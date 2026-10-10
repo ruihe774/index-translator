@@ -145,8 +145,14 @@ paths:
       description: |
         Accepts the same body as `POST /translate` (`stream` and `max_output_tokens` are
         ignored) and reports the size of the resulting prompt without translating anything.
-        An input that is too long is reported with `fits: false`, not with an error. The
-        requested model is loaded if necessary, so the first call for a model can be slow.
+        An input that is too long is reported with `fits: false`, not with an error.
+
+        Tokenizing never waits in the queue, never uses a slot and never loads or swaps a model,
+        so it can run while a translation is in progress. The prompt is built for the requested
+        `model`, but it is counted by the model that is loaded now, named in `counted_with`. The
+        two checkpoints are 9B siblings that share a tokenizer family, so the count is taken to
+        match the requested model's. If no model is ready (loading, failed or stopped), the
+        answer is `503` with `engine_unavailable`.
       requestBody:
         required: true
         content:
@@ -168,10 +174,17 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
-        "429":
-          $ref: "#/components/responses/QueueFull"
-        "502":
-          $ref: "#/components/responses/EngineError"
+        "503":
+          description: No model is ready to count with (`engine_unavailable`). Retry after the `Retry-After` delay.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Suggested delay in seconds (2).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /models:
     get:
       tags: [service]
@@ -383,10 +396,14 @@ components:
           $ref: "#/components/schemas/Timings"
     TokenizeResponse:
       type: object
-      required: [model, prompt_tokens, fits, max_output_tokens, limits]
+      required: [model, counted_with, prompt_tokens, fits, max_output_tokens, limits]
       properties:
         model:
           type: string
+          description: The model the prompt is built for (the requested one).
+        counted_with:
+          type: string
+          description: The loaded model whose tokenizer counted the prompt. Equals `model` when that one is loaded.
         prompt_tokens:
           type: integer
           description: Tokens the full prompt occupies, including the instruction and chat template.
@@ -532,6 +549,7 @@ components:
                 - body_too_large
                 - queue_full
                 - engine_error
+                - engine_unavailable
                 - not_found
                 - method_not_allowed
                 - internal_error

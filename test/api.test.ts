@@ -6,6 +6,7 @@ import { join, resolve } from "node:path";
 import { startApp, type App } from "../src/app";
 import type { Config } from "../src/config";
 import { EngineError, type Launcher } from "../src/llama";
+import { buildDocumentPrompt } from "../src/prompt";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -198,6 +199,7 @@ describe("POST /tokenize", () => {
     const promptChars = "请将以下文本翻译为中文，直接输出翻译结果，不要进行任何解释。\n\nHello".length;
     expect(await res.json()).toEqual({
       model: CHAT,
+      counted_with: CHAT,
       prompt_tokens: promptChars + TEMPLATE.length,
       fits: true,
       max_output_tokens: 1000 - promptChars - TEMPLATE.length - 64,
@@ -214,6 +216,55 @@ describe("POST /tokenize", () => {
     const res = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh", model: DOCUMENT });
     expect(res.status).toBe(400);
     expect(((await res.json()) as any).error.details.field).toBe("source_lang");
+  });
+
+  test("counts a document request's own prompt with the loaded model, without loading it", async () => {
+    const before = mock.launches.length;
+    const res = await post("/api/v1/tokenize", { text: "The fox.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as any;
+    expect(body).toMatchObject({ model: DOCUMENT, counted_with: CHAT });
+    expect(body.prompt_tokens).toBe(buildDocumentPrompt("en-zh", "The fox.").length + TEMPLATE.length);
+    expect(mock.launches.length).toBe(before);
+
+    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    expect(health.model).toBe(CHAT);
+  });
+
+  test("does not wait for a running translation", async () => {
+    mock.delayMs = 300;
+    const running = post("/api/v1/translate", { text: "long", target_lang: "en", stream: true });
+    await Bun.sleep(50);
+
+    const started = performance.now();
+    const res = await post("/api/v1/tokenize", { text: "Hello", target_lang: "zh" });
+    const elapsed = performance.now() - started;
+    expect(res.status).toBe(200);
+    expect(elapsed).toBeLessThan(200);
+    expect(((await res.json()) as any).counted_with).toBe(CHAT);
+
+    expect((await readSse(await running)).at(-1)!.event).toBe("done");
+    mock.delayMs = 0;
+  });
+
+  test("takes no queue slot, so it works when the queue is full and leaves the queue unchanged", async () => {
+    mock.delayMs = 100;
+    const first = post("/api/v1/translate", { text: "one", target_lang: "en", stream: true });
+    await Bun.sleep(30);
+    const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
+    await Bun.sleep(30);
+
+    const before = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    expect(before.queue).toEqual({ running: true, waiting: 1, max_waiting: 1 });
+
+    const res = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" });
+    expect(res.status).toBe(200);
+
+    const after = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    expect(after.queue).toEqual({ running: true, waiting: 1, max_waiting: 1 });
+
+    await Promise.all([first.then(readSse), second.then(readSse)]);
+    mock.delayMs = 0;
   });
 });
 
@@ -489,6 +540,56 @@ describe("engine availability", () => {
     } finally {
       mock.ready = true;
       await loading.stop();
+    }
+  });
+
+  test("tokenize while the engine is loading gets 503 with Retry-After, then counts once it is ready", async () => {
+    mock.ready = false;
+    const loading = await startApp(config(), launcher);
+    try {
+      const origin = loading.server.url.origin;
+      for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) await Bun.sleep(10);
+      expect(loading.engine.state).toBe("loading");
+
+      const tokenize = () =>
+        fetch(origin + "/api/v1/tokenize", {
+          method: "POST",
+          headers: { "content-type": "application/json" },
+          body: JSON.stringify({ text: "Hi", target_lang: "zh" }),
+        });
+      const busy = await tokenize();
+      expect(busy.status).toBe(503);
+      expect(busy.headers.get("retry-after")).toBe("2");
+      expect(((await busy.json()) as any).error.code).toBe("engine_unavailable");
+
+      mock.ready = true;
+      await waitReady(loading);
+      const ready = await tokenize();
+      expect(ready.status).toBe(200);
+      expect(((await ready.json()) as any).counted_with).toBe(CHAT);
+    } finally {
+      mock.ready = true;
+      await loading.stop();
+    }
+  });
+
+  test("tokenize after a failed default load gets 503 instead of waiting", async () => {
+    mock.failLaunch = "model file is corrupt";
+    const broken = await startApp(config(), launcher);
+    try {
+      for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) await Bun.sleep(10);
+      expect(broken.engine.state).toBe("error");
+      const res = await fetch(broken.server.url.origin + "/api/v1/tokenize", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ text: "Hi", target_lang: "zh" }),
+      });
+      expect(res.status).toBe(503);
+      expect(res.headers.get("retry-after")).toBe("2");
+      expect(((await res.json()) as any).error.code).toBe("engine_unavailable");
+    } finally {
+      mock.failLaunch = undefined;
+      await broken.stop();
     }
   });
 });

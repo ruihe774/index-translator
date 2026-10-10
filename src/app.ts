@@ -444,6 +444,41 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
     return new Response(file);
   }
 
+  /**
+   * Counts a request's prompt without entering the queue and without loading or swapping a model.
+   * The prompt is built for the requested model's kind, but counted by the loaded engine's
+   * tokenizer. This assumes the two 9B checkpoints share a tokenizer family; `counted_with` says
+   * which model did the counting.
+   */
+  async function tokenize(input: TranslateRequest, signal: AbortSignal): Promise<Record<string, unknown>> {
+    const unavailable = () =>
+      new ApiError(
+        503,
+        "engine_unavailable",
+        "the engine is loading or switching models; retry in a moment",
+        undefined,
+        { "retry-after": "2" },
+      );
+    const counter = engine.loaded;
+    if (engine.state !== "ready" || !counter) throw unavailable();
+    let promptTokens: number;
+    try {
+      promptTokens = await engine.countPromptTokens(promptFor(input), signal);
+    } catch (e) {
+      // The engine went away between the check above and the request (a swap killed it).
+      if (e instanceof EngineError) throw unavailable();
+      throw e;
+    }
+    return {
+      model: input.model.id,
+      counted_with: counter.id,
+      prompt_tokens: promptTokens,
+      fits: promptTokens <= cfg.maxInputTokens,
+      max_output_tokens: Math.max(0, cfg.ctxSize - promptTokens - CONTEXT_MARGIN),
+      limits: limits(),
+    };
+  }
+
   const methodNotAllowed = (allow: string) =>
     errorResponse(new ApiError(405, "method_not_allowed", `use ${allow}`, undefined, { allow }));
 
@@ -499,19 +534,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
           case "/tokenize": {
             if (req.method !== "POST") return methodNotAllowed("POST");
             const input = parseTranslateRequest(req, await parseBody(req), cfg.defaultModel);
-            return json(
-              await underQueue(req.signal, async () => {
-                await engine.load(input.model);
-                const promptTokens = await engine.countPromptTokens(promptFor(input), req.signal);
-                return {
-                  model: input.model.id,
-                  prompt_tokens: promptTokens,
-                  fits: promptTokens <= cfg.maxInputTokens,
-                  max_output_tokens: Math.max(0, cfg.ctxSize - promptTokens - CONTEXT_MARGIN),
-                  limits: limits(),
-                };
-              }),
-            );
+            return json(await tokenize(input, req.signal));
           }
           case "/translate": {
             if (req.method !== "POST") return methodNotAllowed("POST");

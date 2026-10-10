@@ -148,6 +148,7 @@ export class Engine {
     const running = this.running;
     this.running = undefined;
     this.loaded = undefined;
+    this.baseUrl = "";
     this.state = "stopped";
     if (!running) return;
     running.stop();
@@ -210,9 +211,17 @@ export class Engine {
     return tokens.length;
   }
 
-  /** Tokens a user message with this content occupies in the context, chat template included. */
+  /**
+   * Tokens a user message with this content occupies in the context, chat template included.
+   * Counted by the engine that is running now, without waiting for a generation (llama-server
+   * answers /tokenize while one runs). Throws EngineError when no engine is ready, so a stopped
+   * or stale base URL is never used. The check and the request start in the same tick, so the
+   * URL cannot change between them; a swap that kills the process mid-request surfaces as EngineError.
+   */
   async countPromptTokens(content: string, signal?: AbortSignal): Promise<number> {
-    return (await this.tokenize(content, false, signal)) + this.templateOverhead;
+    if (this.state !== "ready") throw new EngineError(`the engine is ${this.state}`);
+    const overhead = this.templateOverhead;
+    return (await this.tokenize(content, false, signal)) + overhead;
   }
 
   async *generate(prompt: string, maxTokens: number, signal?: AbortSignal): AsyncGenerator<GenerationEvent> {
