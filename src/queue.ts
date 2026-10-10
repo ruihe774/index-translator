@@ -48,7 +48,13 @@ export class SlotQueue {
       settle(true);
     } else {
       this.waiting.push(entry);
-      onPosition?.(this.waiting.length);
+      try {
+        onPosition?.(this.waiting.length);
+      } catch (e) {
+        // The caller gets no ticket, so nothing could ever remove this entry; it would hold the slot once promoted.
+        this.waiting.splice(this.waiting.indexOf(entry), 1);
+        throw e;
+      }
     }
 
     let left = false;

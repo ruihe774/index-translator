@@ -228,8 +228,8 @@ describe("SlotQueue state getters", () => {
 });
 
 describe("SlotQueue observer errors", () => {
-  test.failing("a throwing onPosition does not leave a ghost ticket holding the slot", () => {
-    // Bug: enter() queues the entry before calling onPosition, so a throw leaves it in line with no ticket to leave it.
+  test("a throwing onPosition does not leave a ghost ticket holding the slot", () => {
+    // enter() queues the entry before calling onPosition, so it must take the entry back out on a throw.
     const q = new SlotQueue(2);
     const a = q.enter();
     expect(() =>

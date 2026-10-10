@@ -60,7 +60,8 @@ function optionalString(body: Record<string, unknown>, field: string, maxLength:
   const v = body[field];
   if (v === undefined || v === null) return undefined;
   if (typeof v !== "string") throw invalid(`${field} must be a string`, field);
-  if (v.length > maxLength) throw invalid(`${field} must be at most ${maxLength} characters`, field);
+  // JSON Schema counts code points; String.length counts UTF-16 units, so only spread when that could matter.
+  if (v.length > maxLength && [...v].length > maxLength) throw invalid(`${field} must be at most ${maxLength} characters`, field);
   return v;
 }
 

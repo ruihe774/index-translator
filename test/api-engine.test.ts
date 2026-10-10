@@ -310,14 +310,12 @@ describe("engine process dies", () => {
 
   test("dying mid-stream in JSON mode fails the request; health then reports the error and the next request reloads", async () => {
     const res = await killMidStreamJson();
-    // The status is pinned by the test.failing below; here only the failure itself matters.
     expect(res.status).toBeGreaterThanOrEqual(500);
     await res.text();
     await expectErrorStateThenReload();
   });
 
-  // BUG: Engine.generate lets the socket's TypeError escape unwrapped, so this is 500 internal_error.
-  test.failing("dying mid-stream in JSON mode gives 502 engine_error", async () => {
+  test("dying mid-stream in JSON mode gives 502 engine_error", async () => {
     const res = await killMidStreamJson();
     await until(() => h.app.engine.state === "error", "engine to report the error");
     expect(res.status).toBe(502);
@@ -330,8 +328,7 @@ describe("engine process dies", () => {
     await expectErrorStateThenReload();
   });
 
-  // BUG: same unwrapped socket error as above, reported as code internal_error in the error event.
-  test.failing("dying mid-stream in SSE mode ends the stream with an engine_error event", async () => {
+  test("dying mid-stream in SSE mode ends the stream with an engine_error event", async () => {
     const rest = await killMidStreamSse();
     await until(() => h.app.engine.state === "error", "engine to report the error");
     expect(rest.at(-1)!.data).toMatchObject({ code: "engine_error" });
@@ -462,10 +459,9 @@ describe("model swaps", () => {
     expect(h.ctl.launches.slice(before)).toEqual([DOCUMENT, CHAT]);
   });
 
-  // BUG: abandoning a request frees the queue slot while its engine load is still in flight, so the
-  // next request starts a second load. When the abandoned load finishes it overwrites the engine
-  // the next load set up, and the abandoned engine process is never stopped.
-  test.failing("a swap abandoned mid-load does not leave its engine running when another request swaps again", async () => {
+  // Abandoning a request frees the queue slot while its engine load is still in flight, so the next
+  // request starts a second load. The older load must stop its own process when it finishes.
+  test("a swap abandoned mid-load does not leave its engine running when another request swaps again", async () => {
     await warm(h.origin, CHAT);
     const before = h.ctl.launches.length;
     try {
@@ -482,7 +478,11 @@ describe("model swaps", () => {
       await until(() => h.ctl.launches.length === before + 2, "the chat engine to start loading");
 
       releaseDoc();
-      await until(() => h.app.engine.state === "ready", "the abandoned load to finish");
+      await until(
+        () => h.ctl.upstreams.filter((u) => u.model === DOCUMENT).every((u) => u.stopped),
+        "the abandoned engine to be stopped",
+      );
+      expect(h.app.engine.state).toBe("loading");
       releaseChat();
       expect((await next).model).toBe(CHAT);
 

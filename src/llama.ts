@@ -92,6 +92,16 @@ export const launchLlamaServer: Launcher = async (model, cfg) => {
   };
 };
 
+/** Streams a response body; a connection that drops (the engine died) becomes an EngineError. */
+async function* readBody(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
+  try {
+    yield* body;
+  } catch (e: any) {
+    if (signal?.aborted) throw e;
+    throw new EngineError(`llama-server connection lost: ${e?.message ?? e}`);
+  }
+}
+
 export class Engine {
   state: EngineState = "stopped";
   /** The model whose engine is running or loading. */
@@ -101,6 +111,8 @@ export class Engine {
 
   private baseUrl = "";
   private running?: Running;
+  /** Bumped by every load() and unload(); a load that finds it changed has been superseded. */
+  private epoch = 0;
 
   constructor(
     private cfg: Config,
@@ -113,12 +125,21 @@ export class Engine {
    */
   async load(model: ModelSpec): Promise<void> {
     if (this.state === "ready" && this.loaded?.id === model.id) return;
-    await this.unload();
+    // A client that gave up frees the queue slot while its load is still in flight, so a later load
+    // can start before this one ends. Whichever load is newest wins; an older one stops its own
+    // process and leaves the engine state alone.
+    const epoch = ++this.epoch;
+    await this.stopRunning();
     this.state = "loading";
     this.loaded = model;
     this.error = undefined;
     try {
       const running = await this.launch(model, this.cfg);
+      if (epoch !== this.epoch) {
+        running.stop();
+        await running.exited;
+        throw new EngineError("the model load was superseded by a newer one");
+      }
       this.running = running;
       this.baseUrl = running.url;
       void running.exited.then((code) => {
@@ -134,8 +155,9 @@ export class Engine {
       this.state = "ready";
       console.error(`[engine] ${model.id} ready at ${this.baseUrl} (template overhead ${this.templateOverhead} tokens)`);
     } catch (e) {
+      if (epoch !== this.epoch) throw e instanceof EngineError ? e : new EngineError(String(e));
       const message = e instanceof Error ? e.message : String(e);
-      await this.unload();
+      await this.stopRunning();
       this.state = "error";
       this.error = message;
       console.error(`[engine] could not load ${model.id}: ${message}`);
@@ -145,6 +167,11 @@ export class Engine {
 
   /** Stops the running engine, if any. */
   async unload(): Promise<void> {
+    this.epoch++;
+    await this.stopRunning();
+  }
+
+  private async stopRunning(): Promise<void> {
     const running = this.running;
     this.running = undefined;
     this.loaded = undefined;
@@ -244,7 +271,7 @@ export class Engine {
 
     let buffer = "";
     const decoder = new TextDecoder();
-    for await (const chunk of res.body!) {
+    for await (const chunk of readBody(res.body!, signal)) {
       buffer += decoder.decode(chunk, { stream: true });
       let nl: number;
       while ((nl = buffer.indexOf("\n")) >= 0) {

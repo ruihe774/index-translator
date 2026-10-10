@@ -129,9 +129,8 @@ describe("string length limits", () => {
     expect(shapedBody.error.message).toContain("unknown model");
   });
 
-  test.failing("target_lang maxLength counts code points as JSON Schema does, so 40 emoji (80 UTF-16 units) are accepted", async () => {
-    // Bug: src/app.ts optionalString compares v.length (UTF-16 units) against maxLength, so
-    // 40 emoji (40 code points, within the spec's maxLength 64) are refused with 400.
+  test("target_lang maxLength counts code points as JSON Schema does, so 40 emoji (80 UTF-16 units) are accepted", async () => {
+    // optionalString counts code points, not UTF-16 units, so 40 emoji are within the spec's maxLength 64.
     const res = await post("/api/v1/translate", { text: "Hi", target_lang: "🌏".repeat(40) });
     expect(res.status).toBe(200);
     await res.text();
