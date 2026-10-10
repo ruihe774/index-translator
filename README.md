@@ -42,7 +42,7 @@ The specification is [docs/openapi.yaml](docs/openapi.yaml), also served at `/ap
 | Endpoint | Purpose |
 |---|---|
 | `POST /api/v1/translate` | Translate; JSON response, or SSE with `stream: true` |
-| `POST /api/v1/tokenize` | Token count and remaining budget for a request |
+| `POST /api/v1/tokenize` | Token count and remaining budget for a request; never queues or swaps models (`503` while no model is ready) |
 | `GET /api/v1/models` | Available models, the default, and the one loaded now |
 | `GET /api/v1/languages` | Language codes with a short form |
 | `GET /api/v1/health` | Engine state, loaded model, limits, queue |
