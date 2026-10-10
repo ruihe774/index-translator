@@ -527,10 +527,10 @@ describe("queueing and cancellation", () => {
     for (let i = 0; i < 100 && (await queueState()).waiting !== count; i++) await Bun.sleep(20);
   }
 
-  test.each([
-    ["translate", "/api/v1/translate", { text: "two", target_lang: "en" }],
-    ["tokenize", "/api/v1/tokenize", { text: "two", target_lang: "en" }],
-  ])("cancelling a queued JSON %s request frees its place quietly", async (_name, path, body) => {
+  // /tokenize never queues (see the tokenize tests), so only translate can be cancelled while waiting.
+  test("cancelling a queued JSON translate request frees its place quietly", async () => {
+    const path = "/api/v1/translate";
+    const body = { text: "two", target_lang: "en" };
     mock.delayMs = 60;
     const log = spyOn(console, "error").mockImplementation(() => {});
     try {
