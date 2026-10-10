@@ -21,6 +21,8 @@ describe("loadConfig defaults", () => {
       ctxSize: 65536,
       maxInputTokens: 28000,
       maxQueue: 8,
+      allowedOrigins: [],
+      allowedHosts: [],
     });
   });
 

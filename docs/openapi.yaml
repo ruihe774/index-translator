@@ -322,7 +322,7 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     UnsupportedMediaType:
-      description: The body is not declared as `Content-Type: application/json` (`unsupported_media_type`).
+      description: "The body is not declared as `Content-Type: application/json` (`unsupported_media_type`)."
       content:
         application/json:
           schema:
