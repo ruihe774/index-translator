@@ -1,7 +1,7 @@
 // API tests against a mock engine, so they run without a GPU or model files. The mock launcher
 // starts an in-process upstream server per load and records which model each load was for.
 
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { join, resolve } from "node:path";
 import { startApp, type App } from "../src/app";
 import type { Config } from "../src/config";
@@ -463,6 +463,112 @@ describe("queueing and cancellation", () => {
     expect(health.queue.running).toBe(false);
     const next = await post("/api/v1/translate", { text: "next", target_lang: "en" });
     expect(next.status).toBe(200);
+  });
+
+  async function queueState(): Promise<{ running: boolean; waiting: number }> {
+    const { running, waiting } = ((await (await fetch(base + "/api/v1/health")).json()) as any).queue;
+    return { running, waiting };
+  }
+
+  async function waitForWaiting(count: number): Promise<void> {
+    for (let i = 0; i < 100 && (await queueState()).waiting !== count; i++) await Bun.sleep(20);
+  }
+
+  test.each([
+    ["translate", "/api/v1/translate", { text: "two", target_lang: "en" }],
+    ["tokenize", "/api/v1/tokenize", { text: "two", target_lang: "en" }],
+  ])("cancelling a queued JSON %s request frees its place quietly", async (_name, path, body) => {
+    mock.delayMs = 60;
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const first = post("/api/v1/translate", { text: "one", target_lang: "en" });
+      await Bun.sleep(30);
+      const ac = new AbortController();
+      const second = post(path, body, { signal: ac.signal });
+      await Bun.sleep(30);
+      expect((await queueState()).waiting).toBe(1);
+
+      ac.abort();
+      await expect(second).rejects.toThrow();
+      await waitForWaiting(0);
+      expect(await queueState()).toEqual({ running: true, waiting: 0 });
+
+      expect((await first).status).toBe(200);
+      expect(await queueState()).toEqual({ running: false, waiting: 0 });
+      expect(log).not.toHaveBeenCalled();
+
+      const next = await post("/api/v1/translate", { text: "next", target_lang: "en" });
+      expect(next.status).toBe(200);
+    } finally {
+      log.mockRestore();
+      mock.delayMs = 0;
+    }
+  });
+
+  test("disconnecting during a JSON translation is a quiet cancellation", async () => {
+    mock.delayMs = 200;
+    const log = spyOn(console, "error").mockImplementation(() => {});
+    const abortedBefore = mock.aborted;
+    try {
+      const ac = new AbortController();
+      const pending = post("/api/v1/translate", { text: "long", target_lang: "en" }, { signal: ac.signal });
+      await Bun.sleep(100);
+      ac.abort();
+      await expect(pending).rejects.toThrow();
+
+      for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) await Bun.sleep(20);
+      await waitForWaiting(0);
+      await Bun.sleep(50);
+      expect(mock.aborted).toBe(abortedBefore + 1);
+      expect(await queueState()).toEqual({ running: false, waiting: 0 });
+      expect(log).not.toHaveBeenCalled();
+    } finally {
+      log.mockRestore();
+      mock.delayMs = 0;
+    }
+  });
+
+  test("cancelling a queued SSE request ends its handler and clears its keepalive", async () => {
+    // Keepalive timers are the only thing a hung queued stream would leak, so track them directly.
+    const g = globalThis as any;
+    const realSetInterval = g.setInterval;
+    const realClearInterval = g.clearInterval;
+    const live = new Set<unknown>();
+    g.setInterval = (...args: any[]) => {
+      const id = realSetInterval(...args);
+      live.add(id);
+      return id;
+    };
+    g.clearInterval = (id: unknown) => {
+      live.delete(id);
+      realClearInterval(id);
+    };
+    try {
+      mock.delayMs = 60;
+      const first = post("/api/v1/translate", { text: "one", target_lang: "en" });
+      await Bun.sleep(30);
+      const before = live.size;
+      const ac = new AbortController();
+      // The stream's headers arrive at once, so the queued request is open but never answered.
+      await post("/api/v1/translate", { text: "two", target_lang: "en", stream: true }, { signal: ac.signal });
+      await Bun.sleep(30);
+      expect((await queueState()).waiting).toBe(1);
+      expect(live.size).toBe(before + 1);
+
+      ac.abort();
+      await waitForWaiting(0);
+      await Bun.sleep(50);
+      expect(live.size).toBe(before);
+      expect((await first).status).toBe(200);
+
+      const next = await post("/api/v1/translate", { text: "next", target_lang: "en", stream: true });
+      expect((await readSse(next)).at(-1)!.event).toBe("done");
+      expect(await queueState()).toEqual({ running: false, waiting: 0 });
+    } finally {
+      g.setInterval = realSetInterval;
+      g.clearInterval = realClearInterval;
+      mock.delayMs = 0;
+    }
   });
 });
 

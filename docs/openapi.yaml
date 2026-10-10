@@ -535,6 +535,7 @@ components:
                 - not_found
                 - method_not_allowed
                 - internal_error
+                - cancelled
             message:
               type: string
             details:

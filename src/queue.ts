@@ -7,14 +7,17 @@ export class QueueFullError extends Error {
 }
 
 export interface Ticket {
-  /** Resolves when this ticket owns the slot. */
-  ready: Promise<void>;
+  /**
+   * Settles once: `true` when this ticket owns the slot, `false` when it left while still waiting.
+   * Never rejects, so nobody has to handle it when they stop waiting.
+   */
+  ready: Promise<boolean>;
   /** Give up the slot or the place in line. Safe to call more than once. */
   leave(): void;
 }
 
 interface Entry {
-  grant: () => void;
+  settle: (granted: boolean) => void;
   onPosition?: (position: number) => void;
 }
 
@@ -36,13 +39,13 @@ export class SlotQueue {
   enter(onPosition?: (position: number) => void): Ticket {
     if (this.active && this.waiting.length >= this.maxWaiting) throw new QueueFullError();
 
-    let grant!: () => void;
-    const ready = new Promise<void>((resolve) => (grant = resolve));
-    const entry: Entry = { grant, onPosition };
+    let settle!: (granted: boolean) => void;
+    const ready = new Promise<boolean>((resolve) => (settle = resolve));
+    const entry: Entry = { settle, onPosition };
 
     if (!this.active) {
       this.active = entry;
-      grant();
+      settle(true);
     } else {
       this.waiting.push(entry);
       onPosition?.(this.waiting.length);
@@ -56,11 +59,12 @@ export class SlotQueue {
         left = true;
         if (this.active === entry) {
           this.active = this.waiting.shift() ?? null;
-          this.active?.grant();
+          this.active?.settle(true);
         } else {
           const i = this.waiting.indexOf(entry);
           if (i < 0) return;
           this.waiting.splice(i, 1);
+          entry.settle(false);
         }
         this.waiting.forEach((e, i) => e.onPosition?.(i + 1));
       },
