@@ -11,6 +11,10 @@ function int(name: string, fallback: number): number {
   return n;
 }
 
+function list(name: string): string[] {
+  return (Bun.env[name] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+}
+
 export interface Config {
   host: string;
   port: number;
@@ -29,6 +33,10 @@ export interface Config {
   maxInputTokens: number;
   /** Requests allowed to wait behind the running one. */
   maxQueue: number;
+  /** Origins (e.g. "https://app.example.com") allowed to call /api/v1 cross-origin. */
+  allowedOrigins: string[];
+  /** Host names besides loopback and HOST that /api/v1 accepts, e.g. behind a proxy. */
+  allowedHosts: string[];
 }
 
 export function loadConfig(): Config {
@@ -48,5 +56,7 @@ export function loadConfig(): Config {
     ctxSize: int("CTX_SIZE", 65536),
     maxInputTokens: int("MAX_INPUT_TOKENS", 28000),
     maxQueue: int("MAX_QUEUE", 8),
+    allowedOrigins: list("ALLOWED_ORIGINS"),
+    allowedHosts: list("ALLOWED_HOSTS"),
   };
 }

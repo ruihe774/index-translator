@@ -57,6 +57,8 @@ Environment variables, all optional:
 | Variable | Default | Meaning |
 |---|---|---|
 | `HOST`, `PORT` | `127.0.0.1`, `3000` | Listen address. There is no authentication; keep it on loopback or behind a proxy. |
+| `ALLOWED_ORIGINS` | | Comma-separated origins (e.g. `https://app.example.com`) allowed to call the API from a browser page. Requests from the same origin, or with no `Origin` header, are always allowed. |
+| `ALLOWED_HOSTS` | | Comma-separated host names (no port) the API accepts in the `Host` header, besides `localhost`, `127.0.0.1`, `::1` and `HOST`. Set this when `HOST` is `0.0.0.0` or `::` and clients reach the server through a proxy under another name. |
 | `MODELS_DIR` | `models/` | Directory holding the GGUF files named in `src/models.ts` |
 | `DEFAULT_MODEL` | `index-translate-9b` | Model loaded at startup and used when a request names none |
 | `CTX_SIZE` | `65536` | Context window in tokens, shared by prompt and translation |

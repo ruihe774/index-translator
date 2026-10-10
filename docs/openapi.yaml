@@ -48,7 +48,9 @@ paths:
         `Accept: text/event-stream`, to receive Server-Sent Events instead.
 
         Request validation (`400`) and the queue (`429`) are checked before the response
-        starts, so they are reported with an HTTP status in both modes. Everything after that
+        starts, so they are reported with an HTTP status in both modes. The body must be declared
+        as `application/json` (`415`), and browser requests must pass the Host and Origin checks
+        (`403`); see `ALLOWED_ORIGINS` and `ALLOWED_HOSTS` in the README. Everything after that
         happens in the queue or the engine: an input over the token limit, a model that fails to
         load, and an engine failure are reported as `413` or `502` in JSON mode, and as an
         `error` event in SSE mode, because the stream has already started by then.
@@ -135,6 +137,10 @@ paths:
           $ref: "#/components/responses/QueueFull"
         "413":
           $ref: "#/components/responses/TooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "502":
           $ref: "#/components/responses/EngineError"
   /tokenize:
@@ -153,6 +159,9 @@ paths:
         two checkpoints are 9B siblings that share a tokenizer family, so the count is taken to
         match the requested model's. If no model is ready (loading, failed or stopped), the
         answer is `503` with `engine_unavailable`.
+
+        Like `/translate`, it requires `Content-Type: application/json` (`415`) and passes the
+        Host and Origin checks (`403`).
       requestBody:
         required: true
         content:
@@ -185,6 +194,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "403":
+          $ref: "#/components/responses/Forbidden"
   /models:
     get:
       tags: [service]
@@ -304,6 +317,20 @@ components:
       description: |
         The inference engine failed while handling the request (`engine_error`): a generation
         failed, or the requested model could not be loaded. The message says which.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnsupportedMediaType:
+      description: The body is not declared as `Content-Type: application/json` (`unsupported_media_type`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Forbidden:
+      description: |
+        A browser page from another origin called the API (`forbidden_origin`), or the request's
+        Host header is not loopback, `HOST` or in `ALLOWED_HOSTS` (`forbidden_host`).
       content:
         application/json:
           schema:
@@ -552,6 +579,9 @@ components:
                 - engine_unavailable
                 - not_found
                 - method_not_allowed
+                - unsupported_media_type
+                - forbidden_origin
+                - forbidden_host
                 - internal_error
             message:
               type: string

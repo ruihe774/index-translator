@@ -70,7 +70,58 @@ function optionalStringArray(body: Record<string, unknown>, field: string): stri
   return v as string[];
 }
 
+const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1"];
+
+/** Lowercase host name from a Host-style value ("name:port", "[::1]:port"); undefined if malformed. */
+function hostnameOf(hostport: string): string | undefined {
+  try {
+    return new URL(`http://${hostport}`).hostname.replace(/^\[(.*)\]$/, "$1");
+  } catch {
+    return undefined;
+  }
+}
+
+/** Bare host from a config value, which has no port and may be bracketed IPv6. */
+function bareHost(value: string): string {
+  return value.replace(/^\[(.*)\]$/, "$1").toLowerCase();
+}
+
+/** Anti DNS-rebinding: a rebinding page reaches us under its own host name. */
+function checkHost(req: Request, cfg: Config): void {
+  const host = hostnameOf(req.headers.get("host") ?? "");
+  const allowed = [...LOOPBACK_HOSTS, bareHost(cfg.host), ...cfg.allowedHosts.map(bareHost)];
+  if (!host || !allowed.includes(host)) {
+    throw new ApiError(403, "forbidden_host", "this Host header is not allowed; add the host name to ALLOWED_HOSTS");
+  }
+}
+
+/** A request without an Origin header is not from a browser page and is allowed. */
+function checkOrigin(req: Request, cfg: Config): void {
+  const origin = req.headers.get("origin");
+  if (origin === null) return;
+  const host = (req.headers.get("host") ?? "").toLowerCase();
+  let sameOrigin = false;
+  try {
+    sameOrigin = new URL(origin).host === host;
+  } catch {
+    // "null" and other non-URL origins are never same-origin
+  }
+  const allowed = cfg.allowedOrigins.some((o) => o.replace(/\/+$/, "").toLowerCase() === origin.toLowerCase());
+  if (!sameOrigin && !allowed) {
+    throw new ApiError(403, "forbidden_origin", "cross-origin requests are not allowed; add the origin to ALLOWED_ORIGINS");
+  }
+}
+
+/** Browsers send a cross-site form POST as text/plain without a preflight, so only JSON is accepted. */
+function checkJsonContentType(req: Request): void {
+  const type = (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+  if (type !== "application/json") {
+    throw new ApiError(415, "unsupported_media_type", "request body must be application/json");
+  }
+}
+
 async function parseBody(req: Request): Promise<Record<string, unknown>> {
+  checkJsonContentType(req);
   if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
     throw new ApiError(413, "body_too_large", `request body exceeds ${MAX_BODY_BYTES} bytes`);
   }
@@ -496,6 +547,8 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
       }
 
       try {
+        checkHost(req, cfg);
+        checkOrigin(req, cfg);
         switch (path.slice(API.length)) {
           case "/health": {
             if (req.method !== "GET") return methodNotAllowed("GET");
