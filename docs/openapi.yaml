@@ -1,22 +1,35 @@
 openapi: 3.1.0
 info:
   title: Index Translator API
-  version: 1.0.0
-  summary: Text translation backed by a locally deployed Index-Translate model.
+  version: 1.1.0
+  summary: Text translation backed by locally deployed Index-Translate models.
   description: |
-    The backend runs one Index-Translate model through llama.cpp and exposes it over REST.
+    The backend runs Index-Translate models through llama.cpp and exposes them over REST.
+    Two checkpoints are available (see `GET /models`):
+
+    - `index-translate-9b`: general translation in any supported language, with glossary and
+      constraint support.
+    - `index-nailong-9b`: whole-document translation (NativeLong) in four directions only:
+      `zh-en`, `en-zh`, `zh-ja` and `ja-zh`. It takes no glossary or constraints.
+
+    The client chooses the model per request with the `model` field. The backend never picks a
+    model for the client.
 
     **Single-pass translation.** A request is translated in one generation; the backend never
     splits the input. Input size is limited in tokens (see `limits` in `GET /health`), and
     `POST /tokenize` reports how many tokens a request would use before it is sent.
 
+    **Model switching.** The GPU holds one model at a time. A request for a model that is not
+    loaded waits in the queue, unloads the current model, loads the requested one (this takes
+    a few seconds), and then runs. Consecutive requests for the same model do not reload.
+
     **Streaming.** `POST /translate` returns either one JSON document or a Server-Sent Events
     stream. Because the request needs a body, the stream is consumed with `fetch` (or any HTTP
     client that can read a streamed response), not with the browser `EventSource` API.
 
-    **Concurrency.** One translation runs at a time. Further requests wait in a bounded FIFO
-    queue; when it is full the backend answers `429`. Closing the connection cancels a waiting
-    or running translation.
+    **Concurrency.** One request at a time uses the engine. Further requests wait in a bounded
+    FIFO queue; when it is full the backend answers `429`. Closing the connection cancels a
+    waiting or running translation.
 
     **Errors.** Every error response has the same JSON envelope, see `Error`.
 servers:
@@ -34,9 +47,11 @@ paths:
         Returns JSON by default. Set `stream: true` in the body, or send
         `Accept: text/event-stream`, to receive Server-Sent Events instead.
 
-        All validation, size and queue checks happen before the response starts, so they are
-        reported with an HTTP status in both modes. Failures after a stream has started arrive
-        as an `error` event.
+        Request validation (`400`) and the queue (`429`) are checked before the response
+        starts, so they are reported with an HTTP status in both modes. Everything after that
+        happens in the queue or the engine: an input over the token limit, a model that fails to
+        load, and an engine failure are reported as `413` or `502` in JSON mode, and as an
+        `error` event in SSE mode, because the stream has already started by then.
       requestBody:
         required: true
         content:
@@ -62,6 +77,13 @@ paths:
                   soft_constraints:
                     - 保持专业严谨的技术工程文档风格
                   stream: true
+              document:
+                summary: Whole document with NativeLong
+                value:
+                  model: index-nailong-9b
+                  text: "The town library reopened last month after a renovation that took far longer than anyone had planned.\n\nThe old reading room has been replaced by a bright hall."
+                  source_lang: en
+                  target_lang: zh
       responses:
         "200":
           description: The translation, as one JSON document or as an event stream.
@@ -96,7 +118,7 @@ paths:
                   keep-alives and must be ignored.
               example: |
                 event: start
-                data: {"model":"Index-Translate-9B.Q6_K","prompt_tokens":45,"max_output_tokens":65427,"queue_ms":0}
+                data: {"model":"index-translate-9b","prompt_tokens":45,"max_output_tokens":65427,"queue_ms":0}
 
                 event: delta
                 data: {"text":"你好"}
@@ -109,14 +131,12 @@ paths:
 
         "400":
           $ref: "#/components/responses/InvalidRequest"
-        "413":
-          $ref: "#/components/responses/TooLarge"
         "429":
           $ref: "#/components/responses/QueueFull"
+        "413":
+          $ref: "#/components/responses/TooLarge"
         "502":
           $ref: "#/components/responses/EngineError"
-        "503":
-          $ref: "#/components/responses/EngineUnavailable"
   /tokenize:
     post:
       tags: [translation]
@@ -125,7 +145,8 @@ paths:
       description: |
         Accepts the same body as `POST /translate` (`stream` and `max_output_tokens` are
         ignored) and reports the size of the resulting prompt without translating anything.
-        An input that is too long is reported with `fits: false`, not with an error.
+        An input that is too long is reported with `fits: false`, not with an error. The
+        requested model is loaded if necessary, so the first call for a model can be slow.
       requestBody:
         required: true
         content:
@@ -147,10 +168,22 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+        "429":
+          $ref: "#/components/responses/QueueFull"
         "502":
           $ref: "#/components/responses/EngineError"
-        "503":
-          $ref: "#/components/responses/EngineUnavailable"
+  /models:
+    get:
+      tags: [service]
+      operationId: listModels
+      summary: List the available models and the one loaded now
+      responses:
+        "200":
+          description: Model identifiers, their kind and, for document models, the directions they accept.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ModelList"
   /languages:
     get:
       tags: [service]
@@ -160,7 +193,8 @@ paths:
         The codes listed here are the ones the backend maps to the language names used in the
         model's training prompts. The model supports more languages than this list; any other
         language can be requested by passing its name (preferably in Chinese, for example
-        `斯瓦希里语`) as `source_lang` or `target_lang`.
+        `斯瓦希里语`) as `source_lang` or `target_lang`. The `index-nailong-9b` model accepts
+        only the four codes listed in `GET /models`.
       responses:
         "200":
           description: Known language codes.
@@ -179,6 +213,11 @@ paths:
       tags: [service]
       operationId: getHealth
       summary: Service and engine status
+      description: |
+        `status` is `ready` only when a model is loaded and idle or busy. `loading` means a model
+        is being loaded (a request for a different model causes this), `stopped` means no model
+        is loaded yet (startup), and `error` means the last load failed; the next request for
+        that model tries again.
       responses:
         "200":
           description: The engine is ready to translate.
@@ -187,7 +226,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Health"
         "503":
-          description: The engine is loading, stopped or has failed. The body is the same `Health` document.
+          description: The engine is not ready. The body is the same `Health` document.
           content:
             application/json:
               schema:
@@ -208,8 +247,9 @@ components:
   responses:
     InvalidRequest:
       description: |
-        The body is not a JSON object or a field is invalid (`invalid_request`).
-        `details.field` names the offending field when there is one.
+        The body is not a JSON object, a field is invalid (`invalid_request`), or the model
+        does not accept the request (`unsupported_language_pair`). `details.field` names the
+        offending field when there is one.
       content:
         application/json:
           schema:
@@ -248,20 +288,9 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     EngineError:
-      description: The inference engine failed while handling the request (`engine_error`).
-      content:
-        application/json:
-          schema:
-            $ref: "#/components/schemas/Error"
-    EngineUnavailable:
       description: |
-        The model is still loading (`engine_loading`, with a `Retry-After` header) or the
-        engine is not running (`engine_unavailable`).
-      headers:
-        Retry-After:
-          schema:
-            type: integer
-          description: Suggested delay in seconds; present for `engine_loading`.
+        The inference engine failed while handling the request (`engine_error`): a generation
+        failed, or the requested model could not be loaded. The message says which.
       content:
         application/json:
           schema:
@@ -271,6 +300,13 @@ components:
       type: object
       required: [text, target_lang]
       properties:
+        model:
+          type: string
+          enum: [index-translate-9b, index-nailong-9b]
+          default: index-translate-9b
+          description: |
+            Which checkpoint translates the request; see `GET /models`. Requests that name a
+            different model than the one loaded cause a model switch.
         text:
           type: string
           minLength: 1
@@ -279,18 +315,20 @@ components:
           type: string
           minLength: 1
           maxLength: 64
-          description: A code from `GET /languages` (case-insensitive) or a language name.
+          description: A code from `GET /languages` (case-insensitive) or a language name. For `index-nailong-9b`, a code that completes a supported direction.
           examples: [en, zh, 斯瓦希里语]
         source_lang:
           type: string
           maxLength: 64
           default: auto
-          description: A language code or name. `auto` (or omitting the field) lets the model detect the language.
+          description: |
+            A language code or name. `auto` (or omitting the field) lets the model detect the
+            language. Required by `index-nailong-9b`, which has no detection.
         glossary:
           type: object
           additionalProperties:
             type: string
-          description: Required term translations, source term to target term. Enforced as a hard constraint.
+          description: Required term translations, source term to target term. Enforced as a hard constraint. Not accepted by `index-nailong-9b`.
           examples:
             - 碳纤维: carbon fiber
         hard_constraints:
@@ -300,14 +338,14 @@ components:
           description: |
             Requirements that must hold, such as preserving JSON structure, placeholders or
             code. The model was trained on Chinese instructions; write them in Chinese for
-            best adherence.
+            best adherence. Not accepted by `index-nailong-9b`.
           examples:
             - [保留源文中的 JSON 格式标记不变]
         soft_constraints:
           type: array
           items:
             type: string
-          description: Graded requirements such as tone, register or domain context.
+          description: Graded requirements such as tone, register or domain context. Not accepted by `index-nailong-9b`.
           examples:
             - [调整为严谨、正式、礼貌的商务公文风格]
         genre:
@@ -316,7 +354,7 @@ components:
           default: 文本
           description: |
             Genre or domain of the source, such as `专栏文章`, `学术论文`, `小说` or `字幕`.
-            Only used when a glossary or constraint is present.
+            Only used when a glossary or constraint is present. Not accepted by `index-nailong-9b`.
         max_output_tokens:
           type: integer
           minimum: 1
@@ -338,15 +376,17 @@ components:
           $ref: "#/components/schemas/FinishReason"
         model:
           type: string
-          examples: [Index-Translate-9B.Q6_K]
+          examples: [index-translate-9b]
         usage:
           $ref: "#/components/schemas/Usage"
         timings:
           $ref: "#/components/schemas/Timings"
     TokenizeResponse:
       type: object
-      required: [prompt_tokens, fits, max_output_tokens, limits]
+      required: [model, prompt_tokens, fits, max_output_tokens, limits]
       properties:
+        model:
+          type: string
         prompt_tokens:
           type: integer
           description: Tokens the full prompt occupies, including the instruction and chat template.
@@ -358,6 +398,43 @@ components:
           description: Context space left for the translation.
         limits:
           $ref: "#/components/schemas/Limits"
+    ModelList:
+      type: object
+      required: [default, loaded, models]
+      properties:
+        default:
+          type: string
+          description: The model used when a request names none.
+        loaded:
+          type: string
+          nullable: true
+          description: The model whose engine is running now, or null before the first load.
+        models:
+          type: array
+          items:
+            $ref: "#/components/schemas/ModelInfo"
+    ModelInfo:
+      type: object
+      required: [id, label, kind]
+      properties:
+        id:
+          type: string
+          enum: [index-translate-9b, index-nailong-9b]
+        label:
+          type: string
+        kind:
+          type: string
+          enum: [chat, document]
+          description: |
+            `chat` translates free text with optional glossary and constraints. `document`
+            translates a whole text with a fixed prompt and takes no options beyond the language
+            pair and output budget.
+        directions:
+          type: array
+          items:
+            type: string
+            examples: [zh-en]
+          description: Accepted `<source>-<target>` codes, for document models only.
     FinishReason:
       type: string
       enum: [stop, length]
@@ -378,7 +455,7 @@ components:
       properties:
         queue_ms:
           type: integer
-          description: Time spent waiting for the engine.
+          description: Time spent waiting for the engine, including any model switch.
         prompt_ms:
           type: integer
           description: Time the engine spent reading the prompt.
@@ -423,6 +500,8 @@ components:
           description: Present when `status` is `error`.
         model:
           type: string
+          nullable: true
+          description: The loaded model, or null when none is loaded.
         limits:
           $ref: "#/components/schemas/Limits"
         queue:
@@ -448,11 +527,10 @@ components:
               type: string
               enum:
                 - invalid_request
+                - unsupported_language_pair
                 - input_too_long
                 - body_too_large
                 - queue_full
-                - engine_loading
-                - engine_unavailable
                 - engine_error
                 - not_found
                 - method_not_allowed
@@ -476,6 +554,7 @@ components:
       properties:
         model:
           type: string
+          description: The model that will translate this request.
         prompt_tokens:
           type: integer
         max_output_tokens:
@@ -506,6 +585,12 @@ components:
       properties:
         code:
           type: string
-          enum: [engine_error, internal_error]
+          enum: [input_too_long, engine_error, internal_error]
+          description: |
+            `input_too_long` carries the same `details` as the JSON `413`. `engine_error` covers
+            both failed generations and failed model loads.
         message:
           type: string
+        details:
+          type: object
+          additionalProperties: true

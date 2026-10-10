@@ -5,7 +5,7 @@ import { loadConfig } from "./config";
 
 const cfg = loadConfig();
 const app = await startApp(cfg);
-console.error(`[server] listening on ${app.server.url} (model ${cfg.modelName}, context ${cfg.ctxSize})`);
+console.error(`[server] listening on ${app.server.url} (default model ${cfg.defaultModel}, context ${cfg.ctxSize})`);
 
 let stopping = false;
 for (const sig of ["SIGINT", "SIGTERM"] as const) {

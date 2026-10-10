@@ -1,14 +1,19 @@
-// API tests against a mock llama-server, so they run without a GPU or model.
+// API tests against a mock engine, so they run without a GPU or model files. The mock launcher
+// starts an in-process upstream server per load and records which model each load was for.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
 import { startApp, type App } from "../src/app";
 import type { Config } from "../src/config";
+import { EngineError, type Launcher } from "../src/llama";
 
 const root = resolve(import.meta.dir, "..");
 
 // The mock tokenizer counts one token per character and the chat template adds TEMPLATE.length tokens.
 const TEMPLATE = "<user></user>";
+
+const CHAT = "index-translate-9b";
+const DOCUMENT = "index-nailong-9b";
 
 const mock = {
   ready: true,
@@ -16,52 +21,65 @@ const mock = {
   delayMs: 0,
   finish: "stop",
   failWith: undefined as string | undefined,
+  failLaunch: undefined as string | undefined,
   requests: [] as any[],
   aborted: 0,
+  launches: [] as string[],
 };
 
 const sse = (data: unknown) => `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
 
-const upstream = Bun.serve({
-  port: 0,
-  hostname: "127.0.0.1",
-  async fetch(req) {
-    const path = new URL(req.url).pathname;
-    if (path === "/health") return Response.json({ status: mock.ready ? "ok" : "loading" }, { status: mock.ready ? 200 : 503 });
-    if (path === "/apply-template") return Response.json({ prompt: TEMPLATE });
-    if (path === "/tokenize") {
-      const { content } = (await req.json()) as { content: string };
-      return Response.json({ tokens: Array.from(content, (_, i) => i) });
-    }
-    if (path === "/v1/chat/completions") {
-      const body = (await req.json()) as any;
-      mock.requests.push(body);
-      const { chunks, delayMs, finish, failWith } = mock;
-      req.signal.addEventListener("abort", () => mock.aborted++);
-      return new Response(
-        (async function* () {
-          for (const content of chunks) {
-            if (delayMs) await Bun.sleep(delayMs);
-            yield sse({ choices: [{ delta: { content }, finish_reason: null }] });
-          }
-          if (failWith) {
-            yield sse({ error: { message: failWith } });
-            return;
-          }
-          yield sse({ choices: [{ delta: {}, finish_reason: finish }] });
-          yield sse({
-            choices: [],
-            usage: { prompt_tokens: 42, completion_tokens: chunks.length },
-            timings: { prompt_ms: 12.4, predicted_ms: 99.6, predicted_per_second: 70.123 },
-          });
-          yield sse("[DONE]");
-        })(),
-        { headers: { "content-type": "text/event-stream" } },
-      );
-    }
-    return new Response("not found", { status: 404 });
-  },
-});
+async function upstreamFetch(req: Request): Promise<Response> {
+  const path = new URL(req.url).pathname;
+  if (path === "/health") return Response.json({ status: mock.ready ? "ok" : "loading" }, { status: mock.ready ? 200 : 503 });
+  if (path === "/apply-template") return Response.json({ prompt: TEMPLATE });
+  if (path === "/tokenize") {
+    const { content } = (await req.json()) as { content: string };
+    return Response.json({ tokens: Array.from(content, (_, i) => i) });
+  }
+  if (path === "/v1/chat/completions") {
+    const body = (await req.json()) as any;
+    mock.requests.push(body);
+    const { chunks, delayMs, finish, failWith } = mock;
+    req.signal.addEventListener("abort", () => mock.aborted++);
+    return new Response(
+      (async function* () {
+        for (const content of chunks) {
+          if (delayMs) await Bun.sleep(delayMs);
+          yield sse({ choices: [{ delta: { content }, finish_reason: null }] });
+        }
+        if (failWith) {
+          yield sse({ error: { message: failWith } });
+          return;
+        }
+        yield sse({ choices: [{ delta: {}, finish_reason: finish }] });
+        yield sse({
+          choices: [],
+          usage: { prompt_tokens: 42, completion_tokens: chunks.length },
+          timings: { prompt_ms: 12.4, predicted_ms: 99.6, predicted_per_second: 70.123 },
+        });
+        yield sse("[DONE]");
+      })(),
+      { headers: { "content-type": "text/event-stream" } },
+    );
+  }
+  return new Response("not found", { status: 404 });
+}
+
+const launcher: Launcher = async (model) => {
+  if (mock.failLaunch) throw new EngineError(mock.failLaunch);
+  mock.launches.push(model.id);
+  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: upstreamFetch });
+  let finish!: (code: number) => void;
+  const exited = new Promise<number>((resolve) => (finish = resolve));
+  return {
+    url: `http://127.0.0.1:${server.port}`,
+    exited,
+    stop() {
+      void server.stop(true).then(() => finish(0));
+    },
+  };
+};
 
 function config(overrides: Partial<Config> = {}): Config {
   return {
@@ -69,10 +87,9 @@ function config(overrides: Partial<Config> = {}): Config {
     port: 0,
     publicDir: join(root, "public"),
     specPath: join(root, "docs", "openapi.yaml"),
-    modelPath: "/nonexistent/model.gguf",
-    modelName: "mock-model",
+    modelsDir: "/nonexistent",
+    defaultModel: CHAT,
     llamaBin: "/nonexistent/llama-server",
-    llamaUrl: `http://127.0.0.1:${upstream.port}`,
     llamaPort: 0,
     gpuLayers: "all",
     llamaExtraArgs: [],
@@ -92,14 +109,13 @@ let app: App;
 let base: string;
 
 beforeAll(async () => {
-  app = await startApp(config());
+  app = await startApp(config(), launcher);
   base = app.server.url.origin;
   await waitReady(app);
 });
 
 afterAll(async () => {
   await app.stop();
-  await upstream.stop(true);
 });
 
 function post(path: string, body: unknown, init: RequestInit = {}): Promise<Response> {
@@ -127,14 +143,27 @@ async function readSse(res: Response): Promise<SseEvent[]> {
 }
 
 describe("metadata endpoints", () => {
-  test("health reports engine state, limits and queue", async () => {
+  test("health reports engine state, the loaded model, limits and queue", async () => {
     const res = await fetch(base + "/api/v1/health");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       status: "ready",
-      model: "mock-model",
+      model: CHAT,
       limits: { context_tokens: 1000, max_input_tokens: 400 },
       queue: { running: false, waiting: 0, max_waiting: 1 },
+    });
+  });
+
+  test("models lists both checkpoints with their document directions", async () => {
+    const body = (await (await fetch(base + "/api/v1/models")).json()) as any;
+    expect(body.default).toBe(CHAT);
+    expect(body.loaded).toBe(CHAT);
+    expect(body.models.map((m: any) => m.id)).toEqual([CHAT, DOCUMENT]);
+    expect(body.models[1]).toEqual({
+      id: DOCUMENT,
+      label: expect.any(String),
+      kind: "document",
+      directions: ["zh-en", "en-zh", "zh-ja", "ja-zh"],
     });
   });
 
@@ -168,6 +197,7 @@ describe("POST /tokenize", () => {
     expect(res.status).toBe(200);
     const promptChars = "请将以下文本翻译为中文，直接输出翻译结果，不要进行任何解释。\n\nHello".length;
     expect(await res.json()).toEqual({
+      model: CHAT,
       prompt_tokens: promptChars + TEMPLATE.length,
       fits: true,
       max_output_tokens: 1000 - promptChars - TEMPLATE.length - 64,
@@ -179,6 +209,12 @@ describe("POST /tokenize", () => {
     const body = (await (await post("/api/v1/tokenize", { text: "x".repeat(500), target_lang: "zh" })).json()) as any;
     expect(body.fits).toBe(false);
   });
+
+  test("validates the document model's language pair like /translate does", async () => {
+    const res = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh", model: DOCUMENT });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error.details.field).toBe("source_lang");
+  });
 });
 
 describe("POST /translate (JSON)", () => {
@@ -189,7 +225,7 @@ describe("POST /translate (JSON)", () => {
     expect(await res.json()).toEqual({
       translation: "Hello, world",
       finish_reason: "stop",
-      model: "mock-model",
+      model: CHAT,
       usage: { prompt_tokens: 42, completion_tokens: 5 },
       timings: { queue_ms: expect.any(Number), prompt_ms: 12, generation_ms: 100, tokens_per_second: 70.12 },
     });
@@ -229,6 +265,7 @@ describe("POST /translate (JSON)", () => {
     ["missing text", { target_lang: "zh" }, "text"],
     ["blank text", { text: "  ", target_lang: "zh" }, "text"],
     ["missing target", { text: "Hi" }, "target_lang"],
+    ["unknown model", { text: "Hi", target_lang: "zh", model: "gpt" }, "model"],
     ["bad glossary", { text: "Hi", target_lang: "zh", glossary: ["a"] }, "glossary"],
     ["bad glossary value", { text: "Hi", target_lang: "zh", glossary: { a: 1 } }, "glossary"],
     ["bad constraints", { text: "Hi", target_lang: "zh", hard_constraints: "x" }, "hard_constraints"],
@@ -277,7 +314,7 @@ describe("POST /translate (SSE)", () => {
     const events = await readSse(res);
     expect(events.map((e) => e.event)).toEqual(["start", "delta", "delta", "delta", "done"]);
     expect(events[0]!.data).toEqual({
-      model: "mock-model",
+      model: CHAT,
       prompt_tokens: expect.any(Number),
       max_output_tokens: expect.any(Number),
       queue_ms: expect.any(Number),
@@ -302,11 +339,86 @@ describe("POST /translate (SSE)", () => {
     expect(res.headers.get("content-type")).toStartWith("application/json");
   });
 
+  test("an input over the token limit arrives as an error event", async () => {
+    const events = await readSse(await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh", stream: true }));
+    expect(events.map((e) => e.event)).toEqual(["error"]);
+    expect(events[0]!.data.code).toBe("input_too_long");
+    expect(events[0]!.data.details.max_input_tokens).toBe(400);
+  });
+
   test("engine failures mid-stream arrive as an error event", async () => {
     mock.failWith = "device lost";
     const events = await readSse(await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true }));
     mock.failWith = undefined;
     expect(events.at(-1)).toEqual({ event: "error", data: { code: "engine_error", message: expect.stringContaining("device lost") } });
+  });
+});
+
+describe("model selection", () => {
+  test("a request for another model swaps the engine, and the default is restored for the next", async () => {
+    const before = mock.launches.length;
+    const res = await post("/api/v1/translate", { text: "The fox.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as any).model).toBe(DOCUMENT);
+    expect(mock.launches.slice(before)).toEqual([DOCUMENT]);
+
+    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    expect(health.model).toBe(DOCUMENT);
+
+    // A request already on the loaded model does not reload it.
+    await post("/api/v1/translate", { text: "Again.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    expect(mock.launches.slice(before)).toEqual([DOCUMENT]);
+
+    await post("/api/v1/translate", { text: "你好", target_lang: "en" });
+    expect(mock.launches.slice(before)).toEqual([DOCUMENT, CHAT]);
+  });
+
+  test("the document model gets its fixed template with the whole text in place", async () => {
+    mock.requests.length = 0;
+    await post("/api/v1/translate", { text: "Line one.\n\nLine two.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    const content: string = mock.requests.at(-1).messages[0].content;
+    expect(content).toStartWith("请将以下英文小说翻译成中文");
+    expect(content).toContain("【源文】\n\nLine one.\n\nLine two.");
+    expect(content).not.toContain("（在这里放入");
+    expect(content).toEndWith("只输出译文，不要有任何额外说明。\n\n【源文】\n\nLine one.\n\nLine two.");
+  });
+
+  test("the document model needs a source language and a supported direction", async () => {
+    const missing = await post("/api/v1/translate", { text: "Hi", target_lang: "zh", model: DOCUMENT });
+    expect(missing.status).toBe(400);
+    expect(((await missing.json()) as any).error.details.field).toBe("source_lang");
+
+    const pair = await post("/api/v1/translate", { text: "Hi", source_lang: "en", target_lang: "fr", model: DOCUMENT });
+    expect(pair.status).toBe(400);
+    const { error } = (await pair.json()) as any;
+    expect(error.code).toBe("unsupported_language_pair");
+    expect(error.details.supported).toEqual(["zh-en", "en-zh", "zh-ja", "ja-zh"]);
+  });
+
+  test("the document model rejects options its fixed template cannot express", async () => {
+    for (const [field, extra] of [
+      ["glossary", { glossary: { a: "b" } }],
+      ["hard_constraints", { hard_constraints: ["x"] }],
+      ["soft_constraints", { soft_constraints: ["x"] }],
+      ["genre", { genre: "novel" }],
+    ] as const) {
+      const res = await post("/api/v1/translate", { text: "Hi", source_lang: "en", target_lang: "zh", model: DOCUMENT, ...extra });
+      expect(res.status).toBe(400);
+      expect(((await res.json()) as any).error.details.field).toBe(field);
+    }
+  });
+
+  test("a model that fails to load gives 502, and the next request tries again", async () => {
+    // Move off the document model first so the next request has to load it.
+    await post("/api/v1/translate", { text: "你好", target_lang: "en" });
+    mock.failLaunch = "model file is corrupt";
+    const failed = await post("/api/v1/translate", { text: "Hi", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    mock.failLaunch = undefined;
+    expect(failed.status).toBe(502);
+    expect(((await failed.json()) as any).error.message).toContain("model file is corrupt");
+
+    const retried = await post("/api/v1/translate", { text: "Hi", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    expect(retried.status).toBe(200);
   });
 });
 
@@ -355,25 +467,24 @@ describe("queueing and cancellation", () => {
 });
 
 describe("engine availability", () => {
-  test("requests get 503 while the model is loading", async () => {
+  test("requests wait in line while the default model loads, then complete", async () => {
     mock.ready = false;
-    const loading = await startApp(config());
+    const loading = await startApp(config(), launcher);
     try {
       const origin = loading.server.url.origin;
       const health = await fetch(origin + "/api/v1/health");
       expect(health.status).toBe(503);
       expect(((await health.json()) as any).status).toBe("loading");
 
-      const res = await fetch(origin + "/api/v1/translate", {
+      const pending = fetch(origin + "/api/v1/translate", {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: "Hi", target_lang: "zh" }),
       });
-      expect(res.status).toBe(503);
-      expect(res.headers.get("retry-after")).toBe("5");
-      expect(((await res.json()) as any).error.code).toBe("engine_loading");
-
+      await Bun.sleep(100);
       mock.ready = true;
+      const res = await pending;
+      expect(res.status).toBe(200);
       await waitReady(loading);
     } finally {
       mock.ready = true;

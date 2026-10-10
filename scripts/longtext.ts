@@ -1,7 +1,7 @@
 // Long-input check against a running backend. Translates a 16K-letter English document to
 // Chinese in a single generation, translates the result back, and verifies after each pass
 // that no paragraph was dropped or repeated.
-// Usage: bun scripts/longtext.ts [base-url] [output-dir]
+// Usage: [MODEL=index-nailong-9b] bun scripts/longtext.ts [base-url] [output-dir]
 
 import { join } from "node:path";
 import { countLetters, englishEssays, missingParagraphs, repeatedMarkers, withMarkers, type Fixture } from "../test/fixtures";
@@ -69,9 +69,11 @@ if (import.meta.main) {
   const base = (process.argv[2] ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
   const outDir = process.argv[3];
 
+  const model = Bun.env.MODEL ? { model: Bun.env.MODEL } : {};
   const english = await englishEssays();
-  const forward = await runPass(base, "English -> Chinese", english, { source_lang: "en", target_lang: "zh" });
+  const forward = await runPass(base, "English -> Chinese", english, { ...model, source_lang: "en", target_lang: "zh" });
   const back = await runPass(base, "Chinese -> English (round trip)", withMarkers(forward.translation), {
+    ...model,
     source_lang: "zh",
     target_lang: "en",
   });

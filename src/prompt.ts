@@ -1,6 +1,31 @@
 // Prompt builders matching the training-side templates of Index-Translate
 // (ported from inference/llm/translate.py in bilibili/Index-Translate).
 
+// Fixed NativeLong templates, copied from inference/llm/prompts/ in bilibili/Index-Translate.
+import nailongZhEn from "../prompts/nailong_zh-en.txt" with { type: "text" };
+import nailongEnZh from "../prompts/nailong_en-zh.txt" with { type: "text" };
+import nailongZhJa from "../prompts/nailong_zh-ja.txt" with { type: "text" };
+import nailongJaZh from "../prompts/nailong_ja-zh.txt" with { type: "text" };
+
+const DOCUMENT_TEMPLATES: Record<string, string> = {
+  "zh-en": nailongZhEn,
+  "en-zh": nailongEnZh,
+  "zh-ja": nailongZhJa,
+  "ja-zh": nailongJaZh,
+};
+
+export const DOCUMENT_DIRECTIONS = Object.keys(DOCUMENT_TEMPLATES);
+
+const PLACEHOLDER = /（在这里放入需要翻译的完整[^）]*原文）/;
+
+/** The NativeLong prompt for one whole document. `direction` is one of DOCUMENT_DIRECTIONS. */
+export function buildDocumentPrompt(direction: string, text: string): string {
+  const template = DOCUMENT_TEMPLATES[direction];
+  if (!template) throw new Error(`no document template for ${direction}`);
+  // A function replacement keeps "$" sequences in the document text literal.
+  return template.replace(PLACEHOLDER, () => text.trim()).trim();
+}
+
 export interface Language {
   code: string;
   name: string;

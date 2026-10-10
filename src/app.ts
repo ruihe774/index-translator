@@ -3,8 +3,9 @@
 import type { Server } from "bun";
 import { join, normalize, sep } from "node:path";
 import type { Config } from "./config";
-import { Engine, EngineError, type EngineTimings, type FinishReason, type Usage } from "./llama";
-import { LANGUAGES, buildPrompt, type PromptInput } from "./prompt";
+import { Engine, EngineError, launchLlamaServer, type EngineTimings, type FinishReason, type Launcher, type Usage } from "./llama";
+import { MODELS, findModel, type ModelSpec } from "./models";
+import { DOCUMENT_DIRECTIONS, LANGUAGES, buildDocumentPrompt, buildPrompt, type PromptInput } from "./prompt";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 
 const API = "/api/v1";
@@ -43,6 +44,7 @@ function errorResponse(e: unknown): Response {
 }
 
 interface TranslateRequest extends PromptInput {
+  model: ModelSpec;
   maxOutputTokens?: number;
   stream: boolean;
 }
@@ -84,10 +86,16 @@ async function parseBody(req: Request): Promise<Record<string, unknown>> {
   return body as Record<string, unknown>;
 }
 
-function parseTranslateRequest(req: Request, body: Record<string, unknown>): TranslateRequest {
+function parseTranslateRequest(req: Request, body: Record<string, unknown>, defaultModel: string): TranslateRequest {
   if (typeof body.text !== "string" || !body.text.trim()) throw invalid("text must be a non-empty string", "text");
   const targetLang = optionalString(body, "target_lang", 64);
   if (!targetLang?.trim()) throw invalid("target_lang must be a non-empty string", "target_lang");
+
+  const modelId = optionalString(body, "model", 64) ?? defaultModel;
+  const model = findModel(modelId);
+  if (!model) {
+    throw invalid(`unknown model "${modelId}"; see GET /api/v1/models`, "model");
+  }
 
   const glossary = body.glossary;
   if (glossary !== undefined && glossary !== null) {
@@ -109,8 +117,9 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>): Tra
     throw invalid("stream must be a boolean", "stream");
   }
 
-  return {
+  const input: TranslateRequest = {
     text: body.text,
+    model,
     targetLang,
     sourceLang: optionalString(body, "source_lang", 64),
     glossary: (glossary as Record<string, string> | null) ?? undefined,
@@ -120,6 +129,44 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>): Tra
     maxOutputTokens: (maxOutputTokens as number | null) ?? undefined,
     stream: body.stream === true || (req.headers.get("accept") ?? "").includes("text/event-stream"),
   };
+  if (model.kind === "document") checkDocumentRequest(input);
+  return input;
+}
+
+/** The document model takes a whole text in one of its fixed directions and nothing else. */
+function checkDocumentRequest(input: TranslateRequest): void {
+  const src = input.sourceLang?.trim().toLowerCase();
+  if (!src || src === "auto") {
+    throw invalid(`source_lang is required by ${input.model.id}`, "source_lang");
+  }
+  const tgt = input.targetLang.trim().toLowerCase();
+  const direction = `${src}-${tgt}`;
+  if (!DOCUMENT_DIRECTIONS.includes(direction)) {
+    throw new ApiError(400, "unsupported_language_pair", `${input.model.id} does not translate ${src} to ${tgt}`, {
+      field: "target_lang",
+      supported: DOCUMENT_DIRECTIONS,
+    });
+  }
+  const unsupported: [string, unknown][] = [
+    ["glossary", input.glossary && Object.keys(input.glossary).length ? input.glossary : undefined],
+    ["hard_constraints", input.hardConstraints?.length ? input.hardConstraints : undefined],
+    ["soft_constraints", input.softConstraints?.length ? input.softConstraints : undefined],
+    ["genre", input.genre],
+  ];
+  for (const [field, value] of unsupported) {
+    if (value !== undefined) throw invalid(`${field} is not supported by ${input.model.id}`, field);
+  }
+}
+
+/** Direction code of a document request, e.g. "zh-en". Only valid after checkDocumentRequest. */
+function documentDirection(input: TranslateRequest): string {
+  return `${input.sourceLang!.trim().toLowerCase()}-${input.targetLang.trim().toLowerCase()}`;
+}
+
+function promptFor(input: TranslateRequest): string {
+  return input.model.kind === "document"
+    ? buildDocumentPrompt(documentDirection(input), input.text)
+    : buildPrompt(input);
 }
 
 const THINK_OPEN = "<think>";
@@ -181,21 +228,50 @@ export interface App {
   stop(): Promise<void>;
 }
 
-export async function startApp(cfg: Config): Promise<App> {
-  const engine = new Engine(cfg);
+export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer): Promise<App> {
+  const engine = new Engine(cfg, launch);
   const queue = new SlotQueue(cfg.maxQueue);
-  await engine.start();
+  const defaultModel = findModel(cfg.defaultModel)!;
 
-  function requireReady(): void {
-    if (engine.state === "ready") return;
-    if (engine.state === "loading") {
-      throw new ApiError(503, "engine_loading", "the model is still loading", undefined, { "retry-after": "5" });
+  function enterQueue(onPosition?: (position: number) => void): Ticket {
+    try {
+      return queue.enter(onPosition);
+    } catch (e) {
+      if (e instanceof QueueFullError) {
+        throw new ApiError(429, "queue_full", "too many translations are waiting; try again later", {
+          max_queue: cfg.maxQueue,
+        }, { "retry-after": "10" });
+      }
+      throw e;
     }
-    throw new ApiError(503, "engine_unavailable", engine.error ?? "the inference engine is not running");
   }
 
-  async function budget(input: PromptInput, requestedOutput?: number, signal?: AbortSignal): Promise<Budget> {
-    const prompt = buildPrompt(input);
+  /** Runs `fn` while holding the engine: no generation or model swap can overlap it. */
+  async function underQueue<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
+    const ticket = enterQueue();
+    const onAbort = () => ticket.leave();
+    signal.addEventListener("abort", onAbort);
+    try {
+      await ticket.ready;
+      if (signal.aborted) throw new ApiError(499, "cancelled", "the request was cancelled");
+      return await fn();
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      ticket.leave();
+    }
+  }
+
+  // Load the default model before the first request arrives; requests that come earlier wait in line.
+  void underQueue(new AbortController().signal, () => engine.load(defaultModel)).catch(() => {
+    // already logged by the engine; the next request retries the load
+  });
+
+  function limits() {
+    return { context_tokens: cfg.ctxSize, max_input_tokens: cfg.maxInputTokens };
+  }
+
+  async function prepare(input: TranslateRequest, signal: AbortSignal): Promise<Budget> {
+    const prompt = promptFor(input);
     const promptTokens = await engine.countPromptTokens(prompt, signal);
     if (promptTokens > cfg.maxInputTokens) {
       throw new ApiError(413, "input_too_long", "the input exceeds the token limit for a single translation", {
@@ -207,19 +283,25 @@ export async function startApp(cfg: Config): Promise<App> {
     // A translation is rarely several times longer than its source, while a model stuck in a
     // loop will fill whatever it is given; the default leaves room for the former only.
     const fallback = promptTokens * DEFAULT_OUTPUT_RATIO + DEFAULT_OUTPUT_FLOOR;
-    return { prompt, promptTokens, maxOutputTokens: Math.min(requestedOutput ?? fallback, available) };
+    return { prompt, promptTokens, maxOutputTokens: Math.min(input.maxOutputTokens ?? fallback, available) };
   }
 
-  function limits() {
-    return { context_tokens: cfg.ctxSize, max_input_tokens: cfg.maxInputTokens };
-  }
-
-  async function* run(b: Budget, ticket: Ticket, signal: AbortSignal) {
+  /** Waits for the queue slot, loads the requested model if needed, then generates. */
+  async function* run(input: TranslateRequest, ticket: Ticket, signal: AbortSignal) {
     const queuedAt = performance.now();
     await ticket.ready;
     if (signal.aborted) return;
     const queueMs = Math.round(performance.now() - queuedAt);
-    yield { type: "start" as const, queueMs };
+
+    await engine.load(input.model);
+    const b = await prepare(input, signal);
+    yield {
+      type: "start" as const,
+      model: input.model.id,
+      promptTokens: b.promptTokens,
+      maxOutputTokens: b.maxOutputTokens,
+      queueMs,
+    };
 
     const cleaner = new OutputCleaner();
     for await (const ev of engine.generate(b.prompt, b.maxOutputTokens, signal)) {
@@ -239,33 +321,20 @@ export async function startApp(cfg: Config): Promise<App> {
     }
   }
 
-  function enterQueue(onPosition?: (position: number) => void): Ticket {
-    try {
-      return queue.enter(onPosition);
-    } catch (e) {
-      if (e instanceof QueueFullError) {
-        throw new ApiError(429, "queue_full", "too many translations are waiting; try again later", {
-          max_queue: cfg.maxQueue,
-        }, { "retry-after": "10" });
-      }
-      throw e;
-    }
-  }
-
-  async function translateJson(b: Budget, signal: AbortSignal): Promise<Response> {
+  async function translateJson(input: TranslateRequest, signal: AbortSignal): Promise<Response> {
     const ticket = enterQueue();
     const onAbort = () => ticket.leave();
     signal.addEventListener("abort", onAbort);
     try {
       let translation = "";
       let result: Result | undefined;
-      for await (const ev of run(b, ticket, signal)) {
+      for await (const ev of run(input, ticket, signal)) {
         if (ev.type === "delta") translation += ev.text;
         else if (ev.type === "done") {
           result = {
             translation,
             finish_reason: ev.finish_reason,
-            model: cfg.modelName,
+            model: input.model.id,
             usage: ev.usage,
             timings: ev.timings,
           };
@@ -279,7 +348,7 @@ export async function startApp(cfg: Config): Promise<App> {
     }
   }
 
-  function translateSse(b: Budget, signal: AbortSignal): Response {
+  function translateSse(input: TranslateRequest, signal: AbortSignal): Response {
     const encoder = new TextEncoder();
     const abort = new AbortController();
     const cancel = () => abort.abort();
@@ -315,12 +384,12 @@ export async function startApp(cfg: Config): Promise<App> {
         }, KEEPALIVE_MS);
 
         try {
-          for await (const ev of run(b, ticket, abort.signal)) {
+          for await (const ev of run(input, ticket, abort.signal)) {
             if (ev.type === "start") {
               send("start", {
-                model: cfg.modelName,
-                prompt_tokens: b.promptTokens,
-                max_output_tokens: b.maxOutputTokens,
+                model: ev.model,
+                prompt_tokens: ev.promptTokens,
+                max_output_tokens: ev.maxOutputTokens,
                 queue_ms: ev.queueMs,
               });
             } else if (ev.type === "delta") {
@@ -331,9 +400,13 @@ export async function startApp(cfg: Config): Promise<App> {
           }
         } catch (e) {
           if (!abort.signal.aborted) {
-            const code = e instanceof EngineError ? "engine_error" : "internal_error";
-            if (code === "internal_error") console.error("[api] stream failed:", e);
-            send("error", { code, message: e instanceof EngineError ? e.message : "internal server error" });
+            if (e instanceof ApiError) {
+              send("error", { code: e.code, message: e.message, details: e.details });
+            } else {
+              const code = e instanceof EngineError ? "engine_error" : "internal_error";
+              if (code === "internal_error") console.error("[api] stream failed:", e);
+              send("error", { code, message: e instanceof EngineError ? e.message : "internal server error" });
+            }
           }
         } finally {
           clearInterval(keepalive);
@@ -395,12 +468,25 @@ export async function startApp(cfg: Config): Promise<App> {
               {
                 status: engine.state,
                 error: engine.error,
-                model: cfg.modelName,
+                model: engine.loaded?.id ?? null,
                 limits: limits(),
                 queue: { running: queue.running, waiting: queue.depth, max_waiting: cfg.maxQueue },
               },
               engine.state === "ready" ? 200 : 503,
             );
+          }
+          case "/models": {
+            if (req.method !== "GET") return methodNotAllowed("GET");
+            return json({
+              default: defaultModel.id,
+              loaded: engine.loaded?.id ?? null,
+              models: MODELS.map((m) => ({
+                id: m.id,
+                label: m.label,
+                kind: m.kind,
+                ...(m.directions ? { directions: m.directions } : {}),
+              })),
+            });
           }
           case "/languages": {
             if (req.method !== "GET") return methodNotAllowed("GET");
@@ -412,25 +498,27 @@ export async function startApp(cfg: Config): Promise<App> {
           }
           case "/tokenize": {
             if (req.method !== "POST") return methodNotAllowed("POST");
-            const input = parseTranslateRequest(req, await parseBody(req));
-            requireReady();
-            const prompt = buildPrompt(input);
-            const promptTokens = await engine.countPromptTokens(prompt, req.signal);
-            return json({
-              prompt_tokens: promptTokens,
-              fits: promptTokens <= cfg.maxInputTokens,
-              max_output_tokens: Math.max(0, cfg.ctxSize - promptTokens - CONTEXT_MARGIN),
-              limits: limits(),
-            });
+            const input = parseTranslateRequest(req, await parseBody(req), cfg.defaultModel);
+            return json(
+              await underQueue(req.signal, async () => {
+                await engine.load(input.model);
+                const promptTokens = await engine.countPromptTokens(promptFor(input), req.signal);
+                return {
+                  model: input.model.id,
+                  prompt_tokens: promptTokens,
+                  fits: promptTokens <= cfg.maxInputTokens,
+                  max_output_tokens: Math.max(0, cfg.ctxSize - promptTokens - CONTEXT_MARGIN),
+                  limits: limits(),
+                };
+              }),
+            );
           }
           case "/translate": {
             if (req.method !== "POST") return methodNotAllowed("POST");
-            const input = parseTranslateRequest(req, await parseBody(req));
-            requireReady();
-            // A long translation can stay silent for minutes in JSON mode.
+            const input = parseTranslateRequest(req, await parseBody(req), cfg.defaultModel);
+            // A long translation can stay silent for minutes in JSON mode, and a model swap can take a while.
             server.timeout(req, 0);
-            const b = await budget(input, input.maxOutputTokens, req.signal);
-            return input.stream ? translateSse(b, req.signal) : await translateJson(b, req.signal);
+            return input.stream ? translateSse(input, req.signal) : await translateJson(input, req.signal);
           }
           default:
             throw new ApiError(404, "not_found", `no such endpoint: ${path}`);
@@ -449,7 +537,7 @@ export async function startApp(cfg: Config): Promise<App> {
     engine,
     async stop() {
       await server.stop(true);
-      await engine.stop();
+      await engine.unload();
     },
   };
 }

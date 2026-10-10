@@ -1,4 +1,5 @@
-import { basename, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
+import { DEFAULT_MODEL_ID, findModel } from "./models";
 
 const root = resolve(import.meta.dir, "..");
 
@@ -15,12 +16,11 @@ export interface Config {
   port: number;
   publicDir: string;
   specPath: string;
-  modelPath: string;
-  modelName: string;
+  modelsDir: string;
+  /** Model loaded at startup; requests that name no model use it. */
+  defaultModel: string;
   llamaBin: string;
-  /** When set, use an already running llama-server instead of spawning one. */
-  llamaUrl?: string;
-  /** 0 picks a free port. */
+  /** 0 picks a free port for each engine start. */
   llamaPort: number;
   gpuLayers: string;
   /** Extra llama-server arguments, appended last so they override the defaults. */
@@ -32,16 +32,16 @@ export interface Config {
 }
 
 export function loadConfig(): Config {
-  const modelPath = Bun.env.MODEL_PATH ?? join(root, "models", "Index-Translate-9B.Q6_K.gguf");
+  const defaultModel = Bun.env.DEFAULT_MODEL ?? DEFAULT_MODEL_ID;
+  if (!findModel(defaultModel)) throw new Error(`DEFAULT_MODEL "${defaultModel}" is not a known model`);
   return {
     host: Bun.env.HOST ?? "127.0.0.1",
     port: int("PORT", 3000),
     publicDir: Bun.env.PUBLIC_DIR ?? join(root, "public"),
     specPath: join(root, "docs", "openapi.yaml"),
-    modelPath,
-    modelName: Bun.env.MODEL_NAME ?? basename(modelPath, ".gguf"),
+    modelsDir: Bun.env.MODELS_DIR ?? join(root, "models"),
+    defaultModel,
     llamaBin: Bun.env.LLAMA_SERVER_BIN ?? join(root, "vendor", "llama.cpp", "llama-server"),
-    llamaUrl: Bun.env.LLAMA_SERVER_URL || undefined,
     llamaPort: int("LLAMA_PORT", 0),
     gpuLayers: Bun.env.GPU_LAYERS ?? "all",
     llamaExtraArgs: (Bun.env.LLAMA_EXTRA_ARGS ?? "").split(/\s+/).filter(Boolean),

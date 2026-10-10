@@ -1,9 +1,12 @@
-// llama-server lifecycle and the two calls the backend needs from it: token counting and streamed generation.
+// llama-server lifecycle and the calls the backend needs from it: loading a model, token counting
+// and streamed generation. One model is loaded at a time; switching models restarts the engine.
 
+import { join } from "node:path";
 import type { Subprocess } from "bun";
 import type { Config } from "./config";
+import type { ModelSpec } from "./models";
 
-export type EngineState = "loading" | "ready" | "error" | "stopped";
+export type EngineState = "stopped" | "loading" | "ready" | "error";
 
 export type FinishReason = "stop" | "length";
 
@@ -24,9 +27,21 @@ export type GenerationEvent =
 
 export class EngineError extends Error {}
 
+/** A running llama-server, as seen by the engine. */
+export interface Running {
+  url: string;
+  /** Resolves with the exit code once the process is gone, for any reason. */
+  exited: Promise<number>;
+  /** Asks the process to stop; the engine waits on `exited`. */
+  stop(): void;
+}
+
+/** Starts an engine for one model. Replaceable so tests can run without the binary or the weights. */
+export type Launcher = (model: ModelSpec, cfg: Config) => Promise<Running>;
+
 // Tokens the chat template adds around the user message; replaced by a measured value once the model is up.
 const FALLBACK_TEMPLATE_OVERHEAD = 32;
-const MAX_RESTARTS = 5;
+const LOAD_TIMEOUT_MS = 10 * 60_000;
 
 async function freePort(): Promise<number> {
   const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
@@ -35,110 +50,123 @@ async function freePort(): Promise<number> {
   return port;
 }
 
+export const launchLlamaServer: Launcher = async (model, cfg) => {
+  const modelPath = join(cfg.modelsDir, model.file);
+  if (!(await Bun.file(modelPath).exists())) {
+    throw new EngineError(`model not found at ${modelPath}; run: uv run scripts/fetch_models.py`);
+  }
+  if (!(await Bun.file(cfg.llamaBin).exists())) {
+    throw new EngineError(`llama-server not found at ${cfg.llamaBin}; run: bun scripts/fetch_llama.ts`);
+  }
+  const port = cfg.llamaPort || (await freePort());
+
+  const child: Subprocess = Bun.spawn(
+    [
+      cfg.llamaBin,
+      "--model", modelPath,
+      "--alias", model.id,
+      "--host", "127.0.0.1",
+      "--port", String(port),
+      "--gpu-layers", cfg.gpuLayers,
+      "--ctx-size", String(cfg.ctxSize),
+      // One slot, so a single request may use the whole context window.
+      "--parallel", "1",
+      "--no-context-shift",
+      "--jinja",
+      "--chat-template-kwargs", '{"enable_thinking":false}',
+      "--no-webui",
+      "--offline",
+      ...cfg.llamaExtraArgs,
+    ],
+    { stdin: "ignore", stdout: "inherit", stderr: "inherit" },
+  );
+
+  return {
+    url: `http://127.0.0.1:${port}`,
+    exited: child.exited,
+    stop() {
+      child.kill("SIGTERM");
+      const killer = setTimeout(() => child.kill("SIGKILL"), 10_000);
+      void child.exited.then(() => clearTimeout(killer));
+    },
+  };
+};
+
 export class Engine {
   state: EngineState = "stopped";
+  /** The model whose engine is running or loading. */
+  loaded?: ModelSpec;
   error?: string;
   templateOverhead = FALLBACK_TEMPLATE_OVERHEAD;
 
   private baseUrl = "";
-  private child?: Subprocess;
-  private restarts = 0;
+  private running?: Running;
 
-  constructor(private cfg: Config) {}
+  constructor(
+    private cfg: Config,
+    private launch: Launcher = launchLlamaServer,
+  ) {}
 
-  async start(): Promise<void> {
+  /**
+   * Makes `model` the loaded one, replacing any other engine. Callers must hold the queue slot,
+   * so no generation runs while the engine is being swapped.
+   */
+  async load(model: ModelSpec): Promise<void> {
+    if (this.state === "ready" && this.loaded?.id === model.id) return;
+    await this.unload();
     this.state = "loading";
+    this.loaded = model;
     this.error = undefined;
-    if (this.cfg.llamaUrl) {
-      this.baseUrl = this.cfg.llamaUrl.replace(/\/+$/, "");
-    } else {
-      await this.spawn();
-    }
-    void this.waitUntilReady(this.child);
-  }
-
-  async stop(): Promise<void> {
-    this.state = "stopped";
-    const child = this.child;
-    this.child = undefined;
-    if (!child) return;
-    child.kill("SIGTERM");
-    const killer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-    await child.exited;
-    clearTimeout(killer);
-  }
-
-  private async spawn(): Promise<void> {
-    const { cfg } = this;
-    if (!(await Bun.file(cfg.modelPath).exists())) {
-      throw new EngineError(`model not found at ${cfg.modelPath}; run: uv run scripts/fetch_models.py`);
-    }
-    if (!(await Bun.file(cfg.llamaBin).exists())) {
-      throw new EngineError(`llama-server not found at ${cfg.llamaBin}; run: bun scripts/fetch_llama.ts`);
-    }
-    const port = cfg.llamaPort || (await freePort());
-    this.baseUrl = `http://127.0.0.1:${port}`;
-
-    const child = Bun.spawn(
-      [
-        cfg.llamaBin,
-        "--model", cfg.modelPath,
-        "--alias", cfg.modelName,
-        "--host", "127.0.0.1",
-        "--port", String(port),
-        "--gpu-layers", cfg.gpuLayers,
-        "--ctx-size", String(cfg.ctxSize),
-        // One slot, so a single request may use the whole context window.
-        "--parallel", "1",
-        "--no-context-shift",
-        "--jinja",
-        "--chat-template-kwargs", '{"enable_thinking":false}',
-        "--no-webui",
-        "--offline",
-        ...cfg.llamaExtraArgs,
-      ],
-      { stdin: "ignore", stdout: "inherit", stderr: "inherit" },
-    );
-    this.child = child;
-
-    void child.exited.then((code) => {
-      if (this.child !== child) return;
-      this.child = undefined;
+    try {
+      const running = await this.launch(model, this.cfg);
+      this.running = running;
+      this.baseUrl = running.url;
+      void running.exited.then((code) => {
+        if (this.running !== running) return;
+        this.running = undefined;
+        this.loaded = undefined;
+        this.state = "error";
+        this.error = `llama-server exited with code ${code}`;
+        console.error(`[engine] ${this.error}`);
+      });
+      await this.waitUntilReady(running);
+      this.templateOverhead = await this.measureTemplateOverhead();
+      this.state = "ready";
+      console.error(`[engine] ${model.id} ready at ${this.baseUrl} (template overhead ${this.templateOverhead} tokens)`);
+    } catch (e) {
+      const message = e instanceof Error ? e.message : String(e);
+      await this.unload();
       this.state = "error";
-      this.error = `llama-server exited with code ${code}`;
-      console.error(`[engine] ${this.error}`);
-      if (++this.restarts > MAX_RESTARTS) {
-        console.error("[engine] giving up after repeated failures");
-        return;
-      }
-      setTimeout(() => {
-        if (this.state !== "error") return;
-        console.error(`[engine] restarting (attempt ${this.restarts}/${MAX_RESTARTS})`);
-        this.start().catch((e) => {
-          this.state = "error";
-          this.error = String(e?.message ?? e);
-        });
-      }, 2000 * this.restarts);
-    });
+      this.error = message;
+      console.error(`[engine] could not load ${model.id}: ${message}`);
+      throw e instanceof EngineError ? e : new EngineError(message);
+    }
   }
 
-  private async waitUntilReady(child: Subprocess | undefined): Promise<void> {
-    while (this.state === "loading" && this.child === child) {
+  /** Stops the running engine, if any. */
+  async unload(): Promise<void> {
+    const running = this.running;
+    this.running = undefined;
+    this.loaded = undefined;
+    this.state = "stopped";
+    if (!running) return;
+    running.stop();
+    await running.exited;
+  }
+
+  private async waitUntilReady(running: Running): Promise<void> {
+    const deadline = Date.now() + LOAD_TIMEOUT_MS;
+    while (this.running === running) {
+      if (Date.now() > deadline) throw new EngineError("timed out waiting for the model to load");
       try {
         const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(2000) });
-        if (res.ok) {
-          this.templateOverhead = await this.measureTemplateOverhead();
-          if (this.state !== "loading" || this.child !== child) return;
-          this.state = "ready";
-          this.restarts = 0;
-          console.error(`[engine] ready at ${this.baseUrl} (template overhead ${this.templateOverhead} tokens)`);
-          return;
-        }
+        if (res.ok) return;
       } catch {
         // not listening yet
       }
       await Bun.sleep(500);
     }
+    throw new EngineError(this.error ?? "the engine stopped while loading");
   }
 
   private async measureTemplateOverhead(): Promise<number> {
