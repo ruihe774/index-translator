@@ -349,7 +349,7 @@ components:
             different model than the one loaded cause a model switch.
         text:
           type: string
-          minLength: 1
+          pattern: "\\S"
           description: Source text. Must contain a non-whitespace character; surrounding whitespace is ignored.
         target_lang:
           type: string
@@ -450,8 +450,7 @@ components:
           type: string
           description: The model used when a request names none.
         loaded:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: The model whose engine is running now, or null before the first load.
         models:
           type: array
@@ -543,8 +542,7 @@ components:
           type: string
           description: Present when `status` is `error`.
         model:
-          type: string
-          nullable: true
+          type: [string, "null"]
           description: The loaded model, or null when none is loaded.
         limits:
           $ref: "#/components/schemas/Limits"

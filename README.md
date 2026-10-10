@@ -61,8 +61,8 @@ Environment variables, all optional:
 | `ALLOWED_HOSTS` | | Comma-separated host names (no port) the API accepts in the `Host` header, besides `localhost`, `127.0.0.1`, `::1` and `HOST`. Set this when `HOST` is `0.0.0.0` or `::` and clients reach the server through a proxy under another name. |
 | `MODELS_DIR` | `models/` | Directory holding the GGUF files named in `src/models.ts` |
 | `DEFAULT_MODEL` | `index-translate-9b` | Model loaded at startup and used when a request names none |
-| `CTX_SIZE` | `65536` | Context window in tokens, shared by prompt and translation |
-| `MAX_INPUT_TOKENS` | `28000` | Largest accepted prompt |
+| `CTX_SIZE` | `65536` | Context window in tokens, shared by prompt and translation (at least 66) |
+| `MAX_INPUT_TOKENS` | `28000` | Largest accepted prompt. Must satisfy `MAX_INPUT_TOKENS + 64 < CTX_SIZE`, so at most `CTX_SIZE - 65` (`65471` by default); startup fails otherwise |
 | `MAX_QUEUE` | `8` | Requests allowed to wait |
 | `GPU_LAYERS` | `all` | Layers to offload; `0` runs on CPU |
 | `LLAMA_EXTRA_ARGS` | | Extra `llama-server` arguments, space separated |

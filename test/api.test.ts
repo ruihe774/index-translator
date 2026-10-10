@@ -727,3 +727,102 @@ describe("static files", () => {
     expect((await fetch(base + "/..%2fREADME.md")).status).toBe(404);
   });
 });
+
+describe("output budget", () => {
+  // The mock counts one token per prompt character, so a source text of n characters has a known prompt size.
+  async function tokenCount(origin: string, text: string): Promise<number> {
+    const res = await fetch(origin + "/api/v1/tokenize", {
+      method: "POST",
+      body: JSON.stringify({ text, target_lang: "en" }),
+      headers: { "content-type": "application/json" },
+    });
+    return ((await res.json()) as any).prompt_tokens;
+  }
+
+  async function textWithPromptTokens(origin: string, target: number): Promise<string> {
+    const overhead = (await tokenCount(origin, "a")) - 1;
+    return "a".repeat(target - overhead);
+  }
+
+  function translate(origin: string, body: unknown): Promise<Response> {
+    return fetch(origin + "/api/v1/translate", {
+      method: "POST",
+      body: JSON.stringify(body),
+      headers: { "content-type": "application/json" },
+    });
+  }
+
+  describe("ctxSize 300, maxInputTokens 200", () => {
+    // A prompt of 200 tokens leaves 300 - 200 - 64 = 36 for the translation.
+    let app: App;
+    let origin: string;
+
+    beforeAll(async () => {
+      app = await startApp(config({ ctxSize: 300, maxInputTokens: 200 }), launcher);
+      origin = app.server.url.origin;
+      await waitReady(app);
+    });
+
+    afterAll(async () => {
+      await app.stop();
+    });
+
+    test("a prompt at the input limit gets the remaining context as its budget", async () => {
+      const text = await textWithPromptTokens(origin, 200);
+      expect(await tokenCount(origin, text)).toBe(200);
+      const events = await readSse(await translate(origin, { text, target_lang: "en", stream: true }));
+      expect(events.find((e) => e.event === "start")?.data).toMatchObject({ prompt_tokens: 200, max_output_tokens: 36 });
+    });
+
+    test("an explicit max_output_tokens is clamped to the remaining context", async () => {
+      const text = await textWithPromptTokens(origin, 200);
+      const events = await readSse(
+        await translate(origin, { text, target_lang: "en", stream: true, max_output_tokens: 1000 }),
+      );
+      expect(events.find((e) => e.event === "start")?.data.max_output_tokens).toBe(36);
+    });
+
+    test("a prompt one token over the input limit is refused with details", async () => {
+      const text = await textWithPromptTokens(origin, 201);
+      const res = await translate(origin, { text, target_lang: "en" });
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({
+        error: {
+          code: "input_too_long",
+          message: "the input exceeds the token limit for a single translation",
+          details: { prompt_tokens: 201, max_input_tokens: 200 },
+        },
+      });
+    });
+  });
+
+  test("a prompt that leaves no room after the margin is refused, not sent with a non-positive budget", async () => {
+    // loadConfig would reject this pair (290 + 64 >= 300); startApp takes the config as given.
+    const app = await startApp(config({ ctxSize: 300, maxInputTokens: 290 }), launcher);
+    try {
+      const origin = app.server.url.origin;
+      await waitReady(app);
+
+      // 230 tokens leaves 300 - 230 - 64 = 6 for the translation: still accepted.
+      const fits = await textWithPromptTokens(origin, 230);
+      const events = await readSse(await translate(origin, { text: fits, target_lang: "en", stream: true }));
+      expect(events.find((e) => e.event === "start")?.data.max_output_tokens).toBe(6);
+
+      // 240 tokens leaves -4: refused before any generation starts.
+      const tooLong = await textWithPromptTokens(origin, 240);
+      const requests = mock.requests.length;
+      const res = await translate(origin, { text: tooLong, target_lang: "en" });
+      expect(res.status).toBe(413);
+      expect(await res.json()).toEqual({
+        error: {
+          code: "input_too_long",
+          message: "the input leaves no room for a translation in the context window",
+          details: { prompt_tokens: 240, context_tokens: 300 },
+        },
+      });
+      expect(mock.requests.length).toBe(requests);
+    } finally {
+      await app.stop();
+    }
+  });
+});

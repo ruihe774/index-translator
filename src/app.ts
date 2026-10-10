@@ -2,15 +2,13 @@
 
 import type { Server } from "bun";
 import { join, normalize, sep } from "node:path";
-import type { Config } from "./config";
+import { CONTEXT_MARGIN, type Config } from "./config";
 import { Engine, EngineError, launchLlamaServer, type EngineTimings, type FinishReason, type Launcher, type Usage } from "./llama";
 import { MODELS, findModel, type ModelSpec } from "./models";
 import { DOCUMENT_DIRECTIONS, LANGUAGES, buildDocumentPrompt, buildPrompt, type PromptInput } from "./prompt";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 
 const API = "/api/v1";
-// Slack between our token estimate and what the engine actually counts.
-const CONTEXT_MARGIN = 64;
 const DEFAULT_OUTPUT_RATIO = 4;
 const DEFAULT_OUTPUT_FLOOR = 512;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
@@ -331,6 +329,13 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
       });
     }
     const available = cfg.ctxSize - promptTokens - CONTEXT_MARGIN;
+    // A non-positive budget would reach the engine as max_tokens <= 0, which llama.cpp reads as unlimited.
+    if (available < 1) {
+      throw new ApiError(413, "input_too_long", "the input leaves no room for a translation in the context window", {
+        prompt_tokens: promptTokens,
+        context_tokens: cfg.ctxSize,
+      });
+    }
     // A translation is rarely several times longer than its source, while a model stuck in a
     // loop will fill whatever it is given; the default leaves room for the former only.
     const fallback = promptTokens * DEFAULT_OUTPUT_RATIO + DEFAULT_OUTPUT_FLOOR;
