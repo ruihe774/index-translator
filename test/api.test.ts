@@ -96,6 +96,8 @@ function config(overrides: Partial<Config> = {}): Config {
     ctxSize: 1000,
     maxInputTokens: 400,
     maxQueue: 1,
+    allowedOrigins: [],
+    allowedHosts: [],
     ...overrides,
   };
 }
@@ -490,6 +492,126 @@ describe("engine availability", () => {
       mock.ready = true;
       await loading.stop();
     }
+  });
+});
+
+/** Runs `fn` against a second app started with `overrides`, e.g. a different allow-list. */
+async function withApp(overrides: Partial<Config>, fn: (app: App) => Promise<void>): Promise<void> {
+  const extra = await startApp(config(overrides), launcher);
+  try {
+    await waitReady(extra);
+    await fn(extra);
+  } finally {
+    await extra.stop();
+  }
+}
+
+describe("browser request checks", () => {
+  const translateBody = JSON.stringify({ text: "Hi", target_lang: "zh" });
+
+  test("POST endpoints reject a non-JSON body type with 415", async () => {
+    for (const path of ["/api/v1/translate", "/api/v1/tokenize"]) {
+      const res = await post(path, translateBody, { headers: { "content-type": "text/plain" } });
+      expect(res.status).toBe(415);
+      expect(((await res.json()) as any).error.code).toBe("unsupported_media_type");
+    }
+    // A simple cross-site form POST carries no content-type at all.
+    const bare = await fetch(base + "/api/v1/translate", { method: "POST", body: translateBody, headers: { "content-type": "" } });
+    expect(bare.status).toBe(415);
+  });
+
+  test("JSON with parameters and any letter case is accepted", async () => {
+    const res = await post("/api/v1/translate", { text: "Hi", target_lang: "zh" }, {
+      headers: { "content-type": "Application/JSON; Charset=UTF-8" },
+    });
+    expect(res.status).toBe(200);
+    await res.json();
+  });
+
+  test("a cross-origin page is refused with 403", async () => {
+    const res = await post("/api/v1/translate", { text: "Hi", target_lang: "zh" }, {
+      headers: { origin: "https://evil.example" },
+    });
+    expect(res.status).toBe(403);
+    expect(((await res.json()) as any).error.code).toBe("forbidden_origin");
+
+    const health = await fetch(base + "/api/v1/health", { headers: { origin: "null" } });
+    expect(health.status).toBe(403);
+  });
+
+  test("a same-origin page is served, and so is a request without an Origin", async () => {
+    const port = app.server.url.port;
+    const same = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" }, {
+      headers: { origin: `http://127.0.0.1:${port}` },
+    });
+    expect(same.status).toBe(200);
+    await same.text();
+
+    const none = await fetch(base + "/api/v1/health");
+    expect(none.status).toBe(200);
+    await none.text();
+  });
+
+  test("ALLOWED_ORIGINS admits the listed origins only", async () => {
+    await withApp({ allowedOrigins: ["https://app.example.com/", "http://localhost:5173"] }, async (extra) => {
+      const tokenize = (origin: string) =>
+        fetch(extra.server.url.origin + "/api/v1/tokenize", {
+          method: "POST",
+          headers: { "content-type": "application/json", origin },
+          body: translateBody,
+        });
+
+      const allowed = await tokenize("https://app.example.com");
+      expect(allowed.status).toBe(200);
+      await allowed.text();
+
+      const dev = await tokenize("http://localhost:5173");
+      expect(dev.status).toBe(200);
+      await dev.text();
+
+      const other = await tokenize("https://evil.example");
+      expect(other.status).toBe(403);
+      await other.text();
+    });
+  });
+
+  test("a Host header that is not loopback or configured is refused with 403", async () => {
+    const evil = await fetch(base + "/api/v1/health", { headers: { host: "rebind.example:3000" } });
+    expect(evil.status).toBe(403);
+    expect(((await evil.json()) as any).error.code).toBe("forbidden_host");
+
+    for (const host of ["localhost:3000", "[::1]:3000", "127.0.0.1"]) {
+      const ok = await fetch(base + "/api/v1/health", { headers: { host } });
+      expect(ok.status).toBe(200);
+      await ok.text();
+    }
+  });
+
+  test("ALLOWED_HOSTS admits a proxy host name", async () => {
+    await withApp({ allowedHosts: ["Translate.Example.com"] }, async (extra) => {
+      const base2 = extra.server.url.origin;
+      const proxied = await fetch(base2 + "/api/v1/health", { headers: { host: "translate.example.com:8443" } });
+      expect(proxied.status).toBe(200);
+      await proxied.text();
+
+      const other = await fetch(base2 + "/api/v1/health", { headers: { host: "other.example.com" } });
+      expect(other.status).toBe(403);
+      await other.text();
+    });
+  });
+
+  test("HOST itself is an allowed Host, so a wildcard bind works with its own address", async () => {
+    await withApp({ host: "::1" }, async (extra) => {
+      const res = await fetch(`http://[::1]:${extra.server.url.port}/api/v1/health`, { headers: { host: "[::1]" } });
+      expect(res.status).toBe(200);
+      await res.text();
+    });
+  });
+
+  test("static files are not subject to the checks", async () => {
+    const res = await fetch(base + "/", { headers: { host: "rebind.example", origin: "https://evil.example" } });
+    expect(res.status).toBe(200);
+    await res.text();
   });
 });
 
