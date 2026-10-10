@@ -482,7 +482,8 @@ describe("queueing and cancellation", () => {
       const ac = new AbortController();
       // The stream's headers arrive at once, so the queued request is open but never answered.
       await post("/api/v1/translate", { text: "two", target_lang: "en", stream: true }, { signal: ac.signal });
-      await Bun.sleep(30);
+      // Bun starts the response stream when it first writes it, so the interval can appear a moment late.
+      for (let i = 0; i < 100 && live.size !== before + 1; i++) await Bun.sleep(10);
       expect((await queueState()).waiting).toBe(1);
       expect(live.size).toBe(before + 1);
 
