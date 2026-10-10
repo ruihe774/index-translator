@@ -122,6 +122,38 @@ describe("SlotQueue", () => {
     c.leave();
     expect(q.running).toBe(false);
   });
+
+  test("a waiting ticket that leaves settles ready as not granted", async () => {
+    const q = new SlotQueue(2);
+    const a = q.enter();
+    const b = q.enter();
+    expect(await a.ready).toBe(true);
+
+    b.leave();
+    expect(await b.ready).toBe(false);
+    expect(q.depth).toBe(0);
+
+    a.leave();
+    expect(q.running).toBe(false);
+  });
+
+  test("leaving a waiting ticket updates the positions of those behind it", () => {
+    const q = new SlotQueue(3);
+    const positions: Record<"b" | "c" | "d", number[]> = { b: [], c: [], d: [] };
+    const a = q.enter();
+    const b = q.enter((p) => positions.b.push(p));
+    const c = q.enter((p) => positions.c.push(p));
+    const d = q.enter((p) => positions.d.push(p));
+
+    b.leave();
+    expect(positions).toEqual({ b: [1], c: [2, 1], d: [3, 2] });
+    expect(q.depth).toBe(2);
+
+    a.leave();
+    c.leave();
+    d.leave();
+    expect(q.running).toBe(false);
+  });
 });
 
 describe("fixtures", () => {

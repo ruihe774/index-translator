@@ -26,6 +26,11 @@ class ApiError extends Error {
   }
 }
 
+/** The client went away before the request finished. Nobody reads the response, so it is not an error. */
+function cancelled(): ApiError {
+  return new ApiError(499, "cancelled", "the request was cancelled");
+}
+
 function json(body: unknown, status = 200, headers?: Record<string, string>): Response {
   return Response.json(body, { status, headers });
 }
@@ -301,9 +306,10 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
     const onAbort = () => ticket.leave();
     signal.addEventListener("abort", onAbort);
     try {
-      await ticket.ready;
-      if (signal.aborted) throw new ApiError(499, "cancelled", "the request was cancelled");
+      if (!(await ticket.ready) || signal.aborted) throw cancelled();
       return await fn();
+    } catch (e) {
+      throw signal.aborted ? cancelled() : e;
     } finally {
       signal.removeEventListener("abort", onAbort);
       ticket.leave();
@@ -345,8 +351,8 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
   /** Waits for the queue slot, loads the requested model if needed, then generates. */
   async function* run(input: TranslateRequest, ticket: Ticket, signal: AbortSignal) {
     const queuedAt = performance.now();
-    await ticket.ready;
-    if (signal.aborted) return;
+    // Leaving while waiting settles ready as false; the caller then sees no result and reports cancellation.
+    if (!(await ticket.ready) || signal.aborted) return;
     const queueMs = Math.round(performance.now() - queuedAt);
 
     await engine.load(input.model);
@@ -396,8 +402,11 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
           };
         }
       }
-      if (!result) throw new ApiError(499, "cancelled", "the request was cancelled");
+      if (!result) throw cancelled();
       return json(result);
+    } catch (e) {
+      // An aborted engine call throws a raw AbortError; for a gone client that is a cancellation, not a failure.
+      throw signal.aborted ? cancelled() : e;
     } finally {
       signal.removeEventListener("abort", onAbort);
       ticket.leave();

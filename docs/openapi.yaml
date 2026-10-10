@@ -581,6 +581,7 @@ components:
                 - forbidden_origin
                 - forbidden_host
                 - internal_error
+                - cancelled
             message:
               type: string
             details:
