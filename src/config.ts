@@ -3,11 +3,17 @@ import { DEFAULT_MODEL_ID, findModel } from "./models";
 
 const root = resolve(import.meta.dir, "..");
 
-function int(name: string, fallback: number): number {
-  const raw = Bun.env[name];
+/** Slack between our token estimate and what the engine actually counts; also kept free after the prompt. */
+export const CONTEXT_MARGIN = 64;
+
+type Env = Record<string, string | undefined>;
+
+function int(env: Env, name: string, fallback: number, { min = 0, max = Infinity } = {}): number {
+  const raw = env[name];
   if (raw === undefined || raw === "") return fallback;
   const n = Number(raw);
-  if (!Number.isInteger(n) || n < 0) throw new Error(`${name} must be a non-negative integer, got "${raw}"`);
+  if (!Number.isInteger(n) || n < min) throw new Error(`${name} must be an integer of at least ${min}, got "${raw}"`);
+  if (n > max) throw new Error(`${name} must be at most ${max}, got "${raw}"`);
   return n;
 }
 
@@ -31,22 +37,32 @@ export interface Config {
   maxQueue: number;
 }
 
-export function loadConfig(): Config {
-  const defaultModel = Bun.env.DEFAULT_MODEL ?? DEFAULT_MODEL_ID;
+export function loadConfig(env: Env = Bun.env): Config {
+  const defaultModel = env.DEFAULT_MODEL ?? DEFAULT_MODEL_ID;
   if (!findModel(defaultModel)) throw new Error(`DEFAULT_MODEL "${defaultModel}" is not a known model`);
+  const ctxSize = int(env, "CTX_SIZE", 65536, { min: 1 });
+  const maxInputTokens = int(env, "MAX_INPUT_TOKENS", 28000, { min: 1 });
+  // The prompt, the margin and at least one output token must fit: MAX_INPUT_TOKENS + CONTEXT_MARGIN < CTX_SIZE.
+  const largestInput = ctxSize - CONTEXT_MARGIN - 1;
+  if (largestInput < 1) throw new Error(`CTX_SIZE must be at least ${CONTEXT_MARGIN + 2}, got ${ctxSize}`);
+  if (maxInputTokens > largestInput) {
+    throw new Error(
+      `MAX_INPUT_TOKENS must be at most ${largestInput} for CTX_SIZE=${ctxSize} (MAX_INPUT_TOKENS + ${CONTEXT_MARGIN} must be less than CTX_SIZE, leaving room for output), got ${maxInputTokens}`,
+    );
+  }
   return {
-    host: Bun.env.HOST ?? "127.0.0.1",
-    port: int("PORT", 3000),
-    publicDir: Bun.env.PUBLIC_DIR ?? join(root, "public"),
+    host: env.HOST ?? "127.0.0.1",
+    port: int(env, "PORT", 3000, { max: 65535 }),
+    publicDir: env.PUBLIC_DIR ?? join(root, "public"),
     specPath: join(root, "docs", "openapi.yaml"),
-    modelsDir: Bun.env.MODELS_DIR ?? join(root, "models"),
+    modelsDir: env.MODELS_DIR ?? join(root, "models"),
     defaultModel,
-    llamaBin: Bun.env.LLAMA_SERVER_BIN ?? join(root, "vendor", "llama.cpp", "llama-server"),
-    llamaPort: int("LLAMA_PORT", 0),
-    gpuLayers: Bun.env.GPU_LAYERS ?? "all",
-    llamaExtraArgs: (Bun.env.LLAMA_EXTRA_ARGS ?? "").split(/\s+/).filter(Boolean),
-    ctxSize: int("CTX_SIZE", 65536),
-    maxInputTokens: int("MAX_INPUT_TOKENS", 28000),
-    maxQueue: int("MAX_QUEUE", 8),
+    llamaBin: env.LLAMA_SERVER_BIN ?? join(root, "vendor", "llama.cpp", "llama-server"),
+    llamaPort: int(env, "LLAMA_PORT", 0, { max: 65535 }),
+    gpuLayers: env.GPU_LAYERS ?? "all",
+    llamaExtraArgs: (env.LLAMA_EXTRA_ARGS ?? "").split(/\s+/).filter(Boolean),
+    ctxSize,
+    maxInputTokens,
+    maxQueue: int(env, "MAX_QUEUE", 8),
   };
 }
