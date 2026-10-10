@@ -1,0 +1,511 @@
+openapi: 3.1.0
+info:
+  title: Index Translator API
+  version: 1.0.0
+  summary: Text translation backed by a locally deployed Index-Translate model.
+  description: |
+    The backend runs one Index-Translate model through llama.cpp and exposes it over REST.
+
+    **Single-pass translation.** A request is translated in one generation; the backend never
+    splits the input. Input size is limited in tokens (see `limits` in `GET /health`), and
+    `POST /tokenize` reports how many tokens a request would use before it is sent.
+
+    **Streaming.** `POST /translate` returns either one JSON document or a Server-Sent Events
+    stream. Because the request needs a body, the stream is consumed with `fetch` (or any HTTP
+    client that can read a streamed response), not with the browser `EventSource` API.
+
+    **Concurrency.** One translation runs at a time. Further requests wait in a bounded FIFO
+    queue; when it is full the backend answers `429`. Closing the connection cancels a waiting
+    or running translation.
+
+    **Errors.** Every error response has the same JSON envelope, see `Error`.
+servers:
+  - url: /api/v1
+tags:
+  - name: translation
+  - name: service
+paths:
+  /translate:
+    post:
+      tags: [translation]
+      operationId: translate
+      summary: Translate text
+      description: |
+        Returns JSON by default. Set `stream: true` in the body, or send
+        `Accept: text/event-stream`, to receive Server-Sent Events instead.
+
+        All validation, size and queue checks happen before the response starts, so they are
+        reported with an HTTP status in both modes. Failures after a stream has started arrive
+        as an `error` event.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranslateRequest"
+            examples:
+              plain:
+                summary: Plain translation
+                value:
+                  text: 你好，世界。今天天气不错。
+                  target_lang: en
+              constrained:
+                summary: Glossary and style constraints
+                value:
+                  text: 王平仲采用了更加昂贵的碳纤维材料。碳纤维的好处就是它抗裂缝。
+                  source_lang: zh
+                  target_lang: en
+                  genre: 专栏文章
+                  glossary:
+                    碳纤维: carbon fiber
+                    抗裂缝: crack resistance
+                  soft_constraints:
+                    - 保持专业严谨的技术工程文档风格
+                  stream: true
+      responses:
+        "200":
+          description: The translation, as one JSON document or as an event stream.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TranslateResponse"
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  A stream of events, each formatted as
+
+                  ```
+                  event: <name>
+                  data: <one JSON object on a single line>
+
+                  ```
+
+                  Events arrive in this order:
+
+                  | Event | Occurs | Data schema |
+                  |---|---|---|
+                  | `queued` | zero or more times, while waiting | `QueuedEvent` |
+                  | `start` | once, when generation begins | `StartEvent` |
+                  | `delta` | zero or more times | `DeltaEvent` |
+                  | `done` | once, on success; last event | `DoneEvent` |
+                  | `error` | once, on failure; last event | `ErrorEvent` |
+
+                  The translation is the concatenation of all `delta.text` values; it has no
+                  leading or trailing whitespace. Comment lines (starting with `:`) are sent as
+                  keep-alives and must be ignored.
+              example: |
+                event: start
+                data: {"model":"Index-Translate-9B.Q6_K","prompt_tokens":45,"max_output_tokens":65427,"queue_ms":0}
+
+                event: delta
+                data: {"text":"你好"}
+
+                event: delta
+                data: {"text":"，世界"}
+
+                event: done
+                data: {"finish_reason":"stop","usage":{"prompt_tokens":45,"completion_tokens":4},"timings":{"queue_ms":0,"prompt_ms":91,"generation_ms":57,"tokens_per_second":70.2}}
+
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "429":
+          $ref: "#/components/responses/QueueFull"
+        "502":
+          $ref: "#/components/responses/EngineError"
+        "503":
+          $ref: "#/components/responses/EngineUnavailable"
+  /tokenize:
+    post:
+      tags: [translation]
+      operationId: tokenize
+      summary: Count the tokens a translation request would use
+      description: |
+        Accepts the same body as `POST /translate` (`stream` and `max_output_tokens` are
+        ignored) and reports the size of the resulting prompt without translating anything.
+        An input that is too long is reported with `fits: false`, not with an error.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/TranslateRequest"
+      responses:
+        "200":
+          description: Token count and remaining budget.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TokenizeResponse"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "413":
+          description: The request body exceeds 4 MiB (`body_too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "502":
+          $ref: "#/components/responses/EngineError"
+        "503":
+          $ref: "#/components/responses/EngineUnavailable"
+  /languages:
+    get:
+      tags: [service]
+      operationId: listLanguages
+      summary: List languages with a short code
+      description: |
+        The codes listed here are the ones the backend maps to the language names used in the
+        model's training prompts. The model supports more languages than this list; any other
+        language can be requested by passing its name (preferably in Chinese, for example
+        `斯瓦希里语`) as `source_lang` or `target_lang`.
+      responses:
+        "200":
+          description: Known language codes.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [languages]
+                properties:
+                  languages:
+                    type: array
+                    items:
+                      $ref: "#/components/schemas/Language"
+  /health:
+    get:
+      tags: [service]
+      operationId: getHealth
+      summary: Service and engine status
+      responses:
+        "200":
+          description: The engine is ready to translate.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+        "503":
+          description: The engine is loading, stopped or has failed. The body is the same `Health` document.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /openapi.yaml:
+    get:
+      tags: [service]
+      operationId: getSpec
+      summary: This document
+      responses:
+        "200":
+          description: The OpenAPI description of the API.
+          content:
+            application/yaml:
+              schema:
+                type: string
+components:
+  responses:
+    InvalidRequest:
+      description: |
+        The body is not a JSON object or a field is invalid (`invalid_request`).
+        `details.field` names the offending field when there is one.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: invalid_request
+              message: text must be a non-empty string
+              details:
+                field: text
+    TooLarge:
+      description: |
+        Either the prompt exceeds the input token limit (`input_too_long`, with
+        `details.prompt_tokens` and `details.max_input_tokens`), or the request body exceeds
+        4 MiB (`body_too_large`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+          example:
+            error:
+              code: input_too_long
+              message: the input exceeds the token limit for a single translation
+              details:
+                prompt_tokens: 31250
+                max_input_tokens: 28000
+    QueueFull:
+      description: Too many translations are already waiting (`queue_full`).
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Suggested delay in seconds.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    EngineError:
+      description: The inference engine failed while handling the request (`engine_error`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    EngineUnavailable:
+      description: |
+        The model is still loading (`engine_loading`, with a `Retry-After` header) or the
+        engine is not running (`engine_unavailable`).
+      headers:
+        Retry-After:
+          schema:
+            type: integer
+          description: Suggested delay in seconds; present for `engine_loading`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    TranslateRequest:
+      type: object
+      required: [text, target_lang]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          description: Source text. Must contain a non-whitespace character; surrounding whitespace is ignored.
+        target_lang:
+          type: string
+          minLength: 1
+          maxLength: 64
+          description: A code from `GET /languages` (case-insensitive) or a language name.
+          examples: [en, zh, 斯瓦希里语]
+        source_lang:
+          type: string
+          maxLength: 64
+          default: auto
+          description: A language code or name. `auto` (or omitting the field) lets the model detect the language.
+        glossary:
+          type: object
+          additionalProperties:
+            type: string
+          description: Required term translations, source term to target term. Enforced as a hard constraint.
+          examples:
+            - 碳纤维: carbon fiber
+        hard_constraints:
+          type: array
+          items:
+            type: string
+          description: |
+            Requirements that must hold, such as preserving JSON structure, placeholders or
+            code. The model was trained on Chinese instructions; write them in Chinese for
+            best adherence.
+          examples:
+            - [保留源文中的 JSON 格式标记不变]
+        soft_constraints:
+          type: array
+          items:
+            type: string
+          description: Graded requirements such as tone, register or domain context.
+          examples:
+            - [调整为严谨、正式、礼貌的商务公文风格]
+        genre:
+          type: string
+          maxLength: 64
+          default: 文本
+          description: |
+            Genre or domain of the source, such as `专栏文章`, `学术论文`, `小说` or `字幕`.
+            Only used when a glossary or constraint is present.
+        max_output_tokens:
+          type: integer
+          minimum: 1
+          description: |
+            Cap on generated tokens. Defaults to four times the prompt size plus 512, which
+            stops a translation that has gone into a loop. Both the default and an explicit
+            value are clamped to the context space left after the prompt.
+        stream:
+          type: boolean
+          default: false
+          description: Respond with Server-Sent Events.
+    TranslateResponse:
+      type: object
+      required: [translation, finish_reason, model, usage, timings]
+      properties:
+        translation:
+          type: string
+        finish_reason:
+          $ref: "#/components/schemas/FinishReason"
+        model:
+          type: string
+          examples: [Index-Translate-9B.Q6_K]
+        usage:
+          $ref: "#/components/schemas/Usage"
+        timings:
+          $ref: "#/components/schemas/Timings"
+    TokenizeResponse:
+      type: object
+      required: [prompt_tokens, fits, max_output_tokens, limits]
+      properties:
+        prompt_tokens:
+          type: integer
+          description: Tokens the full prompt occupies, including the instruction and chat template.
+        fits:
+          type: boolean
+          description: Whether `prompt_tokens` is within `limits.max_input_tokens`.
+        max_output_tokens:
+          type: integer
+          description: Context space left for the translation.
+        limits:
+          $ref: "#/components/schemas/Limits"
+    FinishReason:
+      type: string
+      enum: [stop, length]
+      description: |
+        `stop`: the model ended the translation itself. `length`: the output budget ran out
+        and the translation is truncated.
+    Usage:
+      type: object
+      required: [prompt_tokens, completion_tokens]
+      properties:
+        prompt_tokens:
+          type: integer
+        completion_tokens:
+          type: integer
+    Timings:
+      type: object
+      required: [queue_ms, prompt_ms, generation_ms, tokens_per_second]
+      properties:
+        queue_ms:
+          type: integer
+          description: Time spent waiting for the engine.
+        prompt_ms:
+          type: integer
+          description: Time the engine spent reading the prompt.
+        generation_ms:
+          type: integer
+          description: Time the engine spent generating the translation.
+        tokens_per_second:
+          type: number
+          description: Generation speed.
+    Limits:
+      type: object
+      required: [context_tokens, max_input_tokens]
+      properties:
+        context_tokens:
+          type: integer
+          description: Context window shared by the prompt and the translation.
+          examples: [65536]
+        max_input_tokens:
+          type: integer
+          description: Largest accepted prompt.
+          examples: [28000]
+    Language:
+      type: object
+      required: [code, name]
+      properties:
+        code:
+          type: string
+          examples: [zh]
+        name:
+          type: string
+          description: English name of the language.
+          examples: [Chinese]
+    Health:
+      type: object
+      required: [status, model, limits, queue]
+      properties:
+        status:
+          type: string
+          enum: [loading, ready, error, stopped]
+        error:
+          type: string
+          description: Present when `status` is `error`.
+        model:
+          type: string
+        limits:
+          $ref: "#/components/schemas/Limits"
+        queue:
+          type: object
+          required: [running, waiting, max_waiting]
+          properties:
+            running:
+              type: boolean
+              description: Whether a translation is in progress.
+            waiting:
+              type: integer
+            max_waiting:
+              type: integer
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum:
+                - invalid_request
+                - input_too_long
+                - body_too_large
+                - queue_full
+                - engine_loading
+                - engine_unavailable
+                - engine_error
+                - not_found
+                - method_not_allowed
+                - internal_error
+            message:
+              type: string
+            details:
+              type: object
+              additionalProperties: true
+    QueuedEvent:
+      type: object
+      required: [position]
+      properties:
+        position:
+          type: integer
+          minimum: 1
+          description: Number of translations ahead of this one, including the running one.
+    StartEvent:
+      type: object
+      required: [model, prompt_tokens, max_output_tokens, queue_ms]
+      properties:
+        model:
+          type: string
+        prompt_tokens:
+          type: integer
+        max_output_tokens:
+          type: integer
+          description: Output budget in effect for this translation.
+        queue_ms:
+          type: integer
+    DeltaEvent:
+      type: object
+      required: [text]
+      properties:
+        text:
+          type: string
+          description: The next piece of the translation.
+    DoneEvent:
+      type: object
+      required: [finish_reason, usage, timings]
+      properties:
+        finish_reason:
+          $ref: "#/components/schemas/FinishReason"
+        usage:
+          $ref: "#/components/schemas/Usage"
+        timings:
+          $ref: "#/components/schemas/Timings"
+    ErrorEvent:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [engine_error, internal_error]
+        message:
+          type: string
