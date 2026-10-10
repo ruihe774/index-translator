@@ -1,112 +1,12 @@
 // API tests against a mock engine, so they run without a GPU or model files. The mock launcher
-// starts an in-process upstream server per load and records which model each load was for.
+// (test/helpers/mock-engine.ts) starts an in-process upstream server per load and records which
+// model each load was for.
 
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { join, resolve } from "node:path";
 import { startApp, type App } from "../src/app";
 import type { Config } from "../src/config";
-import { EngineError, type Launcher } from "../src/llama";
 import { buildDocumentPrompt } from "../src/prompt";
-
-const root = resolve(import.meta.dir, "..");
-
-// The mock tokenizer counts one token per character and the chat template adds TEMPLATE.length tokens.
-const TEMPLATE = "<user></user>";
-
-const CHAT = "index-translate-9b";
-const DOCUMENT = "index-nailong-9b";
-
-const mock = {
-  ready: true,
-  chunks: ["<think>\n\n</think>\n\n", "Hello", ", ", "world", "\n"],
-  delayMs: 0,
-  finish: "stop",
-  failWith: undefined as string | undefined,
-  failLaunch: undefined as string | undefined,
-  requests: [] as any[],
-  aborted: 0,
-  launches: [] as string[],
-};
-
-const sse = (data: unknown) => `data: ${typeof data === "string" ? data : JSON.stringify(data)}\n\n`;
-
-async function upstreamFetch(req: Request): Promise<Response> {
-  const path = new URL(req.url).pathname;
-  if (path === "/health") return Response.json({ status: mock.ready ? "ok" : "loading" }, { status: mock.ready ? 200 : 503 });
-  if (path === "/apply-template") return Response.json({ prompt: TEMPLATE });
-  if (path === "/tokenize") {
-    const { content } = (await req.json()) as { content: string };
-    return Response.json({ tokens: Array.from(content, (_, i) => i) });
-  }
-  if (path === "/v1/chat/completions") {
-    const body = (await req.json()) as any;
-    mock.requests.push(body);
-    const { chunks, delayMs, finish, failWith } = mock;
-    req.signal.addEventListener("abort", () => mock.aborted++);
-    return new Response(
-      (async function* () {
-        for (const content of chunks) {
-          if (delayMs) await Bun.sleep(delayMs);
-          yield sse({ choices: [{ delta: { content }, finish_reason: null }] });
-        }
-        if (failWith) {
-          yield sse({ error: { message: failWith } });
-          return;
-        }
-        yield sse({ choices: [{ delta: {}, finish_reason: finish }] });
-        yield sse({
-          choices: [],
-          usage: { prompt_tokens: 42, completion_tokens: chunks.length },
-          timings: { prompt_ms: 12.4, predicted_ms: 99.6, predicted_per_second: 70.123 },
-        });
-        yield sse("[DONE]");
-      })(),
-      { headers: { "content-type": "text/event-stream" } },
-    );
-  }
-  return new Response("not found", { status: 404 });
-}
-
-const launcher: Launcher = async (model) => {
-  if (mock.failLaunch) throw new EngineError(mock.failLaunch);
-  mock.launches.push(model.id);
-  const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: upstreamFetch });
-  let finish!: (code: number) => void;
-  const exited = new Promise<number>((resolve) => (finish = resolve));
-  return {
-    url: `http://127.0.0.1:${server.port}`,
-    exited,
-    stop() {
-      void server.stop(true).then(() => finish(0));
-    },
-  };
-};
-
-function config(overrides: Partial<Config> = {}): Config {
-  return {
-    host: "127.0.0.1",
-    port: 0,
-    publicDir: join(root, "public"),
-    specPath: join(root, "docs", "openapi.yaml"),
-    modelsDir: "/nonexistent",
-    defaultModel: CHAT,
-    llamaBin: "/nonexistent/llama-server",
-    llamaPort: 0,
-    gpuLayers: "all",
-    llamaExtraArgs: [],
-    ctxSize: 1000,
-    maxInputTokens: 400,
-    maxQueue: 1,
-    allowedOrigins: [],
-    allowedHosts: [],
-    ...overrides,
-  };
-}
-
-async function waitReady(app: App): Promise<void> {
-  for (let i = 0; i < 100 && app.engine.state !== "ready"; i++) await Bun.sleep(20);
-  expect(app.engine.state).toBe("ready");
-}
+import { CHAT, DOCUMENT, TEMPLATE, config, launcher, mock, postTo, readSse, waitReady } from "./helpers/mock-engine";
 
 let app: App;
 let base: string;
@@ -121,29 +21,7 @@ afterAll(async () => {
   await app.stop();
 });
 
-function post(path: string, body: unknown, init: RequestInit = {}): Promise<Response> {
-  return fetch(base + path, {
-    method: "POST",
-    body: typeof body === "string" ? body : JSON.stringify(body),
-    ...init,
-    headers: { "content-type": "application/json", ...(init.headers as Record<string, string>) },
-  });
-}
-
-interface SseEvent {
-  event: string;
-  data: any;
-}
-
-async function readSse(res: Response): Promise<SseEvent[]> {
-  const events: SseEvent[] = [];
-  for (const frame of (await res.text()).split("\n\n")) {
-    const event = /^event: (.*)$/m.exec(frame)?.[1];
-    const data = /^data: (.*)$/m.exec(frame)?.[1];
-    if (event && data) events.push({ event, data: JSON.parse(data) });
-  }
-  return events;
-}
+const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
 
 describe("metadata endpoints", () => {
   test("health reports engine state, the loaded model, limits and queue", async () => {
