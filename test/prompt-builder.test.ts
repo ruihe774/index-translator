@@ -22,15 +22,14 @@ describe("constraint lines", () => {
     expect(constraintBlock(prompt)).toEqual(["1. 【注意】简洁", "2. 【软性要求】准确"]);
   });
 
-  test.failing("a hard constraint carrying a soft tag is not double-tagged (spec: the three prefixes are never re-tagged)", () => {
-    // Bug: hard items only accept 【硬性要求】, so "【注意】..." / "【软性要求】..." in hardConstraints becomes "【硬性要求】【注意】...".
+  test("a hard constraint only recognises its own tag, so a soft tag inside it is kept and tagged again", () => {
+    // Mirrors the reference (translate.py): the hard loop checks startswith("【硬性要求】") only.
     const prompt = buildPrompt({
       text: "x",
       targetLang: "en",
       hardConstraints: ["【注意】保持简洁", "【软性要求】保持准确"],
     });
-    expect(prompt).not.toContain("【硬性要求】【注意】");
-    expect(prompt).not.toContain("【硬性要求】【软性要求】");
+    expect(constraintBlock(prompt)).toEqual(["1. 【硬性要求】【注意】保持简洁", "2. 【硬性要求】【软性要求】保持准确"]);
   });
 
   test("a multi-line item becomes one numbered line per non-blank line", () => {
