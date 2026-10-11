@@ -98,16 +98,19 @@
               </p>
               <div class="field">
                 <label for="glossary">Glossary</label>
-                <textarea id="glossary" name="glossary" rows="3" aria-describedby="glossary-error" placeholder="One entry per line: source term = target term"></textarea>
+                <textarea id="glossary" name="glossary" rows="3" aria-describedby="glossary-hint glossary-error" placeholder="One entry per line: source term = target term"></textarea>
+                <p id="glossary-hint" class="sr-only">One entry per line: source term = target term.</p>
                 <p id="glossary-error" class="error" hidden></p>
               </div>
               <div class="field">
                 <label for="hard">Hard constraints</label>
-                <textarea id="hard" name="hard" rows="2" placeholder="One per line, for example keeping placeholders or JSON unchanged. Chinese works best."></textarea>
+                <textarea id="hard" name="hard" rows="2" aria-describedby="hard-hint" placeholder="One per line, for example keeping placeholders or JSON unchanged. Chinese works best."></textarea>
+                <p id="hard-hint" class="sr-only">One per line, for example keeping placeholders or JSON unchanged. Chinese works best.</p>
               </div>
               <div class="field">
                 <label for="soft">Soft constraints</label>
-                <textarea id="soft" name="soft" rows="2" placeholder="One per line, for example tone or register. Chinese works best."></textarea>
+                <textarea id="soft" name="soft" rows="2" aria-describedby="soft-hint" placeholder="One per line, for example tone or register. Chinese works best."></textarea>
+                <p id="soft-hint" class="sr-only">One per line, for example tone or register. Chinese works best.</p>
               </div>
               <div class="field">
                 <label for="genre">Genre</label>

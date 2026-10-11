@@ -100,7 +100,12 @@ test("the text box and the option boxes carry their instructions as placeholders
   await expect(app.page.getByLabel("Glossary", { exact: true })).toHaveAttribute("placeholder", "One entry per line: source term = target term");
   await expect(app.page.getByLabel("Hard constraints")).toHaveAttribute("placeholder", /^One per line, for example keeping placeholders/);
   await expect(app.page.getByLabel("Soft constraints")).toHaveAttribute("placeholder", /^One per line, for example tone or register/);
-  for (const id of ["glossary-hint", "hard-hint", "soft-hint"]) await expect(app.page.locator(`#${id}`)).toHaveCount(0);
+  // The same text is also the accessible description, so it survives typing, and is not shown twice.
+  for (const [label, hint] of [["Glossary", "glossary-hint"], ["Hard constraints", "hard-hint"], ["Soft constraints", "soft-hint"]] as const) {
+    const box = app.page.getByLabel(label, { exact: true });
+    await expect(box).toHaveAccessibleDescription(await box.getAttribute("placeholder").then((p) => new RegExp(`^${p!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)));
+    expect(await app.page.locator(`#${hint}`).evaluate((el) => el.classList.contains("sr-only"))).toBe(true);
+  }
 });
 
 test("Model is a switch on the same line as Model and options", async ({ app }) => {
