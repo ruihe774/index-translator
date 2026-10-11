@@ -64,7 +64,57 @@ export interface Config {
   speechIdleUnload: number;
 }
 
-export function loadConfig(env: Env = Bun.env): Config {
+/** Every setting, by its environment variable; the command-line flag is the lowercase name with dashes (`--port`). */
+export const SETTING_NAMES = [
+  "HOST",
+  "PORT",
+  "ALLOWED_ORIGINS",
+  "ALLOWED_HOSTS",
+  "MODELS_DIR",
+  "DEFAULT_MODEL",
+  "CTX_SIZE",
+  "MAX_INPUT_TOKENS",
+  "MAX_QUEUE",
+  "GPU_LAYERS",
+  "LLAMA_THREADS",
+  "LLAMA_DIR",
+  "PUBLIC_DIR",
+  "SPEECH",
+  "AUDIO_DIR",
+  "SPEECH_MODEL_DIR",
+  "VOICES_DIR",
+  "SPEECH_BACKEND",
+  "SPEECH_IDLE_UNLOAD",
+  "DEV_RELOAD",
+  "OPEN_BROWSER",
+] as const;
+
+const flagOf = (name: string) => `--${name.toLowerCase().replaceAll("_", "-")}`;
+
+/** `--port 8080` or `--port=8080` as `{ PORT: "8080" }`. An unknown argument or a missing value throws. */
+export function parseArgs(argv: readonly string[]): Env {
+  const byFlag = new Map<string, string>(SETTING_NAMES.map((n) => [flagOf(n), n]));
+  const out: Env = {};
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string;
+    const eq = arg.indexOf("=");
+    const flag = arg.startsWith("--") && eq > 0 ? arg.slice(0, eq) : arg;
+    const name = byFlag.get(flag);
+    if (!name) throw new Error(`unknown argument "${arg}"; settings are ${[...byFlag.keys()].join(", ")}`);
+    if (arg !== flag) {
+      out[name] = arg.slice(eq + 1);
+    } else {
+      const value = argv[++i];
+      if (value === undefined) throw new Error(`${flag} needs a value`);
+      out[name] = value;
+    }
+  }
+  return out;
+}
+
+/** Settings come from `environment`, overridden by the command-line flags in `argv`. */
+export function loadConfig(environment: Env = Bun.env, argv: readonly string[] = []): Config {
+  const env: Env = { ...environment, ...parseArgs(argv) };
   const defaultModel = env.DEFAULT_MODEL ?? DEFAULT_MODEL_ID;
   if (!findModel(defaultModel)) throw new Error(`DEFAULT_MODEL "${defaultModel}" is not a known model`);
   const ctxSize = int(env, "CTX_SIZE", 65536, { min: 1 });

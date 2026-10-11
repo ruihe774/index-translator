@@ -94,7 +94,10 @@ No npm runtime dependencies; no build step for the web app.
 
 ## Configuration
 
-Environment variables, all optional. Defaults in `src/config.ts`.
+Environment variables, all optional. Defaults in `src/config.ts`. Each is also a command-line flag
+(lowercase, dashes: `PORT` is `--port 8080` or `--port=8080`) and the flag wins over the variable;
+`SETTING_NAMES` in `src/config.ts` lists them, so a new variable goes there too. Unknown arguments
+fail at startup.
 
 | Variable | Default | Notes |
 |---|---|---|

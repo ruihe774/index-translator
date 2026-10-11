@@ -160,10 +160,13 @@ not reliable, so check those results carefully.
 
 ## Settings
 
-Optional settings are environment variables set before the app starts:
+Optional settings are environment variables set before the app starts, or command-line flags
+(the lowercase name with dashes: `PORT` is `--port`, `DEFAULT_MODEL` is `--default-model`). A flag
+overrides the environment variable:
 
 ```bash
 PORT=8080 bun src/server.ts
+bun src/server.ts --port 8080
 ```
 
 | Variable | Default | What it does |

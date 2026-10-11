@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
-import { CONTEXT_MARGIN, loadConfig } from "../src/config";
+import { CONTEXT_MARGIN, loadConfig, parseArgs } from "../src/config";
 import { DEFAULT_MODEL_ID } from "../src/models";
 
 const root = resolve(import.meta.dir, "..");
@@ -84,6 +84,36 @@ describe("loadConfig defaults", () => {
 
   test("the default model can be chosen by name", () => {
     expect(loadConfig({ DEFAULT_MODEL: "index-nailong-9b" }).defaultModel).toBe("index-nailong-9b");
+  });
+});
+
+describe("command-line flags", () => {
+  test("parseArgs accepts `--flag value` and `--flag=value`", () => {
+    expect(parseArgs(["--port", "8080", "--default-model=index-nailong-9b", "--speech", "0"])).toEqual({
+      PORT: "8080",
+      DEFAULT_MODEL: "index-nailong-9b",
+      SPEECH: "0",
+    });
+  });
+
+  test("flags override the environment, which fills the rest", () => {
+    const cfg = loadConfig({ PORT: "4000", MAX_QUEUE: "3" }, ["--port=5000"]);
+    expect(cfg.port).toBe(5000);
+    expect(cfg.maxQueue).toBe(3);
+  });
+
+  test("a flag with an empty value still overrides", () => {
+    expect(loadConfig({ ALLOWED_ORIGINS: "https://a.example" }, ["--allowed-origins="]).allowedOrigins).toEqual([]);
+  });
+
+  test("unknown arguments and missing values are errors", () => {
+    expect(() => parseArgs(["--nope", "1"])).toThrow(/unknown argument "--nope"/);
+    expect(() => parseArgs(["stray"])).toThrow(/unknown argument/);
+    expect(() => parseArgs(["--port"])).toThrow(/needs a value/);
+  });
+
+  test("values from flags are validated like the environment", () => {
+    expect(() => loadConfig({}, ["--port", "x"])).toThrow(/PORT/);
   });
 });
 
