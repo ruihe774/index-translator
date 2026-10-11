@@ -494,9 +494,10 @@
     border-radius: var(--radius-md);
   }
 
-  /* Each side scrolls to the paragraph clicked on the other; hovering shows which one. */
+  /* Each side scrolls to the paragraph clicked on the other; hovering shows which one. The text
+     cursor stays (a pointer makes selecting text hard; a selection suppresses the sync). */
   .synced {
-    cursor: pointer;
+    cursor: text;
   }
 
   .synced [data-line]:hover,
