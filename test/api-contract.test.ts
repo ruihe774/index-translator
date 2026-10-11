@@ -192,7 +192,7 @@ describe("GET responses", () => {
   test("GET /health when ready matches Health", async () => {
     const res = await fetch(base + "/api/v1/health");
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body: any = await res.json();
     expect(check("Health", body)).toEqual([]);
     expect(body.status).toBe("ready");
   });
@@ -201,7 +201,7 @@ describe("GET responses", () => {
     await withLoadingApp(async (origin) => {
       const res = await fetch(origin + "/api/v1/health");
       expect(res.status).toBe(503);
-      const body = await res.json();
+      const body: any = await res.json();
       expect(check("Health", body)).toEqual([]);
       // Actual behaviour: `model` already names the model being loaded (the engine sets it before the
       // launch), although the spec says null when none is loaded. Documented, not failed; see the report.
@@ -216,7 +216,7 @@ describe("GET responses", () => {
       for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) await Bun.sleep(10);
       const res = await fetch(broken.server.url.origin + "/api/v1/health");
       expect(res.status).toBe(503);
-      const body = await res.json();
+      const body: any = await res.json();
       expect(check("Health", body)).toEqual([]);
       expect(body).toMatchObject({ status: "error", model: null });
       expect(body.error).toContain("model file is corrupt");
@@ -227,7 +227,7 @@ describe("GET responses", () => {
   });
 
   test("GET /models matches ModelList, with one ModelInfo per model", async () => {
-    const body = await (await fetch(base + "/api/v1/models")).json();
+    const body: any = await (await fetch(base + "/api/v1/models")).json();
     expect(check("ModelList", body)).toEqual([]);
     expect(body.models.map((m: any) => m.id)).toEqual(MODELS.map((m) => m.id));
     for (const m of MODELS) {
@@ -252,7 +252,7 @@ describe("POST success responses", () => {
   test("POST /translate JSON matches TranslateResponse", async () => {
     const res = await post("/api/v1/translate", { text: "你好", target_lang: "en" });
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body: any = await res.json();
     expect(check("TranslateResponse", body)).toEqual([]);
     expect(body.finish_reason).toBe("stop");
   });
@@ -260,7 +260,7 @@ describe("POST success responses", () => {
   test("POST /tokenize matches TokenizeResponse", async () => {
     const res = await post("/api/v1/tokenize", plain);
     expect(res.status).toBe(200);
-    const body = await res.json();
+    const body: any = await res.json();
     expect(check("TokenizeResponse", body)).toEqual([]);
     expect(body.fits).toBe(true);
   });
@@ -334,7 +334,7 @@ describe("error responses match components/schemas/Error", () => {
   test("413 input_too_long", async () => {
     const res = await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh" });
     expect(res.status).toBe(413);
-    const body = await res.json();
+    const body: any = await res.json();
     expect(check("Error", body)).toEqual([]);
     expect(body.error.details).toMatchObject({ max_input_tokens: 400 });
   });

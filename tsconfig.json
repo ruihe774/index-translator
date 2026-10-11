@@ -10,5 +10,6 @@
     "skipLibCheck": true,
     "noUncheckedIndexedAccess": true,
     "types": ["bun"]
-  }
+  },
+  "include": ["src", "test", "scripts", "public/select-model.ts"]
 }

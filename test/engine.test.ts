@@ -176,7 +176,7 @@ function newEngine(launch: Launcher = launcher): Engine {
 
 async function readyEngine(): Promise<Engine> {
   const engine = newEngine();
-  await engine.load(MODELS[0]);
+  await engine.load(MODELS[0]!);
   return engine;
 }
 
@@ -215,36 +215,36 @@ describe("Engine lifecycle", () => {
   test("load marks the engine ready and measures the template overhead", async () => {
     fake.template = "<|im_start|>user\n\n<|im_end|>\n";
     const engine = newEngine();
-    await engine.load(MODELS[0]);
+    await engine.load(MODELS[0]!);
     expect(engine.state).toBe("ready");
-    expect(engine.loaded).toBe(MODELS[0]);
+    expect(engine.loaded).toBe(MODELS[0]!);
     expect(engine.error).toBeUndefined();
     expect(engine.templateOverhead).toBe(fake.template.length);
-    expect(fake.launches).toEqual([MODELS[0].id]);
+    expect(fake.launches).toEqual([MODELS[0]!.id]);
   });
 
   test("load of the model already loaded keeps the running engine", async () => {
     const engine = newEngine();
-    await engine.load(MODELS[0]);
-    await engine.load(MODELS[0]);
+    await engine.load(MODELS[0]!);
+    await engine.load(MODELS[0]!);
     expect(fake.launches).toHaveLength(1);
     expect(fake.stops).toBe(0);
   });
 
   test("load of another model stops the engine and starts the new one", async () => {
     const engine = newEngine();
-    await engine.load(MODELS[0]);
-    await engine.load(MODELS[1]);
-    expect(fake.launches).toEqual([MODELS[0].id, MODELS[1].id]);
+    await engine.load(MODELS[0]!);
+    await engine.load(MODELS[1]!);
+    expect(fake.launches).toEqual([MODELS[0]!.id, MODELS[1]!.id]);
     expect(fake.stops).toBe(1);
     expect(engine.state).toBe("ready");
-    expect(engine.loaded).toBe(MODELS[1]);
+    expect(engine.loaded).toBe(MODELS[1]!);
   });
 
   test("a launcher EngineError fails the load and a retry recovers", async () => {
     fake.launchError = new EngineError("no GPU backend");
     const engine = newEngine();
-    const err = await errorOf(engine.load(MODELS[0]));
+    const err = await errorOf(engine.load(MODELS[0]!));
     expect(err).toBeInstanceOf(EngineError);
     expect(err.message).toBe("no GPU backend");
     expect(engine.state).toBe("error");
@@ -252,7 +252,7 @@ describe("Engine lifecycle", () => {
     expect(engine.loaded).toBeUndefined();
 
     fake.launchError = undefined;
-    await engine.load(MODELS[0]);
+    await engine.load(MODELS[0]!);
     expect(engine.state).toBe("ready");
     expect(engine.error).toBeUndefined();
   });
@@ -260,7 +260,7 @@ describe("Engine lifecycle", () => {
   test("a plain Error from the launcher is wrapped as EngineError", async () => {
     fake.launchError = new Error("spawn EACCES");
     const engine = newEngine();
-    const err = await errorOf(engine.load(MODELS[0]));
+    const err = await errorOf(engine.load(MODELS[0]!));
     expect(err).toBeInstanceOf(EngineError);
     expect(err.message).toBe("spawn EACCES");
     expect(engine.state).toBe("error");
@@ -270,9 +270,9 @@ describe("Engine lifecycle", () => {
   test("the process exiting before /health is ready fails the load with its exit code", async () => {
     fake.health = 503;
     const engine = newEngine();
-    const loading = errorOf(engine.load(MODELS[0]));
+    const loading = errorOf(engine.load(MODELS[0]!));
     await until(() => fake.live.length > 0, "the engine to launch");
-    await fake.live[0].end(3);
+    await fake.live[0]!.end(3);
     const err = await loading;
     expect(err).toBeInstanceOf(EngineError);
     expect(err.message).toBe("llama-server exited with code 3");
@@ -283,13 +283,13 @@ describe("Engine lifecycle", () => {
 
   test("an unexpected exit while ready marks the engine error and the next load recovers", async () => {
     const engine = newEngine();
-    await engine.load(MODELS[0]);
-    await fake.live[0].end(9);
+    await engine.load(MODELS[0]!);
+    await fake.live[0]!.end(9);
     await until(() => engine.state === "error", "the exit to be noticed");
     expect(engine.loaded).toBeUndefined();
     expect(engine.error).toContain("code 9");
 
-    await engine.load(MODELS[0]);
+    await engine.load(MODELS[0]!);
     expect(engine.state).toBe("ready");
     expect(engine.error).toBeUndefined();
     expect(fake.launches).toHaveLength(2);
@@ -297,7 +297,7 @@ describe("Engine lifecycle", () => {
 
   test("unload is idempotent and leaves the engine stopped", async () => {
     const engine = newEngine();
-    await engine.load(MODELS[0]);
+    await engine.load(MODELS[0]!);
     await engine.unload();
     await engine.unload();
     expect(engine.state).toBe("stopped");
@@ -326,7 +326,7 @@ describe("countPromptTokens", () => {
   test("throws EngineError while the model is still loading", async () => {
     fake.health = 503;
     const engine = newEngine();
-    const loading = engine.load(MODELS[0]);
+    const loading = engine.load(MODELS[0]!);
     await until(() => fake.live.length > 0, "the engine to launch");
     const err = await errorOf(engine.countPromptTokens("hi"));
     expect(err).toBeInstanceOf(EngineError);
@@ -339,7 +339,7 @@ describe("countPromptTokens", () => {
 
   test("throws EngineError after unload", async () => {
     const engine = newEngine();
-    await engine.load(MODELS[0]);
+    await engine.load(MODELS[0]!);
     await engine.unload();
     const err = await errorOf(engine.countPromptTokens("hi"));
     expect(err).toBeInstanceOf(EngineError);
@@ -348,8 +348,8 @@ describe("countPromptTokens", () => {
 
   test("throws EngineError after the engine exited unexpectedly", async () => {
     const engine = newEngine();
-    await engine.load(MODELS[0]);
-    await fake.live[0].end(1);
+    await engine.load(MODELS[0]!);
+    await fake.live[0]!.end(1);
     await until(() => engine.state === "error", "the exit to be noticed");
     const err = await errorOf(engine.countPromptTokens("hi"));
     expect(err).toBeInstanceOf(EngineError);
@@ -366,7 +366,7 @@ describe("countPromptTokens", () => {
   test("falls back to 32 tokens of overhead when /apply-template fails", async () => {
     fake.override["/apply-template"] = () => new Response("oops", { status: 500 });
     const engine = newEngine();
-    await engine.load(MODELS[0]);
+    await engine.load(MODELS[0]!);
     expect(engine.state).toBe("ready");
     expect(engine.templateOverhead).toBe(32);
     expect(silence).toHaveBeenCalledWith(expect.stringContaining("could not measure template overhead"));
@@ -397,7 +397,7 @@ describe("upstream errors", () => {
 
   test("an unreachable llama-server is reported as EngineError", async () => {
     const engine = await readyEngine();
-    await fake.live[0].stopServer();
+    await fake.live[0]!.stopServer();
     const err = await errorOf(engine.countPromptTokens("x"));
     expect(err).toBeInstanceOf(EngineError);
     expect(err.message).toContain("llama-server unreachable");
@@ -590,14 +590,14 @@ const started: Running[] = [];
 function valueOf(args: string[], flag: string): string {
   const i = args.indexOf(flag);
   if (i < 0) throw new Error(`argv has no ${flag}`);
-  return args[i + 1];
+  return args[i + 1]!;
 }
 
 async function startFake(overrides: Partial<ReturnType<typeof config>> = {}) {
   rmSync(ARGS_FILE, { force: true });
   rmSync(PID_FILE, { force: true });
   const running = await launchLlamaServer(
-    MODELS[0],
+    MODELS[0]!,
     config({ modelsDir: MODELS_DIR, llamaBin: FAKE_BIN, ...overrides }),
   );
   started.push(running);
@@ -610,7 +610,7 @@ beforeAll(() => {
   rmSync(TMP, { recursive: true, force: true });
   mkdirSync(MODELS_DIR, { recursive: true });
   mkdirSync(EMPTY_DIR, { recursive: true });
-  writeFileSync(join(MODELS_DIR, MODELS[0].file), "");
+  writeFileSync(join(MODELS_DIR, MODELS[0]!.file), "");
   writeFileSync(FAKE_BIN, FAKE_SCRIPT);
   chmodSync(FAKE_BIN, 0o755);
 });
@@ -625,15 +625,15 @@ afterAll(async () => {
 
 describe("launchLlamaServer", () => {
   test("a missing model file fails with a fetch_models hint", async () => {
-    const err = await errorOf(launchLlamaServer(MODELS[0], config({ modelsDir: EMPTY_DIR, llamaBin: FAKE_BIN })));
+    const err = await errorOf(launchLlamaServer(MODELS[0]!, config({ modelsDir: EMPTY_DIR, llamaBin: FAKE_BIN })));
     expect(err).toBeInstanceOf(EngineError);
     expect(err.message).toContain("fetch_models");
-    expect(err.message).toContain(join(EMPTY_DIR, MODELS[0].file));
+    expect(err.message).toContain(join(EMPTY_DIR, MODELS[0]!.file));
   });
 
   test("a missing binary fails with a fetch_llama hint", async () => {
     const err = await errorOf(
-      launchLlamaServer(MODELS[0], config({ modelsDir: MODELS_DIR, llamaBin: join(TMP, "no-such-llama-server") })),
+      launchLlamaServer(MODELS[0]!, config({ modelsDir: MODELS_DIR, llamaBin: join(TMP, "no-such-llama-server") })),
     );
     expect(err).toBeInstanceOf(EngineError);
     expect(err.message).toContain("fetch_llama");
@@ -641,8 +641,8 @@ describe("launchLlamaServer", () => {
 
   test("the command line carries the engine defaults and llamaExtraArgs last", async () => {
     const { args, running } = await startFake({ gpuLayers: "35", ctxSize: 4096, llamaExtraArgs: ["--threads", "8"] });
-    expect(valueOf(args, "--model")).toBe(join(MODELS_DIR, MODELS[0].file));
-    expect(valueOf(args, "--alias")).toBe(MODELS[0].id);
+    expect(valueOf(args, "--model")).toBe(join(MODELS_DIR, MODELS[0]!.file));
+    expect(valueOf(args, "--alias")).toBe(MODELS[0]!.id);
     expect(valueOf(args, "--host")).toBe("127.0.0.1");
     expect(valueOf(args, "--port")).toBe(String(Number(new URL(running.url).port)));
     expect(valueOf(args, "--gpu-layers")).toBe("35");
@@ -671,7 +671,7 @@ describe("launchLlamaServer", () => {
   test("stop() terminates the child and exited resolves", async () => {
     // Not pushed to `started`: this test stops the process itself.
     rmSync(PID_FILE, { force: true });
-    const running = await launchLlamaServer(MODELS[0], config({ modelsDir: MODELS_DIR, llamaBin: FAKE_BIN }));
+    const running = await launchLlamaServer(MODELS[0]!, config({ modelsDir: MODELS_DIR, llamaBin: FAKE_BIN }));
     await until(() => existsSync(PID_FILE), "the fake llama-server to start");
     const pid = Number(readFileSync(PID_FILE, "utf8"));
     expect(() => process.kill(pid, 0)).not.toThrow();
