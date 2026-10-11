@@ -48,7 +48,7 @@ export interface Selection {
 
 export interface SelectionInput {
   text: string;
-  /** A language code, or "auto". */
+  /** A language code, or "auto". Case and surrounding spaces are ignored, as the backend does. */
   sourceLang: string;
   targetLang: string;
   /** Glossary, constraints or genre were entered; the document model rejects all of them. */
@@ -56,47 +56,142 @@ export interface SelectionInput {
   choice: Choice;
 }
 
-const LETTER = /\p{L}/u;
+/**
+ * Language detection looks only at the first this many letters. Detection needs a representative
+ * sample, not the whole text, and a bounded sample keeps a multi-megabyte paste cheap on every
+ * debounced keystroke. The length threshold still counts every letter.
+ */
+const SAMPLE_LETTERS = 20_000;
 
-/** Unicode letters in the trimmed text: spaces, digits and punctuation do not count. */
-export function countLetters(text: string): number {
-  let n = 0;
-  for (const ch of text) if (LETTER.test(ch)) n++;
-  return n;
+// Sticky regexes: test one code point at `lastIndex` without slicing the text. Only non-ASCII code
+// points reach them; ASCII is decided by a char-code range check.
+const LETTER_AT = /\p{L}/uy;
+const KANA_AT = /[\p{Script=Hiragana}\p{Script=Katakana}]/uy;
+const HAN_AT = /\p{Script=Han}/uy;
+
+function matchesAt(re: RegExp, text: string, i: number): boolean {
+  re.lastIndex = i;
+  return re.test(text);
 }
 
-const KANA = /[\p{Script=Hiragana}\p{Script=Katakana}]/gu;
-const HAN = /\p{Script=Han}/gu;
-const LATIN_LETTER = /[A-Za-z]/g;
+interface Scan {
+  /** Letters counted: the whole text, or only the sample when the scan stopped at the sample. */
+  letters: number;
+  /** Letters classified as kana, Han and ASCII: at most SAMPLE_LETTERS. */
+  sampleLetters: number;
+  kana: number;
+  han: number;
+  ascii: number;
+  /** Index just past the last classified letter. */
+  sampleEnd: number;
+}
+
+/**
+ * One pass over the text. Counts letters, and classifies the first SAMPLE_LETTERS of them as kana,
+ * Han or ASCII. No per-match arrays are built. With stopAtSample, the scan ends at the sample.
+ *
+ * Measured with Bun 1.4.2 on a 4,000,000-code-unit input, median of 7 runs of selectModel(auto):
+ * English 175 ms -> 4 ms, Chinese 313 ms -> 60 ms, mixed English and Chinese 146 ms -> 20 ms.
+ * The original used one regex test per code point and three global match() arrays per call.
+ * Chinese stays the slowest because every CJK letter still needs one sticky regex test for the
+ * exact \p{L} check.
+ */
+function scan(text: string, stopAtSample: boolean): Scan {
+  const n = text.length;
+  let letters = 0;
+  let sampleLetters = 0;
+  let kana = 0;
+  let han = 0;
+  let ascii = 0;
+  let sampleEnd = n;
+  let i = 0;
+  while (i < n) {
+    const c = text.charCodeAt(i);
+    let width = 1;
+    let letter: boolean;
+    if (c < 0x80) {
+      const lower = c | 0x20; // maps 'A'..'Z' onto 'a'..'z' and nothing else onto a letter
+      letter = lower >= 0x61 && lower <= 0x7a;
+    } else {
+      if (c >= 0xd800 && c <= 0xdbff && i + 1 < n) {
+        const d = text.charCodeAt(i + 1);
+        if (d >= 0xdc00 && d <= 0xdfff) width = 2;
+      }
+      letter = matchesAt(LETTER_AT, text, i);
+    }
+    if (letter) {
+      letters++;
+      if (sampleLetters < SAMPLE_LETTERS) {
+        sampleLetters++;
+        if (c < 0x80) ascii++;
+        else if (matchesAt(KANA_AT, text, i)) kana++;
+        else if (matchesAt(HAN_AT, text, i)) han++;
+        if (sampleLetters === SAMPLE_LETTERS) {
+          sampleEnd = i + width;
+          if (stopAtSample) break;
+        }
+      }
+    }
+    i += width;
+  }
+  return { letters, sampleLetters, kana, han, ascii, sampleEnd };
+}
+
+/** Unicode letters in the trimmed text: spaces, digits and punctuation do not count. Exact. */
+export function countLetters(text: string): number {
+  return scan(text, false).letters;
+}
+
 const ENGLISH_WORDS = new Set(["the", "and", "of", "to", "in", "is", "that", "it", "was", "for", "with", "as", "on"]);
+
+/**
+ * True when the lower-cased text has more than 10% common English words among its words. A word is
+ * a run of a-z and apostrophes, the same tokens the regex /[a-z']+/g produced.
+ */
+function hasCommonEnglish(lower: string): boolean {
+  let words = 0;
+  let common = 0;
+  let start = -1;
+  for (let i = 0; i <= lower.length; i++) {
+    const c = i < lower.length ? lower.charCodeAt(i) : 0;
+    const wordChar = (c >= 0x61 && c <= 0x7a) || c === 0x27;
+    if (wordChar) {
+      if (start < 0) start = i;
+      continue;
+    }
+    if (start >= 0) {
+      words++;
+      const len = i - start;
+      if (len >= 2 && len <= 4 && ENGLISH_WORDS.has(lower.slice(start, i))) common++;
+      start = -1;
+    }
+  }
+  return words > 0 && common / words > 0.1;
+}
 
 /**
  * Best-effort source language for the four document directions. Returns undefined when the text is
  * not clearly Chinese, Japanese or English; Latin-script text counts as English only when it is
  * plain ASCII and full of common English words, so French or German is not taken for English.
+ * Decided from the first SAMPLE_LETTERS letters only.
  */
 export function detectSource(text: string): "zh" | "ja" | "en" | undefined {
-  const letters = countLetters(text);
-  if (letters === 0) return undefined;
-  const kana = text.match(KANA)?.length ?? 0;
-  const han = text.match(HAN)?.length ?? 0;
-  if (kana / letters > 0.05) return "ja";
-  if (han / letters > 0.3) return "zh";
-  const ascii = text.match(LATIN_LETTER)?.length ?? 0;
-  if (ascii / letters < 0.98) return undefined;
-  const words = text.toLowerCase().match(/[a-z']+/g) ?? [];
-  if (words.length === 0) return undefined;
-  let common = 0;
-  for (const w of words) if (ENGLISH_WORDS.has(w)) common++;
-  return common / words.length > 0.1 ? "en" : undefined;
+  const s = scan(text, true);
+  const sample = s.sampleLetters;
+  if (sample === 0) return undefined;
+  if (s.kana / sample > 0.05) return "ja";
+  if (s.han / sample > 0.3) return "zh";
+  if (s.ascii / sample < 0.98) return undefined;
+  return hasCommonEnglish(text.slice(0, s.sampleEnd).toLowerCase()) ? "en" : undefined;
 }
 
 export function selectModel(input: SelectionInput): Selection {
   const text = input.text.trim();
   const letters = countLetters(text);
-  const target = input.targetLang.toLowerCase();
-  const explicit = input.sourceLang !== "auto";
-  const sourceLang = explicit ? input.sourceLang.toLowerCase() : detectSource(text);
+  const target = input.targetLang.trim().toLowerCase();
+  const source = input.sourceLang.trim().toLowerCase();
+  const explicit = source !== "auto";
+  const sourceLang = explicit ? source : detectSource(text);
   const supported = sourceLang !== undefined && DOCUMENT_DIRECTIONS.includes(`${sourceLang}-${target}`);
   const make = (model: ModelId, reason: Reason, warn: boolean): Selection => ({
     model,
