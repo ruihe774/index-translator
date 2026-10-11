@@ -12,6 +12,7 @@ import {
 import { mismatchMessage, paragraphMismatch } from "./paragraphs.js";
 import { describeError, type ApiErrorBody } from "./errors.js";
 import { sseEvents } from "./sse.js";
+import { parseGlossary } from "./glossary.js";
 
 const API = "/api/v1";
 const MODEL_LABELS: Record<ModelId, string> = {
@@ -92,24 +93,13 @@ function lines(value: string): string[] {
     .filter(Boolean);
 }
 
-/** Glossary lines are "source = target"; returns the first line that does not parse. */
-function parseGlossary(value: string): { glossary: Record<string, string>; badLine?: number } {
-  const glossary: Record<string, string> = {};
-  const all = value.split("\n");
-  for (let i = 0; i < all.length; i++) {
-    const line = all[i]!.trim();
-    if (!line) continue;
-    const eq = line.indexOf("=");
-    const source = line.slice(0, eq).trim();
-    const target = line.slice(eq + 1).trim();
-    if (eq < 0 || !source || !target) return { glossary, badLine: i + 1 };
-    glossary[source] = target;
-  }
-  return { glossary };
-}
-
+/**
+ * Glossary, hard or soft constraints need the chat model. Genre does not count here: the backend
+ * (src/prompt.ts buildPrompt) only uses genre inside the constraint prompt, so with no glossary or
+ * constraints it is ignored, and the document model rejects it (src/app.ts checkDocumentRequest).
+ */
 function hasOptions(): boolean {
-  return Boolean(glossaryInput.value.trim() || hardInput.value.trim() || softInput.value.trim() || genreInput.value.trim());
+  return Boolean(glossaryInput.value.trim() || hardInput.value.trim() || softInput.value.trim());
 }
 
 // ---- model selection display -----------------------------------------------------------------
@@ -166,12 +156,27 @@ function selectionMessage(s: Selection): { text: string; warn: boolean } {
   }
 }
 
+/** An explicit source equal to the target. "auto" is not compared: it may detect another language. */
+function sameLanguage(): boolean {
+  const from = fromSelect.value;
+  return from !== "" && from !== "auto" && from === toSelect.value;
+}
+
+/** Set when /languages could not be loaded and the built-in short list is offered instead. */
+let languageNote = "";
+
 function refreshSelection() {
   const s = currentSelection();
   setText(countEl, `${number.format(s.letters)} letters`);
   const { text, warn } = selectionMessage(s);
-  setText(selectionEl, text);
-  selectionEl.classList.toggle("warn", warn);
+  const same = sameLanguage();
+  const parts = [text];
+  if (same) {
+    parts.push("Warning: the source and target languages are the same, so the translation may only repeat the text. Check the From and To choices.");
+  }
+  if (languageNote) parts.push(languageNote);
+  setText(selectionEl, parts.join(" "));
+  selectionEl.classList.toggle("warn", warn || same);
   const documentModel = s.model === DOCUMENT_MODEL && s.reason !== "manual-document-unusable";
   options.disabled = documentModel;
   return s;
@@ -190,17 +195,23 @@ interface Language {
   name: string;
 }
 
+/** False until the selects hold the language options; Translate stays aria-disabled until then. */
+let languagesReady = false;
+
 async function loadLanguages() {
   let languages: Language[] = [];
   try {
     const res = await fetch(`${API}/languages`);
-    languages = ((await res.json()) as { languages: Language[] }).languages;
+    const body = (await res.json()) as { languages?: unknown };
+    if (!Array.isArray(body.languages)) throw new Error("no language list");
+    languages = body.languages as Language[];
   } catch {
     languages = [
       { code: "en", name: "English" },
       { code: "zh", name: "Chinese" },
       { code: "ja", name: "Japanese" },
     ];
+    languageNote = "Could not load the full language list, so only English, Chinese and Japanese are offered.";
   }
   const add = (select: HTMLSelectElement, code: string, name: string) => {
     const o = document.createElement("option");
@@ -219,11 +230,22 @@ async function loadLanguages() {
   fromSelect.value = has(fromSelect, savedFrom) ? savedFrom! : "auto";
   const fallbackTo = navigator.language.toLowerCase().startsWith("en") ? "zh" : "en";
   toSelect.value = has(toSelect, savedTo) ? savedTo! : has(toSelect, fallbackTo) ? fallbackTo : toSelect.options[0]!.value;
+  languagesReady = true;
+  setTranslateEnabled();
   refreshSelection();
 }
 
+/** Counts up for each poll; a response from an earlier poll is stale and must not overwrite a newer one. */
+let healthSeq = 0;
+
 async function pollHealth() {
+  // One chain at a time: any pending follow-up poll is replaced by this one.
+  clearTimeout(healthTimer);
+  healthTimer = undefined;
+  const seq = ++healthSeq;
   if (document.hidden) return;
+  let text: string;
+  let loading = false;
   try {
     const res = await fetch(`${API}/health`);
     const h = (await res.json()) as {
@@ -233,21 +255,21 @@ async function pollHealth() {
       queue: { running: boolean; waiting: number };
     };
     const model = h.model ? MODEL_LABELS[h.model as ModelId] ?? h.model : null;
-    let text: string;
     if (h.status === "ready") {
       text = `Engine ready${model ? `, ${model} loaded` : ""}.`;
       if (h.queue.waiting > 0) text += ` ${h.queue.waiting} waiting in the queue.`;
     } else if (h.status === "loading") {
       text = "Engine loading a model…";
-      // Only a load in progress is followed automatically; otherwise the status is refreshed on
-      // page load, on return to the tab and after each translation, so nothing updates by itself.
-      clearTimeout(healthTimer);
-      healthTimer = setTimeout(pollHealth, HEALTH_LOADING_POLL_MS);
+      loading = true;
     } else text = `Engine ${h.status}${h.error ? `: ${h.error}` : ""}.`;
-    setText(engineEl, text);
   } catch {
-    setText(engineEl, "The server cannot be reached.");
+    text = "The server cannot be reached.";
   }
+  if (seq !== healthSeq) return;
+  // Only a load in progress is followed automatically; otherwise the status is refreshed on
+  // page load, on return to the tab and after each translation, so nothing updates by itself.
+  if (loading) healthTimer = setTimeout(pollHealth, HEALTH_LOADING_POLL_MS);
+  setText(engineEl, text);
 }
 
 // ---- translating -----------------------------------------------------------------------------
@@ -269,8 +291,13 @@ let running: AbortController | null = null;
 let translation = "";
 let outputText: Text | null = null;
 
+/** Translate is aria-disabled while a translation runs or before the languages are loaded. */
+function setTranslateEnabled() {
+  translateBtn.setAttribute("aria-disabled", String(running !== null || !languagesReady));
+}
+
 function setRunning(on: boolean) {
-  translateBtn.setAttribute("aria-disabled", String(on));
+  setTranslateEnabled();
   stopBtn.hidden = !on;
   if (on) stopBtn.focus();
 }
@@ -299,6 +326,10 @@ function fail(message: string) {
 async function translate() {
   if (running) return;
   setText(errorEl, "");
+  if (!languagesReady) {
+    fail("The languages are still loading. Try again in a moment.");
+    return;
+  }
 
   const text = textInput.value;
   if (!text.trim()) {
@@ -322,18 +353,26 @@ async function translate() {
   };
   if (sel.sourceLang) body.source_lang = sel.sourceLang;
   if (sel.model === CHAT_MODEL) {
-    const { glossary, badLine } = parseGlossary(glossaryInput.value);
-    if (badLine) {
+    const { glossary, error } = parseGlossary(glossaryInput.value);
+    if (error) {
       advancedOpen();
-      showFieldError(glossaryError, glossaryInput, `Glossary line ${badLine} must look like: source term = target term.`);
+      const message =
+        error.kind === "duplicate"
+          ? `Glossary line ${error.line} repeats the source term "${error.term}". Each source term may appear only once.`
+          : `Glossary line ${error.line} must look like: source term = target term.`;
+      showFieldError(glossaryError, glossaryInput, message);
       glossaryInput.focus();
       return;
     }
     showFieldError(glossaryError, glossaryInput, null);
-    if (Object.keys(glossary).length) body.glossary = glossary;
+    const hasGlossary = Object.keys(glossary).length > 0;
+    if (hasGlossary) body.glossary = glossary;
     if (hardInput.value.trim()) body.hard_constraints = lines(hardInput.value);
     if (softInput.value.trim()) body.soft_constraints = lines(softInput.value);
-    if (genreInput.value.trim()) body.genre = genreInput.value.trim();
+    // Genre is sent only with a glossary or constraints; alone the backend ignores it (see hasOptions).
+    if (genreInput.value.trim() && (hasGlossary || body.hard_constraints || body.soft_constraints)) {
+      body.genre = genreInput.value.trim();
+    }
   }
 
   store("from", fromSelect.value);
@@ -470,6 +509,7 @@ const savedModel = stored("model");
 const savedRadio = savedModel && form.querySelector<HTMLInputElement>(`input[name="model"][value="${CSS.escape(savedModel)}"]`);
 if (savedRadio) savedRadio.checked = true;
 
+setTranslateEnabled();
 void loadLanguages();
 void pollHealth();
 document.addEventListener("visibilitychange", () => void pollHealth());

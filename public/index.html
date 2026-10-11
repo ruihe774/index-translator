@@ -32,7 +32,7 @@
 
         <div class="field">
           <label for="text">Text to translate (required)</label>
-          <textarea id="text" name="text" rows="10" required aria-required="true" aria-describedby="count text-error"></textarea>
+          <textarea id="text" name="text" rows="10" required aria-required="true" aria-describedby="count text-error" dir="auto"></textarea>
           <p id="count" class="hint"></p>
           <p id="text-error" class="error" hidden></p>
         </div>
@@ -95,7 +95,7 @@
 
       <section aria-labelledby="result-heading" class="result">
         <h2 id="result-heading">Translation</h2>
-        <div id="output" class="output"></div>
+        <div id="output" class="output" dir="auto"></div>
         <p id="placeholder" class="hint">The translation appears here.</p>
         <p id="meta" class="hint"></p>
         <ul id="notes" class="notes"></ul>
