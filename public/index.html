@@ -26,7 +26,8 @@
                 <label for="from">From</label>
                 <select id="from" name="from"></select>
               </div>
-              <div id="source-switch" class="view-switch" role="group" aria-label="Source view">
+              <!-- biome-ignore lint/a11y/useSemanticElements: a div group keeps the layout; a fieldset needs a legend and resets -->
+              <div id="source-switch"class="view-switch" role="group" aria-label="Source view">
                 <button type="button" data-view="raw" aria-pressed="true" aria-disabled="true">Raw</button>
                 <button type="button" data-view="preview" aria-pressed="false" aria-disabled="true">Preview</button>
               </div>
@@ -58,7 +59,8 @@
                 <label for="to">To</label>
                 <select id="to" name="to"></select>
               </div>
-              <div id="output-switch" class="view-switch" role="group" aria-label="Translation view">
+              <!-- biome-ignore lint/a11y/useSemanticElements: a div group keeps the layout; a fieldset needs a legend and resets -->
+              <div id="output-switch"class="view-switch" role="group" aria-label="Translation view">
                 <button type="button" data-view="raw" aria-pressed="false" aria-disabled="true">Raw</button>
                 <button type="button" data-view="preview" aria-pressed="true" aria-disabled="true">Preview</button>
               </div>
@@ -80,7 +82,8 @@
         <section class="settings" aria-labelledby="settings-heading">
           <div class="settings-head">
             <h2 id="settings-heading">Model and options</h2>
-            <div id="model-switch" class="view-switch" role="group" aria-label="Model">
+            <!-- biome-ignore lint/a11y/useSemanticElements: a div group keeps the layout; a fieldset needs a legend and resets -->
+            <div id="model-switch"class="view-switch" role="group" aria-label="Model">
               <button type="button" data-model="auto" aria-pressed="true">Automatic</button>
               <button type="button" data-model="index-translate-9b" aria-pressed="false">Index-Translate-9B</button>
               <button type="button" data-model="index-nailong-9b" aria-pressed="false">Index-NativeLong-9B</button>

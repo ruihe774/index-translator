@@ -227,7 +227,7 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
       // An unclosed fence runs to the end of the text; its trailing blank lines are not content yet.
       if (i >= n) while (body.length && isBlank(body[body.length - 1]!)) body.pop();
       i++; // the closing fence, or past the end
-      out.push({ block: { type: "code", lang: unescape(fence[3]!.trim().split(/\s+/)[0] ?? ""), text: body.join("\n") }, line: first });
+      out.push({ block: { type: "code", lang: unescapePunctuation(fence[3]!.trim().split(/\s+/)[0] ?? ""), text: body.join("\n") }, line: first });
       continue;
     }
 
@@ -406,7 +406,7 @@ function codeClose(s: string, from: number, len: number): number {
   return -1;
 }
 
-const unescape = (s: string) => s.replace(/\\([!-/:-@[-`{-~])/g, "$1");
+const unescapePunctuation = (s: string) => s.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 
 /** Reads `(href "title")` with s[k] === "(". */
 function linkTail(s: string, k: number): { href: string; title: string; end: number } | null {
@@ -431,6 +431,7 @@ function linkTail(s: string, k: number): { href: string; title: string; end: num
     for (; k < s.length; k++) {
       const ch = s[k]!;
       if (ch === "\\" && ASCII_PUNCT.test(s[k + 1] ?? "")) k++;
+      // biome-ignore lint/suspicious/noControlCharactersInRegex: a bare link destination ends at a control character
       else if (/[ \x00-\x1f\x7f]/.test(ch)) break;
       else if (ch === "(") parens++;
       else if (ch === ")") {
@@ -455,7 +456,7 @@ function linkTail(s: string, k: number): { href: string; title: string; end: num
     skipSpace();
   }
   if (s[k] !== ")") return null;
-  return { href: unescape(href), title: unescape(title), end: k + 1 };
+  return { href: unescapePunctuation(href), title: unescapePunctuation(title), end: k + 1 };
 }
 
 function plainText(nodes: Inline[]): string {

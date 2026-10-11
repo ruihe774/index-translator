@@ -72,7 +72,9 @@ export class SlotQueue {
           this.waiting.splice(i, 1);
           entry.settle(false);
         }
-        this.waiting.forEach((e, i) => e.onPosition?.(i + 1));
+        this.waiting.forEach((e, i) => {
+          e.onPosition?.(i + 1);
+        });
       },
     };
   }

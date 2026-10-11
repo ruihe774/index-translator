@@ -21,8 +21,7 @@ export async function translateStream(baseUrl: string, body: Record<string, unkn
   const decoder = new TextDecoder();
   for await (const chunk of res.body!) {
     buffer += decoder.decode(chunk, { stream: true });
-    let end: number;
-    while ((end = buffer.indexOf("\n\n")) >= 0) {
+    for (let end = buffer.indexOf("\n\n"); end >= 0; end = buffer.indexOf("\n\n")) {
       const frame = buffer.slice(0, end);
       buffer = buffer.slice(end + 2);
       const event = /^event: (.*)$/m.exec(frame)?.[1];

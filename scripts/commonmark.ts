@@ -42,6 +42,7 @@ function url(s: string): string {
 
 function inline(nodes: Inline[]): string {
   return nodes
+    // biome-ignore lint/suspicious/useIterableCallbackReturn: the switch covers every inline type; tsc checks it
     .map((n) => {
       switch (n.type) {
         case "text":
@@ -65,6 +66,7 @@ function inline(nodes: Inline[]): string {
 
 function blocks(bs: Block[], tight = false): string {
   return bs
+    // biome-ignore lint/suspicious/useIterableCallbackReturn: the switch covers every block type; tsc checks it
     .map((b) => {
       switch (b.type) {
         case "heading":

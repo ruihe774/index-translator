@@ -3,6 +3,7 @@
 // is written to disk. A request for /x.js is answered from x.ts when no real x.js exists.
 // The .ts sources themselves are never served.
 
+import type { Stats } from "node:fs";
 import { stat } from "node:fs/promises";
 import { join, normalize, resolve, sep } from "node:path";
 
@@ -42,7 +43,7 @@ export function createStaticServer(publicDir: string) {
   async function plainFile(path: string, req: Request): Promise<Response | undefined> {
     // Constructed before the stat: a path with a null byte throws here, and the caller answers that as a 500.
     const file = Bun.file(path);
-    let info;
+    let info: Stats;
     try {
       info = await stat(path);
     } catch {
@@ -57,7 +58,7 @@ export function createStaticServer(publicDir: string) {
   }
 
   async function transpiled(path: string, req: Request): Promise<Response | undefined> {
-    let info;
+    let info: Stats;
     try {
       info = await stat(path);
     } catch {

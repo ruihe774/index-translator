@@ -163,9 +163,10 @@ export const launchNative: Launcher = async (model, cfg) => {
   if (!(await Bun.file(modelPath).exists())) {
     throw new EngineError(`model not found at ${modelPath}; run: uv run scripts/fetch_models.py`);
   }
-  const worker = (nativeWorker ??= new NativeWorker(() => {
+  nativeWorker ??= new NativeWorker(() => {
     if (nativeWorker === worker) nativeWorker = undefined;
-  }));
+  });
+  const worker = nativeWorker;
   return worker.load(model, cfg);
 };
 

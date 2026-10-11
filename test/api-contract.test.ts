@@ -82,7 +82,9 @@ function problems(schemaNode: any, value: unknown, at = "$", out: string[] = [])
     }
   }
   if (Array.isArray(value) && schema.items !== undefined) {
-    value.forEach((item, i) => problems(schema.items, item, `${at}[${i}]`, out));
+    value.forEach((item, i) => {
+      problems(schema.items, item, `${at}[${i}]`, out);
+    });
   }
   if (isObject(value)) {
     for (const key of schema.required ?? []) {
