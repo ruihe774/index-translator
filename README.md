@@ -3,6 +3,40 @@
 A local text translator. It runs entirely on your machine, using the Index-Translate 9B models
 on your GPU, and does not send your text anywhere.
 
+![Index Translator translating Markdown release notes from English to Chinese. Both sides are shown formatted, and the list the pointer rests on is highlighted on both sides.](docs/screenshot.png)
+
+*A Markdown document translated from English to Chinese. Headings, lists, inline code and emphasis
+are kept and shown formatted on both sides. The mouse pointer is on the numbered list in the
+source, and the matching list in the translation is highlighted too; a click scrolls the other side
+to it.*
+
+## What sets it apart
+
+Compared with widely used online translation tools:
+
+- **Private and offline.** The models run on your own GPU. Your text never leaves your machine, so
+  it is safe for confidential documents, and there are no accounts, quotas or fees.
+- **Built for whole documents.** A dedicated long-document model translates a full document in one
+  pass (Chinese ↔ English, Chinese ↔ Japanese), and the app picks between it and the general model
+  by text length.
+- **You control the terminology and style.** Give a glossary, hard rules ("keep placeholders
+  unchanged"), soft style guidance and a genre such as academic paper or subtitles, and the
+  translation follows them.
+- **It tells you when something is missing.** Language models can silently drop or repeat
+  paragraphs. The app counts paragraphs after each translation and warns you if they differ.
+- **Check the result against the original.** When the paragraphs line up, click one on either side
+  and the other side scrolls to the matching paragraph.
+- **Markdown stays Markdown.** Headings, lists, tables and code blocks in your text are translated
+  and shown formatted as they arrive, with a Raw / Preview switch on each side, and Copy gives you
+  the Markdown back.
+- **Streaming with Stop.** Text appears as it is generated, and you can stop at any time.
+- **Correct Chinese and Japanese typography.** Line breaking and fonts follow Japanese and Chinese
+  typesetting rules instead of using one font for every language.
+- **Accessible.** The interface is checked against WCAG 2.2 AA, including keyboard use and screen
+  readers.
+- **Scriptable.** A local REST API with streaming is documented in `docs/openapi.yaml`, so other
+  programs can use the same translator.
+
 ## Start the app
 
 ```bash
