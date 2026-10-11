@@ -146,6 +146,22 @@ test("Previous and Next jump between blocks, say where, and hand focus back when
   await expect(next).toBeHidden();
 });
 
+test("Next while paused resumes the reading at the next block", async ({ app, mock }) => {
+  await mock.set({ speech: { delayMs: 300 } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(MARKDOWN);
+  const listen = app.page.locator("#listen-source");
+  const pause = app.page.locator("#pause-source");
+  await listen.click();
+  await pause.click();
+  await expect(listen).toHaveAttribute("data-state", "paused");
+  await app.page.locator("#next-source").click();
+  await expect(pause).toHaveAccessibleName("Pause reading");
+  await expect(listen).not.toHaveAttribute("data-state", "paused");
+  await expect.poll(async () => (await mock.state()).speech.requests.map((r) => r.text)).toContain("1. Install it.");
+});
+
 test("a blocked Listen says why, to the eye and to assistive technology", async ({ app }) => {
   await app.open();
   const listen = app.page.locator("#listen-source");

@@ -91,7 +91,7 @@ export class SpeechPlayer {
   /**
    * Jumps to the start of the previous (-1) or next (1) block, a block being the run of pieces that
    * share a `line`. "Previous" first returns to the start of the block being read, as media players
-   * do. Returns false when there is nowhere to go. Works while paused (it stays paused).
+   * do. Returns false when there is nowhere to go. A jump while paused resumes the reading.
    */
   jump(direction: -1 | 1): boolean {
     if (!this.active) return false;
@@ -101,6 +101,11 @@ export class SpeechPlayer {
     // An utterance cannot be stopped on the server, so every request abandoned by a jump still
     // takes its turn there. Pressing Next three times in a row must ask for one piece, not three:
     // the new block is shown at once and its audio is requested once the jumping pauses.
+    // Choosing where to listen next is a request to listen: a jump while paused resumes.
+    if (this.paused) {
+      this.paused = false;
+      void this.ctx?.resume();
+    }
     this.index = target;
     this.hooks.onSegment(this.segments[target]!);
     this.refresh();
