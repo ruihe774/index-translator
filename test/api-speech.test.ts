@@ -7,7 +7,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type App, startApp } from "../src/app";
-import { nativeSpeech } from "../src/speech";
+import { NativeSpeech, nativeSpeech } from "../src/speech";
 import {
   config,
   launcher,
@@ -124,6 +124,38 @@ describe("POST /speech", () => {
     expect(mockSpeech.aborted).toBe(1);
   });
 
+  test("an abandoned utterance keeps its slot until the engine finishes it", async () => {
+    mockSpeech.ignoreAbort = true;
+    mockSpeech.delayMs = 250;
+    const gone = new AbortController();
+    const abandoned = speak({ text: "abandoned", lang: "en" }, { signal: gone.signal }).catch(() => null);
+    await Bun.sleep(30);
+    gone.abort();
+    await abandoned;
+    expect(mockSpeech.running).toBe(1);
+    // One waiting is allowed (MAX_QUEUE is 1); a third is refused while the abandoned one runs.
+    const waiting = speak({ text: "waits", lang: "en" });
+    await Bun.sleep(30);
+    const refused = await speak({ text: "refused", lang: "en" });
+    expect(refused.status).toBe(429);
+    expect((await waiting).status).toBe(200);
+    expect(mockSpeech.running).toBe(0);
+    expect(mockSpeech.requests.map((r) => r.text)).toEqual(["abandoned", "waits"]);
+  });
+
+  test("a request aborted while waiting in line is never sent to the engine", async () => {
+    mockSpeech.delayMs = 150;
+    const first = speak({ text: "first", lang: "en" });
+    const gone = new AbortController();
+    const queued = speak({ text: "queued", lang: "en" }, { signal: gone.signal }).catch(() => null);
+    await Bun.sleep(30);
+    gone.abort();
+    await queued;
+    expect((await first).status).toBe(200);
+    expect((await speak({ text: "after", lang: "en" })).status).toBe(200);
+    expect(mockSpeech.requests.map((r) => r.text)).toEqual(["first", "after"]);
+  });
+
   test("does not hold the translation queue", async () => {
     mockSpeech.delayMs = 150;
     const speaking = speak({ text: "one", lang: "en" });
@@ -175,7 +207,11 @@ describe("the native speech engine without audio.cpp", () => {
     expect(speech.error).toContain("bun scripts/build_audiocpp.ts");
     expect(nativeSpeech(config({ speech: false })).error).toContain("SPEECH=0");
     const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
-    expect(speech.synthesize(request, new AbortController().signal)).rejects.toThrow("not installed");
+    let released = 0;
+    await expect(speech.synthesize(request, new AbortController().signal, () => released++)).rejects.toThrow(
+      "not installed",
+    );
+    expect(released).toBe(1);
   });
 
   test("a voice is a .wav file in the voices directory", async () => {
@@ -188,6 +224,83 @@ describe("the native speech engine without audio.cpp", () => {
         { id: "narrator_two", name: "Narrator two" },
       ]);
       expect(await nativeSpeech(config({ voicesDir: join(dir, "missing") })).voices()).toEqual([]);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+});
+
+describe("NativeSpeech with a fake worker", () => {
+  /** A worker that records what it is sent and answers when the test says so. */
+  function fakeWorker() {
+    const posted: any[] = [];
+    const fake: any = {
+      posted,
+      onmessage: null,
+      onerror: null,
+      postMessage: (m: any) => posted.push(m),
+      addEventListener() {},
+      terminate() {},
+      reply: (req: number, extra: object) => fake.onmessage({ data: { req, ...extra } }),
+    };
+    return fake;
+  }
+  const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
+  const tick = () => Bun.sleep(5);
+
+  async function setup() {
+    const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
+    await writeFile(join(dir, `libaudiocpp.${process.platform === "darwin" ? "dylib" : "so"}`), "");
+    const worker = fakeWorker();
+    const speech = new NativeSpeech(config({ speech: true, audioDir: dir, speechModelDir: dir }), () => worker);
+    return { dir, worker, speech };
+  }
+  const kinds = (w: any) => w.posted.map((m: any) => m.type);
+
+  test("an utterance aborted while the model loads is never posted", async () => {
+    const { dir, worker, speech } = await setup();
+    try {
+      const gone = new AbortController();
+      let released = 0;
+      const result = speech.synthesize(request, gone.signal, () => released++);
+      const rejected = result.then(
+        () => null,
+        (e) => e,
+      );
+      await tick();
+      expect(kinds(worker)).toEqual(["load"]);
+      gone.abort();
+      expect(await rejected).toBe(gone.signal.reason);
+      expect(released).toBe(1);
+      worker.reply(worker.posted[0].req, { type: "ok" });
+      await tick();
+      expect(kinds(worker)).toEqual(["load"]);
+      expect(released).toBe(1);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
+  test("a posted utterance that is aborted is released only when the worker is done", async () => {
+    const { dir, worker, speech } = await setup();
+    try {
+      const gone = new AbortController();
+      let released = 0;
+      const result = speech.synthesize(request, gone.signal, () => released++);
+      const rejected = result.then(
+        () => null,
+        (e) => e,
+      );
+      await tick();
+      worker.reply(worker.posted[0].req, { type: "ok" });
+      await tick();
+      expect(kinds(worker)).toEqual(["load", "synthesize"]);
+      gone.abort();
+      expect(await rejected).toBe(gone.signal.reason);
+      expect(released).toBe(0);
+      worker.reply(worker.posted[1].req, { type: "audio", wav: new ArrayBuffer(4) });
+      await tick();
+      expect(released).toBe(1);
     } finally {
       await rm(dir, { recursive: true });
     }

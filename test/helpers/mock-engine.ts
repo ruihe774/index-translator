@@ -174,6 +174,10 @@ export const mockSpeech = {
   /** Every utterance asked for. */
   requests: [] as SpeechRequest[],
   aborted: 0,
+  /** Like the real engine: an utterance that started runs to its end, and `done` waits for it. */
+  ignoreAbort: false,
+  /** Utterances the engine is working on right now, whoever still waits for them. */
+  running: 0,
 };
 
 export function resetMockSpeech(): void {
@@ -184,6 +188,8 @@ export function resetMockSpeech(): void {
   mockSpeech.failWith = undefined;
   mockSpeech.requests.length = 0;
   mockSpeech.aborted = 0;
+  mockSpeech.ignoreAbort = false;
+  mockSpeech.running = 0;
 }
 
 /** Stands in for the audio.cpp speech engine: answers every utterance with silence. */
@@ -201,21 +207,39 @@ export const speechLauncher: SpeechLauncher = () => ({
     mockSpeech.voices.push(voice);
     return voice;
   },
-  async synthesize(req, signal) {
-    mockSpeech.requests.push(req);
-    if (mockSpeech.delayMs) {
-      await Promise.race([
-        Bun.sleep(mockSpeech.delayMs),
-        new Promise((wake) => signal.addEventListener("abort", wake)),
-      ]);
-    }
+  async synthesize(req, signal, done) {
     if (signal.aborted) {
+      done();
       mockSpeech.aborted++;
       signal.throwIfAborted();
     }
-    if (mockSpeech.failWith) throw new SpeechError(mockSpeech.failWith);
-    mockSpeech.state = "ready";
-    return silentWav(mockSpeech.audioSeconds);
+    mockSpeech.requests.push(req);
+    mockSpeech.running++;
+    const work = (async () => {
+      try {
+        if (mockSpeech.delayMs) {
+          const abort = mockSpeech.ignoreAbort
+            ? new Promise(() => {})
+            : new Promise((wake) => signal.addEventListener("abort", wake));
+          await Promise.race([Bun.sleep(mockSpeech.delayMs), abort]);
+        }
+        if (signal.aborted && !mockSpeech.ignoreAbort) {
+          mockSpeech.aborted++;
+          signal.throwIfAborted();
+        }
+        if (mockSpeech.failWith) throw new SpeechError(mockSpeech.failWith);
+        mockSpeech.state = "ready";
+        return silentWav(mockSpeech.audioSeconds);
+      } finally {
+        mockSpeech.running--;
+        done();
+      }
+    })();
+    if (!mockSpeech.ignoreAbort) return work;
+    return new Promise((resolve, reject) => {
+      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      work.then(resolve, reject);
+    });
   },
   async stop() {},
 });

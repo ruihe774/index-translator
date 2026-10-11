@@ -627,17 +627,24 @@ export async function startApp(
 
   async function speak(input: SpeechRequest, signal: AbortSignal): Promise<Response> {
     const ticket = enterQueue(undefined, speechQueue);
-    const onAbort = () => ticket.leave();
+    // Aborted while waiting: leave the line. Once the utterance is handed to the engine the slot is
+    // kept, because the engine cannot stop it; the engine's `done` gives it up, so abandoned
+    // utterances count against the queue instead of piling up behind it.
+    let handed = false;
+    const onAbort = () => {
+      if (!handed) ticket.leave();
+    };
     signal.addEventListener("abort", onAbort);
     try {
       if (!(await ticket.ready) || signal.aborted) throw cancelled();
-      const wav = await speech.synthesize(input, signal);
+      handed = true;
+      const wav = await speech.synthesize(input, signal, () => ticket.leave());
       return new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store" } });
     } catch (e) {
+      if (!handed) ticket.leave();
       throw signal.aborted ? cancelled() : e;
     } finally {
       signal.removeEventListener("abort", onAbort);
-      ticket.leave();
     }
   }
 

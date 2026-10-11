@@ -61,8 +61,14 @@ export interface Speech {
   voices(): Promise<Voice[]>;
   /** Keeps a WAV recording as a voice until the server stops. Rejects with SpeechError if it is not a WAV. */
   addVoice(name: string, wav: ArrayBuffer): Promise<Voice>;
-  /** One utterance as a WAV file. Rejects with SpeechError, or the signal's reason when aborted. */
-  synthesize(req: SpeechRequest, signal: AbortSignal): Promise<ArrayBuffer>;
+  /**
+   * One utterance as a WAV file. Rejects with SpeechError, or the signal's reason when aborted,
+   * which happens at once even if the engine cannot stop the utterance.
+   * `done` is called exactly once, when the engine no longer works on the utterance: it finished,
+   * failed, or was never started because the signal aborted first. The caller keeps its queue slot
+   * until then, so abandoned work still counts against the queue.
+   */
+  synthesize(req: SpeechRequest, signal: AbortSignal, done: () => void): Promise<ArrayBuffer>;
   stop(): Promise<void>;
 }
 
@@ -72,7 +78,14 @@ type Send<T> = T extends unknown ? Omit<T, "req"> : never;
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
-class NativeSpeech implements Speech {
+/** Starts the thread that owns libaudiocpp; replaceable in tests. */
+export type SpeechWorkerFactory = () => Worker;
+
+const defaultWorker: SpeechWorkerFactory = () =>
+  // Not referenced: the server decides when the process ends, not an idle speech thread.
+  new Worker(new URL("./speech-worker.ts", import.meta.url).href, { ref: false });
+
+export class NativeSpeech implements Speech {
   /** The thread that owns libaudiocpp, started by the first request. */
   private worker: Worker | null = null;
   private waiting = new Map<number, (reply: SpeechWorkerReply) => void>();
@@ -89,7 +102,10 @@ class NativeSpeech implements Speech {
   private uploads = new Map<string, { name: string; path: string }>();
   private readonly uploadDir = join(tmpdir(), `index-translator-voices-${process.pid}`);
 
-  constructor(private cfg: Config) {}
+  constructor(
+    private cfg: Config,
+    private makeWorker: SpeechWorkerFactory = defaultWorker,
+  ) {}
 
   /** Why speech cannot run at all, checked each time so an install does not need a restart. */
   private missing(): string | undefined {
@@ -162,8 +178,7 @@ class NativeSpeech implements Speech {
   }
 
   private startWorker(): Worker {
-    // Not referenced: the server decides when the process ends, not an idle speech thread.
-    const worker = new Worker(new URL("./speech-worker.ts", import.meta.url).href, { ref: false });
+    const worker = this.makeWorker();
     worker.onmessage = (event: MessageEvent<SpeechWorkerReply>) => this.waiting.get(event.data.req)?.(event.data);
     // If the thread dies its model is gone with it; the next request starts another.
     const lost = (reason: string) => {
@@ -227,10 +242,12 @@ class NativeSpeech implements Speech {
     this.idle.unref();
   }
 
-  private async run(req: SpeechRequest, signal: AbortSignal): Promise<ArrayBuffer> {
+  /** `posted` is set once the utterance has been handed to the worker, which cannot take it back. */
+  private async run(req: SpeechRequest, signal: AbortSignal, posted: { value: boolean }): Promise<ArrayBuffer> {
     await this.ready();
-    // Gone while the model was loading: the utterance is not started.
+    // Gone while the model was loading: the utterance is never sent.
     signal.throwIfAborted();
+    posted.value = true;
     const reply = await this.call({
       type: "synthesize",
       text: req.text,
@@ -242,20 +259,38 @@ class NativeSpeech implements Speech {
     return reply.wav;
   }
 
-  synthesize(req: SpeechRequest, signal: AbortSignal): Promise<ArrayBuffer> {
+  synthesize(req: SpeechRequest, signal: AbortSignal, done: () => void): Promise<ArrayBuffer> {
+    let released = false;
+    const release = () => {
+      if (released) return;
+      released = true;
+      done();
+    };
     const missing = this.missing();
-    if (missing) return Promise.reject(new SpeechError(missing));
-    if (signal.aborted) return Promise.reject(signal.reason);
+    if (missing) {
+      release();
+      return Promise.reject(new SpeechError(missing));
+    }
+    if (signal.aborted) {
+      release();
+      return Promise.reject(signal.reason);
+    }
     clearTimeout(this.idle);
     this.pending++;
-    const work = this.run(req, signal).finally(() => {
+    const posted = { value: false };
+    const work = this.run(req, signal, posted).finally(() => {
       this.pending--;
       this.unloadWhenIdle();
+      release();
     });
     // The library cannot stop an utterance. An aborted request is answered at once; the worker
-    // finishes the utterance, nobody receives it, and whatever comes next waits behind it.
+    // finishes a posted utterance and nobody receives it, so `done` waits for the worker. An
+    // utterance not posted yet is never sent, and its `done` need not wait for the model to load.
     return new Promise((resolve, reject) => {
-      const onAbort = () => reject(signal.reason);
+      const onAbort = () => {
+        if (!posted.value) release();
+        reject(signal.reason);
+      };
       signal.addEventListener("abort", onAbort, { once: true });
       work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
     });

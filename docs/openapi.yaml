@@ -38,7 +38,10 @@ info:
     one utterance, returned whole; a client reads a document by sending it sentence by sentence.
     The speech model is loaded by the first request, which therefore takes a few seconds longer,
     and is unloaded again after a while without requests. Speech requests have their own queue of
-    the same size.
+    the same size. An utterance cannot be stopped once the engine has started it: closing the
+    connection answers at once, but the utterance still occupies the speech slot until it is
+    finished, so a new request may wait behind it or get `429`. An utterance not yet started is
+    dropped.
 
     **Errors.** Every error response has the same JSON envelope, see `Error`.
 servers:

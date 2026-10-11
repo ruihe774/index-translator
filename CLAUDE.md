@@ -79,8 +79,11 @@ No npm runtime dependencies; no build step for the web app.
   libllama loaded and dies with an undefined symbol, or alone finds no backend because it looks
   for them beside the `bun` executable.
 - An utterance cannot be stopped: the C API has no abort. A request whose client goes away is
-  answered at once and leaves its queue slot; the worker finishes the utterance, which nobody
-  receives, and the next one waits behind it (a few seconds at most, given the client's pieces).
+  answered at once, but keeps its queue slot until the worker has finished the utterance
+  (`Speech.synthesize`'s `done` callback), so abandoned work counts against `MAX_QUEUE` and
+  yields `429 queue_full` instead of piling up. An utterance whose client left before it was
+  posted to the worker (waiting for the model, or for the slot) is never sent and frees its slot
+  at once.
 - Speech has its own single-slot queue (`MAX_QUEUE` waiting) and never holds the translation
   queue: a translation and a synthesis may run on the GPU at the same time.
 - `POST /speech` speaks the text as given: one request, one utterance, at most 1,000 characters,
