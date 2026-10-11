@@ -73,7 +73,7 @@ async function upstreamFetch(req: Request): Promise<Response> {
           timings: { prompt_ms: 12.4, predicted_ms: 99.6, predicted_per_second: 70.123 },
         });
         yield sse("[DONE]");
-      })(),
+      })() as never, // Bun accepts async iterables; the DOM lib types do not
       { headers: { "content-type": "text/event-stream" } },
     );
   }

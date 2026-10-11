@@ -5,11 +5,16 @@
   "scripts": {
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p public/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
-    "e2e": "playwright test"
+    "e2e": "playwright test",
+    "lint:css": "bun scripts/lint_css.ts"
   },
   "devDependencies": {
+    "@axe-core/playwright": "^4.13.0",
     "@playwright/test": "1.56.1",
     "@types/bun": "^1.4.2",
+    "browserslist": "^4.29.3",
+    "doiuse": "^6.0.6",
+    "postcss": "^8.5.29",
     "typescript": "^7.0.2"
   }
 }

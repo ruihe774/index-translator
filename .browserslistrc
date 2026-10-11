@@ -1,0 +1,9 @@
+# Recent, non-rare browsers (about two years back). `bun run lint:css` checks public/style.css
+# against this list; update it together with the CSS features the stylesheet uses.
+chrome >= 123
+edge >= 123
+firefox >= 120
+firefox esr
+safari >= 17.5
+ios_saf >= 17.5
+samsung >= 25

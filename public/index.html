@@ -11,96 +11,109 @@
   <body>
     <a class="skip-link" href="#main">Skip to main content</a>
 
-    <header>
+    <header class="site-header">
       <h1>Index Translator</h1>
+      <p id="engine" role="status" class="engine">Checking the translation engine…</p>
     </header>
 
     <main id="main" tabindex="-1">
-      <p id="engine" role="status" class="engine">Checking the translation engine…</p>
-
       <form id="form" novalidate>
-        <div class="languages">
-          <div class="field">
-            <label for="from">From</label>
-            <select id="from" name="from"></select>
-          </div>
-          <div class="field">
-            <label for="to">To</label>
-            <select id="to" name="to"></select>
-          </div>
+        <div class="workspace">
+          <section class="panel source" aria-labelledby="source-heading">
+            <h2 id="source-heading" class="sr-only">Source text</h2>
+            <div class="field language">
+              <label for="from">From</label>
+              <select id="from" name="from"></select>
+            </div>
+
+            <div class="field grow">
+              <label for="text">Text to translate (required)</label>
+              <textarea id="text" name="text" rows="10" required aria-required="true" aria-describedby="count text-error" dir="auto"></textarea>
+              <p id="text-error" class="error" hidden></p>
+            </div>
+
+            <div class="panel-foot">
+              <p id="count" class="hint"></p>
+              <div class="actions">
+                <button type="button" id="stop" hidden>Stop</button>
+                <button type="submit" id="translate" class="primary">Translate</button>
+              </div>
+            </div>
+          </section>
+
+          <section class="panel result" aria-labelledby="result-heading">
+            <h2 id="result-heading" class="sr-only">Translation</h2>
+            <div class="field language">
+              <label for="to">To</label>
+              <select id="to" name="to"></select>
+            </div>
+
+            <p id="progress" role="status" class="progress"></p>
+            <p id="error" role="alert" class="error-banner"></p>
+
+            <div class="output-area grow">
+              <div id="output" class="output" dir="auto"></div>
+              <p id="placeholder" class="placeholder">The translation appears here.</p>
+            </div>
+
+            <ul id="notes" class="notes"></ul>
+            <div class="panel-foot">
+              <p id="meta" class="hint"></p>
+              <button type="button" id="copy" hidden>Copy translation</button>
+            </div>
+          </section>
         </div>
 
-        <div class="field">
-          <label for="text">Text to translate (required)</label>
-          <textarea id="text" name="text" rows="10" required aria-required="true" aria-describedby="count text-error" dir="auto"></textarea>
-          <p id="count" class="hint"></p>
-          <p id="text-error" class="error" hidden></p>
-        </div>
-
-        <fieldset class="models">
-          <legend>Model</legend>
-          <div class="choice">
-            <input type="radio" id="model-auto" name="model" value="auto" checked />
-            <label for="model-auto">Automatic (by text length)</label>
-          </div>
-          <div class="choice">
-            <input type="radio" id="model-chat" name="model" value="index-translate-9b" />
-            <label for="model-chat">Index-Translate-9B</label>
-          </div>
-          <div class="choice">
-            <input type="radio" id="model-document" name="model" value="index-nailong-9b" />
-            <label for="model-document">Index-NativeLong-9B</label>
-          </div>
-        </fieldset>
-        <p id="selection" class="selection"></p>
-
-        <details id="advanced">
-          <summary>Glossary and constraints</summary>
-          <fieldset id="options" class="options">
-            <p id="options-note" class="hint">
-              Available with Index-Translate-9B only. Index-NativeLong-9B takes none of these.
-            </p>
-            <div class="field">
-              <label for="glossary">Glossary</label>
-              <textarea id="glossary" name="glossary" rows="3" aria-describedby="glossary-hint glossary-error"></textarea>
-              <p id="glossary-hint" class="hint">One entry per line: source term = target term.</p>
-              <p id="glossary-error" class="error" hidden></p>
+        <section class="settings" aria-labelledby="settings-heading">
+          <h2 id="settings-heading">Model and options</h2>
+          <fieldset class="models">
+            <legend>Model</legend>
+            <div class="choice">
+              <input type="radio" id="model-auto" name="model" value="auto" checked />
+              <label for="model-auto">Automatic (by text length)</label>
             </div>
-            <div class="field">
-              <label for="hard">Hard constraints</label>
-              <textarea id="hard" name="hard" rows="2" aria-describedby="hard-hint"></textarea>
-              <p id="hard-hint" class="hint">One per line, for example keeping placeholders or JSON unchanged. Chinese works best.</p>
+            <div class="choice">
+              <input type="radio" id="model-chat" name="model" value="index-translate-9b" />
+              <label for="model-chat">Index-Translate-9B</label>
             </div>
-            <div class="field">
-              <label for="soft">Soft constraints</label>
-              <textarea id="soft" name="soft" rows="2" aria-describedby="soft-hint"></textarea>
-              <p id="soft-hint" class="hint">One per line, for example tone or register. Chinese works best.</p>
-            </div>
-            <div class="field">
-              <label for="genre">Genre</label>
-              <input type="text" id="genre" name="genre" maxlength="64" aria-describedby="genre-hint" />
-              <p id="genre-hint" class="hint">For example <span lang="zh">学术论文</span> or <span lang="zh">字幕</span>. Used only together with a glossary or constraints.</p>
+            <div class="choice">
+              <input type="radio" id="model-document" name="model" value="index-nailong-9b" />
+              <label for="model-document">Index-NativeLong-9B</label>
             </div>
           </fieldset>
-        </details>
+          <p id="selection" class="selection"></p>
 
-        <div class="actions">
-          <button type="submit" id="translate" class="primary">Translate</button>
-          <button type="button" id="stop" hidden>Stop</button>
-        </div>
+          <details id="advanced">
+            <summary>Glossary and constraints</summary>
+            <fieldset id="options" class="options">
+              <p id="options-note" class="hint">
+                Available with Index-Translate-9B only. Index-NativeLong-9B takes none of these.
+              </p>
+              <div class="field">
+                <label for="glossary">Glossary</label>
+                <textarea id="glossary" name="glossary" rows="3" aria-describedby="glossary-hint glossary-error"></textarea>
+                <p id="glossary-hint" class="hint">One entry per line: source term = target term.</p>
+                <p id="glossary-error" class="error" hidden></p>
+              </div>
+              <div class="field">
+                <label for="hard">Hard constraints</label>
+                <textarea id="hard" name="hard" rows="2" aria-describedby="hard-hint"></textarea>
+                <p id="hard-hint" class="hint">One per line, for example keeping placeholders or JSON unchanged. Chinese works best.</p>
+              </div>
+              <div class="field">
+                <label for="soft">Soft constraints</label>
+                <textarea id="soft" name="soft" rows="2" aria-describedby="soft-hint"></textarea>
+                <p id="soft-hint" class="hint">One per line, for example tone or register. Chinese works best.</p>
+              </div>
+              <div class="field">
+                <label for="genre">Genre</label>
+                <input type="text" id="genre" name="genre" maxlength="64" aria-describedby="genre-hint" />
+                <p id="genre-hint" class="hint">For example <span lang="zh">学术论文</span> or <span lang="zh">字幕</span>. Used only together with a glossary or constraints.</p>
+              </div>
+            </fieldset>
+          </details>
+        </section>
       </form>
-
-      <p id="progress" role="status" class="progress"></p>
-      <p id="error" role="alert" class="error-banner"></p>
-
-      <section aria-labelledby="result-heading" class="result">
-        <h2 id="result-heading">Translation</h2>
-        <div id="output" class="output" dir="auto"></div>
-        <p id="placeholder" class="hint">The translation appears here.</p>
-        <p id="meta" class="hint"></p>
-        <ul id="notes" class="notes"></ul>
-        <button type="button" id="copy" hidden>Copy translation</button>
-      </section>
     </main>
 
     <footer>
