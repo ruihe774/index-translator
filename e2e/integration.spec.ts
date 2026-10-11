@@ -183,6 +183,48 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   expect(await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText())).toBe(md);
 });
 
+test("output links ask for confirmation, with other wording for links that do not pair with the source", async ({
+  app,
+}) => {
+  const source = "[A](https://a.example)\n\n[B](https://b.example)\n\n[C](https://c.example)";
+  const md = "[甲](https://a.example)\n\n[乙](https://a.example)\n\n[丙](https://evil.example)";
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: md }],
+      ["done", done],
+    ]),
+  );
+  await run(app, source);
+  await expect(app.meta).toContainText("generated");
+
+  const dialog = app.page.locator("dialog.link-dialog");
+  const open = app.page.evaluate(() => {
+    const w = globalThis as any;
+    w.opened = [];
+    w.open = (url: string) => w.opened.push(url);
+  });
+  await open;
+
+  await app.output.getByRole("link", { name: "甲" }).click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading")).toHaveText("Open this link?");
+  await expect(dialog).toContainText("https://a.example");
+  await dialog.getByRole("button", { name: "Cancel" }).click();
+  await expect(dialog).toBeHidden();
+  expect(await app.page.evaluate(() => (globalThis as any).opened)).toEqual([]);
+
+  await app.output.getByRole("link", { name: "乙" }).click();
+  await expect(dialog.getByRole("heading")).toHaveText("Open this unverified link?");
+  await dialog.getByRole("button", { name: "Open anyway" }).click();
+  await expect(dialog).toBeHidden();
+  expect(await app.page.evaluate(() => (globalThis as any).opened)).toEqual(["https://a.example/"]);
+
+  // A target absent from the source is disabled and opens nothing.
+  await expect(app.output.locator("a[aria-disabled=true]")).toHaveText(/丙/);
+});
+
 test("plain source: Markdown-like output stays plain text", async ({ app }) => {
   await stubTranslate(
     app,

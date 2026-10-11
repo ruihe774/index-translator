@@ -76,3 +76,26 @@ export const LINK_NOTE: Record<LinkProblem, string> = {
   mismatch:
     "This link target differs from the source link in the matching paragraph, or the paragraphs could not be matched.",
 };
+
+export interface LinkPrompt {
+  title: string;
+  message: string;
+  /** Label of the confirming button. */
+  open: string;
+}
+
+/** What the confirm dialog says before a link is opened; `paired` when the check found its target in the source. */
+export function linkPrompt(paired: boolean): LinkPrompt {
+  return paired
+    ? {
+        title: "Open this link?",
+        message: "The target matches a link in the matching paragraph of the source. It opens in a new tab.",
+        open: "Open link",
+      }
+    : {
+        title: "Open this unverified link?",
+        message:
+          "This link could not be matched with the source: the translation may have changed its target, the paragraphs could not be paired, or the check has not run. Open it only if you trust the address. It opens in a new tab.",
+        open: "Open anyway",
+      };
+}

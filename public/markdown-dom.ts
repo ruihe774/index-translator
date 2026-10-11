@@ -222,7 +222,10 @@ export function checkLinks(root: HTMLElement, ref: LinkReference) {
     const href = a.getAttribute("href") ?? "";
     const line = Number(a.closest<HTMLElement>("[data-line]")?.dataset.line ?? 0);
     const problem = linkProblem(ref, href, line);
-    if (!problem) continue;
+    if (!problem) {
+      a.dataset.linkPaired = "true";
+      continue;
+    }
     a.dataset.linkProblem = problem;
     a.title = LINK_NOTE[problem];
     const note = el("span", [document.createTextNode(` (${LINK_NOTE[problem]})`)], "sr-only");

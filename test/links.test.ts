@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test";
-import { linkProblem, linkReference } from "../public/links.ts";
+import { linkProblem, linkPrompt, linkReference } from "../public/links.ts";
 import { alignBlocks } from "../public/paragraphs.ts";
 
 const source = "[A](https://a.example)\n\n[B](https://b.example)\n\nplain";
@@ -21,6 +21,14 @@ test("a target absent from the source is missing", () => {
   const out = "[甲](https://evil.example)\n\n乙\n\n文本";
   const ref = linkReference(source, alignBlocks(source, out));
   expect(linkProblem(ref, "https://evil.example", 0)).toBe("missing");
+});
+
+test("the confirm dialog words paired and unpaired links differently", () => {
+  const paired = linkPrompt(true);
+  const unpaired = linkPrompt(false);
+  expect(paired.title).not.toBe(unpaired.title);
+  expect(paired.message).not.toBe(unpaired.message);
+  expect(paired.open).not.toBe(unpaired.open);
 });
 
 test("failed paragraph matching marks known targets as mismatch", () => {

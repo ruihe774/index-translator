@@ -3,6 +3,7 @@
 // reads the form, calls the API and writes the results to the page.
 
 import { type ApiErrorBody, describeError } from "./errors.js";
+import { confirmLink } from "./link-dialog.js";
 import { type LinkReference, linkReference } from "./links.js";
 import { looksLikeMarkdown } from "./markdown.js";
 import { checkLinks, createOutput, type OutputView, renderText } from "./markdown-dom.js";
@@ -324,6 +325,19 @@ function showOutput() {
   }
 }
 
+/** Output links open only after the dialog is confirmed; its wording depends on the link check. */
+function onOutputLink(e: MouseEvent) {
+  const a = (e.target as Element).closest<HTMLAnchorElement>("a[href]");
+  if (!a || !outputEl.contains(a) || (e.type === "auxclick" && e.button !== 1)) return;
+  e.preventDefault();
+  const href = a.getAttribute("href") ?? "";
+  void confirmLink(href, a.dataset.linkPaired === "true").then((ok) => {
+    if (ok) window.open(a.href, "_blank", "noopener,noreferrer");
+  });
+}
+outputEl.addEventListener("click", onOutputLink);
+outputEl.addEventListener("auxclick", onOutputLink);
+
 /** Set when a translation ends: what the output's links are checked against. */
 let linkCheck: { translation: string; ref: LinkReference } | null = null;
 
@@ -539,12 +553,7 @@ async function translate() {
     const alignment = done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
     if (alignment) synced = { source: text, translation, alignment };
     setMeta(metaLine(sel.model, done));
-    if (markdown) {
-      // Checked on the finished text; the output element is rendered in full first.
-      output?.finish();
-      linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
-      applyLinkCheck();
-    }
+    if (markdown) linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
   } catch (e) {
     if (stopped) {
       showInterruption(true);
@@ -561,6 +570,8 @@ async function translate() {
     }
   } finally {
     output?.finish();
+    // After the last render, which rebuilds the open tail and would drop the marks.
+    applyLinkCheck();
     running = null;
     stopBtn.onclick = null;
     const hadFocus = document.activeElement === stopBtn || document.activeElement === document.body;
