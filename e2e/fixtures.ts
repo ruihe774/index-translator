@@ -14,7 +14,7 @@ export interface MockKnobs {
 }
 
 export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs">> {
-  requests: any[];
+  requests: { prompt: string; maxTokens: number }[];
   aborted: number;
   launches: string[];
 }
@@ -26,7 +26,7 @@ export interface Mock {
   unload(): Promise<void>;
 }
 
-/** The think block llama-server streams before the answer; the server strips it. */
+/** The think block a model may put before the answer; the server strips it. */
 export const THINK = "<think>\n\n</think>\n\n";
 
 export const CHAT = "index-translate-9b";

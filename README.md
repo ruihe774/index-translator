@@ -18,9 +18,10 @@ bun scripts/fetch_llama.ts      # translation engine (llama.cpp, Vulkan)
 uv run scripts/fetch_models.py  # the two translation models
 ```
 
-You need [Bun](https://bun.sh), [uv](https://docs.astral.sh/uv/) and a GPU with a working Vulkan
-driver. It was tested on an AMD Radeon RX 9070 (16 GiB). Without a usable GPU, set `GPU_LAYERS=0`
-to run on the CPU, which is much slower.
+You need [Bun](https://bun.sh), [uv](https://docs.astral.sh/uv/), the C library headers (package
+`libc6-dev` on Debian and Ubuntu, `glibc-devel` on Fedora; already there if a C compiler is
+installed) and a GPU with a working Vulkan driver. It was tested on an AMD Radeon RX 9070 (16 GiB).
+Without a usable GPU, set `GPU_LAYERS=0` to run on the CPU, which is much slower.
 
 ## Translate text
 
@@ -91,9 +92,7 @@ PORT=8080 bun src/server.ts
 | `HOST` | `127.0.0.1` | Address to listen on. The app has no login, so keep it on `127.0.0.1` unless you put it behind a proxy. |
 | `DEFAULT_MODEL` | `index-translate-9b` | Model loaded at startup |
 | `GPU_LAYERS` | `all` | Layers to run on the GPU; `0` runs on the CPU |
+| `LLAMA_THREADS` | half the CPU threads | CPU threads for the engine; matters when running on the CPU |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 
 Only one translation runs at a time. Other requests wait in line.
-
-If the app is killed with `kill -9`, the translation engine it started keeps running and holding
-GPU memory. Stop it manually in that case. `Ctrl+C` stops both.

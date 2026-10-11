@@ -1,4 +1,4 @@
-// End to end: the web app in a real browser against the real server, with the mock llama-server.
+// End to end: the web app in a real browser against the real server, with the mock engine.
 
 import { CHAT, DOCUMENT, THINK, expect, test } from "./fixtures";
 
@@ -26,7 +26,7 @@ test("translates short text with the chat model and shows the result", async ({ 
 
   const { requests } = await mock.state();
   expect(requests).toHaveLength(1);
-  expect(JSON.stringify(requests[0].messages)).toContain("Hello, world");
+  expect(requests[0]!.prompt).toContain("Hello, world");
 });
 
 test("streams the translation as it arrives and lets the user stop it", async ({ app, mock }) => {
@@ -101,8 +101,8 @@ test("a glossary reaches the engine and a bad glossary line is rejected in the p
   await app.translate.click();
   await expect(app.progress).toHaveText("Done.");
   const { requests } = await mock.state();
-  expect(JSON.stringify(requests[0].messages)).toContain("cat");
-  expect(JSON.stringify(requests[0].messages)).toContain("猫");
+  expect(requests[0]!.prompt).toContain("cat");
+  expect(requests[0]!.prompt).toContain("猫");
 });
 
 test("a long English text selects the document model, swaps the engine and warns on lost paragraphs", async ({ app, mock }) => {

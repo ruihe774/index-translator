@@ -1,9 +1,9 @@
 // Server for the Playwright tests: the real app (routes, static files, queue, engine supervisor)
-// on top of the in-process mock llama-server from test/helpers/mock-engine.ts, so no GPU or model
-// files are needed.
+// on top of the fake models from test/helpers/mock-engine.ts, so no GPU, libllama or model files
+// are needed.
 //
 // A second, control server lets a test script what the mock engine says:
-//   GET    /mock           current knobs and the upstream requests seen so far
+//   GET    /mock           current knobs and the generations requested so far
 //   POST   /mock           set knobs: { chunks?, delayMs?, finish?, failWith?, failLaunch?, ready? }
 //   DELETE /mock           reset knobs and forget recorded requests
 //   POST   /mock/restart   unload the engine so the next request loads its model again

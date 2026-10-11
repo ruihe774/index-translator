@@ -1,9 +1,11 @@
-// llama-server lifecycle and the calls the backend needs from it: loading a model, token counting
-// and streamed generation. One model is loaded at a time; switching models restarts the engine.
+// The engine: one model at a time, loaded in-process through libllama (bun:ffi), with token
+// counting and streamed generation. Switching models frees the loaded one and loads the other.
+// The library runs on a worker thread (src/llama-worker.ts); this file is the server-thread side.
 
+import { availableParallelism } from "node:os";
 import { join } from "node:path";
-import type { Subprocess } from "bun";
 import type { Config } from "./config";
+import type { WorkerReply, WorkerRequest } from "./llama-worker";
 import type { ModelSpec } from "./models";
 
 export type EngineState = "stopped" | "loading" | "ready" | "error";
@@ -27,107 +29,170 @@ export type GenerationEvent =
 
 export class EngineError extends Error {}
 
-/** A running llama-server, as seen by the engine. */
+/** A loaded model, as seen by the engine. */
 export interface Running {
-  url: string;
-  /** Resolves with the exit code once the process is gone, for any reason. */
-  exited: Promise<number>;
-  /** Asks the process to stop; the engine waits on `exited`. */
+  /** Resolves once the model is gone: with `undefined` after stop(), otherwise with what went wrong. */
+  exited: Promise<string | undefined>;
+  /** Asks for the model to be freed; the engine waits on `exited`. */
   stop(): void;
+  /** Tokens a user message with this content occupies in the context, chat template included. */
+  countTokens(content: string): Promise<number>;
+  /** Answers one user message, greedily, with at most `maxTokens` tokens. Aborting rejects with the signal's reason. */
+  generate(content: string, maxTokens: number, signal?: AbortSignal): AsyncGenerator<GenerationEvent>;
 }
 
-/** Starts an engine for one model. Replaceable so tests can run without the binary or the weights. */
+/** Loads one model. Replaceable so tests can run without the library or the weights. */
 export type Launcher = (model: ModelSpec, cfg: Config) => Promise<Running>;
 
-// Tokens the chat template adds around the user message; replaced by a measured value once the model is up.
-const FALLBACK_TEMPLATE_OVERHEAD = 32;
-const LOAD_TIMEOUT_MS = 10 * 60_000;
+type Send<T> = T extends unknown ? Omit<T, "req"> : never;
 
-async function freePort(): Promise<number> {
-  const probe = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: () => new Response() });
-  const port = probe.port!;
-  await probe.stop(true);
-  return port;
+/** The worker thread that owns libllama, and the requests waiting on it. */
+class NativeWorker {
+  /** Resolves with the reason if the thread dies; every model it held is gone then. */
+  readonly lost: Promise<string>;
+
+  private worker: Worker;
+  private waiting = new Map<number, (reply: WorkerReply) => void>();
+  private lastReq = 0;
+  private lastModel = 0;
+
+  constructor(onLost: () => void) {
+    // Not referenced: the server decides when the process ends, not an idle engine thread.
+    this.worker = new Worker(new URL("./llama-worker.ts", import.meta.url).href, { ref: false });
+    this.worker.onmessage = (event: MessageEvent<WorkerReply>) => this.waiting.get(event.data.req)?.(event.data);
+    this.lost = new Promise((resolve) => {
+      const fail = (reason: string) => {
+        onLost();
+        resolve(reason);
+        for (const [req, deliver] of this.waiting) deliver({ type: "error", req, message: reason });
+      };
+      this.worker.onerror = (event) => fail(`the engine thread failed: ${event.message}`);
+      this.worker.addEventListener("close", () => fail("the engine thread exited"));
+    });
+  }
+
+  private send(msg: Send<WorkerRequest>, deliver: (reply: WorkerReply) => void): number {
+    const req = ++this.lastReq;
+    this.waiting.set(req, deliver);
+    this.worker.postMessage({ ...msg, req });
+    return req;
+  }
+
+  /** One request, one reply. */
+  private call(msg: Send<WorkerRequest>): Promise<WorkerReply> {
+    return new Promise((resolve, reject) => {
+      const req = this.send(msg, (reply) => {
+        this.waiting.delete(req);
+        if (reply.type === "error") reject(new EngineError(reply.message));
+        else resolve(reply);
+      });
+    });
+  }
+
+  async load(model: ModelSpec, cfg: Config): Promise<Running> {
+    const no = ++this.lastModel;
+    await this.call({
+      type: "load",
+      model: no,
+      options: {
+        dir: cfg.llamaDir,
+        path: join(cfg.modelsDir, model.file),
+        gpuLayers: cfg.gpuLayers,
+        ctxSize: cfg.ctxSize,
+        // Physical cores, roughly: hyperthreads do not help llama.cpp.
+        threads: cfg.threads || Math.max(1, Math.floor(availableParallelism() / 2)),
+      },
+    });
+
+    let finish!: (reason: string | undefined) => void;
+    const exited = new Promise<string | undefined>((resolve) => (finish = resolve));
+    void this.lost.then(finish);
+    return {
+      exited,
+      stop: () => void this.call({ type: "unload", model: no }).then(() => finish(undefined), finish),
+      countTokens: async (content) => {
+        const reply = await this.call({ type: "count", model: no, content });
+        if (reply.type !== "count") throw new EngineError(`unexpected ${reply.type} reply to a token count`);
+        return reply.tokens;
+      },
+      generate: (content, maxTokens, signal) => this.generate(no, content, maxTokens, signal),
+    };
+  }
+
+  private async *generate(model: number, content: string, maxTokens: number, signal?: AbortSignal): AsyncGenerator<GenerationEvent> {
+    signal?.throwIfAborted();
+    const replies: WorkerReply[] = [];
+    let wake: (() => void) | undefined;
+    const req = this.send({ type: "generate", model, content, maxTokens }, (reply) => {
+      replies.push(reply);
+      wake?.();
+    });
+    const onAbort = () => wake?.();
+    signal?.addEventListener("abort", onAbort);
+    let ended = false;
+    try {
+      for (;;) {
+        while (replies.length === 0 && !signal?.aborted) await new Promise<void>((resolve) => (wake = resolve));
+        signal?.throwIfAborted();
+        const reply = replies.shift()!;
+        if (reply.type === "delta") {
+          yield { type: "delta", text: reply.text };
+        } else if (reply.type === "done") {
+          ended = true;
+          yield { type: "done", finishReason: reply.finishReason, usage: reply.usage, timings: reply.timings };
+          return;
+        } else if (reply.type === "error") {
+          ended = true;
+          throw new EngineError(`generation failed: ${reply.message}`);
+        }
+      }
+    } finally {
+      signal?.removeEventListener("abort", onAbort);
+      this.waiting.delete(req);
+      // Aborted, or the consumer stopped reading: the worker gives up at its next token.
+      if (!ended) this.worker.postMessage({ type: "cancel", req } satisfies WorkerRequest);
+    }
+  }
 }
 
-export const launchLlamaServer: Launcher = async (model, cfg) => {
+let nativeWorker: NativeWorker | undefined;
+
+/** Loads the model with libllama on the engine thread, which is started on first use. */
+export const launchNative: Launcher = async (model, cfg) => {
   const modelPath = join(cfg.modelsDir, model.file);
   if (!(await Bun.file(modelPath).exists())) {
     throw new EngineError(`model not found at ${modelPath}; run: uv run scripts/fetch_models.py`);
   }
-  if (!(await Bun.file(cfg.llamaBin).exists())) {
-    throw new EngineError(`llama-server not found at ${cfg.llamaBin}; run: bun scripts/fetch_llama.ts`);
-  }
-  const port = cfg.llamaPort || (await freePort());
-
-  const child: Subprocess = Bun.spawn(
-    [
-      cfg.llamaBin,
-      "--model", modelPath,
-      "--alias", model.id,
-      "--host", "127.0.0.1",
-      "--port", String(port),
-      "--gpu-layers", cfg.gpuLayers,
-      "--ctx-size", String(cfg.ctxSize),
-      // One slot, so a single request may use the whole context window.
-      "--parallel", "1",
-      "--no-context-shift",
-      "--jinja",
-      "--chat-template-kwargs", '{"enable_thinking":false}',
-      "--no-webui",
-      "--offline",
-      ...cfg.llamaExtraArgs,
-    ],
-    { stdin: "ignore", stdout: "inherit", stderr: "inherit" },
-  );
-
-  return {
-    url: `http://127.0.0.1:${port}`,
-    exited: child.exited,
-    stop() {
-      child.kill("SIGTERM");
-      const killer = setTimeout(() => child.kill("SIGKILL"), 10_000);
-      void child.exited.then(() => clearTimeout(killer));
-    },
-  };
+  const worker = (nativeWorker ??= new NativeWorker(() => {
+    if (nativeWorker === worker) nativeWorker = undefined;
+  }));
+  return worker.load(model, cfg);
 };
-
-/** Streams a response body; a connection that drops (the engine died) becomes an EngineError. */
-async function* readBody(body: ReadableStream<Uint8Array>, signal?: AbortSignal): AsyncGenerator<Uint8Array> {
-  try {
-    yield* body;
-  } catch (e: any) {
-    if (signal?.aborted) throw e;
-    throw new EngineError(`llama-server connection lost: ${e?.message ?? e}`);
-  }
-}
 
 export class Engine {
   state: EngineState = "stopped";
-  /** The model whose engine is running or loading. */
+  /** The model that is loaded or loading. */
   loaded?: ModelSpec;
   error?: string;
-  templateOverhead = FALLBACK_TEMPLATE_OVERHEAD;
 
-  private baseUrl = "";
   private running?: Running;
   /** Bumped by every load() and unload(); a load that finds it changed has been superseded. */
   private epoch = 0;
 
   constructor(
     private cfg: Config,
-    private launch: Launcher = launchLlamaServer,
+    private launch: Launcher = launchNative,
   ) {}
 
   /**
-   * Makes `model` the loaded one, replacing any other engine. Callers must hold the queue slot,
-   * so no generation runs while the engine is being swapped.
+   * Makes `model` the loaded one, replacing any other. Callers must hold the queue slot, so no
+   * generation runs while the model is being swapped.
    */
   async load(model: ModelSpec): Promise<void> {
     if (this.state === "ready" && this.loaded?.id === model.id) return;
     // A client that gave up frees the queue slot while its load is still in flight, so a later load
-    // can start before this one ends. Whichever load is newest wins; an older one stops its own
-    // process and leaves the engine state alone.
+    // can start before this one ends. Whichever load is newest wins; an older one frees its own
+    // model and leaves the engine state alone.
     const epoch = ++this.epoch;
     await this.stopRunning();
     this.state = "loading";
@@ -141,19 +206,16 @@ export class Engine {
         throw new EngineError("the model load was superseded by a newer one");
       }
       this.running = running;
-      this.baseUrl = running.url;
-      void running.exited.then((code) => {
+      void running.exited.then((reason) => {
         if (this.running !== running) return;
         this.running = undefined;
         this.loaded = undefined;
         this.state = "error";
-        this.error = `llama-server exited with code ${code}`;
+        this.error = reason ?? "the model was unloaded";
         console.error(`[engine] ${this.error}`);
       });
-      await this.waitUntilReady(running);
-      this.templateOverhead = await this.measureTemplateOverhead();
       this.state = "ready";
-      console.error(`[engine] ${model.id} ready at ${this.baseUrl} (template overhead ${this.templateOverhead} tokens)`);
+      console.error(`[engine] ${model.id} ready`);
     } catch (e) {
       if (epoch !== this.epoch) throw e instanceof EngineError ? e : new EngineError(String(e));
       const message = e instanceof Error ? e.message : String(e);
@@ -165,7 +227,7 @@ export class Engine {
     }
   }
 
-  /** Stops the running engine, if any. */
+  /** Frees the loaded model, if any. */
   async unload(): Promise<void> {
     this.epoch++;
     await this.stopRunning();
@@ -175,133 +237,28 @@ export class Engine {
     const running = this.running;
     this.running = undefined;
     this.loaded = undefined;
-    this.baseUrl = "";
     this.state = "stopped";
     if (!running) return;
     running.stop();
     await running.exited;
   }
 
-  private async waitUntilReady(running: Running): Promise<void> {
-    const deadline = Date.now() + LOAD_TIMEOUT_MS;
-    while (this.running === running) {
-      if (Date.now() > deadline) throw new EngineError("timed out waiting for the model to load");
-      try {
-        const res = await fetch(`${this.baseUrl}/health`, { signal: AbortSignal.timeout(2000) });
-        if (res.ok) return;
-      } catch {
-        // not listening yet
-      }
-      await Bun.sleep(500);
-    }
-    throw new EngineError(this.error ?? "the engine stopped while loading");
-  }
-
-  private async measureTemplateOverhead(): Promise<number> {
-    try {
-      const res = await this.post("/apply-template", { messages: [{ role: "user", content: "" }] });
-      const { prompt } = (await res.json()) as { prompt: string };
-      return await this.tokenize(prompt, true);
-    } catch (e) {
-      console.error(`[engine] could not measure template overhead, assuming ${FALLBACK_TEMPLATE_OVERHEAD}: ${e}`);
-      return FALLBACK_TEMPLATE_OVERHEAD;
-    }
-  }
-
-  private async post(path: string, body: unknown, signal?: AbortSignal): Promise<Response> {
-    let res: Response;
-    try {
-      res = await fetch(this.baseUrl + path, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify(body),
-        signal,
-      });
-    } catch (e: any) {
-      if (signal?.aborted) throw e;
-      throw new EngineError(`llama-server unreachable: ${e?.message ?? e}`);
-    }
-    if (!res.ok) {
-      const text = await res.text();
-      let message = text;
-      try {
-        message = JSON.parse(text).error?.message ?? text;
-      } catch {}
-      throw new EngineError(`llama-server ${path} failed (HTTP ${res.status}): ${message}`);
-    }
-    return res;
-  }
-
-  private async tokenize(content: string, parseSpecial: boolean, signal?: AbortSignal): Promise<number> {
-    const res = await this.post("/tokenize", { content, add_special: false, parse_special: parseSpecial }, signal);
-    const { tokens } = (await res.json()) as { tokens: unknown[] };
-    return tokens.length;
+  /** The loaded model, or an EngineError while there is none to use. */
+  private ready(): Running {
+    if (this.state !== "ready" || !this.running) throw new EngineError(`the engine is ${this.state}`);
+    return this.running;
   }
 
   /**
    * Tokens a user message with this content occupies in the context, chat template included.
-   * Counted by the engine that is running now, without waiting for a generation (llama-server
-   * answers /tokenize while one runs). Throws EngineError when no engine is ready, so a stopped
-   * or stale base URL is never used. The check and the request start in the same tick, so the
-   * URL cannot change between them; a swap that kills the process mid-request surfaces as EngineError.
+   * Counted by the model that is loaded now, without waiting for a generation. Throws EngineError
+   * when no model is ready or it goes away before answering.
    */
-  async countPromptTokens(content: string, signal?: AbortSignal): Promise<number> {
-    if (this.state !== "ready") throw new EngineError(`the engine is ${this.state}`);
-    const overhead = this.templateOverhead;
-    return (await this.tokenize(content, false, signal)) + overhead;
+  async countPromptTokens(content: string): Promise<number> {
+    return this.ready().countTokens(content);
   }
 
   async *generate(prompt: string, maxTokens: number, signal?: AbortSignal): AsyncGenerator<GenerationEvent> {
-    const res = await this.post(
-      "/v1/chat/completions",
-      {
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0,
-        max_tokens: maxTokens,
-        stream: true,
-        stream_options: { include_usage: true },
-        cache_prompt: false,
-      },
-      signal,
-    );
-
-    let finishReason: FinishReason | undefined;
-    let usage: Usage | undefined;
-    let timings: EngineTimings = { prompt_ms: 0, generation_ms: 0, tokens_per_second: 0 };
-
-    let buffer = "";
-    const decoder = new TextDecoder();
-    for await (const chunk of readBody(res.body!, signal)) {
-      buffer += decoder.decode(chunk, { stream: true });
-      let nl: number;
-      while ((nl = buffer.indexOf("\n")) >= 0) {
-        const line = buffer.slice(0, nl).replace(/\r$/, "");
-        buffer = buffer.slice(nl + 1);
-        if (!line.startsWith("data:")) continue;
-        const data = line.slice(5).trim();
-        if (data === "[DONE]") continue;
-
-        const msg = JSON.parse(data);
-        if (msg.error) throw new EngineError(`generation failed: ${msg.error.message ?? JSON.stringify(msg.error)}`);
-
-        const choice = msg.choices?.[0];
-        const text = choice?.delta?.content;
-        if (text) yield { type: "delta", text };
-        if (choice?.finish_reason) finishReason = choice.finish_reason === "length" ? "length" : "stop";
-        if (msg.usage) {
-          usage = { prompt_tokens: msg.usage.prompt_tokens, completion_tokens: msg.usage.completion_tokens };
-        }
-        if (msg.timings) {
-          timings = {
-            prompt_ms: Math.round(msg.timings.prompt_ms ?? 0),
-            generation_ms: Math.round(msg.timings.predicted_ms ?? 0),
-            tokens_per_second: Number((msg.timings.predicted_per_second ?? 0).toFixed(2)),
-          };
-        }
-      }
-    }
-
-    if (!finishReason) throw new EngineError("generation ended without a finish reason");
-    yield { type: "done", finishReason, usage: usage ?? { prompt_tokens: 0, completion_tokens: 0 }, timings };
+    yield* this.ready().generate(prompt, maxTokens, signal);
   }
 }

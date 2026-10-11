@@ -28,7 +28,7 @@ afterEach(() => {
 
 const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
 const json = async (res: Response): Promise<any> => res.json();
-const lastUpstreamContent = (): string => mock.requests.at(-1).messages[0].content;
+const lastUpstreamContent = (): string => mock.requests.at(-1)!.prompt;
 
 /** A translate request body the mock engine accepts. */
 const plain = { text: "Hi", target_lang: "zh" };
@@ -63,14 +63,14 @@ describe("max_output_tokens", () => {
     await res.text();
     const prompt = buildPrompt({ text: "Hi", targetLang: "zh" });
     const promptTokens = Array.from(prompt).length + TEMPLATE.length;
-    expect(mock.requests.at(-1).max_tokens).toBe(Math.min(promptTokens * 4 + 512, 1000 - promptTokens - 64));
+    expect(mock.requests.at(-1)!.maxTokens).toBe(Math.min(promptTokens * 4 + 512, 1000 - promptTokens - 64));
   });
 
-  test("the smallest legal value is forwarded to the engine as max_tokens", async () => {
+  test("the smallest legal value is forwarded to the engine as its token limit", async () => {
     const res = await post("/api/v1/translate", { ...plain, max_output_tokens: 1 });
     expect(res.status).toBe(200);
     await res.text();
-    expect(mock.requests.at(-1).max_tokens).toBe(1);
+    expect(mock.requests.at(-1)!.maxTokens).toBe(1);
   });
 
   test("the smallest legal value is reported as the start event's budget", async () => {

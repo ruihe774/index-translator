@@ -2,7 +2,7 @@
 
 import type { Server } from "bun";
 import { CONTEXT_MARGIN, type Config } from "./config";
-import { Engine, EngineError, launchLlamaServer, type EngineTimings, type FinishReason, type Launcher, type Usage } from "./llama";
+import { Engine, EngineError, launchNative, type EngineTimings, type FinishReason, type Launcher, type Usage } from "./llama";
 import { MODELS, findModel, type ModelSpec } from "./models";
 import { DOCUMENT_DIRECTIONS, LANGUAGES, buildDocumentPrompt, buildPrompt, type PromptInput } from "./prompt";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
@@ -283,7 +283,7 @@ export interface App {
   stop(): Promise<void>;
 }
 
-export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer): Promise<App> {
+export async function startApp(cfg: Config, launch: Launcher = launchNative): Promise<App> {
   const engine = new Engine(cfg, launch);
   const queue = new SlotQueue(cfg.maxQueue);
   const defaultModel = findModel(cfg.defaultModel)!;
@@ -326,9 +326,9 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
     return { context_tokens: cfg.ctxSize, max_input_tokens: cfg.maxInputTokens };
   }
 
-  async function prepare(input: TranslateRequest, signal: AbortSignal): Promise<Budget> {
+  async function prepare(input: TranslateRequest): Promise<Budget> {
     const prompt = promptFor(input);
-    const promptTokens = await engine.countPromptTokens(prompt, signal);
+    const promptTokens = await engine.countPromptTokens(prompt);
     if (promptTokens > cfg.maxInputTokens) {
       throw new ApiError(413, "input_too_long", "the input exceeds the token limit for a single translation", {
         prompt_tokens: promptTokens,
@@ -336,7 +336,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
       });
     }
     const available = cfg.ctxSize - promptTokens - CONTEXT_MARGIN;
-    // A non-positive budget would reach the engine as max_tokens <= 0, which llama.cpp reads as unlimited.
+    // A non-positive budget would reach the engine as a limit <= 0, which it reads as unlimited.
     if (available < 1) {
       throw new ApiError(413, "input_too_long", "the input leaves no room for a translation in the context window", {
         prompt_tokens: promptTokens,
@@ -357,7 +357,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
     const queueMs = Math.round(performance.now() - queuedAt);
 
     await engine.load(input.model);
-    const b = await prepare(input, signal);
+    const b = await prepare(input);
     yield {
       type: "start" as const,
       model: input.model.id,
@@ -503,7 +503,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
    * tokenizer. This assumes the two 9B checkpoints share a tokenizer family; `counted_with` says
    * which model did the counting.
    */
-  async function tokenize(input: TranslateRequest, signal: AbortSignal): Promise<Record<string, unknown>> {
+  async function tokenize(input: TranslateRequest): Promise<Record<string, unknown>> {
     const unavailable = () =>
       new ApiError(
         503,
@@ -516,9 +516,9 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
     if (engine.state !== "ready" || !counter) throw unavailable();
     let promptTokens: number;
     try {
-      promptTokens = await engine.countPromptTokens(promptFor(input), signal);
+      promptTokens = await engine.countPromptTokens(promptFor(input));
     } catch (e) {
-      // The engine went away between the check above and the request (a swap killed it).
+      // The model went away between the check above and the count (a swap freed it).
       if (e instanceof EngineError) throw unavailable();
       throw e;
     }
@@ -586,7 +586,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
           case "/tokenize": {
             if (req.method !== "POST") return methodNotAllowed("POST");
             const input = parseTranslateRequest(req, await parseBody(req), cfg.defaultModel);
-            return json(await tokenize(input, req.signal));
+            return json(await tokenize(input));
           }
           case "/translate": {
             if (req.method !== "POST") return methodNotAllowed("POST");

@@ -1,25 +1,29 @@
-// Engine lifecycle, queue and streaming edge cases against a mock llama-server. Each describe starts
-// its own app, so none of this touches the shared app of api.test.ts.
+// Engine lifecycle, queue and streaming edge cases against fake models. Each describe starts its
+// own app, so none of this touches the shared app of api.test.ts.
 //
-// The upstream here mirrors test/helpers/mock-engine.ts and adds what that helper cannot do: kill a
-// running engine, hold a launch or a generation until the test opens a gate, count concurrent
-// generations, and report prompt_tokens as 0. Content knobs (chunks, delayMs, finish, failWith,
-// failLaunch) still come from the shared `mock`, so every test calls resetMock() afterwards.
+// The launcher here builds on fakeModel() from test/helpers/mock-engine.ts and adds what the shared
+// launcher cannot do: lose a loaded model, hold a launch or a generation until the test opens a
+// gate, count concurrent generations, and report prompt_tokens as 0. Content knobs (chunks,
+// delayMs, finish, failWith, failLaunch) still come from the shared `mock`, so every test calls
+// resetMock() afterwards.
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { startApp, type App } from "../src/app";
 import type { Config } from "../src/config";
 import { EngineError, type Launcher } from "../src/llama";
-import { CHAT, DOCUMENT, TEMPLATE, config, mock, postTo, resetMock, sse, waitReady, type SseEvent } from "./helpers/mock-engine";
+import { CHAT, DOCUMENT, config, fakeModel, mock, postTo, resetMock, waitReady, type SseEvent } from "./helpers/mock-engine";
 
 afterEach(() => resetMock());
 
+/** What the engine reports when a model is lost because its thread died. */
+const KILLED = "the engine thread exited";
+
 interface Upstream {
   model: string;
-  stopped: boolean;
-  /** Resolves with the exit code once the process is gone, for any reason. */
-  exited: Promise<number>;
-  /** Stops the server as if the process had been killed (exit code 137). */
+  readonly stopped: boolean;
+  /** Resolves once the model is gone, for any reason. */
+  exited: Promise<string | undefined>;
+  /** Loses the model as if the engine thread had died. */
   kill(): void;
 }
 
@@ -78,76 +82,27 @@ class Control {
     const gate = this.launchGate;
     if (gate) await gate;
 
-    let finish!: (code: number) => void;
-    const exited = new Promise<number>((resolve) => (finish = resolve));
-    const server = Bun.serve({ port: 0, hostname: "127.0.0.1", fetch: (req) => this.serve(req, model.id) });
-    const stop = (code: number) => {
-      if (upstream.stopped) return;
-      upstream.stopped = true;
-      void server.stop(true).then(() => finish(code));
-    };
-    const upstream: Upstream = { model: model.id, stopped: false, exited, kill: () => stop(137) };
-    this.upstreams.push(upstream);
-    return { url: `http://127.0.0.1:${server.port}`, exited, stop: () => stop(0) };
+    const fake = fakeModel({
+      onStart: (prompt) => {
+        this.generations.push({ model: model.id, prompt });
+        this.inFlight++;
+        this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
+      },
+      gate: () => this.generationGate,
+      onChunk: () => this.chunksSent++,
+      onEnd: () => this.inFlight--,
+      promptTokens: () => (this.zeroPromptUsage ? 0 : 42),
+    });
+    this.upstreams.push({
+      model: model.id,
+      get stopped() {
+        return fake.stopped;
+      },
+      exited: fake.exited,
+      kill: () => fake.kill(KILLED),
+    });
+    return fake;
   };
-
-  private async serve(req: Request, model: string): Promise<Response> {
-    const path = new URL(req.url).pathname;
-    if (path === "/health") return Response.json({ status: "ok" });
-    if (path === "/apply-template") return Response.json({ prompt: TEMPLATE });
-    if (path === "/tokenize") {
-      const { content } = (await req.json()) as { content: string };
-      return Response.json({ tokens: Array.from(content, (_, i) => i) });
-    }
-    if (path === "/v1/chat/completions") return this.completion(req, model);
-    return new Response("not found", { status: 404 });
-  }
-
-  private async completion(req: Request, model: string): Promise<Response> {
-    const body = (await req.json()) as any;
-    this.generations.push({ model, prompt: body.messages[0].content });
-    const { chunks, delayMs, finish, failWith } = mock;
-    const gate = this.generationGate;
-    const zeroPrompt = this.zeroPromptUsage;
-    const self = this;
-
-    this.inFlight++;
-    this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
-    let counted = true;
-    const leave = () => {
-      if (!counted) return;
-      counted = false;
-      self.inFlight--;
-    };
-    req.signal.addEventListener("abort", leave);
-
-    return new Response(
-      (async function* () {
-        try {
-          if (gate) await gate;
-          for (const content of chunks) {
-            if (delayMs) await Bun.sleep(delayMs);
-            self.chunksSent++;
-            yield sse({ choices: [{ delta: { content }, finish_reason: null }] });
-          }
-          if (failWith) {
-            yield sse({ error: { message: failWith } });
-            return;
-          }
-          yield sse({ choices: [{ delta: {}, finish_reason: finish }] });
-          yield sse({
-            choices: [],
-            usage: { prompt_tokens: zeroPrompt ? 0 : 42, completion_tokens: chunks.length },
-            timings: { prompt_ms: 12.4, predicted_ms: 99.6, predicted_per_second: 70.123 },
-          });
-          yield sse("[DONE]");
-        } finally {
-          leave();
-        }
-      })(),
-      { headers: { "content-type": "text/event-stream" } },
-    );
-  }
 }
 
 /** A fresh app on a fresh Control, started in beforeAll and stopped in afterAll. */
@@ -256,9 +211,9 @@ async function collect(it: AsyncGenerator<SseEvent>): Promise<SseEvent[]> {
 
 const queuedPositions = (events: SseEvent[]) => events.filter((e) => e.event === "queued").map((e) => e.data.position);
 
-// ---- engine process failures ----
+// ---- engine thread failures ----
 
-describe("engine process dies", () => {
+describe("engine thread dies", () => {
   const h = fixture();
   let log: ReturnType<typeof spyOn>;
 
@@ -297,7 +252,7 @@ describe("engine process dies", () => {
     const health = await getHealth(h.origin);
     expect(health.status).toBe(503);
     expect(health.body).toMatchObject({ status: "error", model: null });
-    expect(health.body.error).toContain("exited with code 137");
+    expect(health.body.error).toBe(KILLED);
 
     resetMock();
     const launchesBefore = h.ctl.launches.length;
@@ -342,7 +297,7 @@ describe("engine process dies", () => {
     await until(async () => (await getHealth(h.origin)).status === 503, "health to report the dead engine", 1000);
     const health = await getHealth(h.origin);
     expect(health.body).toMatchObject({ status: "error", model: null });
-    expect(health.body.error).toContain("exited with code 137");
+    expect(health.body.error).toBe(KILLED);
 
     await warm(h.origin, CHAT);
     expect(h.ctl.launches.slice(launchesBefore)).toEqual([CHAT]);
@@ -460,7 +415,7 @@ describe("model swaps", () => {
   });
 
   // Abandoning a request frees the queue slot while its engine load is still in flight, so the next
-  // request starts a second load. The older load must stop its own process when it finishes.
+  // request starts a second load. The older load must free its own model when it finishes.
   test("a swap abandoned mid-load does not leave its engine running when another request swaps again", async () => {
     await warm(h.origin, CHAT);
     const before = h.ctl.launches.length;

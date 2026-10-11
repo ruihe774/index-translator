@@ -14,10 +14,9 @@ describe("loadConfig defaults", () => {
       specPath: join(root, "docs", "openapi.yaml"),
       modelsDir: join(root, "models"),
       defaultModel: DEFAULT_MODEL_ID,
-      llamaBin: join(root, "vendor", "llama.cpp", "llama-server"),
-      llamaPort: 0,
-      gpuLayers: "all",
-      llamaExtraArgs: [],
+      llamaDir: join(root, "vendor", "llama.cpp"),
+      gpuLayers: -1,
+      threads: 0,
       ctxSize: 65536,
       maxInputTokens: 28000,
       maxQueue: 8,
@@ -39,8 +38,8 @@ describe("loadConfig defaults", () => {
   });
 
   test("valid overrides are applied", () => {
-    const cfg = loadConfig({ HOST: "0.0.0.0", PORT: "8080", LLAMA_PORT: "9000", CTX_SIZE: "4096", MAX_INPUT_TOKENS: "2000", MAX_QUEUE: "100000" });
-    expect(cfg).toMatchObject({ host: "0.0.0.0", port: 8080, llamaPort: 9000, ctxSize: 4096, maxInputTokens: 2000, maxQueue: 100000 });
+    const cfg = loadConfig({ HOST: "0.0.0.0", PORT: "8080", LLAMA_THREADS: "8", CTX_SIZE: "4096", MAX_INPUT_TOKENS: "2000", MAX_QUEUE: "100000" });
+    expect(cfg).toMatchObject({ host: "0.0.0.0", port: 8080, threads: 8, ctxSize: 4096, maxInputTokens: 2000, maxQueue: 100000 });
   });
 
   test("the environment record is read, not process.env", () => {
@@ -78,9 +77,18 @@ describe("loadConfig rejections", () => {
     expect(loadConfig({ PORT: "65535" }).port).toBe(65535);
   });
 
-  test("LLAMA_PORT above 65535 is rejected, 0 (free port) is accepted", () => {
-    expect(() => loadConfig({ LLAMA_PORT: "70000" })).toThrow("LLAMA_PORT must be at most 65535");
-    expect(loadConfig({ LLAMA_PORT: "0" }).llamaPort).toBe(0);
+  test("GPU_LAYERS is a layer count or all; anything else is rejected", () => {
+    expect(loadConfig({ GPU_LAYERS: "all" }).gpuLayers).toBe(-1);
+    expect(loadConfig({ GPU_LAYERS: "" }).gpuLayers).toBe(-1);
+    expect(loadConfig({ GPU_LAYERS: "0" }).gpuLayers).toBe(0);
+    expect(loadConfig({ GPU_LAYERS: "20" }).gpuLayers).toBe(20);
+    expect(() => loadConfig({ GPU_LAYERS: "auto" })).toThrow('GPU_LAYERS must be an integer of at least 0, got "auto"');
+    expect(() => loadConfig({ GPU_LAYERS: "-1" })).toThrow("GPU_LAYERS must be an integer of at least 0");
+  });
+
+  test("LLAMA_THREADS must be a non-negative integer; 0 leaves the choice to the engine", () => {
+    expect(loadConfig({ LLAMA_THREADS: "0" }).threads).toBe(0);
+    expect(() => loadConfig({ LLAMA_THREADS: "many" })).toThrow("LLAMA_THREADS must be an integer");
   });
 
   test("MAX_INPUT_TOKENS must leave room for the margin and output", () => {
@@ -119,17 +127,12 @@ describe("loadConfig PUBLIC_DIR", () => {
   });
 });
 
-describe("loadConfig LLAMA_EXTRA_ARGS", () => {
-  test("split on any whitespace, dropping empty pieces", () => {
-    expect(loadConfig({ LLAMA_EXTRA_ARGS: "  --flash-attn\t--no-mmap   -c 4096 \n" }).llamaExtraArgs).toEqual([
-      "--flash-attn",
-      "--no-mmap",
-      "-c",
-      "4096",
-    ]);
+describe("loadConfig LLAMA_DIR", () => {
+  test("a relative path is made absolute, since the library is opened by path", () => {
+    expect(loadConfig({ LLAMA_DIR: "build/bin/" }).llamaDir).toBe(resolve("build/bin"));
   });
 
-  test("blank value gives no extra arguments", () => {
-    expect(loadConfig({ LLAMA_EXTRA_ARGS: "   " }).llamaExtraArgs).toEqual([]);
+  test("an empty value falls back to the vendored build", () => {
+    expect(loadConfig({ LLAMA_DIR: "" }).llamaDir).toBe(join(root, "vendor", "llama.cpp"));
   });
 });

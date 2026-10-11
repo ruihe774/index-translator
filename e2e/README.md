@@ -1,6 +1,6 @@
 # Frontend tests (Playwright)
 
-`bun run e2e` starts `e2e/mock-server.ts` (the real app on the mock llama-server from
+`bun run e2e` starts `e2e/mock-server.ts` (the real app on the fake models from
 `test/helpers/mock-engine.ts`) and runs the specs in Chromium. No GPU or model files are needed.
 
 - `translate.spec.ts`: end to end, real server and mock engine; `fixtures.ts` scripts the engine

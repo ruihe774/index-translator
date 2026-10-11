@@ -161,26 +161,24 @@ describe("POST /translate (JSON)", () => {
       timings: { queue_ms: expect.any(Number), prompt_ms: 12, generation_ms: 100, tokens_per_second: 70.12 },
     });
 
-    const sent = mock.requests[0];
-    expect(sent.messages).toEqual([
-      { role: "user", content: "请将以下文本翻译为英语，直接输出翻译结果，不要进行任何解释。\n\n你好，世界" },
-    ]);
-    expect(sent.temperature).toBe(0);
-    expect(sent.max_tokens).toBe(50);
+    expect(mock.requests[0]).toEqual({
+      prompt: "请将以下文本翻译为英语，直接输出翻译结果，不要进行任何解释。\n\n你好，世界",
+      maxTokens: 50,
+    });
   });
 
   test("the output budget defaults to a multiple of the prompt and never exceeds the context", async () => {
     mock.requests.length = 0;
     await post("/api/v1/translate", { text: "Hi", target_lang: "zh" });
-    const short = mock.requests[0].messages[0].content.length + TEMPLATE.length;
-    expect(mock.requests[0].max_tokens).toBe(short * 4 + 512);
+    const short = mock.requests[0]!.prompt.length + TEMPLATE.length;
+    expect(mock.requests[0]!.maxTokens).toBe(short * 4 + 512);
 
     await post("/api/v1/translate", { text: "x".repeat(300), target_lang: "zh" });
-    const long = mock.requests[1].messages[0].content.length + TEMPLATE.length;
-    expect(mock.requests[1].max_tokens).toBe(1000 - long - 64);
+    const long = mock.requests[1]!.prompt.length + TEMPLATE.length;
+    expect(mock.requests[1]!.maxTokens).toBe(1000 - long - 64);
 
     await post("/api/v1/translate", { text: "Hi", target_lang: "zh", max_output_tokens: 5000 });
-    expect(mock.requests[2].max_tokens).toBe(1000 - short - 64);
+    expect(mock.requests[2]!.maxTokens).toBe(1000 - short - 64);
   });
 
   test("reports truncation through finish_reason", async () => {
@@ -307,7 +305,7 @@ describe("model selection", () => {
   test("the document model gets its fixed template with the whole text in place", async () => {
     mock.requests.length = 0;
     await post("/api/v1/translate", { text: "Line one.\n\nLine two.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
-    const content: string = mock.requests.at(-1).messages[0].content;
+    const content = mock.requests.at(-1)!.prompt;
     expect(content).toStartWith("请将以下英文小说翻译成中文");
     expect(content).toContain("【源文】\n\nLine one.\n\nLine two.");
     expect(content).not.toContain("（在这里放入");

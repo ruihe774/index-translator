@@ -29,12 +29,12 @@ export interface Config {
   modelsDir: string;
   /** Model loaded at startup; requests that name no model use it. */
   defaultModel: string;
-  llamaBin: string;
-  /** 0 picks a free port for each engine start. */
-  llamaPort: number;
-  gpuLayers: string;
-  /** Extra llama-server arguments, appended last so they override the defaults. */
-  llamaExtraArgs: string[];
+  /** Directory with libllama, its backend libraries and `include/llama.h`. */
+  llamaDir: string;
+  /** Layers to run on the GPU; -1 means all of them. */
+  gpuLayers: number;
+  /** CPU threads for the engine; 0 uses half the logical CPUs. */
+  threads: number;
   ctxSize: number;
   maxInputTokens: number;
   /** Requests allowed to wait behind the running one. */
@@ -68,10 +68,9 @@ export function loadConfig(env: Env = Bun.env): Config {
     specPath: join(root, "docs", "openapi.yaml"),
     modelsDir: env.MODELS_DIR ?? join(root, "models"),
     defaultModel,
-    llamaBin: env.LLAMA_SERVER_BIN ?? join(root, "vendor", "llama.cpp", "llama-server"),
-    llamaPort: int(env, "LLAMA_PORT", 0, { max: 65535 }),
-    gpuLayers: env.GPU_LAYERS ?? "all",
-    llamaExtraArgs: (env.LLAMA_EXTRA_ARGS ?? "").split(/\s+/).filter(Boolean),
+    llamaDir: resolve(env.LLAMA_DIR || join(root, "vendor", "llama.cpp")),
+    gpuLayers: env.GPU_LAYERS === undefined || env.GPU_LAYERS === "all" ? -1 : int(env, "GPU_LAYERS", -1),
+    threads: int(env, "LLAMA_THREADS", 0),
     ctxSize,
     maxInputTokens,
     maxQueue: int(env, "MAX_QUEUE", 8),
