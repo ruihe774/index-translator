@@ -33,6 +33,9 @@
     --pane-height: clamp(16rem, 60dvh, 40rem);
     --gutter: 1rem;
     --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
+    /* Per language, so Han characters get Japanese or Chinese glyph forms, not the first CJK font's. */
+    --font-ja: system-ui, "Segoe UI", "Noto Sans", "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
+    --font-zh: system-ui, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
     --shadow: 0 1px 2px light-dark(rgb(20 30 60 / 0.08), rgb(0 0 0 / 0.4)), 0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
   }
 
@@ -642,6 +645,26 @@
     &:empty {
       display: none;
     }
+  }
+
+  /* Japanese (jlreq) and Chinese (clreq) text, chosen by `lang`: the source box, the source preview
+     and the translation carry the language of their text. Only what the two documents require and
+     CSS can do: kinsoku (closing punctuation never starts a line, opening never ends one),
+     opening brackets flush at a line start (Chrome only so far), and the gap between Han and
+     Latin text. Recommendations (justification, indents, emphasis marks) are left out. */
+  :lang(ja),
+  :lang(zh) {
+    line-break: strict;
+    text-autospace: normal; /* Chrome's initial value is no-autospace */
+    text-spacing-trim: trim-start;
+  }
+
+  :lang(ja) {
+    font-family: var(--font-ja);
+  }
+
+  :lang(zh) {
+    font-family: var(--font-zh);
   }
 
   @media (prefers-reduced-motion: no-preference) {

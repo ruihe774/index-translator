@@ -2,7 +2,7 @@
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
-import { CHAT_MODEL, DOCUMENT_MODEL, selectModel, type Choice, type Selection } from "./select-model.js";
+import { CHAT_MODEL, DOCUMENT_MODEL, detectSource, selectModel, type Choice, type Selection } from "./select-model.js";
 import { describeError, type ApiErrorBody } from "./errors.js";
 import { sseEvents } from "./sse.js";
 import { buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.js";
@@ -145,8 +145,20 @@ function currentSelection(): Selection {
 /** Set when /languages could not be loaded and the built-in short list is offered instead. */
 let languageNote = "";
 
+/** The source text's language: the selected one, else a guess. Unknown leaves `lang` to the page. */
+function sourceLangOf(): string | undefined {
+  return fromSelect.value === "auto" ? detectSource(textInput.value) : fromSelect.value;
+}
+
+/** Sets or clears `lang`, which picks glyph forms and the CJK line-layout rules in style.css. */
+function setLang(el: HTMLElement, lang: string | undefined) {
+  if (lang) el.lang = lang;
+  else el.removeAttribute("lang");
+}
+
 function refreshSelection() {
   const s = currentSelection();
+  setLang(textInput, sourceLangOf());
   setText(countEl, `${number.format(s.letters)} letters`);
   setText(adviceEl, adviceMessage(s, fromSelect.value, toSelect.value, languageNote));
   const documentModel = s.model === DOCUMENT_MODEL && s.reason !== "manual-document-unusable";
@@ -283,6 +295,7 @@ function refreshControls() {
 function showSource() {
   const preview = views.source.view === "preview" && textInput.value.length > 0;
   showSwitch(sourceSwitch, "source");
+  setLang(sourceView, sourceLangOf());
   if (preview) renderText(sourceView, textInput.value, views.source.available);
   else sourceView.replaceChildren();
   sourceArea.hidden = !preview;
