@@ -93,7 +93,7 @@ function constraintLines(items: string[] | undefined, tag: string, accepted: str
   const out: string[] = [];
   for (const item of items ?? []) {
     for (const raw of item.split("\n")) {
-      const line = raw.trim().replace(/^[0-9. ]+/, "");
+      const line = raw.trim().replace(/^(?:\d+(?:[.)、]\s*|\s+)|[.\s])+/, "");
       if (!line) continue;
       out.push(accepted.some((p) => line.startsWith(p)) ? line : tag + line);
     }

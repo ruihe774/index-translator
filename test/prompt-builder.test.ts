@@ -82,15 +82,18 @@ describe("constraint lines", () => {
     ]);
   });
 
-  test("a constraint starting with digits loses them, mirroring the reference lstrip", () => {
-    // Intentional: translate.py does line.strip().lstrip("0123456789. "), so the port drops
-    // the leading "2024" too. Digits not at the start of the item are untouched.
+  test("digits that belong to the text are kept; only list numbering is stripped", () => {
+    // The reference lstrip("0123456789. ") would drop the "2024" of "2024年…"; this port does not.
     const prompt = buildPrompt({
       text: "x",
       targetLang: "en",
-      hardConstraints: ["2024年的日期保持不变", "保留 2024 年份"],
+      hardConstraints: ["2024年的日期保持不变", "保留 2024 年份", "1.2026年不变"],
     });
-    expect(constraintBlock(prompt)).toEqual(["1. 【硬性要求】年的日期保持不变", "2. 【硬性要求】保留 2024 年份"]);
+    expect(constraintBlock(prompt)).toEqual([
+      "1. 【硬性要求】2024年的日期保持不变",
+      "2. 【硬性要求】保留 2024 年份",
+      "3. 【硬性要求】2026年不变",
+    ]);
   });
 });
 
