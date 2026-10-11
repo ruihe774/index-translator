@@ -12,6 +12,7 @@ docs: README.md.
 - Frontend e2e/integration/a11y: `bun run e2e` (Playwright, mock engine; see `e2e/README.md`; `bunx playwright install chromium` or `CHROMIUM_PATH`)
 - CSS browser-support check: `bun run lint:css` (doiuse against `.browserslistrc`)
 - Setup: `bun scripts/fetch_llama.ts` (vendor/llama.cpp, checksum verified); `uv run scripts/fetch_models.py` (models/, about 14 GiB)
+- Markdown conformance: `bun scripts/commonmark.ts` (CommonMark spec examples against `public/markdown.ts`; divergences in `docs/markdown-conformance.md`)
 - Long-document check: `MODEL=index-nailong-9b bun scripts/longtext.ts http://127.0.0.1:3000`
 
 No npm runtime dependencies; no build step for the web app.
@@ -116,7 +117,8 @@ Hence the 11,000-letter switch point.
   must stay prefix-stable (a block never changes once a later complete line starts another), which
   `MarkdownStream` relies on to append finished blocks once and rebuild only the open tail per
   frame (`public/markdown-dom.ts`). Elements are built with the DOM API, never `innerHTML`; links
-  are limited to `http(s):` and `mailto:`. Copy and the paragraph check use the raw text. The
+  are limited to `http(s):` and `mailto:`. Copy and the paragraph check use the raw text. Parser
+  changes keep `bun scripts/commonmark.ts` passing and `docs/markdown-conformance.md` in step. The
   rendered output's accessibility review is still pending (not yet in `A11Y-ACCEPTANCE.md`).
 - Update `docs/openapi.yaml` and the tests in `test/api-contract.test.ts` / `test/openapi.test.ts` when the API changes.
 - Update README.md for user-visible behaviour only; keep developer detail here.

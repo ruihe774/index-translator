@@ -4,9 +4,11 @@
 //
 // It covers what translated documents and model output use: ATX and setext headings, paragraphs,
 // fenced code, block quotes, bullet, ordered and task lists, thematic breaks and GFM tables; inline
-// code, emphasis, strong, strikethrough, links, images (shown as links) and autolinks. Raw HTML is
-// shown as text. Indented code blocks are not recognised, so indented prose stays prose. A single
-// newline inside a paragraph is kept as a line break, as in the plain-text view.
+// code, emphasis, strong, strikethrough, inline links, images (shown as links) and autolinks.
+// Deliberately left out: raw HTML (shown as text), indented code blocks (indented prose stays
+// prose), reference links and entity references. A single newline inside a paragraph is kept as a
+// line break, as in the plain-text view. Every other CommonMark spec example passes; see
+// docs/markdown-conformance.md and `bun scripts/commonmark.ts`.
 //
 // Streaming: a block, once a later line has started another block, never changes. `MarkdownStream`
 // relies on this to hand finished blocks out once and re-parse only the open tail.
@@ -168,6 +170,28 @@ function interrupts(lines: string[], i: number): boolean {
   return tableStart(lines, i);
 }
 
+/** Whether the open block at the end of `body` is a paragraph, which is all a lazy line may continue. */
+function endsInParagraph(body: string[]): boolean {
+  if (!body.length || isBlank(body[body.length - 1]!)) return false;
+  let last = parseLines(body).at(-1)?.block;
+  // The innermost open block: through the last quote or list item.
+  while (last?.type === "quote" || last?.type === "list") {
+    last = last.type === "quote" ? last.children.at(-1) : last.items.at(-1)?.children.at(-1);
+  }
+  return last?.type === "paragraph";
+}
+
+/**
+ * A lazy continuation line, made safe to re-parse inside its container: it is paragraph text, so
+ * if it looks like a block start ("- x", "1. x", "===", "> x") the marker is escaped, which renders
+ * as the same character.
+ */
+function lazyLine(line: string): string {
+  const l = line.trimStart();
+  if (!(ATX.test(l) || FENCE_OPEN.test(l) || HR.test(l) || QUOTE.test(l) || SETEXT.test(l) || listMarker(l) || l.startsWith("|"))) return l;
+  return /^\d/.test(l) ? l.replace(/^(\d+)([.)])/, "$1\\$2") : "\\" + l;
+}
+
 export interface ParsedBlock {
   block: Block;
   /** Index of the block's first line. */
@@ -203,7 +227,7 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
       // An unclosed fence runs to the end of the text; its trailing blank lines are not content yet.
       if (i >= n) while (body.length && isBlank(body[body.length - 1]!)) body.pop();
       i++; // the closing fence, or past the end
-      out.push({ block: { type: "code", lang: fence[3]!.trim().split(/\s+/)[0] ?? "", text: body.join("\n") }, line: first });
+      out.push({ block: { type: "code", lang: unescape(fence[3]!.trim().split(/\s+/)[0] ?? ""), text: body.join("\n") }, line: first });
       continue;
     }
 
@@ -226,8 +250,8 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
       while (i < n) {
         const l = lines[i]!;
         if (QUOTE.test(l)) body.push(l.replace(QUOTE, ""));
-        // Lazy continuation: an unmarked line continues the quoted paragraph.
-        else if (!isBlank(l) && !isBlank(body[body.length - 1] ?? "") && !interrupts(lines, i)) body.push(l);
+        // Lazy continuation: an unmarked line continues a quoted paragraph.
+        else if (!isBlank(l) && !interrupts(lines, i) && endsInParagraph(body)) body.push(lazyLine(l));
         else break;
         i++;
       }
@@ -262,19 +286,20 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
           }
           if (indentOf(l) >= current.contentIndent) {
             if (blanks && body.every(isBlank)) break; // an item that starts empty ends at a blank line
-            if (blanks) loose = true;
             body.push(l.slice(current.contentIndent));
             blanks = 0;
             i++;
             continue;
           }
+          if (HR.test(l)) break;
           const m = listMarker(l);
-          if (m && m.ordered === current.ordered && m.kind === current.kind) {
-            next = m;
+          if (m) {
+            // The same kind of marker adds an item; another kind starts a new list.
+            if (m.ordered === current.ordered && m.kind === current.kind) next = m;
             break;
           }
-          if (!blanks && !interrupts(lines, i) && !SETEXT.test(l)) {
-            body.push(l.trimStart()); // lazy continuation of the item's paragraph
+          if (!blanks && !interrupts(lines, i) && endsInParagraph(body)) {
+            body.push(lazyLine(l)); // lazy continuation of the item's paragraph
             i++;
             continue;
           }
@@ -286,7 +311,12 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
         if (blanks) loose = true;
         current = next;
       }
-      const parsed = items.map((it) => ({ task: it.task, children: parseLines(it.lines).map((p) => p.block) }));
+      const parsed = items.map((it) => {
+        const children = parseLines(it.lines);
+        // Loose also when a blank line separates two of an item's own blocks (not lines inside one).
+        if (children.some((c, k) => k > 0 && isBlank(it.lines[c.line - 1]!))) loose = true;
+        return { task: it.task, children: children.map((c) => c.block) };
+      });
       out.push({
         block: { type: "list", ordered: marker.ordered, start: marker.start, tight: !loose, items: parsed },
         line: first,
@@ -313,7 +343,7 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
     }
 
     // Paragraph, or a setext heading when an underline follows.
-    const para = [line.trim()];
+    const para = [line.trimStart()];
     i++;
     let level = 0;
     while (i < n) {
@@ -326,10 +356,10 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
         break;
       }
       if (interrupts(lines, i)) break;
-      para.push(l.trim());
+      para.push(l.trimStart());
       i++;
     }
-    const children = parseInline(para.join("\n"));
+    const children = parseInline(para.join("\n").trimEnd());
     out.push({ block: level ? { type: "heading", level, children } : { type: "paragraph", children }, line: first });
   }
   return out;
@@ -340,10 +370,18 @@ export function parseMarkdown(text: string): Block[] {
 }
 
 // ---- inlines ---------------------------------------------------------------------------------
+//
+// The CommonMark algorithm: code spans and autolinks are taken first while scanning; "*", "_" and
+// "~~" runs and "[" / "![" go on delimiter stacks; "]" closes the nearest bracket if an inline link
+// destination follows, and emphasis is resolved by "process emphasis" with the flanking rules and
+// the rule of three.
 
-const PUNCT = /[!-/:-@[-`{-~]/;
-const AUTOLINK = /<((?:https?:\/\/|mailto:)[^\s<>]*)>/y;
-const BARE_URL = /https?:\/\/[^\s<]*[^\s<?!.,:;*_~'")\]]/y;
+const ASCII_PUNCT = /[!-/:-@[-`{-~]/;
+const AUTOLINK = /<((?:https?:\/\/|mailto:)[^\s<>]*)>/iy;
+const EMAIL_AUTOLINK = /<([\w.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>/y;
+const BARE_URL = /(?<![\p{L}\p{N}])https?:\/\/[^\s<]*[^\s<?!.,:;*_~'")\]]/gu;
+const WHITESPACE = /\s/u;
+const PUNCTUATION = /[\p{P}\p{S}]/u;
 
 /** A sticky regex matched at position i, without copying the rest of the string. */
 function matchAt(re: RegExp, s: string, i: number): RegExpExecArray | null {
@@ -367,111 +405,158 @@ function codeClose(s: string, from: number, len: number): number {
   return -1;
 }
 
-/** Index of a closing delimiter run of exactly `len` characters `c`, skipping escapes and code spans. */
-function delimClose(s: string, from: number, c: string, len: number): number {
-  for (let j = from; j < s.length; ) {
-    const ch = s[j];
-    if (ch === "\\") {
-      j += 2;
-    } else if (ch === "`") {
-      const run = runLength(s, j);
-      const close = codeClose(s, j + run, run);
-      j = close < 0 ? j + run : close + run;
-    } else if (ch === c) {
-      const run = runLength(s, j);
-      const after = s[j + run];
-      if (run === len && j > from && /\S/.test(s[j - 1]!) && (c !== "_" || !after || !/[\p{L}\p{N}]/u.test(after))) return j;
-      j += run;
-    } else j++;
-  }
-  return -1;
-}
+const unescape = (s: string) => s.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 
-interface LinkParts {
-  label: string;
-  href: string;
-  title: string;
-  end: number;
-}
-
-/** Reads `[label](href "title")` with s[i] === "[". */
-function linkAt(s: string, i: number): LinkParts | null {
-  let depth = 0;
-  let j = i;
-  for (; j < s.length; j++) {
-    const ch = s[j];
-    if (ch === "\\") j++;
-    else if (ch === "`") {
-      const run = runLength(s, j);
-      const close = codeClose(s, j + run, run);
-      j = (close < 0 ? j + run : close + run) - 1;
-    } else if (ch === "[") depth++;
-    else if (ch === "]" && --depth === 0) break;
-  }
-  if (j >= s.length || s[j + 1] !== "(") return null;
-  const label = s.slice(i + 1, j);
-  let k = j + 2;
-  while (s[k] === " " || s[k] === "\n") k++;
+/** Reads `(href "title")` with s[k] === "(". */
+function linkTail(s: string, k: number): { href: string; title: string; end: number } | null {
+  k++;
+  const skipSpace = () => {
+    while (s[k] === " " || s[k] === "\t" || s[k] === "\n") k++;
+  };
+  skipSpace();
   let href = "";
   if (s[k] === "<") {
-    const close = s.indexOf(">", k);
-    if (close < 0 || s.slice(k, close).includes("\n")) return null;
-    href = s.slice(k + 1, close);
-    k = close + 1;
+    let j = k + 1;
+    for (; j < s.length && s[j] !== ">"; j++) {
+      if (s[j] === "\n" || s[j] === "<") return null;
+      if (s[j] === "\\") j++;
+    }
+    if (j >= s.length) return null;
+    href = s.slice(k + 1, j);
+    k = j + 1;
   } else {
     let parens = 0;
     const start = k;
     for (; k < s.length; k++) {
       const ch = s[k]!;
-      if (ch === "\\" && PUNCT.test(s[k + 1] ?? "")) k++;
-      else if (/\s/.test(ch)) break;
+      if (ch === "\\" && ASCII_PUNCT.test(s[k + 1] ?? "")) k++;
+      else if (/[ \x00-\x1f\x7f]/.test(ch)) break;
       else if (ch === "(") parens++;
       else if (ch === ")") {
         if (parens === 0) break;
         parens--;
       }
     }
-    href = s.slice(start, k).replace(/\\([!-/:-@[-`{-~])/g, "$1");
+    if (parens) return null;
+    href = s.slice(start, k);
   }
-  while (s[k] === " " || s[k] === "\n") k++;
+  const beforeTitle = k;
+  skipSpace();
   let title = "";
   const q = s[k];
-  if (q === '"' || q === "'" || q === "(") {
+  if ((q === '"' || q === "'" || q === "(") && k > beforeTitle) {
     const closer = q === "(" ? ")" : q;
-    const close = s.indexOf(closer, k + 1);
-    if (close < 0) return null;
-    title = s.slice(k + 1, close);
-    k = close + 1;
-    while (s[k] === " " || s[k] === "\n") k++;
+    let j = k + 1;
+    for (; j < s.length && s[j] !== closer; j++) if (s[j] === "\\") j++;
+    if (j >= s.length) return null;
+    title = s.slice(k + 1, j);
+    k = j + 1;
+    skipSpace();
   }
   if (s[k] !== ")") return null;
-  return { label, href, title, end: k + 1 };
+  return { href: unescape(href), title: unescape(title), end: k + 1 };
 }
 
 function plainText(nodes: Inline[]): string {
   return nodes
-    .map((n) =>
-      n.type === "text" || n.type === "code"
-        ? n.text
-        : n.type === "br"
-          ? " "
-          : n.type === "image"
-            ? n.alt
-            : plainText(n.children),
-    )
+    .map((n) => (n.type === "text" || n.type === "code" ? n.text : n.type === "br" ? " " : n.type === "image" ? n.alt : plainText(n.children)))
     .join("");
 }
 
-export function parseInline(src: string, inLink = false): Inline[] {
+/** Link children cannot hold links: a bare URL or autolink inside a label is unwrapped to its text. */
+function unlink(nodes: Inline[]): Inline[] {
+  return nodes.flatMap((n): Inline[] =>
+    n.type === "link" ? unlink(n.children) : "children" in n ? [{ ...n, children: unlink(n.children) }] : [n],
+  );
+}
+
+type TextNode = Extract<Inline, { type: "text" }>;
+
+interface Delimiter {
+  node: TextNode;
+  char: string;
+  /** Characters still unused in the run, and the run's original length (for the rule of three). */
+  count: number;
+  length: number;
+  canOpen: boolean;
+  canClose: boolean;
+}
+
+interface Bracket {
+  node: TextNode;
+  image: boolean;
+  active: boolean;
+  /** Delimiters at or above this index lie inside the bracket. */
+  bottom: number;
+}
+
+export function parseInline(src: string): Inline[] {
   const out: Inline[] = [];
+  const delims: Delimiter[] = [];
+  const brackets: Bracket[] = [];
   let buf = "";
   const flush = () => {
     if (buf) out.push({ type: "text", text: buf });
     buf = "";
   };
-  const push = (node: Inline) => {
+  const textNode = (text: string): TextNode => {
     flush();
+    const node: TextNode = { type: "text", text };
     out.push(node);
+    return node;
+  };
+
+  /** Resolves emphasis among the delimiters from index `bottom` up, then drops them from the stack. */
+  const processEmphasis = (bottom: number) => {
+    const openersBottom = new Map<string, number>();
+    let c = bottom;
+    while (c < delims.length) {
+      const closer = delims[c]!;
+      if (!closer.canClose) {
+        c++;
+        continue;
+      }
+      const key = `${closer.char}${closer.canOpen}${closer.length % 3}`;
+      const floor = Math.max(bottom, openersBottom.get(key) ?? bottom);
+      let o = c - 1;
+      for (; o >= floor; o--) {
+        const opener = delims[o]!;
+        if (opener.char !== closer.char || !opener.canOpen) continue;
+        if (closer.char === "~" && opener.count !== closer.count) continue;
+        const oddMatch = (opener.canClose || closer.canOpen) && (opener.length + closer.length) % 3 === 0 && !(opener.length % 3 === 0 && closer.length % 3 === 0);
+        if (closer.char !== "~" && oddMatch) continue;
+        break;
+      }
+      if (o < floor) {
+        openersBottom.set(key, c);
+        if (!closer.canOpen) delims.splice(c, 1);
+        else c++;
+        continue;
+      }
+      const opener = delims[o]!;
+      const use = closer.char === "~" ? closer.count : closer.count >= 2 && opener.count >= 2 ? 2 : 1;
+      opener.count -= use;
+      closer.count -= use;
+      opener.node.text = opener.node.text.slice(0, opener.count);
+      closer.node.text = closer.node.text.slice(use);
+      const from = out.indexOf(opener.node);
+      const to = out.indexOf(closer.node);
+      const children = out.slice(from + 1, to);
+      const type = closer.char === "~" ? "del" : use === 2 ? "strong" : "em";
+      out.splice(from + 1, to - from - 1, { type, children });
+      delims.splice(o + 1, c - o - 1);
+      c = o + 1;
+      if (opener.count === 0) {
+        out.splice(out.indexOf(opener.node), 1);
+        delims.splice(o, 1);
+        c--;
+      }
+      if (closer.count === 0) {
+        out.splice(out.indexOf(closer.node), 1);
+        delims.splice(c, 1);
+      }
+    }
+    delims.length = bottom;
   };
 
   let i = 0;
@@ -481,9 +566,10 @@ export function parseInline(src: string, inLink = false): Inline[] {
     if (c === "\\") {
       const next = src[i + 1];
       if (next === "\n") {
-        push({ type: "br" });
+        flush();
+        out.push({ type: "br" });
         i += 2;
-      } else if (next !== undefined && PUNCT.test(next)) {
+      } else if (next !== undefined && ASCII_PUNCT.test(next)) {
         buf += next;
         i += 2;
       } else {
@@ -494,8 +580,12 @@ export function parseInline(src: string, inLink = false): Inline[] {
     }
 
     if (c === "\n") {
+      // Every line break is kept (see the header); trailing spaces before it are not content.
       buf = buf.replace(/[ \t]+$/, "");
-      push({ type: "br" });
+      const last = out[out.length - 1];
+      if (!buf && last?.type === "text") last.text = last.text.replace(/[ \t]+$/, "");
+      flush();
+      out.push({ type: "br" });
       i++;
       while (src[i] === " " || src[i] === "\t") i++;
       continue;
@@ -510,73 +600,75 @@ export function parseInline(src: string, inLink = false): Inline[] {
         continue;
       }
       let code = src.slice(i + run, close).replace(/\n/g, " ");
-      if (code.length > 2 && code.startsWith(" ") && code.endsWith(" ") && /\S/.test(code)) code = code.slice(1, -1);
-      push({ type: "code", text: code });
+      if (code.length > 2 && code.startsWith(" ") && code.endsWith(" ") && /[^ ]/.test(code)) code = code.slice(1, -1);
+      flush();
+      out.push({ type: "code", text: code });
       i = close + run;
       continue;
     }
 
-    if (!inLink && (c === "[" || (c === "!" && src[i + 1] === "["))) {
-      const image = c === "!";
-      const link = linkAt(src, image ? i + 1 : i);
-      if (link) {
-        const children = parseInline(link.label, true);
-        push(image ? { type: "image", href: link.href, title: link.title, alt: plainText(children) } : { type: "link", href: link.href, title: link.title, children });
-        i = link.end;
-        continue;
-      }
-    }
-
-    if (!inLink && c === "<") {
+    if (c === "<") {
       const m = matchAt(AUTOLINK, src, i);
-      if (m) {
-        push({ type: "link", href: m[1]!, title: "", children: [{ type: "text", text: m[1]!.replace(/^mailto:/, "") }] });
-        i += m[0].length;
+      const email = m ? null : matchAt(EMAIL_AUTOLINK, src, i);
+      if (m || email) {
+        flush();
+        const text = (m ?? email)![1]!;
+        out.push({ type: "link", href: m ? text : `mailto:${text}`, title: "", children: [{ type: "text", text }] });
+        i += (m ?? email)![0].length;
         continue;
       }
     }
 
-    if (!inLink && c === "h" && !/[\p{L}\p{N}]/u.test(src[i - 1] ?? "")) {
-      const m = matchAt(BARE_URL, src, i);
-      if (m) {
-        let url = m[0];
-        // A closing parenthesis belongs to the URL only if it has an opening one.
-        while (url.endsWith(")") && (url.match(/\)/g)?.length ?? 0) > (url.match(/\(/g)?.length ?? 0)) url = url.slice(0, -1);
-        push({ type: "link", href: url, title: "", children: [{ type: "text", text: url }] });
-        i += url.length;
+    if (c === "[" || (c === "!" && src[i + 1] === "[")) {
+      const image = c === "!";
+      brackets.push({ node: textNode(image ? "![" : "["), image, active: true, bottom: delims.length });
+      i += image ? 2 : 1;
+      continue;
+    }
+
+    if (c === "]") {
+      const opener = brackets.pop();
+      const tail = opener?.active && src[i + 1] === "(" ? linkTail(src, i + 1) : null;
+      if (!opener || !tail) {
+        buf += "]";
+        i++;
         continue;
       }
+      flush();
+      processEmphasis(opener.bottom);
+      const from = out.indexOf(opener.node);
+      const children = unlink(out.splice(from + 1));
+      out[from] = opener.image
+        ? { type: "image", href: tail.href, title: tail.title, alt: plainText(children) }
+        : { type: "link", href: tail.href, title: tail.title, children };
+      // No links inside links: earlier "[" openers can no longer form one.
+      if (!opener.image) for (const b of brackets) if (!b.image) b.active = false;
+      i = tail.end;
+      continue;
     }
 
     if (c === "*" || c === "_" || (c === "~" && src[i + 1] === "~")) {
       const run = runLength(src, i);
-      const next = src[i + run];
-      const prev = src[i - 1];
-      const canOpen = next !== undefined && /\S/.test(next) && !(c === "_" && prev !== undefined && /[\p{L}\p{N}]/u.test(prev));
-      let matched = false;
-      if (canOpen) {
-        const lengths = c === "~" ? (run === 2 ? [2] : []) : [3, 2, 1].filter((l) => l <= run);
-        for (const len of lengths) {
-          const close = delimClose(src, i + run, c, len);
-          if (close < 0) continue;
-          buf += c.repeat(run - len);
-          const inner = parseInline(src.slice(i + run, close), inLink);
-          const node: Inline =
-            c === "~"
-              ? { type: "del", children: inner }
-              : len === 3
-                ? { type: "strong", children: [{ type: "em", children: inner }] }
-                : { type: len === 2 ? "strong" : "em", children: inner };
-          push(node);
-          i = close + len;
-          matched = true;
-          break;
-        }
+      const before = src[i - 1] ?? "\n";
+      const after = src[i + run] ?? "\n";
+      const wsBefore = WHITESPACE.test(before);
+      const wsAfter = WHITESPACE.test(after);
+      const pBefore = PUNCTUATION.test(before);
+      const pAfter = PUNCTUATION.test(after);
+      const left = !wsAfter && (!pAfter || wsBefore || pBefore);
+      const right = !wsBefore && (!pBefore || wsAfter || pAfter);
+      const node = textNode(src.slice(i, i + run));
+      if (c !== "~" || run === 2) {
+        delims.push({
+          node,
+          char: c,
+          count: run,
+          length: run,
+          canOpen: c === "_" ? left && (!right || pBefore) : left,
+          canClose: c === "_" ? right && (!left || pAfter) : right,
+        });
       }
-      if (!matched) {
-        buf += src.slice(i, i + run);
-        i += run;
-      }
+      i += run;
       continue;
     }
 
@@ -584,7 +676,41 @@ export function parseInline(src: string, inLink = false): Inline[] {
     i++;
   }
   flush();
-  return out;
+  processEmphasis(0);
+
+  // Merge the text pieces left by delimiters and brackets that matched nothing.
+  const merge = (nodes: Inline[]): Inline[] => {
+    const merged: Inline[] = [];
+    for (const n of nodes) {
+      const prev = merged[merged.length - 1];
+      if (n.type === "text" && !n.text) continue;
+      if (n.type === "text" && prev?.type === "text") merged[merged.length - 1] = { type: "text", text: prev.text + n.text };
+      else merged.push("children" in n ? { ...n, children: merge(n.children) } : n);
+    }
+    return merged;
+  };
+  return linkBareUrls(merge(out));
+}
+
+/** GFM extended autolinks: bare http(s) URLs in text outside links become links, after the inline parse. */
+function linkBareUrls(nodes: Inline[]): Inline[] {
+  return nodes.flatMap((n): Inline[] => {
+    if (n.type === "link") return [n];
+    if ("children" in n) return [{ ...n, children: linkBareUrls(n.children) }];
+    if (n.type !== "text" || !n.text.includes("http")) return [n];
+    const parts: Inline[] = [];
+    let last = 0;
+    for (const m of n.text.matchAll(BARE_URL)) {
+      let url = m[0];
+      // A closing parenthesis belongs to the URL only if it has an opening one.
+      while (url.endsWith(")") && (url.match(/\)/g)?.length ?? 0) > (url.match(/\(/g)?.length ?? 0)) url = url.slice(0, -1);
+      if (m.index > last) parts.push({ type: "text", text: n.text.slice(last, m.index) });
+      parts.push({ type: "link", href: url, title: "", children: [{ type: "text", text: url }] });
+      last = m.index + url.length;
+    }
+    if (last < n.text.length) parts.push({ type: "text", text: n.text.slice(last) });
+    return parts;
+  });
 }
 
 // ---- streaming -------------------------------------------------------------------------------
