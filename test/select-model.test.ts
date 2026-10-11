@@ -84,6 +84,75 @@ describe("selectModel", () => {
     expect(pick({ choice: DOCUMENT_MODEL, hasOptions: true }).reason).toBe("manual-document-unusable");
     expect(pick({ choice: DOCUMENT_MODEL, sourceLang: "auto", text: "Bonjour" }).reason).toBe("manual-document-unusable");
   });
+
+  test("manual chat choice warns only above the threshold", () => {
+    expect(pick({ choice: CHAT_MODEL, text: "a".repeat(LONG_THRESHOLD_LETTERS) })).toMatchObject({
+      model: CHAT_MODEL,
+      reason: "manual",
+      warn: false,
+    });
+    expect(pick({ choice: CHAT_MODEL, text: "a".repeat(LONG_THRESHOLD_LETTERS + 1) })).toMatchObject({
+      model: CHAT_MODEL,
+      reason: "manual",
+      warn: true,
+    });
+  });
+
+  test("manual chat choice with glossary or constraints is not flagged when the text is short", () => {
+    expect(pick({ choice: CHAT_MODEL, hasOptions: true })).toMatchObject({ model: CHAT_MODEL, reason: "manual", warn: false });
+  });
+
+  test("manual chat choice sends an explicit source language", () => {
+    expect(pick({ choice: CHAT_MODEL, sourceLang: "en", targetLang: "zh" }).sourceLang).toBe("en");
+    expect(pick({ choice: CHAT_MODEL, sourceLang: "zh", text: "a".repeat(20_000) }).sourceLang).toBe("zh");
+  });
+
+  test("an explicit source language is sent on the chat model too", () => {
+    expect(pick({ sourceLang: "fr", targetLang: "en" }).sourceLang).toBe("fr");
+    expect(pick({ sourceLang: "zh", targetLang: "en" })).toMatchObject({ model: CHAT_MODEL, sourceLang: "zh" });
+  });
+
+  test("same source and target language is not a document direction", () => {
+    expect(pick({ text: "a".repeat(20_000), sourceLang: "en", targetLang: "en" })).toMatchObject({
+      model: CHAT_MODEL,
+      reason: "long-unsupported-direction",
+      sourceLang: "en",
+      warn: true,
+    });
+    expect(pick({ text: "你好世界。".repeat(4000), sourceLang: "auto", targetLang: "zh" })).toMatchObject({
+      model: CHAT_MODEL,
+      reason: "long-unsupported-direction",
+      warn: true,
+    });
+    expect(pick({ text: "Hello", sourceLang: "en", targetLang: "en" })).toMatchObject({ model: CHAT_MODEL, reason: "short", warn: false });
+    expect(pick({ choice: DOCUMENT_MODEL, sourceLang: "en", targetLang: "en" }).reason).toBe("manual-document-unusable");
+  });
+
+  test("upper-case language codes select the same model as lower-case ones", () => {
+    expect(pick({ text: "a".repeat(20_000), sourceLang: "EN", targetLang: "ZH" })).toMatchObject({
+      model: DOCUMENT_MODEL,
+      reason: "long-document",
+      sourceLang: "en",
+    });
+    expect(pick({ text: "你好世界。".repeat(4000), sourceLang: "ZH", targetLang: "EN" })).toMatchObject({
+      model: DOCUMENT_MODEL,
+      reason: "long-document",
+      sourceLang: "zh",
+    });
+    expect(pick({ text: "a".repeat(20_000), sourceLang: "EN", targetLang: "FR" })).toMatchObject({
+      model: CHAT_MODEL,
+      reason: "long-unsupported-direction",
+    });
+  });
+
+  test("an upper-case or padded AUTO is detected like auto, as the backend does", () => {
+    expect(pick({ text: "你好世界。".repeat(4000), sourceLang: "AUTO", targetLang: "en" })).toMatchObject({
+      model: DOCUMENT_MODEL,
+      reason: "long-document",
+      sourceLang: "zh",
+    });
+    expect(pick({ sourceLang: " Auto " }).sourceLang).toBeUndefined();
+  });
 });
 
 describe("detectSource", () => {
@@ -97,5 +166,46 @@ describe("detectSource", () => {
     expect(detectSource("Le conseil municipal a rouvert la bibliothèque après des travaux.")).toBeUndefined();
     expect(detectSource("El ayuntamiento reabrió la biblioteca después de las obras.")).toBeUndefined();
     expect(detectSource("1234 !!!")).toBeUndefined();
+  });
+
+  test("kana at 5 percent: 5 of 100 letters is not Japanese, 6 of 100 is", () => {
+    expect(detectSource("あ".repeat(5) + "a".repeat(95))).toBeUndefined();
+    expect(detectSource("あ".repeat(6) + "a".repeat(94))).toBe("ja");
+  });
+
+  test("Han at 30 percent: 30 of 100 letters is not Chinese, 31 of 100 is", () => {
+    expect(detectSource("中".repeat(30) + "a".repeat(70))).toBeUndefined();
+    expect(detectSource("中".repeat(31) + "a".repeat(69))).toBe("zh");
+  });
+
+  test("ASCII at 98 percent: 97 of 100 letters is not English, 98 of 100 can be", () => {
+    const common = "the ".repeat(32);
+    expect(detectSource(common + "a" + "é".repeat(3))).toBeUndefined();
+    expect(detectSource(common + "ab" + "é".repeat(2))).toBe("en");
+  });
+
+  test("common English words at 10 percent: 10 of 100 words is not English, 11 of 100 is", () => {
+    expect(detectSource("the ".repeat(10) + "zebra ".repeat(90))).toBeUndefined();
+    expect(detectSource("the ".repeat(11) + "zebra ".repeat(89))).toBe("en");
+  });
+
+  test("traditional Chinese is Chinese", () => {
+    expect(detectSource("這個圖書館在上個月重新開放，經過了比計劃長得多的翻修。")).toBe("zh");
+  });
+
+  test("kanji-only Japanese is detected as Chinese, because it has no kana", () => {
+    expect(detectSource("東京国立博物館上野公園")).toBe("zh");
+  });
+
+  test("Chinese with a few English words is Chinese; English with a little Chinese is not guessed", () => {
+    expect(detectSource("今天天气很好，我们去 park 散步。")).toBe("zh");
+    expect(detectSource("The library 图书馆 reopened last month 重新开放 after the renovation")).toBeUndefined();
+  });
+
+  test("only the first 20,000 letters decide, while countLetters still counts all of them", () => {
+    const head = "the ".repeat(7000); // 21,000 letters, all English
+    const text = head + "你".repeat(4_000_000);
+    expect(detectSource(text)).toBe("en");
+    expect(countLetters(text)).toBe(21_000 + 4_000_000);
   });
 });
