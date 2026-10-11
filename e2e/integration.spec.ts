@@ -166,7 +166,6 @@ test("plain source: Markdown-like output stays plain text", async ({ app }) => {
   // One span per line, nothing rendered.
   await expect(app.output.locator("> span")).toHaveText(["# 不是标题\n", "**也不粗**"]);
   await expect(app.output.locator(":not(span), span *")).toHaveCount(0);
-  await expect(app.page.locator("#output-switch")).toBeHidden();
 });
 
 test("Markdown source: rendered in place of the textarea after Translate, with Raw and Preview on each side", async ({ app }) => {
@@ -202,13 +201,14 @@ test("Markdown source: rendered in place of the textarea after Translate, with R
   await expect(app.output.locator("h3")).toHaveText("标题");
 });
 
-test("plain source: the textarea stays and no switches are offered", async ({ app }) => {
+test("plain source: the textarea stays and the switches are offered", async ({ app }) => {
   await stubTranslate(app, 200, sse([["delta", { text: "你好" }], ["done", done]]));
   await run(app, "Hello");
   await expect(app.meta).toContainText("generated");
   await expect(app.text).toBeVisible();
-  await expect(app.page.locator("#source-switch")).toBeHidden();
-  await expect(app.page.locator("#output-switch")).toBeHidden();
+  await expect(app.page.locator("#source-switch button[aria-disabled='true']")).toHaveCount(0);
+  await expect(app.page.locator("#output-switch button[aria-disabled='true']")).toHaveCount(0);
+  await expect(app.copy).toHaveAttribute("aria-disabled", "false");
 });
 
 test("Clear empties both sides and returns the source to the plain textarea", async ({ app }) => {
@@ -222,12 +222,13 @@ test("Clear empties both sides and returns the source to the plain textarea", as
   await expect(app.text).toHaveValue("");
   await expect(app.text).toBeFocused();
   await expect(app.page.locator("#source-area")).toBeHidden();
-  await expect(app.page.locator("#source-switch")).toBeHidden();
-  await expect(app.page.locator("#output-switch")).toBeHidden();
+  await expect(app.page.locator("#source-switch button[aria-disabled='false']")).toHaveCount(0);
+  await expect(app.page.locator("#output-switch button[aria-disabled='false']")).toHaveCount(0);
   await expect(app.output).toBeEmpty();
   await expect(app.page.locator("#placeholder")).toBeVisible();
   await expect(app.meta).toHaveText("");
-  await expect(app.copy).toBeHidden();
+  await expect(app.copy).toHaveAttribute("aria-disabled", "true");
+  await expect(app.page.getByRole("button", { name: "Clear" })).toHaveAttribute("aria-disabled", "true");
   await expect(app.page.locator("#count")).toHaveText("0 letters");
 });
 

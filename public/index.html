@@ -26,9 +26,9 @@
                 <label for="from">From</label>
                 <select id="from" name="from"></select>
               </div>
-              <div id="source-switch" class="view-switch" role="group" aria-label="Source view" hidden>
-                <button type="button" data-view="raw" aria-pressed="false">Raw</button>
-                <button type="button" data-view="preview" aria-pressed="true">Preview</button>
+              <div id="source-switch" class="view-switch" role="group" aria-label="Source view">
+                <button type="button" data-view="raw" aria-pressed="true" aria-disabled="true">Raw</button>
+                <button type="button" data-view="preview" aria-pressed="false" aria-disabled="true">Preview</button>
               </div>
             </div>
 
@@ -42,15 +42,13 @@
             <div class="panel-foot">
               <p id="count" class="hint"></p>
               <div class="actions">
-                <button type="button" id="clear">Clear</button>
+                <button type="button" id="clear" aria-disabled="true">Clear</button>
                 <button type="button" id="stop" hidden>Stop</button>
                 <button type="submit" id="translate" class="primary">Translate</button>
               </div>
             </div>
-            <div class="status">
-              <p id="text-error" class="error" hidden></p>
-              <p id="advice" class="advice"></p>
-            </div>
+            <p id="text-error" class="error" hidden></p>
+            <p id="advice" class="advice"></p>
           </section>
 
           <section class="panel result" aria-labelledby="result-heading">
@@ -60,9 +58,9 @@
                 <label for="to">To</label>
                 <select id="to" name="to"></select>
               </div>
-              <div id="output-switch" class="view-switch" role="group" aria-label="Translation view" hidden>
-                <button type="button" data-view="raw" aria-pressed="false">Raw</button>
-                <button type="button" data-view="preview" aria-pressed="true">Preview</button>
+              <div id="output-switch" class="view-switch" role="group" aria-label="Translation view">
+                <button type="button" data-view="raw" aria-pressed="false" aria-disabled="true">Raw</button>
+                <button type="button" data-view="preview" aria-pressed="true" aria-disabled="true">Preview</button>
               </div>
             </div>
 
@@ -73,7 +71,7 @@
 
             <div class="panel-foot">
               <p id="meta" role="status" class="hint"></p>
-              <button type="button" id="copy" hidden>Copy translation</button>
+              <button type="button" id="copy" aria-label="Copy translation" aria-disabled="true">Copy</button>
             </div>
             <ul id="notes" class="notes"></ul>
           </section>

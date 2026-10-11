@@ -28,6 +28,7 @@
     --radius: calc(var(--radius-md) + 1rem + 1px);
     --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.75rem));
     --target: 2.75rem;
+    --gap: 1rem;
     /* Height of the text box, the source preview and the translation: equal, so the panes line up. */
     --pane-height: clamp(16rem, 60dvh, 40rem);
     --gutter: 1rem;
@@ -118,27 +119,19 @@
   .workspace {
     display: grid;
     grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
-    gap: 1rem;
+    gap: var(--gap);
   }
 
   .panel {
     display: flex;
     flex-direction: column;
-    gap: 0.75rem;
+    gap: var(--gap);
     min-inline-size: 0;
-    padding: 1rem;
+    padding: var(--gap);
     background: var(--surface);
     border: 1px solid var(--divider);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
-  }
-
-  /* Lines that come and go (warnings, hints, field errors) sit below everything else in the
-     panel, so nothing above them moves when they appear. */
-  .status {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
   }
 
   .panel-foot {
@@ -146,7 +139,7 @@
     flex-wrap: wrap;
     align-items: center;
     justify-content: space-between;
-    gap: 0.5rem 1rem;
+    gap: var(--gap);
     min-block-size: var(--target);
   }
 }
@@ -163,6 +156,20 @@
   .hint {
     color: var(--muted);
     font-size: 0.875rem;
+  }
+
+  /* The status line scrolls sideways instead of wrapping. Its box is as tall as a button, so a
+     classic scrollbar (when the platform draws one) lands in the empty space under the centred
+     text and the row never changes height. Overlay scrollbars are up to the platform; the
+     scrollbar properties that would style them are not supported in every browser in
+     `.browserslistrc`. */
+  #meta {
+    flex: 1 1 0;
+    min-inline-size: 0;
+    block-size: var(--target);
+    line-height: var(--target);
+    white-space: nowrap;
+    overflow: auto hidden;
   }
 
   .error {
@@ -351,7 +358,7 @@
   .actions {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.75rem;
+    gap: var(--gap);
 
     /* Clear, Stop and Translate share one width, so swapping Clear for Stop moves nothing. */
     > button {
@@ -416,7 +423,7 @@
     display: flex;
     flex-wrap: wrap;
     align-items: end;
-    gap: 0.5rem 1rem;
+    gap: var(--gap);
 
     > .language {
       flex: 1 1 12rem;
@@ -446,6 +453,12 @@
         color: var(--on-accent);
         background: var(--accent);
         border-color: var(--accent);
+      }
+
+      &[aria-disabled="true"] {
+        color: var(--muted);
+        background: var(--surface-sunken);
+        border: 1px dashed var(--border);
       }
     }
   }

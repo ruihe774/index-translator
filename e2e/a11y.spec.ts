@@ -62,7 +62,7 @@ test("skip link is first in the tab order and the whole form is reachable in rea
     await app.page.keyboard.press("Tab");
     names.push(await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""));
   }
-  expect(names.slice(0, 6)).toEqual(["Skip to main content", "engine", "from", "text", "clear", "translate"]);
+  expect(names.slice(0, 8)).toEqual(["Skip to main content", "engine", "from", "Raw", "Preview", "text", "clear", "translate"]);
 });
 
 test("every control keeps a visible focus outline", async ({ app }) => {

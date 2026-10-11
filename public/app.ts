@@ -94,7 +94,15 @@ function setMeta(text: string, error = false) {
   metaEl.classList.toggle("error", error);
   metaEl.setAttribute("role", error ? "alert" : "status");
   setText(metaEl, text);
+  markScrollable();
 }
+
+/** The line scrolls sideways when it is longer than its room; then keyboard users must be able to reach it. */
+function markScrollable() {
+  if (metaEl.scrollWidth > metaEl.clientWidth) metaEl.tabIndex = 0;
+  else metaEl.removeAttribute("tabindex");
+}
+new ResizeObserver(markScrollable).observe(metaEl);
 
 /** A short message that gives the line back to what it showed before. */
 function flashMeta(text: string) {
@@ -251,31 +259,42 @@ function setTranslateEnabled() {
 
 type View = "raw" | "preview";
 
-/** Whether the switch is offered (the source looked like Markdown), and the chosen view. */
+/** Whether the text is rendered as Markdown (it looked like it), and the chosen view. */
 const views = {
-  source: { available: false, view: "preview" as View },
+  source: { available: false, view: "raw" as View },
   output: { available: false, view: "preview" as View },
 };
 
 function showSwitch(el: HTMLElement, side: keyof typeof views) {
-  const { available, view } = views[side];
-  el.hidden = !available;
+  const { view } = views[side];
   for (const b of el.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.view === view));
 }
 
+/** The switches, Clear and Copy are always shown; they are aria-disabled while they have nothing to act on. */
+function refreshControls() {
+  const hasText = textInput.value.length > 0;
+  const hasOutput = translation.length > 0;
+  for (const b of sourceSwitch.querySelectorAll("button")) b.setAttribute("aria-disabled", String(!hasText));
+  for (const b of outputSwitch.querySelectorAll("button")) b.setAttribute("aria-disabled", String(!hasOutput));
+  clearBtn.setAttribute("aria-disabled", String(!hasText && !hasOutput));
+  copyBtn.setAttribute("aria-disabled", String(!hasOutput || running !== null));
+}
+
 function showSource() {
-  const preview = views.source.available && views.source.view === "preview";
+  const preview = views.source.view === "preview" && textInput.value.length > 0;
   showSwitch(sourceSwitch, "source");
-  if (preview) renderText(sourceView, textInput.value, true);
+  if (preview) renderText(sourceView, textInput.value, views.source.available);
   else sourceView.replaceChildren();
   sourceArea.hidden = !preview;
   textInput.hidden = preview;
+  refreshControls();
   refreshSync();
 }
 
 /** Rebuilds the output in the chosen view; text still streaming is appended to the new view. */
 function showOutput() {
   showSwitch(outputSwitch, "output");
+  refreshControls();
   output = createOutput(outputEl, views.output.available && views.output.view === "preview");
   if (translation) {
     output.append(translation);
@@ -287,7 +306,8 @@ function wireSwitch(el: HTMLElement, side: keyof typeof views, show: () => void)
   for (const b of el.querySelectorAll<HTMLButtonElement>("button")) {
     b.addEventListener("click", () => {
       const view = b.dataset.view as View;
-      if (views[side].view === view) return;
+      if (b.getAttribute("aria-disabled") === "true" || views[side].view === view) return;
+      if (side === "source") views.source.available = looksLikeMarkdown(textInput.value);
       views[side].view = view;
       show();
     });
@@ -324,6 +344,7 @@ function onOutputClick(e: MouseEvent) {
 
 function setRunning(on: boolean) {
   setTranslateEnabled();
+  refreshControls();
   // Stop takes Clear's place while a translation runs; the two are never shown together.
   stopBtn.hidden = !on;
   clearBtn.hidden = on;
@@ -338,8 +359,8 @@ function clearResult(markdown: boolean) {
   showOutput();
   setMeta("");
   notesEl.replaceChildren();
-  copyBtn.hidden = true;
   placeholderEl.hidden = true;
+  refreshControls();
 }
 
 function addNote(text: string) {
@@ -350,8 +371,7 @@ function addNote(text: string) {
 
 /** Output already on screen when a translation ends early is kept, but it must not look finished. */
 function showInterruption(stopped: boolean, message = "") {
-  const { note, showCopy } = interruption(translation, stopped);
-  copyBtn.hidden = !showCopy;
+  const { note } = interruption(translation, stopped);
   setMeta([message, note ?? (stopped ? "Stopped." : "")].filter(Boolean).join(" "), !stopped);
 }
 
@@ -403,7 +423,7 @@ async function translate() {
   running = controller;
   const markdown = looksLikeMarkdown(text);
   clearResult(markdown);
-  views.source = { available: markdown, view: "preview" };
+  views.source = { available: markdown, view: markdown ? "preview" : "raw" };
   showSource();
   outputEl.lang = toSelect.value;
   setRunning(true);
@@ -434,7 +454,9 @@ async function translate() {
       } else if (event === "start") {
         setMeta(`Translating with ${modelLabel(data.model)}…`);
       } else if (event === "delta") {
+        const first = translation.length === 0;
         translation += data.text;
+        if (first) refreshControls();
         output!.append(data.text);
       } else if (event === "done") {
         done = data;
@@ -455,7 +477,6 @@ async function translate() {
     const alignment = done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
     if (alignment) synced = { source: text, translation, alignment };
     setMeta(metaLine(sel.model, done));
-    copyBtn.hidden = translation.length === 0;
   } catch (e) {
     if (stopped) {
       showInterruption(true);
@@ -485,10 +506,10 @@ async function translate() {
 
 /** Empties the source and the result and returns the source to the plain textarea. */
 function clearAll() {
-  if (running) return;
+  if (running || clearBtn.getAttribute("aria-disabled") === "true") return;
   textInput.value = "";
   showFieldError(textError, textInput, null);
-  views.source = { available: false, view: "preview" };
+  views.source = { available: false, view: "raw" };
   showSource();
   clearResult(false);
   placeholderEl.hidden = false;
@@ -510,6 +531,7 @@ form.addEventListener("submit", (e) => {
 
 textInput.addEventListener("input", () => {
   if (!textError.hidden && textInput.value.trim()) showFieldError(textError, textInput, null);
+  refreshControls();
   refreshSync();
   refreshSoon();
 });
@@ -534,6 +556,7 @@ for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button")) {
 }
 
 copyBtn.addEventListener("click", async () => {
+  if (copyBtn.getAttribute("aria-disabled") === "true") return;
   try {
     await navigator.clipboard.writeText(translation);
     flashMeta("Translation copied to the clipboard.");
@@ -546,6 +569,7 @@ const savedModel = stored("model");
 if (CHOICES.includes(savedModel as Choice)) setModelChoice(savedModel as Choice);
 
 setTranslateEnabled();
+refreshControls();
 void loadLanguages();
 void pollHealth();
 document.addEventListener("visibilitychange", () => void pollHealth());

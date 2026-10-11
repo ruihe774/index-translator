@@ -134,8 +134,11 @@ test("the Model switch looks like the Raw / Preview switch", async ({ app }) => 
       const b = getComputedStyle(el.querySelector("button[aria-pressed='true']")!);
       return [b.backgroundColor, b.color, b.borderColor, b.fontWeight, b.minHeight];
     });
-  await app.page.evaluate(() => document.querySelector("#source-switch")!.removeAttribute("hidden"));
-  expect(await style("#model-switch")).toEqual(await style("#source-switch"));
+  // The source switch starts disabled; enable it and keep the pointer off it.
+  await app.text.fill("x");
+  await app.page.mouse.move(0, 0);
+  const model = await style("#model-switch");
+  await expect.poll(() => style("#source-switch")).toEqual(model);
 });
 
 test("the engine status is a link to the health endpoint, and the footer links are gone", async ({ app }) => {
@@ -231,4 +234,45 @@ test("the disabled Translate button does not react to hover", async ({ app, mock
   await app.translate.hover();
   await app.page.waitForTimeout(400);
   expect(await bg()).not.toBe(enabled); // an enabled button still reacts
+});
+
+test("gaps are even: panel padding, the rows, the buttons", async ({ app, mock }) => {
+  await mock.set({ chunks: [THINK, "你好"] });
+  await app.open();
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  await app.text.fill("Hello");
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  const gaps = await app.page.evaluate(() => {
+    const r = (s: string) => document.querySelector(s)!.getBoundingClientRect();
+    const panel = r(".source");
+    const head = r(".source .pane-head");
+    const text = r("#text");
+    const foot = r(".source .panel-foot");
+    const clear = r("#clear");
+    const translate = r("#translate");
+    return {
+      top: head.top - panel.top - 1,
+      left: head.left - panel.left - 1,
+      headToText: text.top - head.bottom,
+      textToFoot: foot.top - text.bottom,
+      buttons: translate.left - clear.right,
+      right: panel.right - 1 - translate.right,
+      bottom: panel.bottom - 1 - translate.bottom,
+    };
+  });
+  const gap = await app.page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+  for (const [k, v] of Object.entries(gaps)) expect(Math.abs(v - gap), k).toBeLessThan(1.5);
+});
+
+test("a long status line scrolls sideways and stays reachable by keyboard", async ({ app, mock }) => {
+  await app.page.setViewportSize({ width: 600, height: 800 });
+  await mock.set({ failWith: "boom ".repeat(100) });
+  await app.open();
+  await app.text.fill("Hello");
+  await app.translate.click();
+  await expect(app.meta).toContainText("boom boom");
+  expect(await app.meta.evaluate((el) => el.scrollWidth > el.clientWidth)).toBe(true);
+  expect(await app.meta.evaluate((el) => el.getBoundingClientRect().height)).toBeLessThan(50);
+  await expect(app.meta).toHaveAttribute("tabindex", "0");
 });
