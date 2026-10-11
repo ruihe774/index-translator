@@ -9,6 +9,7 @@ import {
   type ModelId,
   type Selection,
 } from "./select-model.js";
+import { mismatchMessage, paragraphMismatch } from "./paragraphs.js";
 
 const API = "/api/v1";
 const MODEL_LABELS: Record<ModelId, string> = {
@@ -305,10 +306,6 @@ async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<{ ev
   }
 }
 
-function paragraphs(text: string): number {
-  return text.split(/\n\s*\n/).filter((p) => p.trim()).length;
-}
-
 function seconds(ms: number): string {
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
 }
@@ -433,13 +430,8 @@ async function translate() {
     if (done.finish_reason === "length") {
       notes.push("The translation was cut off because it reached the output limit. It is incomplete.");
     }
-    const sourceParagraphs = paragraphs(text);
-    const outParagraphs = paragraphs(translation);
-    if (sourceParagraphs >= 3 && sourceParagraphs !== outParagraphs) {
-      notes.push(
-        `The source has ${sourceParagraphs} paragraphs and the translation has ${outParagraphs}. Parts may have been dropped, merged or repeated; check it against the source.`,
-      );
-    }
+    const mismatch = paragraphMismatch(text, translation);
+    if (mismatch) notes.push(mismatchMessage(mismatch));
     if (sel.model === DOCUMENT_MODEL && sel.sourceLang === "zh" && toSelect.value === "en") {
       notes.push("Long Chinese-to-English output can silently lose content. Check that every part of the source is present.");
     }
