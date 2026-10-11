@@ -468,6 +468,35 @@ describe("static files", () => {
     await res.text();
   });
 
+  test("/app.js is the transpiled app.ts: JavaScript, relative imports intact, revalidated by ETag", async () => {
+    const res = await fetch(base + "/app.js");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("content-type")).toStartWith("text/javascript");
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+    const code = await res.text();
+    expect(code).toContain('from "./select-model.js"');
+    expect(code).not.toContain(": HTMLElement");
+
+    const etag = res.headers.get("etag")!;
+    const again = await fetch(base + "/app.js", { headers: { "if-none-match": etag } });
+    expect(again.status).toBe(304);
+    expect(await again.text()).toBe("");
+  });
+
+  test("/select-model.js is served so the browser and bun test share one module", async () => {
+    const res = await fetch(base + "/select-model.js");
+    expect(res.status).toBe(200);
+    expect(await res.text()).toContain("LONG_THRESHOLD_LETTERS");
+  });
+
+  test("a .js request with no .ts behind it is a 404, including traversal to src/*.ts", async () => {
+    for (const path of ["/nothing.js", "/..%2fsrc%2fapp.js", "/%2e%2e%2fsrc%2fapp.js"]) {
+      const res = await fetch(base + path);
+      expect(res.status).toBe(404);
+      expect(await res.text()).not.toContain("startApp");
+    }
+  });
+
   test("a percent-encoded traversal stays inside the public directory", async () => {
     for (const path of ["/%2e%2e%2f", "/..%2f..%2fsrc%2fapp.ts", "/%2e%2e%2f%2e%2e%2fdocs%2fopenapi.yaml"]) {
       const res = await fetch(base + path);

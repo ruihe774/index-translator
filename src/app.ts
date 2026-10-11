@@ -1,12 +1,12 @@
 // HTTP surface: REST + SSE API under /api/v1 and static files for the web app.
 
 import type { Server } from "bun";
-import { join, normalize, sep } from "node:path";
 import { CONTEXT_MARGIN, type Config } from "./config";
 import { Engine, EngineError, launchLlamaServer, type EngineTimings, type FinishReason, type Launcher, type Usage } from "./llama";
 import { MODELS, findModel, type ModelSpec } from "./models";
 import { DOCUMENT_DIRECTIONS, LANGUAGES, buildDocumentPrompt, buildPrompt, type PromptInput } from "./prompt";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
+import { createStaticServer } from "./static";
 
 const API = "/api/v1";
 const DEFAULT_OUTPUT_RATIO = 4;
@@ -495,20 +495,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
     });
   }
 
-  async function serveStatic(pathname: string): Promise<Response> {
-    let rel: string;
-    try {
-      rel = decodeURIComponent(pathname);
-    } catch {
-      return new Response("Bad Request", { status: 400 });
-    }
-    if (rel.endsWith("/")) rel += "index.html";
-    const path = normalize(join(cfg.publicDir, rel));
-    if (!path.startsWith(cfg.publicDir + sep)) return new Response("Not Found", { status: 404 });
-    const file = Bun.file(path);
-    if (!(await file.exists())) return new Response("Not Found", { status: 404 });
-    return new Response(file);
-  }
+  const serveStatic = createStaticServer(cfg.publicDir);
 
   /**
    * Counts a request's prompt without entering the queue and without loading or swapping a model.
@@ -558,7 +545,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
       const path = url.pathname;
       if (!path.startsWith(API + "/")) {
         if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method Not Allowed", { status: 405 });
-        return serveStatic(path);
+        return serveStatic(path, req);
       }
 
       try {
