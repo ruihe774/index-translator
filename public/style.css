@@ -34,9 +34,15 @@
     --gutter: 1rem;
     --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
     /* Per language, so Han characters get Japanese or Chinese glyph forms, not the first CJK font's. */
-    --font-ja: system-ui, "Segoe UI", "Noto Sans", "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
-    --font-zh: system-ui, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC", sans-serif;
-    --shadow: 0 1px 2px light-dark(rgb(20 30 60 / 0.08), rgb(0 0 0 / 0.4)), 0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
+    --font-ja:
+      system-ui, "Segoe UI", "Noto Sans", "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP",
+      sans-serif;
+    --font-zh:
+      system-ui, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC",
+      sans-serif;
+    --shadow:
+      0 1px 2px light-dark(rgb(20 30 60 / 0.08), rgb(0 0 0 / 0.4)),
+      0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
   }
 
   *,
@@ -56,7 +62,7 @@
     flex-direction: column;
     background: var(--bg);
     color: var(--text);
-    font: 1rem/1.5 var(--font);
+    font: 1rem / 1.5 var(--font);
   }
 
   h1,
@@ -253,7 +259,17 @@
      the corner (about 15px square), so the drawn grip must lie inside it to
      respond to the mouse. Only the option boxes resize. */
   .options textarea {
-    background-image: linear-gradient(135deg, transparent 50%, var(--muted) 50%, var(--muted) 56%, transparent 56%, transparent 72%, var(--muted) 72%, var(--muted) 78%, transparent 78%);
+    background-image: linear-gradient(
+      135deg,
+      transparent 50%,
+      var(--muted) 50%,
+      var(--muted) 56%,
+      transparent 56%,
+      transparent 72%,
+      var(--muted) 72%,
+      var(--muted) 78%,
+      transparent 78%
+    );
     background-size: 0.625rem 0.625rem;
     background-position: right 0.25rem bottom 0.25rem;
     background-repeat: no-repeat;

@@ -119,7 +119,12 @@ class NativeWorker {
     };
   }
 
-  private async *generate(model: number, content: string, maxTokens: number, signal?: AbortSignal): AsyncGenerator<GenerationEvent> {
+  private async *generate(
+    model: number,
+    content: string,
+    maxTokens: number,
+    signal?: AbortSignal,
+  ): AsyncGenerator<GenerationEvent> {
     signal?.throwIfAborted();
     const replies: WorkerReply[] = [];
     let wake: (() => void) | undefined;

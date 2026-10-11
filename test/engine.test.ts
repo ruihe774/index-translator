@@ -358,15 +358,21 @@ describe("generate", () => {
 
 describe("chatPrompt", () => {
   test("wraps the content as one ChatML user turn and opens the assistant turn", () => {
-    expect(chatPrompt("Translate: hi", false)).toBe("<|im_start|>user\nTranslate: hi<|im_end|>\n<|im_start|>assistant\n");
+    expect(chatPrompt("Translate: hi", false)).toBe(
+      "<|im_start|>user\nTranslate: hi<|im_end|>\n<|im_start|>assistant\n",
+    );
   });
 
   test("a thinking template gets an empty think block, so the answer comes first", () => {
-    expect(chatPrompt("hi", true)).toBe("<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n");
+    expect(chatPrompt("hi", true)).toBe(
+      "<|im_start|>user\nhi<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
+    );
   });
 
   test("the content is trimmed like the template's `trim` filter, inner whitespace kept", () => {
-    expect(chatPrompt(" \n\t a\n\n b \r\n", false)).toBe("<|im_start|>user\na\n\n b<|im_end|>\n<|im_start|>assistant\n");
+    expect(chatPrompt(" \n\t a\n\n b \r\n", false)).toBe(
+      "<|im_start|>user\na\n\n b<|im_end|>\n<|im_start|>assistant\n",
+    );
   });
 });
 

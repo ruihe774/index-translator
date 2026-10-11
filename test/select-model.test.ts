@@ -75,14 +75,20 @@ describe("selectModel", () => {
   });
 
   test("manual choice overrides the length rule", () => {
-    expect(pick({ text: "a".repeat(20_000), choice: CHAT_MODEL })).toMatchObject({ model: CHAT_MODEL, reason: "manual", warn: true });
+    expect(pick({ text: "a".repeat(20_000), choice: CHAT_MODEL })).toMatchObject({
+      model: CHAT_MODEL,
+      reason: "manual",
+      warn: true,
+    });
     expect(pick({ choice: DOCUMENT_MODEL })).toMatchObject({ model: DOCUMENT_MODEL, reason: "manual", warn: false });
   });
 
   test("manually choosing the document model for something it rejects is flagged", () => {
     expect(pick({ choice: DOCUMENT_MODEL, targetLang: "fr" }).reason).toBe("manual-document-unusable");
     expect(pick({ choice: DOCUMENT_MODEL, hasOptions: true }).reason).toBe("manual-document-unusable");
-    expect(pick({ choice: DOCUMENT_MODEL, sourceLang: "auto", text: "Bonjour" }).reason).toBe("manual-document-unusable");
+    expect(pick({ choice: DOCUMENT_MODEL, sourceLang: "auto", text: "Bonjour" }).reason).toBe(
+      "manual-document-unusable",
+    );
   });
 
   test("manual chat choice warns only above the threshold", () => {
@@ -99,7 +105,11 @@ describe("selectModel", () => {
   });
 
   test("manual chat choice with glossary or constraints is not flagged when the text is short", () => {
-    expect(pick({ choice: CHAT_MODEL, hasOptions: true })).toMatchObject({ model: CHAT_MODEL, reason: "manual", warn: false });
+    expect(pick({ choice: CHAT_MODEL, hasOptions: true })).toMatchObject({
+      model: CHAT_MODEL,
+      reason: "manual",
+      warn: false,
+    });
   });
 
   test("manual chat choice sends an explicit source language", () => {
@@ -124,8 +134,14 @@ describe("selectModel", () => {
       reason: "long-unsupported-direction",
       warn: true,
     });
-    expect(pick({ text: "Hello", sourceLang: "en", targetLang: "en" })).toMatchObject({ model: CHAT_MODEL, reason: "short", warn: false });
-    expect(pick({ choice: DOCUMENT_MODEL, sourceLang: "en", targetLang: "en" }).reason).toBe("manual-document-unusable");
+    expect(pick({ text: "Hello", sourceLang: "en", targetLang: "en" })).toMatchObject({
+      model: CHAT_MODEL,
+      reason: "short",
+      warn: false,
+    });
+    expect(pick({ choice: DOCUMENT_MODEL, sourceLang: "en", targetLang: "en" }).reason).toBe(
+      "manual-document-unusable",
+    );
   });
 
   test("upper-case language codes select the same model as lower-case ones", () => {
@@ -159,7 +175,9 @@ describe("detectSource", () => {
   test("Chinese, Japanese and English", () => {
     expect(detectSource("今天天气很好，我们去公园散步。")).toBe("zh");
     expect(detectSource("今日はいい天気ですね。公園へ行きましょう。")).toBe("ja");
-    expect(detectSource("The town library reopened last month after a renovation that took far longer than planned.")).toBe("en");
+    expect(
+      detectSource("The town library reopened last month after a renovation that took far longer than planned."),
+    ).toBe("en");
   });
 
   test("other Latin-script languages and empty input are not guessed", () => {

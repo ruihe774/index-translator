@@ -66,8 +66,18 @@ test("sends stream:true and the chosen languages", async ({ app }) => {
 
 for (const [name, status, error, message] of [
   ["queue_full", 429, { code: "queue_full" }, "The translator is busy and its queue is full. Try again in a minute."],
-  ["engine_unavailable", 503, { code: "engine_unavailable" }, "The engine is loading or switching models. Try again in a moment."],
-  ["input_too_long", 413, { code: "input_too_long", details: { prompt_tokens: 30000, max_input_tokens: 28000 } }, "30,000 tokens, and the limit is 28,000"],
+  [
+    "engine_unavailable",
+    503,
+    { code: "engine_unavailable" },
+    "The engine is loading or switching models. Try again in a moment.",
+  ],
+  [
+    "input_too_long",
+    413,
+    { code: "input_too_long", details: { prompt_tokens: 30000, max_input_tokens: 28000 } },
+    "30,000 tokens, and the limit is 28,000",
+  ],
   ["a bare 429", 429, {}, "The translator is busy. Try again in a minute."],
   ["a custom message", 400, { code: "invalid_request", message: "bad field" }, "bad field"],
 ] as const) {
@@ -128,17 +138,32 @@ test("health: an unreachable server and an engine error", async ({ app }) => {
 
 test("copy puts the translation on the clipboard", async ({ app, context }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  await stubTranslate(app, 200, sse([["delta", { text: "你好" }], ["done", done]]));
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: "你好" }],
+      ["done", done],
+    ]),
+  );
   await run(app);
   await app.copy.click();
   await expect(app.meta).toHaveText("Translation copied to the clipboard.");
   expect(await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText())).toBe("你好");
 });
 
-test("Markdown source: the output is rendered, unsafe links stay text, and copy keeps the raw Markdown", async ({ app, context }) => {
+test("Markdown source: the output is rendered, unsafe links stay text, and copy keeps the raw Markdown", async ({
+  app,
+  context,
+}) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
-  const md = "# 标题\n\n- **一**\n- [链接](https://example.com)\n- [坏](javascript:alert(1))\n\n```js\nlet a = 1;\n```\n\n<b>原样</b>";
-  await stubTranslate(app, 200, sse([...[...md].map((c): [string, unknown] => ["delta", { text: c }]), ["done", done]]));
+  const md =
+    "# 标题\n\n- **一**\n- [链接](https://example.com)\n- [坏](javascript:alert(1))\n\n```js\nlet a = 1;\n```\n\n<b>原样</b>";
+  await stubTranslate(
+    app,
+    200,
+    sse([...[...md].map((c): [string, unknown] => ["delta", { text: c }]), ["done", done]]),
+  );
   await run(app, "# Title\n\n- **one**\n- [link](https://example.com)");
 
   await expect(app.meta).toContainText("generated");
@@ -159,7 +184,14 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
 });
 
 test("plain source: Markdown-like output stays plain text", async ({ app }) => {
-  await stubTranslate(app, 200, sse([["delta", { text: "# 不是标题\n**也不粗**" }], ["done", done]]));
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: "# 不是标题\n**也不粗**" }],
+      ["done", done],
+    ]),
+  );
   await run(app, "Hello there");
   await expect(app.meta).toContainText("generated");
   await expect(app.output).toHaveText("# 不是标题\n**也不粗**");
@@ -168,9 +200,18 @@ test("plain source: Markdown-like output stays plain text", async ({ app }) => {
   await expect(app.output.locator(":not(span), span *")).toHaveCount(0);
 });
 
-test("Markdown source: rendered in place of the textarea after Translate, with Raw and Preview on each side", async ({ app }) => {
+test("Markdown source: rendered in place of the textarea after Translate, with Raw and Preview on each side", async ({
+  app,
+}) => {
   const md = "# Title\n\nSome **bold** text.";
-  await stubTranslate(app, 200, sse([["delta", { text: "# 标题\n\n一些**粗体**文字。" }], ["done", done]]));
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: "# 标题\n\n一些**粗体**文字。" }],
+      ["done", done],
+    ]),
+  );
   await run(app, md);
   await expect(app.meta).toContainText("generated");
 
@@ -202,7 +243,14 @@ test("Markdown source: rendered in place of the textarea after Translate, with R
 });
 
 test("plain source: the textarea stays and the switches are offered", async ({ app }) => {
-  await stubTranslate(app, 200, sse([["delta", { text: "你好" }], ["done", done]]));
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: "你好" }],
+      ["done", done],
+    ]),
+  );
   await run(app, "Hello");
   await expect(app.meta).toContainText("generated");
   await expect(app.text).toBeVisible();
@@ -212,7 +260,14 @@ test("plain source: the textarea stays and the switches are offered", async ({ a
 });
 
 test("Clear empties both sides and returns the source to the plain textarea", async ({ app }) => {
-  await stubTranslate(app, 200, sse([["delta", { text: "# 标题" }], ["done", done]]));
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: "# 标题" }],
+      ["done", done],
+    ]),
+  );
   await run(app, "# Title");
   await expect(app.meta).toContainText("generated");
   await expect(app.text).toBeHidden();
@@ -235,18 +290,28 @@ test("Clear empties both sides and returns the source to the plain textarea", as
 /** Top of `el` relative to the top of the box of `scroller`. */
 async function offsetIn(app: AppPage, el: string, scroller: string): Promise<number> {
   return app.page.evaluate(
-    ({ el, scroller }) => document.querySelector(el)!.getBoundingClientRect().top - document.querySelector(scroller)!.getBoundingClientRect().top,
+    ({ el, scroller }) =>
+      document.querySelector(el)!.getBoundingClientRect().top -
+      document.querySelector(scroller)!.getBoundingClientRect().top,
     { el, scroller },
   );
 }
 
-const paragraphs = (n: number, make: (i: number) => string) => Array.from({ length: n }, (_, i) => make(i)).join("\n\n");
+const paragraphs = (n: number, make: (i: number) => string) =>
+  Array.from({ length: n }, (_, i) => make(i)).join("\n\n");
 
 test("matching paragraphs: a click on either side scrolls the other to the same paragraph", async ({ app }) => {
   await app.page.setViewportSize({ width: 1280, height: 800 });
   const source = "# Doc\n\n" + paragraphs(30, (i) => `Paragraph ${i} ${"word ".repeat(i % 3 ? 8 : 40)}`);
   const translation = "# 文档\n\n" + paragraphs(30, (i) => `第${i}段 ${"字".repeat(i % 2 ? 10 : 90)}`);
-  await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: translation }],
+      ["done", done],
+    ]),
+  );
   await run(app, source);
   await expect(app.meta).toContainText("generated");
   await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
@@ -274,7 +339,14 @@ test("matching lines in plain text: the raw textarea and the output sync both wa
   await app.page.setViewportSize({ width: 1280, height: 800 });
   const source = Array.from({ length: 80 }, (_, i) => `Line ${i}`).join("\n");
   const translation = Array.from({ length: 80 }, (_, i) => `第${i}行`).join("\n");
-  await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: translation }],
+      ["done", done],
+    ]),
+  );
   await run(app, source);
   await expect(app.meta).toContainText("generated");
   await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
@@ -283,7 +355,9 @@ test("matching lines in plain text: the raw textarea and the output sync both wa
   // The lines are short and do not wrap, so line 60 starts 60 line heights below the first.
   const inTextarea = await app.text.evaluate((t) => {
     const style = getComputedStyle(t);
-    return parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop) + 60 * parseFloat(style.lineHeight) - t.scrollTop;
+    return (
+      parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop) + 60 * parseFloat(style.lineHeight) - t.scrollTop
+    );
   });
   expect(await app.text.evaluate((t) => t.scrollTop)).toBeGreaterThan(0);
   const inOutput = await offsetIn(app, '#output > span[data-line="60"]', "#output-area");
@@ -304,7 +378,14 @@ test("paragraphs that do not match: no sync", async ({ app }) => {
   await app.page.setViewportSize({ width: 1280, height: 800 });
   const source = "# Doc\n\n" + paragraphs(30, (i) => `Paragraph ${i}`);
   const translation = "# 文档\n\n" + paragraphs(25, (i) => `第${i}段`);
-  await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: translation }],
+      ["done", done],
+    ]),
+  );
   await run(app, source);
   await expect(app.meta).toContainText("generated");
   await expect(app.page.locator("#output-area")).not.toHaveClass(/synced/);

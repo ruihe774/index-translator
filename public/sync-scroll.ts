@@ -35,16 +35,38 @@ export function viewPane(view: HTMLElement, scroller: HTMLElement): Pane {
 }
 
 const MIRRORED = [
-  "boxSizing", "paddingTop", "paddingRight", "paddingBottom", "paddingLeft",
-  "borderTopWidth", "borderRightWidth", "borderBottomWidth", "borderLeftWidth", "borderStyle",
-  "fontFamily", "fontSize", "fontWeight", "fontStyle", "lineHeight", "letterSpacing", "wordSpacing",
-  "tabSize", "textIndent", "textTransform", "direction", "overflowWrap", "wordBreak",
+  "boxSizing",
+  "paddingTop",
+  "paddingRight",
+  "paddingBottom",
+  "paddingLeft",
+  "borderTopWidth",
+  "borderRightWidth",
+  "borderBottomWidth",
+  "borderLeftWidth",
+  "borderStyle",
+  "fontFamily",
+  "fontSize",
+  "fontWeight",
+  "fontStyle",
+  "lineHeight",
+  "letterSpacing",
+  "wordSpacing",
+  "tabSize",
+  "textIndent",
+  "textTransform",
+  "direction",
+  "overflowWrap",
+  "wordBreak",
 ] as const;
 
 /** Offset of `line` from the top of the textarea's content, measured on a hidden copy of it. */
 function textareaOffset(area: HTMLTextAreaElement, line: number): number {
   const lines = area.value.split("\n");
-  const before = lines.slice(0, Math.min(line, lines.length)).map((l) => l + "\n").join("");
+  const before = lines
+    .slice(0, Math.min(line, lines.length))
+    .map((l) => l + "\n")
+    .join("");
   const style = getComputedStyle(area);
   const mirror = document.createElement("div");
   for (const key of MIRRORED) mirror.style[key] = style[key];

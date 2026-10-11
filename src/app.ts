@@ -2,7 +2,15 @@
 
 import type { Server } from "bun";
 import { CONTEXT_MARGIN, type Config } from "./config";
-import { Engine, EngineError, type EngineTimings, type FinishReason, type Launcher, launchNative, type Usage } from "./llama";
+import {
+  Engine,
+  EngineError,
+  type EngineTimings,
+  type FinishReason,
+  type Launcher,
+  launchNative,
+  type Usage,
+} from "./llama";
 import { findModel, MODELS, type ModelSpec } from "./models";
 import { buildDocumentPrompt, buildPrompt, DOCUMENT_DIRECTIONS, LANGUAGES, type PromptInput } from "./prompt";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
@@ -61,7 +69,8 @@ function optionalString(body: Record<string, unknown>, field: string, maxLength:
   if (v === undefined || v === null) return undefined;
   if (typeof v !== "string") throw invalid(`${field} must be a string`, field);
   // JSON Schema counts code points; String.length counts UTF-16 units, so only spread when that could matter.
-  if (v.length > maxLength && [...v].length > maxLength) throw invalid(`${field} must be at most ${maxLength} characters`, field);
+  if (v.length > maxLength && [...v].length > maxLength)
+    throw invalid(`${field} must be at most ${maxLength} characters`, field);
   return v;
 }
 
@@ -112,7 +121,11 @@ function checkOrigin(req: Request, cfg: Config): void {
   }
   const allowed = cfg.allowedOrigins.some((o) => o.replace(/\/+$/, "").toLowerCase() === origin.toLowerCase());
   if (!sameOrigin && !allowed) {
-    throw new ApiError(403, "forbidden_origin", "cross-origin requests are not allowed; add the origin to ALLOWED_ORIGINS");
+    throw new ApiError(
+      403,
+      "forbidden_origin",
+      "cross-origin requests are not allowed; add the origin to ALLOWED_ORIGINS",
+    );
   }
 }
 
@@ -293,9 +306,15 @@ export async function startApp(cfg: Config, launch: Launcher = launchNative): Pr
       return queue.enter(onPosition);
     } catch (e) {
       if (e instanceof QueueFullError) {
-        throw new ApiError(429, "queue_full", "too many translations are waiting; try again later", {
-          max_queue: cfg.maxQueue,
-        }, { "retry-after": "10" });
+        throw new ApiError(
+          429,
+          "queue_full",
+          "too many translations are waiting; try again later",
+          {
+            max_queue: cfg.maxQueue,
+          },
+          { "retry-after": "10" },
+        );
       }
       throw e;
     }

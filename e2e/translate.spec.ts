@@ -70,7 +70,7 @@ test("the output follows the stream to its end until the user scrolls", async ({
   expect(await area.evaluate((el) => el.scrollTop)).toBeLessThan(100);
 });
 
-test("Markdown output is rendered while it streams: finished blocks stay in place",async ({ app, mock }) => {
+test("Markdown output is rendered while it streams: finished blocks stay in place", async ({ app, mock }) => {
   await mock.set({ chunks: ["# 标题\n\n", "第一段。\n\n", "- 甲\n", "- 乙\n\n", "**结束**"], delayMs: 400 });
   await app.open();
   await app.text.fill("# Title\n\nFirst paragraph.\n\n- a\n- b\n\n**End**");
@@ -128,7 +128,10 @@ test("a glossary reaches the engine and a bad glossary line is rejected in the p
   expect(requests[0]!.prompt).toContain("猫");
 });
 
-test("a long English text selects the document model, swaps the engine and warns on lost paragraphs", async ({ app, mock }) => {
+test("a long English text selects the document model, swaps the engine and warns on lost paragraphs", async ({
+  app,
+  mock,
+}) => {
   await mock.set({ chunks: ["[1]\n", "只有一段"] });
   await app.open();
   await app.from.selectOption("en");
@@ -193,9 +196,7 @@ test("a full queue shows the busy message", async ({ app, mock, request, baseURL
   await expect.poll(async () => (await mock.state()).requests.length).toBe(1);
   const second = call(); // waits (max_queue is 1)
   await expect(app.engine).toBeVisible();
-  await expect
-    .poll(async () => (await (await request.get(`${baseURL}/api/v1/health`)).json()).queue.waiting)
-    .toBe(1);
+  await expect.poll(async () => (await (await request.get(`${baseURL}/api/v1/health`)).json()).queue.waiting).toBe(1);
 
   await app.text.fill("third");
   await app.translate.click();

@@ -1,5 +1,13 @@
 import { describe, expect, test } from "bun:test";
-import { alignBlocks, blockAt, blockStarts, countBlocks, mismatchMessage, paragraphMismatch, unitOf } from "../public/paragraphs";
+import {
+  alignBlocks,
+  blockAt,
+  blockStarts,
+  countBlocks,
+  mismatchMessage,
+  paragraphMismatch,
+  unitOf,
+} from "../public/paragraphs";
 
 describe("unitOf", () => {
   test("a blank line makes the unit paragraphs, otherwise lines", () => {
@@ -73,8 +81,12 @@ describe("paragraphMismatch", () => {
 
 describe("mismatchMessage", () => {
   test("names the unit", () => {
-    expect(mismatchMessage({ unit: "lines", source: 5, output: 4 })).toStartWith("The source has 5 lines and the translation has 4.");
-    expect(mismatchMessage({ unit: "paragraphs", source: 3, output: 1 })).toStartWith("The source has 3 paragraphs and");
+    expect(mismatchMessage({ unit: "lines", source: 5, output: 4 })).toStartWith(
+      "The source has 5 lines and the translation has 4.",
+    );
+    expect(mismatchMessage({ unit: "paragraphs", source: 3, output: 1 })).toStartWith(
+      "The source has 3 paragraphs and",
+    );
   });
 });
 
@@ -89,14 +101,19 @@ describe("blockStarts", () => {
 
   test("counts as many blocks as countBlocks", () => {
     for (const text of ["", "A", "A\n\n\nB\n", "\r\nA\r\n \r\nB\r\nb", "# T\n\n- a\n- b\n\n```\nx\n\ny\n```"]) {
-      for (const unit of ["paragraphs", "lines"] as const) expect(blockStarts(text, unit)).toHaveLength(countBlocks(text, unit));
+      for (const unit of ["paragraphs", "lines"] as const)
+        expect(blockStarts(text, unit)).toHaveLength(countBlocks(text, unit));
     }
   });
 });
 
 describe("alignBlocks", () => {
   test("pairs blocks by index when the counts match, in the source's unit", () => {
-    expect(alignBlocks("A\n\nB\nb\n\nC", "甲\n\n\n乙\n\n丙\n丙")).toEqual({ unit: "paragraphs", source: [0, 2, 5], output: [0, 3, 5] });
+    expect(alignBlocks("A\n\nB\nb\n\nC", "甲\n\n\n乙\n\n丙\n丙")).toEqual({
+      unit: "paragraphs",
+      source: [0, 2, 5],
+      output: [0, 3, 5],
+    });
     expect(alignBlocks("A\nB", "甲\n\n乙")).toEqual({ unit: "lines", source: [0, 1], output: [0, 2] });
   });
 

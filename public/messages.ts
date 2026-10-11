@@ -21,7 +21,10 @@ export function selectionMessage(s: Selection): { text: string; warn: boolean } 
   const long = s.letters > LONG_THRESHOLD_LETTERS;
   switch (s.reason) {
     case "short":
-      return { text: `Model: ${name}. The text is within ${limit} letters, which it translates reliably.`, warn: false };
+      return {
+        text: `Model: ${name}. The text is within ${limit} letters, which it translates reliably.`,
+        warn: false,
+      };
     case "long-document":
       return {
         text: `Model: ${name}. The text is over ${limit} letters, so the whole-document model is used. The first request after a switch takes a few seconds longer.`,
@@ -124,7 +127,9 @@ export function resultNotes(done: Pick<Done, "finish_reason">, ctx: ResultContex
   const mismatch = paragraphMismatch(ctx.source, ctx.translation);
   if (mismatch) notes.push(mismatchMessage(mismatch));
   if (ctx.model === DOCUMENT_MODEL && ctx.sourceLang === "zh" && ctx.targetLang === "en") {
-    notes.push("Long Chinese-to-English output can silently lose content. Check that every part of the source is present.");
+    notes.push(
+      "Long Chinese-to-English output can silently lose content. Check that every part of the source is present.",
+    );
   }
   return notes;
 }
@@ -134,7 +139,8 @@ export function metaLine(model: ModelId, done: Done): string {
 }
 
 export const STOPPED_NOTE = "You stopped the translation. The text above is incomplete.";
-export const INTERRUPTED_NOTE = "The translation is incomplete because an error interrupted it. The text above is partial.";
+export const INTERRUPTED_NOTE =
+  "The translation is incomplete because an error interrupted it. The text above is partial.";
 
 /** What the page keeps on screen when a translation ends early, by a stop or by an error. */
 export function interruption(translation: string, stopped: boolean): { note: string | null; showCopy: boolean } {

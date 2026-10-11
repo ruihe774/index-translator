@@ -36,10 +36,17 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
   // biome-ignore lint/correctness/noEmptyPattern: Playwright reads the fixture's dependencies from this parameter
   mock: async ({}, use) => {
     const call = (method: string, body?: unknown, path = ""): Promise<any> =>
-      fetch(CONTROL + path, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) => r.json());
+      fetch(CONTROL + path, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) =>
+        r.json(),
+      );
     await call("DELETE");
     await use({
-      set: async (knobs) => void (await call("POST", { ...knobs, failWith: knobs.failWith ?? undefined, failLaunch: knobs.failLaunch ?? undefined })),
+      set: async (knobs) =>
+        void (await call("POST", {
+          ...knobs,
+          failWith: knobs.failWith ?? undefined,
+          failLaunch: knobs.failLaunch ?? undefined,
+        })),
       state: () => call("GET"),
       unload: async () => void (await call("POST", undefined, "/restart")),
     });

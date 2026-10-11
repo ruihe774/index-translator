@@ -96,13 +96,28 @@ test("the text box and the option boxes carry their instructions as placeholders
   await expect(app.text).toHaveAttribute("aria-required", "true");
 
   await app.openAdvanced();
-  await expect(app.page.getByLabel("Glossary", { exact: true })).toHaveAttribute("placeholder", "One entry per line: source term = target term");
-  await expect(app.page.getByLabel("Hard constraints")).toHaveAttribute("placeholder", /^One per line, for example keeping placeholders/);
-  await expect(app.page.getByLabel("Soft constraints")).toHaveAttribute("placeholder", /^One per line, for example tone or register/);
+  await expect(app.page.getByLabel("Glossary", { exact: true })).toHaveAttribute(
+    "placeholder",
+    "One entry per line: source term = target term",
+  );
+  await expect(app.page.getByLabel("Hard constraints")).toHaveAttribute(
+    "placeholder",
+    /^One per line, for example keeping placeholders/,
+  );
+  await expect(app.page.getByLabel("Soft constraints")).toHaveAttribute(
+    "placeholder",
+    /^One per line, for example tone or register/,
+  );
   // The same text is also the accessible description, so it survives typing, and is not shown twice.
-  for (const [label, hint] of [["Glossary", "glossary-hint"], ["Hard constraints", "hard-hint"], ["Soft constraints", "soft-hint"]] as const) {
+  for (const [label, hint] of [
+    ["Glossary", "glossary-hint"],
+    ["Hard constraints", "hard-hint"],
+    ["Soft constraints", "soft-hint"],
+  ] as const) {
     const box = app.page.getByLabel(label, { exact: true });
-    await expect(box).toHaveAccessibleDescription(await box.getAttribute("placeholder").then((p) => new RegExp(`^${p!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)));
+    await expect(box).toHaveAccessibleDescription(
+      await box.getAttribute("placeholder").then((p) => new RegExp(`^${p!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)),
+    );
     expect(await app.page.locator(`#${hint}`).evaluate((el) => el.classList.contains("sr-only"))).toBe(true);
   }
 });
@@ -115,7 +130,9 @@ test("Model is a switch on the same line as Model and options", async ({ app }) 
 
   const heading = await box(app, "#settings-heading");
   const switchBox = await group.boundingBox();
-  expect(Math.abs(heading.y + heading.height / 2 - (switchBox!.y + switchBox!.height / 2))).toBeLessThan(heading.height);
+  expect(Math.abs(heading.y + heading.height / 2 - (switchBox!.y + switchBox!.height / 2))).toBeLessThan(
+    heading.height,
+  );
   expect(switchBox!.x).toBeGreaterThan(heading.x + heading.width);
 
   await expect(app.model("Automatic")).toHaveAttribute("aria-pressed", "true");
@@ -144,7 +161,10 @@ test("the Model switch looks like the Raw / Preview switch", async ({ app }) => 
 test("the engine status is a link to the health endpoint, and the footer links are gone", async ({ app }) => {
   await app.open();
   await expect(app.engine).toHaveText("Engine ready, Index-Translate-9B loaded.");
-  await expect(app.page.getByRole("link", { name: "Engine ready, Index-Translate-9B loaded." })).toHaveAttribute("href", "/api/v1/health");
+  await expect(app.page.getByRole("link", { name: "Engine ready, Index-Translate-9B loaded." })).toHaveAttribute(
+    "href",
+    "/api/v1/health",
+  );
   await expect(app.page.getByRole("link")).toHaveCount(2); // skip link and the engine link
   await expect(app.page.getByText("API specification")).toHaveCount(0);
   await expect(app.page.getByText("Engine health (JSON)")).toHaveCount(0);
@@ -183,7 +203,10 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
   await app.translate.click();
   await expect(app.meta).toContainText("Translating");
   await expect(app.stop).toBeVisible();
-  const running = await layout(app, STABLE.filter((s) => s !== "#meta"));
+  const running = await layout(
+    app,
+    STABLE.filter((s) => s !== "#meta"),
+  );
   for (const [k, v] of Object.entries(running)) expect(v, `while running: ${k}`).toEqual(idle[k]);
   // Stop sits where Clear was, and Translate has not moved.
   expect(await box(app, "#stop")).toEqual(buttons["#clear"]);
@@ -192,7 +215,10 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
   await expect(app.meta).toContainText("generated");
   await expect(app.copy).toBeVisible();
   await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
-  const done = await layout(app, STABLE.filter((s) => s !== "#meta"));
+  const done = await layout(
+    app,
+    STABLE.filter((s) => s !== "#meta"),
+  );
   for (const [k, v] of Object.entries(done)) expect(v, `when done: ${k}`).toEqual(idle[k]);
   expect(await box(app, "#clear")).toEqual(buttons["#clear"]);
   expect(await box(app, "#translate")).toEqual(buttons["#translate"]);

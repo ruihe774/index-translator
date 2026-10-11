@@ -37,9 +37,7 @@ describe("sseEvents", () => {
   });
 
   test("accepts data: without a space after the colon", async () => {
-    expect(await collect(['event:delta\ndata:{"text":"x"}\n\n'])).toEqual([
-      { event: "delta", data: { text: "x" } },
-    ]);
+    expect(await collect(['event:delta\ndata:{"text":"x"}\n\n'])).toEqual([{ event: "delta", data: { text: "x" } }]);
   });
 
   test("joins multi-line data with newlines before parsing", async () => {
@@ -49,7 +47,7 @@ describe("sseEvents", () => {
   });
 
   test("reassembles an event split across chunks", async () => {
-    expect(await collect(['event: del', 'ta\ndata: {"te', 'xt":"hi"}', "\n\n"])).toEqual([
+    expect(await collect(["event: del", 'ta\ndata: {"te', 'xt":"hi"}', "\n\n"])).toEqual([
       { event: "delta", data: { text: "hi" } },
     ]);
   });
@@ -63,7 +61,7 @@ describe("sseEvents", () => {
   });
 
   test("handles a \\n\\n separator that falls on a chunk boundary", async () => {
-    expect(await collect(['data: {"a":1}\n', "\ndata: {\"a\":2}\n", "\n"])).toEqual([
+    expect(await collect(['data: {"a":1}\n', '\ndata: {"a":2}\n', "\n"])).toEqual([
       { event: "message", data: { a: 1 } },
       { event: "message", data: { a: 2 } },
     ]);
@@ -71,7 +69,7 @@ describe("sseEvents", () => {
 
   test("ignores comment and keepalive lines", async () => {
     expect(
-      await collect([': keepalive\n\n', ': ping\n: another\n\nevent: delta\ndata: {"text":"x"}\n\n: keepalive\n\n']),
+      await collect([": keepalive\n\n", ': ping\n: another\n\nevent: delta\ndata: {"text":"x"}\n\n: keepalive\n\n']),
     ).toEqual([{ event: "delta", data: { text: "x" } }]);
   });
 

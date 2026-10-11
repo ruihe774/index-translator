@@ -123,7 +123,8 @@ let modelChoice: Choice = "auto";
 
 function setModelChoice(choice: Choice) {
   modelChoice = choice;
-  for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.model === choice));
+  for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button"))
+    b.setAttribute("aria-pressed", String(b.dataset.model === choice));
 }
 
 function hasOptions(): boolean {
@@ -208,12 +209,17 @@ async function loadLanguages() {
     add(fromSelect, l.code, l.name);
     add(toSelect, l.code, l.name);
   }
-  const has = (select: HTMLSelectElement, v: string | null) => v !== null && [...select.options].some((o) => o.value === v);
+  const has = (select: HTMLSelectElement, v: string | null) =>
+    v !== null && [...select.options].some((o) => o.value === v);
   const savedFrom = stored("from");
   const savedTo = stored("to");
   fromSelect.value = has(fromSelect, savedFrom) ? savedFrom! : "auto";
   const fallbackTo = navigator.language.toLowerCase().startsWith("en") ? "zh" : "en";
-  toSelect.value = has(toSelect, savedTo) ? savedTo! : has(toSelect, fallbackTo) ? fallbackTo : toSelect.options[0]!.value;
+  toSelect.value = has(toSelect, savedTo)
+    ? savedTo!
+    : has(toSelect, fallbackTo)
+      ? fallbackTo
+      : toSelect.options[0]!.value;
   languagesReady = true;
   setTranslateEnabled();
   refreshSelection();
@@ -279,7 +285,8 @@ const views = {
 
 function showSwitch(el: HTMLElement, side: keyof typeof views) {
   const { view } = views[side];
-  for (const b of el.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.view === view));
+  for (const b of el.querySelectorAll<HTMLButtonElement>("button"))
+    b.setAttribute("aria-pressed", String(b.dataset.view === view));
 }
 
 /** The switches, Clear and Copy are always shown; they are aria-disabled while they have nothing to act on. */

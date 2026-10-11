@@ -24,10 +24,7 @@ function expectEveryPartition(text: string, expected: string) {
     const outs = chunks.map((t) => c.push(t));
     const tail = c.flush();
     const pushed = outs.join("");
-    const ok =
-      pushed + tail === expected &&
-      expected.startsWith(pushed) &&
-      outs.every((o) => o === o.trimEnd());
+    const ok = pushed + tail === expected && expected.startsWith(pushed) && outs.every((o) => o === o.trimEnd());
     if (!ok) bad.push(JSON.stringify(chunks));
   }
   expect(bad.slice(0, 3)).toEqual([]);

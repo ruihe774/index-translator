@@ -5,7 +5,18 @@
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { type App, startApp } from "../src/app";
 import { buildDocumentPrompt, buildPrompt } from "../src/prompt";
-import { CHAT, config, DOCUMENT, launcher, mock, postTo, readSse, resetMock, TEMPLATE, waitReady } from "./helpers/mock-engine";
+import {
+  CHAT,
+  config,
+  DOCUMENT,
+  launcher,
+  mock,
+  postTo,
+  readSse,
+  resetMock,
+  TEMPLATE,
+  waitReady,
+} from "./helpers/mock-engine";
 
 const MiB = 1024 * 1024;
 
@@ -239,13 +250,21 @@ describe("streaming selection", () => {
 
   test("stream: false does not stop an Accept: text/event-stream request from streaming", async () => {
     // Actual behaviour: the Accept header wins over an explicit stream:false (the server ORs the two).
-    const res = await post("/api/v1/translate", { ...plain, stream: false }, { headers: { accept: "text/event-stream" } });
+    const res = await post(
+      "/api/v1/translate",
+      { ...plain, stream: false },
+      { headers: { accept: "text/event-stream" } },
+    );
     expect(res.headers.get("content-type")).toStartWith("text/event-stream");
     expect((await readSse(res)).at(-1)!.event).toBe("done");
   });
 
   test("stream: true with Accept: application/json still streams, because the body field wins", async () => {
-    const res = await post("/api/v1/translate", { ...plain, stream: true }, { headers: { accept: "application/json" } });
+    const res = await post(
+      "/api/v1/translate",
+      { ...plain, stream: true },
+      { headers: { accept: "application/json" } },
+    );
     expect(res.headers.get("content-type")).toStartWith("text/event-stream");
     await res.text();
   });
@@ -305,7 +324,10 @@ describe("request body size", () => {
   test("an oversized chunked translate body is refused with 413, and the server stays healthy", async () => {
     // The envelope for this case is not pinned down: it is input_too_long (the text is over the token
     // limit) rather than body_too_large, because the size check only looks at Content-Length. Status only.
-    const res = await postChunked("/api/v1/translate", JSON.stringify({ text: "a".repeat(5 * MiB), target_lang: "zh" }));
+    const res = await postChunked(
+      "/api/v1/translate",
+      JSON.stringify({ text: "a".repeat(5 * MiB), target_lang: "zh" }),
+    );
     expect(res.status).toBe(413);
     await res.text();
 
@@ -374,7 +396,12 @@ describe("unicode and replacement patterns", () => {
     mock.chunks = ["$&", " $1 ", "$$"];
     const events = await readSse(await post("/api/v1/translate", { text, target_lang: "en", stream: true }));
     expect(lastUpstreamContent()).toBe(buildPrompt({ text, targetLang: "en" }));
-    expect(events.filter((e) => e.event === "delta").map((e) => e.data.text).join("")).toBe("$& $1 $$");
+    expect(
+      events
+        .filter((e) => e.event === "delta")
+        .map((e) => e.data.text)
+        .join(""),
+    ).toBe("$& $1 $$");
   });
 
   test("$& and $1 sequences survive in the fixed document template", async () => {
@@ -406,7 +433,9 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
   });
 
   test("translate accepts a prompt of exactly the input limit and gives it the rest of the context", async () => {
-    const events = await readSse(await post("/api/v1/translate", { text: textFor(400), target_lang: "en", stream: true }));
+    const events = await readSse(
+      await post("/api/v1/translate", { text: textFor(400), target_lang: "en", stream: true }),
+    );
     expect(events.find((e) => e.event === "start")!.data).toMatchObject({ prompt_tokens: 400, max_output_tokens: 536 });
   });
 
@@ -438,8 +467,16 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
     ["unknown model", { text: "Hi", target_lang: "en", model: "gpt" }, "model"],
     ["fractional output cap", { text: "Hi", target_lang: "en", max_output_tokens: 1.5 }, "max_output_tokens"],
     ["non-boolean stream", { text: "Hi", target_lang: "en", stream: "yes" }, "stream"],
-    ["glossary on the document model", { text: "Hi", source_lang: "en", target_lang: "zh", model: DOCUMENT, glossary: { a: "b" } }, "glossary"],
-    ["document pair not supported", { text: "Hi", source_lang: "en", target_lang: "fr", model: DOCUMENT }, "target_lang"],
+    [
+      "glossary on the document model",
+      { text: "Hi", source_lang: "en", target_lang: "zh", model: DOCUMENT, glossary: { a: "b" } },
+      "glossary",
+    ],
+    [
+      "document pair not supported",
+      { text: "Hi", source_lang: "en", target_lang: "fr", model: DOCUMENT },
+      "target_lang",
+    ],
   ])("validates like /translate: %s is a 400", async (_name, body, field) => {
     const res = await post("/api/v1/tokenize", body);
     expect(res.status).toBe(400);
@@ -577,12 +614,37 @@ describe("error envelope", () => {
     const cases: [string, Promise<Response>, string, number][] = [
       ["400 invalid body", post("/api/v1/translate", { text: "", target_lang: "en" }), "invalid_request", 400],
       ["404 unknown endpoint", fetch(base + "/api/v1/nope"), "not_found", 404],
-      ["405 wrong method", fetch(base + "/api/v1/models", { method: "POST", body: "{}", headers: { "content-type": "application/json" } }), "method_not_allowed", 405],
-      ["415 wrong content type", post("/api/v1/translate", plain, { headers: { "content-type": "text/plain" } }), "unsupported_media_type", 415],
-      ["403 foreign origin", post("/api/v1/translate", plain, { headers: { origin: "https://evil.example" } }), "forbidden_origin", 403],
-      ["403 foreign host", fetch(base + "/api/v1/health", { headers: { host: "rebind.example" } }), "forbidden_host", 403],
+      [
+        "405 wrong method",
+        fetch(base + "/api/v1/models", { method: "POST", body: "{}", headers: { "content-type": "application/json" } }),
+        "method_not_allowed",
+        405,
+      ],
+      [
+        "415 wrong content type",
+        post("/api/v1/translate", plain, { headers: { "content-type": "text/plain" } }),
+        "unsupported_media_type",
+        415,
+      ],
+      [
+        "403 foreign origin",
+        post("/api/v1/translate", plain, { headers: { origin: "https://evil.example" } }),
+        "forbidden_origin",
+        403,
+      ],
+      [
+        "403 foreign host",
+        fetch(base + "/api/v1/health", { headers: { host: "rebind.example" } }),
+        "forbidden_host",
+        403,
+      ],
       ["413 body too large", post("/api/v1/translate", paddedBody(4 * MiB + 1)), "body_too_large", 413],
-      ["413 input too long", post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh" }), "input_too_long", 413],
+      [
+        "413 input too long",
+        post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh" }),
+        "input_too_long",
+        413,
+      ],
     ];
     for (const [label, pending, code, status] of cases) {
       const res = await pending;
@@ -606,7 +668,11 @@ describe("error envelope", () => {
     ["/api/v1/tokenize", "POST"],
   ])("%s answers DELETE and PUT with 405 and Allow: %s", async (path, allow) => {
     for (const method of ["DELETE", "PUT"]) {
-      const res = await fetch(base + path, { method, headers: { "content-type": "application/json" }, body: method === "PUT" ? "{}" : undefined });
+      const res = await fetch(base + path, {
+        method,
+        headers: { "content-type": "application/json" },
+        body: method === "PUT" ? "{}" : undefined,
+      });
       expect(res.status).toBe(405);
       expect(res.headers.get("allow")).toBe(allow);
       expect(res.headers.get("content-type")).toStartWith("application/json");

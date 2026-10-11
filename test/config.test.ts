@@ -38,8 +38,22 @@ describe("loadConfig defaults", () => {
   });
 
   test("valid overrides are applied", () => {
-    const cfg = loadConfig({ HOST: "0.0.0.0", PORT: "8080", LLAMA_THREADS: "8", CTX_SIZE: "4096", MAX_INPUT_TOKENS: "2000", MAX_QUEUE: "100000" });
-    expect(cfg).toMatchObject({ host: "0.0.0.0", port: 8080, threads: 8, ctxSize: 4096, maxInputTokens: 2000, maxQueue: 100000 });
+    const cfg = loadConfig({
+      HOST: "0.0.0.0",
+      PORT: "8080",
+      LLAMA_THREADS: "8",
+      CTX_SIZE: "4096",
+      MAX_INPUT_TOKENS: "2000",
+      MAX_QUEUE: "100000",
+    });
+    expect(cfg).toMatchObject({
+      host: "0.0.0.0",
+      port: 8080,
+      threads: 8,
+      ctxSize: 4096,
+      maxInputTokens: 2000,
+      maxQueue: 100000,
+    });
   });
 
   test("the environment record is read, not process.env", () => {
@@ -55,7 +69,9 @@ describe("loadConfig defaults", () => {
 
 describe("loadConfig rejections", () => {
   test("an unknown DEFAULT_MODEL is rejected", () => {
-    expect(() => loadConfig({ DEFAULT_MODEL: "no-such-model" })).toThrow('DEFAULT_MODEL "no-such-model" is not a known model');
+    expect(() => loadConfig({ DEFAULT_MODEL: "no-such-model" })).toThrow(
+      'DEFAULT_MODEL "no-such-model" is not a known model',
+    );
   });
 
   test("CTX_SIZE below 1 is rejected", () => {

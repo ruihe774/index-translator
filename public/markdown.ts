@@ -188,7 +188,18 @@ function endsInParagraph(body: string[]): boolean {
  */
 function lazyLine(line: string): string {
   const l = line.trimStart();
-  if (!(ATX.test(l) || FENCE_OPEN.test(l) || HR.test(l) || QUOTE.test(l) || SETEXT.test(l) || listMarker(l) || l.startsWith("|"))) return l;
+  if (
+    !(
+      ATX.test(l) ||
+      FENCE_OPEN.test(l) ||
+      HR.test(l) ||
+      QUOTE.test(l) ||
+      SETEXT.test(l) ||
+      listMarker(l) ||
+      l.startsWith("|")
+    )
+  )
+    return l;
   return /^\d/.test(l) ? l.replace(/^(\d+)([.)])/, "$1\\$2") : "\\" + l;
 }
 
@@ -227,7 +238,14 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
       // An unclosed fence runs to the end of the text; its trailing blank lines are not content yet.
       if (i >= n) while (body.length && isBlank(body[body.length - 1]!)) body.pop();
       i++; // the closing fence, or past the end
-      out.push({ block: { type: "code", lang: unescapePunctuation(fence[3]!.trim().split(/\s+/)[0] ?? ""), text: body.join("\n") }, line: first });
+      out.push({
+        block: {
+          type: "code",
+          lang: unescapePunctuation(fence[3]!.trim().split(/\s+/)[0] ?? ""),
+          text: body.join("\n"),
+        },
+        line: first,
+      });
       continue;
     }
 
@@ -378,7 +396,8 @@ export function parseMarkdown(text: string): Block[] {
 
 const ASCII_PUNCT = /[!-/:-@[-`{-~]/;
 const AUTOLINK = /<((?:https?:\/\/|mailto:)[^\s<>]*)>/iy;
-const EMAIL_AUTOLINK = /<([\w.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>/y;
+const EMAIL_AUTOLINK =
+  /<([\w.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>/y;
 const BARE_URL = /(?<![\p{L}\p{N}])https?:\/\/[^\s<]*[^\s<?!.,:;*_~'")\]]/gu;
 const WHITESPACE = /\s/u;
 const PUNCTUATION = /[\p{P}\p{S}]/u;
@@ -461,7 +480,15 @@ function linkTail(s: string, k: number): { href: string; title: string; end: num
 
 function plainText(nodes: Inline[]): string {
   return nodes
-    .map((n) => (n.type === "text" || n.type === "code" ? n.text : n.type === "br" ? " " : n.type === "image" ? n.alt : plainText(n.children)))
+    .map((n) =>
+      n.type === "text" || n.type === "code"
+        ? n.text
+        : n.type === "br"
+          ? " "
+          : n.type === "image"
+            ? n.alt
+            : plainText(n.children),
+    )
     .join("");
 }
 
@@ -525,7 +552,10 @@ export function parseInline(src: string): Inline[] {
         const opener = delims[o]!;
         if (opener.char !== closer.char || !opener.canOpen) continue;
         if (closer.char === "~" && opener.count !== closer.count) continue;
-        const oddMatch = (opener.canClose || closer.canOpen) && (opener.length + closer.length) % 3 === 0 && !(opener.length % 3 === 0 && closer.length % 3 === 0);
+        const oddMatch =
+          (opener.canClose || closer.canOpen) &&
+          (opener.length + closer.length) % 3 === 0 &&
+          !(opener.length % 3 === 0 && closer.length % 3 === 0);
         if (closer.char !== "~" && oddMatch) continue;
         break;
       }
@@ -691,7 +721,8 @@ export function parseInline(src: string): Inline[] {
     for (const n of nodes) {
       const prev = merged[merged.length - 1];
       if (n.type === "text" && !n.text) continue;
-      if (n.type === "text" && prev?.type === "text") merged[merged.length - 1] = { type: "text", text: prev.text + n.text };
+      if (n.type === "text" && prev?.type === "text")
+        merged[merged.length - 1] = { type: "text", text: prev.text + n.text };
       else merged.push("children" in n ? { ...n, children: merge(n.children) } : n);
     }
     return merged;
@@ -710,7 +741,8 @@ function linkBareUrls(nodes: Inline[]): Inline[] {
     for (const m of n.text.matchAll(BARE_URL)) {
       let url = m[0];
       // A closing parenthesis belongs to the URL only if it has an opening one.
-      while (url.endsWith(")") && (url.match(/\)/g)?.length ?? 0) > (url.match(/\(/g)?.length ?? 0)) url = url.slice(0, -1);
+      while (url.endsWith(")") && (url.match(/\)/g)?.length ?? 0) > (url.match(/\(/g)?.length ?? 0))
+        url = url.slice(0, -1);
       if (m.index > last) parts.push({ type: "text", text: n.text.slice(last, m.index) });
       parts.push({ type: "link", href: url, title: "", children: [{ type: "text", text: url }] });
       last = m.index + url.length;

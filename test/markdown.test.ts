@@ -1,6 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { type Block, looksLikeMarkdown, MarkdownStream, type ParsedBlock, parseInline, parseLines, parseMarkdown } from "../public/markdown";
+import {
+  type Block,
+  looksLikeMarkdown,
+  MarkdownStream,
+  type ParsedBlock,
+  parseInline,
+  parseLines,
+  parseMarkdown,
+} from "../public/markdown";
 
 describe("looksLikeMarkdown", () => {
   test("one unambiguous construct is enough", () => {
@@ -56,7 +64,10 @@ describe("parseMarkdown blocks", () => {
         type: "quote",
         children: [
           { type: "heading", level: 1, children: [{ type: "text", text: "Q" }] },
-          { type: "paragraph", children: [{ type: "text", text: "line" }, { type: "br" }, { type: "text", text: "lazy" }] },
+          {
+            type: "paragraph",
+            children: [{ type: "text", text: "line" }, { type: "br" }, { type: "text", text: "lazy" }],
+          },
         ],
       },
     ]);
@@ -70,7 +81,13 @@ describe("parseMarkdown blocks", () => {
     expect(items[0]!.children[1]).toMatchObject({ type: "list", items: [{ children: [{ type: "paragraph" }] }] });
     expect(items[1]).toMatchObject({ task: true, children: [{ type: "paragraph", children: [{ text: "c" }] }] });
 
-    expect(parseMarkdown("3. x\n\n4. y")[0]).toMatchObject({ type: "list", ordered: true, start: 3, tight: false, items: [{}, {}] });
+    expect(parseMarkdown("3. x\n\n4. y")[0]).toMatchObject({
+      type: "list",
+      ordered: true,
+      start: 3,
+      tight: false,
+      items: [{}, {}],
+    });
     // A different marker starts a new list; a paragraph line after the list ends it.
     expect(parseMarkdown("- a\n+ b").map((b) => b.type)).toEqual(["list", "list"]);
     expect(parseMarkdown("- a\n\nafter").map((b) => b.type)).toEqual(["list", "paragraph"]);
@@ -81,10 +98,27 @@ describe("parseMarkdown blocks", () => {
     expect(parseMarkdown("1. a\n2. b\n3) c").map((b) => b.type)).toEqual(["list", "list"]);
     // Blank lines inside a code block or a nested list do not make the outer list loose.
     expect(parseMarkdown("- a\n- ```\n  b\n\n  ```\n- c")[0]).toMatchObject({ tight: true });
-    expect(parseMarkdown("- a\n  - b\n\n    c\n- d")[0]).toMatchObject({ tight: true, items: [{ children: [{}, { tight: false }] }, {}] });
+    expect(parseMarkdown("- a\n  - b\n\n    c\n- d")[0]).toMatchObject({
+      tight: true,
+      items: [{ children: [{}, { tight: false }] }, {}],
+    });
     // A lazy line is paragraph text, even when it looks like a block start.
     expect(parseMarkdown("> foo\nbar\n===")).toEqual([
-      { type: "quote", children: [{ type: "paragraph", children: [{ type: "text", text: "foo" }, { type: "br" }, { type: "text", text: "bar" }, { type: "br" }, { type: "text", text: "===" }] }] },
+      {
+        type: "quote",
+        children: [
+          {
+            type: "paragraph",
+            children: [
+              { type: "text", text: "foo" },
+              { type: "br" },
+              { type: "text", text: "bar" },
+              { type: "br" },
+              { type: "text", text: "===" },
+            ],
+          },
+        ],
+      },
     ]);
     expect(parseMarkdown("> ```\nfoo\n```").map((b) => b.type)).toEqual(["quote", "paragraph", "code"]);
   });
@@ -118,7 +152,14 @@ describe("parseInline", () => {
       { type: "del", children: [{ type: "text", text: "d" }] },
     ]);
     expect(parseInline("**a *b* c**")).toEqual([
-      { type: "strong", children: [{ type: "text", text: "a " }, { type: "em", children: [{ type: "text", text: "b" }] }, { type: "text", text: " c" }] },
+      {
+        type: "strong",
+        children: [
+          { type: "text", text: "a " },
+          { type: "em", children: [{ type: "text", text: "b" }] },
+          { type: "text", text: " c" },
+        ],
+      },
     ]);
   });
 
@@ -132,7 +173,7 @@ describe("parseInline", () => {
     expect(html("*foo **bar***")).toBe("<em>foo <strong>bar</strong></em>");
     expect(html("**foo *bar***")).toBe("<strong>foo <em>bar</em></strong>");
     expect(html("*foo**bar**baz*")).toBe("<em>foo<strong>bar</strong>baz</em>");
-    expect(html("a**\"foo\"**")).toBe('a**"foo"**');
+    expect(html('a**"foo"**')).toBe('a**"foo"**');
     expect(html("**foo***")).toBe("<strong>foo</strong>*");
     // Divergence: next to ideographs, a run may open or close beside punctuation.
     expect(html("**「日本」**です")).toBe("<strong>「日本」</strong>です");
@@ -140,7 +181,7 @@ describe("parseInline", () => {
     expect(html("日本語~~（旧）~~です")).toBe("日本語<del>（旧）</del>です");
     expect(html("*（注）*本文")).toBe("<em>（注）</em>本文");
     // Latin text keeps the CommonMark rule.
-    expect(html("a**\"foo\"**b")).toBe('a**"foo"**b');
+    expect(html('a**"foo"**b')).toBe('a**"foo"**b');
     expect(html("__foo, __bar__, baz__")).toBe("<strong>foo, <strong>bar</strong>, baz</strong>");
   });
 
@@ -175,11 +216,20 @@ describe("parseInline", () => {
 
   test("links, images, autolinks and bare URLs", () => {
     expect(parseInline('[**x**](https://a.b/c_(d) "T")')).toEqual([
-      { type: "link", href: "https://a.b/c_(d)", title: "T", children: [{ type: "strong", children: [{ type: "text", text: "x" }] }] },
+      {
+        type: "link",
+        href: "https://a.b/c_(d)",
+        title: "T",
+        children: [{ type: "strong", children: [{ type: "text", text: "x" }] }],
+      },
     ]);
     expect(parseInline("![alt *t*](/i.png)")).toEqual([{ type: "image", href: "/i.png", title: "", alt: "alt t" }]);
-    expect(parseInline("<mailto:a@b.c>")).toEqual([{ type: "link", href: "mailto:a@b.c", title: "", children: [{ type: "text", text: "mailto:a@b.c" }] }]);
-    expect(parseInline("<a@b.c>")).toEqual([{ type: "link", href: "mailto:a@b.c", title: "", children: [{ type: "text", text: "a@b.c" }] }]);
+    expect(parseInline("<mailto:a@b.c>")).toEqual([
+      { type: "link", href: "mailto:a@b.c", title: "", children: [{ type: "text", text: "mailto:a@b.c" }] },
+    ]);
+    expect(parseInline("<a@b.c>")).toEqual([
+      { type: "link", href: "mailto:a@b.c", title: "", children: [{ type: "text", text: "a@b.c" }] },
+    ]);
     expect(parseInline("see https://x.org/a.")).toEqual([
       { type: "text", text: "see " },
       { type: "link", href: "https://x.org/a", title: "", children: [{ type: "text", text: "https://x.org/a" }] },
@@ -266,7 +316,13 @@ describe("MarkdownStream", () => {
     s.push("--");
     expect(s.take().done).toEqual([]);
     s.push("-\n\nNext");
-    expect(s.take()).toEqual({ done: [], tail: [{ type: "heading", level: 2, children: [{ type: "text", text: "Para" }] }, { type: "paragraph", children: [{ type: "text", text: "Next" }] }] });
+    expect(s.take()).toEqual({
+      done: [],
+      tail: [
+        { type: "heading", level: 2, children: [{ type: "text", text: "Para" }] },
+        { type: "paragraph", children: [{ type: "text", text: "Next" }] },
+      ],
+    });
     s.push("\n");
     const r = s.take();
     expect(r.done).toEqual([{ type: "heading", level: 2, children: [{ type: "text", text: "Para" }] }]);

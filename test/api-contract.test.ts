@@ -75,8 +75,10 @@ function problems(schemaNode: any, value: unknown, at = "$", out: string[] = [])
   }
   if (typeof value === "string") {
     const length = [...value].length; // JSON Schema counts code points
-    if (typeof schema.minLength === "number" && length < schema.minLength) out.push(`${at}: shorter than ${schema.minLength}`);
-    if (typeof schema.maxLength === "number" && length > schema.maxLength) out.push(`${at}: longer than ${schema.maxLength}`);
+    if (typeof schema.minLength === "number" && length < schema.minLength)
+      out.push(`${at}: shorter than ${schema.minLength}`);
+    if (typeof schema.maxLength === "number" && length > schema.maxLength)
+      out.push(`${at}: longer than ${schema.maxLength}`);
     if (typeof schema.pattern === "string" && !new RegExp(schema.pattern, "u").test(value)) {
       out.push(`${at}: does not match ${schema.pattern}`);
     }
@@ -169,23 +171,27 @@ describe("validator", () => {
   });
 
   test("rejects wrong types, and accepts null only where the type list includes it", () => {
-    expect(check("ModelList", { default: CHAT, loaded: 5, models: [] }).join("\n")).toContain("expected string or null");
-    expect(check("Timings", { queue_ms: 1.5, prompt_ms: 1, generation_ms: 1, tokens_per_second: 1 }).join("\n")).toContain(
-      "expected integer",
+    expect(check("ModelList", { default: CHAT, loaded: 5, models: [] }).join("\n")).toContain(
+      "expected string or null",
     );
-    expect(check("TranslateResponse", {
-      translation: 5,
-      finish_reason: "maybe",
-      model: CHAT,
-      usage: { prompt_tokens: 1, completion_tokens: 1 },
-      timings: { queue_ms: 1, prompt_ms: 1, generation_ms: 1, tokens_per_second: 1 },
-    }).length).toBe(2);
+    expect(
+      check("Timings", { queue_ms: 1.5, prompt_ms: 1, generation_ms: 1, tokens_per_second: 1 }).join("\n"),
+    ).toContain("expected integer");
+    expect(
+      check("TranslateResponse", {
+        translation: 5,
+        finish_reason: "maybe",
+        model: CHAT,
+        usage: { prompt_tokens: 1, completion_tokens: 1 },
+        timings: { queue_ms: 1, prompt_ms: 1, generation_ms: 1, tokens_per_second: 1 },
+      }).length,
+    ).toBe(2);
   });
 
   test("checks array items and enforces the minimum on integers", () => {
-    expect(check("ModelList", { default: CHAT, loaded: null, models: [{ id: "x", label: "y", kind: "chat" }] }).join("\n")).toContain(
-      "is not one of",
-    );
+    expect(
+      check("ModelList", { default: CHAT, loaded: null, models: [{ id: "x", label: "y", kind: "chat" }] }).join("\n"),
+    ).toContain("is not one of");
     expect(check("QueuedEvent", { position: 0 }).join("\n")).toContain("below the minimum 1");
   });
 });
@@ -307,7 +313,9 @@ describe("POST success responses", () => {
   });
 
   test("an input over the limit arrives as an ErrorEvent with its details", async () => {
-    const events = await readSse(await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh", stream: true }));
+    const events = await readSse(
+      await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh", stream: true }),
+    );
     expect(events.map((e) => e.event)).toEqual(["error"]);
     expect(check("ErrorEvent", events[0]!.data)).toEqual([]);
     expect(events[0]!.data.code).toBe("input_too_long");
@@ -392,7 +400,9 @@ describe("the spec against the server", () => {
     const answers: Record<string, number> = {};
     for (const { path, method } of OPERATIONS) {
       const init: RequestInit =
-        method === "post" ? { method: "POST", headers: { "content-type": "application/json" }, body: "{}" } : { method: method.toUpperCase() };
+        method === "post"
+          ? { method: "POST", headers: { "content-type": "application/json" }, body: "{}" }
+          : { method: method.toUpperCase() };
       const res = await fetch(serverBase + path, init);
       await res.text();
       answers[`${method.toUpperCase()} ${path}`] = res.status;
@@ -420,7 +430,10 @@ describe("the spec against the server", () => {
   test("the error responses documented for /translate all point at the Error schema", () => {
     const errorSchema = spec.components.schemas.Error;
     for (const status of ["400", "403", "413", "415", "429", "502"]) {
-      expect({ status, schema: deref(documented("/translate", "post", status)) }).toEqual({ status, schema: errorSchema });
+      expect({ status, schema: deref(documented("/translate", "post", status)) }).toEqual({
+        status,
+        schema: errorSchema,
+      });
     }
   });
 
@@ -428,9 +441,11 @@ describe("the spec against the server", () => {
     const triggers: Record<string, () => Promise<number>> = {
       "200": async () => (await post("/api/v1/translate", plain)).status,
       "400": async () => (await post("/api/v1/translate", { text: "", target_lang: "en" })).status,
-      "403": async () => (await post("/api/v1/translate", plain, { headers: { origin: "https://evil.example" } })).status,
+      "403": async () =>
+        (await post("/api/v1/translate", plain, { headers: { origin: "https://evil.example" } })).status,
       "413": async () => (await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh" })).status,
-      "415": async () => (await post("/api/v1/translate", JSON.stringify(plain), { headers: { "content-type": "text/plain" } })).status,
+      "415": async () =>
+        (await post("/api/v1/translate", JSON.stringify(plain), { headers: { "content-type": "text/plain" } })).status,
       "429": async () => {
         mock.delayMs = 150;
         const first = post("/api/v1/translate", { text: "one", target_lang: "en" });
@@ -468,7 +483,9 @@ describe("the spec against the server", () => {
     seen["200"] = (await post("/api/v1/tokenize", plain)).status;
     seen["400"] = (await post("/api/v1/tokenize", { text: "", target_lang: "en" })).status;
     seen["403"] = (await post("/api/v1/tokenize", plain, { headers: { origin: "https://evil.example" } })).status;
-    seen["415"] = (await post("/api/v1/tokenize", JSON.stringify(plain), { headers: { "content-type": "text/plain" } })).status;
+    seen["415"] = (
+      await post("/api/v1/tokenize", JSON.stringify(plain), { headers: { "content-type": "text/plain" } })
+    ).status;
     const padded = JSON.stringify(plain) + " ".repeat(4 * 1024 * 1024);
     seen["413"] = (await post("/api/v1/tokenize", padded)).status;
     await withLoadingApp(async (origin) => {

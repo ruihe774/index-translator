@@ -34,7 +34,9 @@ test("two columns on a desktop viewport, one column at 320 px without horizontal
 
   await app.page.setViewportSize({ width: 320, height: 640 });
   await app.openAdvanced();
-  const overflow = await app.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+  const overflow = await app.page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
+  );
   expect(overflow).toBeLessThanOrEqual(0);
   const stacked = await app.page.locator("#output-area").boundingBox();
   const field = await app.text.boundingBox();
@@ -51,7 +53,13 @@ test("text spacing overrides clip nothing", async ({ app }) => {
   }, "* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-block-end: 2em !important; }");
   const clipped = await app.page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>("label, legend, summary, button, .hint, h1, h2, option")]
-      .filter((el) => el.offsetParent && !el.closest(".sr-only") && el.scrollWidth > el.clientWidth + 1 && getComputedStyle(el).overflow !== "visible")
+      .filter(
+        (el) =>
+          el.offsetParent &&
+          !el.closest(".sr-only") &&
+          el.scrollWidth > el.clientWidth + 1 &&
+          getComputedStyle(el).overflow !== "visible",
+      )
       .map((el) => el.id || el.textContent),
   );
   expect(clipped).toEqual([]);
@@ -62,16 +70,31 @@ test("skip link is first in the tab order and the whole form is reachable in rea
   const names: string[] = [];
   for (let i = 0; i < 14; i++) {
     await app.page.keyboard.press("Tab");
-    names.push(await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""));
+    names.push(
+      await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""),
+    );
   }
-  expect(names.slice(0, 8)).toEqual(["Skip to main content", "engine", "from", "Raw", "Preview", "text", "clear", "translate"]);
+  expect(names.slice(0, 8)).toEqual([
+    "Skip to main content",
+    "engine",
+    "from",
+    "Raw",
+    "Preview",
+    "text",
+    "clear",
+    "translate",
+  ]);
 });
 
 test("every control keeps a visible focus outline", async ({ app }) => {
   await app.open();
   for (const el of [app.from, app.text, app.translate, app.to]) {
     await el.focus();
-    expect(await el.evaluate((n) => getComputedStyle(n).outlineStyle !== "none" && parseFloat(getComputedStyle(n).outlineWidth) >= 2)).toBe(true);
+    expect(
+      await el.evaluate(
+        (n) => getComputedStyle(n).outlineStyle !== "none" && parseFloat(getComputedStyle(n).outlineWidth) >= 2,
+      ),
+    ).toBe(true);
   }
 });
 
@@ -87,7 +110,6 @@ test("pointer targets are at least 24 px", async ({ app }) => {
   expect(small).toEqual([]);
 });
 
-
 for (const scheme of ["light", "dark"] as const) {
   test(`placeholder text has 4.5:1 contrast in ${scheme} mode`, async ({ app }) => {
     await app.page.emulateMedia({ colorScheme: scheme });
@@ -95,10 +117,13 @@ for (const scheme of ["light", "dark"] as const) {
     await app.openAdvanced();
     const ratios = await app.page.evaluate(() => {
       const lum = (c: string) => {
-        const [r, g, b] = c.match(/[\d.]+/g)!.slice(0, 3).map((v) => {
-          const x = Number(v) / 255;
-          return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
-        });
+        const [r, g, b] = c
+          .match(/[\d.]+/g)!
+          .slice(0, 3)
+          .map((v) => {
+            const x = Number(v) / 255;
+            return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+          });
         return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
       };
       return ["text", "glossary", "hard", "soft"].map((id) => {

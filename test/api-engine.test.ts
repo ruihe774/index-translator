@@ -11,7 +11,17 @@ import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "b
 import { type App, startApp } from "../src/app";
 import type { Config } from "../src/config";
 import { EngineError, type Launcher } from "../src/llama";
-import { CHAT, config, DOCUMENT, fakeModel, mock, postTo, resetMock, type SseEvent, waitReady } from "./helpers/mock-engine";
+import {
+  CHAT,
+  config,
+  DOCUMENT,
+  fakeModel,
+  mock,
+  postTo,
+  resetMock,
+  type SseEvent,
+  waitReady,
+} from "./helpers/mock-engine";
 
 afterEach(() => resetMock());
 
@@ -505,7 +515,9 @@ describe("queued events", () => {
     const b = sseEvents(await translate(h.origin, { text: "two", target_lang: "en", stream: true }));
     expect(await nextEvent(b)).toEqual({ event: "queued", data: { position: 1 } });
     const cAbort = new AbortController();
-    const c = sseEvents(await translate(h.origin, { text: "three", target_lang: "en", stream: true }, { signal: cAbort.signal }));
+    const c = sseEvents(
+      await translate(h.origin, { text: "three", target_lang: "en", stream: true }, { signal: cAbort.signal }),
+    );
     expect(await nextEvent(c)).toEqual({ event: "queued", data: { position: 2 } });
     const d = sseEvents(await translate(h.origin, { text: "four", target_lang: "en", stream: true }));
     expect(await nextEvent(d)).toEqual({ event: "queued", data: { position: 3 } });
@@ -603,7 +615,10 @@ describe("streaming and output details", () => {
 
     mock.chunks = ["<think>plan</think>Hello"];
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
-    const text = events.filter((e) => e.event === "delta").map((e) => e.data.text).join("");
+    const text = events
+      .filter((e) => e.event === "delta")
+      .map((e) => e.data.text)
+      .join("");
     expect(text).toBe("Hello");
   });
 
@@ -611,7 +626,12 @@ describe("streaming and output details", () => {
     mock.failWith = "boom";
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
     expect(events.map((e) => e.event)).toEqual(["start", "delta", "delta", "delta", "error"]);
-    expect(events.filter((e) => e.event === "delta").map((e) => e.data.text).join("")).toBe("Hello, world");
+    expect(
+      events
+        .filter((e) => e.event === "delta")
+        .map((e) => e.data.text)
+        .join(""),
+    ).toBe("Hello, world");
     expect(events.at(-1)!.data).toMatchObject({ code: "engine_error", message: expect.stringContaining("boom") });
   });
 
@@ -631,7 +651,7 @@ describe("streaming and output details", () => {
 
   test("usage.prompt_tokens falls back to the measured prompt size when the engine reports 0", async () => {
     h.ctl.zeroPromptUsage = true;
-    const counted = (await (await tokenize(h.origin, chatBody)).json() as any).prompt_tokens;
+    const counted = ((await (await tokenize(h.origin, chatBody)).json()) as any).prompt_tokens;
     expect(counted).toBeGreaterThan(0);
 
     const json = await jsonOf(translate(h.origin, chatBody));
@@ -661,7 +681,9 @@ describe("streaming and output details", () => {
     expect(events.at(-1)!.event).toBe("error");
     expect(await queueOf(h.origin)).toMatchObject({ running: false, waiting: 0 });
 
-    expect((await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })))).at(-1)!.event).toBe("done");
+    expect((await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })))).at(-1)!.event).toBe(
+      "done",
+    );
   });
 });
 

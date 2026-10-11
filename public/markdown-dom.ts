@@ -17,7 +17,11 @@ export interface OutputView {
 /** Links open only to the web or mail; anything else (javascript:, data:, relative paths) stays text. */
 const SAFE_URL = /^(?:https?:\/\/|mailto:)/i;
 
-function el<K extends keyof HTMLElementTagNameMap>(tag: K, children: Node[] = [], className = ""): HTMLElementTagNameMap[K] {
+function el<K extends keyof HTMLElementTagNameMap>(
+  tag: K,
+  children: Node[] = [],
+  className = "",
+): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
   if (className) e.className = className;
   e.append(...children);
@@ -97,9 +101,23 @@ function blockNode(b: Block, tight = false): Node[] {
       return [list];
     }
     case "table": {
-      const cell = (tag: "th" | "td", content: Inline[], k: number) => el(tag, inlineNodes(content), ALIGN_CLASS(b.align[k] ?? null));
-      const head = el("thead", [el("tr", b.head.map((h, k) => cell("th", h, k)))]);
-      const body = el("tbody", b.rows.map((r) => el("tr", r.map((c, k) => cell("td", c, k)))));
+      const cell = (tag: "th" | "td", content: Inline[], k: number) =>
+        el(tag, inlineNodes(content), ALIGN_CLASS(b.align[k] ?? null));
+      const head = el("thead", [
+        el(
+          "tr",
+          b.head.map((h, k) => cell("th", h, k)),
+        ),
+      ]);
+      const body = el(
+        "tbody",
+        b.rows.map((r) =>
+          el(
+            "tr",
+            r.map((c, k) => cell("td", c, k)),
+          ),
+        ),
+      );
       return [el("div", [el("table", [head, body])], "table-scroll")];
     }
   }

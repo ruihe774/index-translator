@@ -4,7 +4,14 @@
 // Usage: [MODEL=index-nailong-9b] bun scripts/longtext.ts [base-url] [output-dir]
 
 import { join } from "node:path";
-import { countLetters, englishEssays, type Fixture, missingParagraphs, repeatedMarkers, withMarkers } from "../test/fixtures";
+import {
+  countLetters,
+  englishEssays,
+  type Fixture,
+  missingParagraphs,
+  repeatedMarkers,
+  withMarkers,
+} from "../test/fixtures";
 
 export async function translateStream(baseUrl: string, body: Record<string, unknown>) {
   const res = await fetch(`${baseUrl}/api/v1/translate`, {
@@ -46,7 +53,12 @@ export interface PassResult {
   finishReason: string;
 }
 
-export async function runPass(baseUrl: string, label: string, fixture: Fixture, body: Record<string, unknown>): Promise<PassResult> {
+export async function runPass(
+  baseUrl: string,
+  label: string,
+  fixture: Fixture,
+  body: Record<string, unknown>,
+): Promise<PassResult> {
   const t0 = performance.now();
   const { translation, start, done } = await translateStream(baseUrl, { ...body, text: fixture.text });
   const seconds = (performance.now() - t0) / 1000;
@@ -55,7 +67,9 @@ export async function runPass(baseUrl: string, label: string, fixture: Fixture, 
   const ok = done.finish_reason === "stop" && missing.length === 0 && repeated.length === 0;
 
   console.log(`${ok ? "PASS" : "FAIL"} ${label}`);
-  console.log(`  input: ${fixture.text.length} characters (${countLetters(fixture.text)} letters), ${fixture.markers.length} paragraphs`);
+  console.log(
+    `  input: ${fixture.text.length} characters (${countLetters(fixture.text)} letters), ${fixture.markers.length} paragraphs`,
+  );
   console.log(`  tokens: ${start.prompt_tokens} prompt + ${done.usage.completion_tokens} completion`);
   console.log(`  output: ${translation.length} characters, finish_reason=${done.finish_reason}`);
   console.log(`  time: ${seconds.toFixed(1)} s wall, ${done.timings.tokens_per_second} tokens/s generation`);
@@ -70,7 +84,11 @@ if (import.meta.main) {
 
   const model = Bun.env.MODEL ? { model: Bun.env.MODEL } : {};
   const english = await englishEssays();
-  const forward = await runPass(base, "English -> Chinese", english, { ...model, source_lang: "en", target_lang: "zh" });
+  const forward = await runPass(base, "English -> Chinese", english, {
+    ...model,
+    source_lang: "en",
+    target_lang: "zh",
+  });
   const back = await runPass(base, "Chinese -> English (round trip)", withMarkers(forward.translation), {
     ...model,
     source_lang: "zh",

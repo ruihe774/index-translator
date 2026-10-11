@@ -18,7 +18,10 @@ function int(env: Env, name: string, fallback: number, { min = 0, max = Infinity
 }
 
 function list(env: Env, name: string): string[] {
-  return (env[name] ?? "").split(",").map((s) => s.trim()).filter(Boolean);
+  return (env[name] ?? "")
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
 }
 
 export interface Config {

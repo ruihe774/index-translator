@@ -100,7 +100,12 @@ describe("POST /tokenize", () => {
 
   test("counts a document request's own prompt with the loaded model, without loading it", async () => {
     const before = mock.launches.length;
-    const res = await post("/api/v1/tokenize", { text: "The fox.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    const res = await post("/api/v1/tokenize", {
+      text: "The fox.",
+      source_lang: "en",
+      target_lang: "zh",
+      model: DOCUMENT,
+    });
     expect(res.status).toBe(200);
     const body = (await res.json()) as any;
     expect(body).toMatchObject({ model: DOCUMENT, counted_with: CHAT });
@@ -218,7 +223,10 @@ describe("POST /translate (JSON)", () => {
   });
 
   test("rejects an oversized body with 413 and the error envelope", async () => {
-    const res = await post("/api/v1/translate", JSON.stringify({ text: "a".repeat(5 * 1024 * 1024), target_lang: "zh" }));
+    const res = await post(
+      "/api/v1/translate",
+      JSON.stringify({ text: "a".repeat(5 * 1024 * 1024), target_lang: "zh" }),
+    );
     expect(res.status).toBe(413);
     expect(((await res.json()) as any).error.code).toBe("body_too_large");
   });
@@ -248,7 +256,12 @@ describe("POST /translate (SSE)", () => {
       max_output_tokens: expect.any(Number),
       queue_ms: expect.any(Number),
     });
-    expect(events.filter((e) => e.event === "delta").map((e) => e.data.text).join("")).toBe("Hello, world");
+    expect(
+      events
+        .filter((e) => e.event === "delta")
+        .map((e) => e.data.text)
+        .join(""),
+    ).toBe("Hello, world");
     expect(events.at(-1)!.data).toEqual({
       finish_reason: "stop",
       usage: { prompt_tokens: 42, completion_tokens: 5 },
@@ -257,7 +270,11 @@ describe("POST /translate (SSE)", () => {
   });
 
   test("the Accept header alone selects streaming", async () => {
-    const res = await post("/api/v1/translate", { text: "你好", target_lang: "en" }, { headers: { accept: "text/event-stream" } });
+    const res = await post(
+      "/api/v1/translate",
+      { text: "你好", target_lang: "en" },
+      { headers: { accept: "text/event-stream" } },
+    );
     expect(res.headers.get("content-type")).toStartWith("text/event-stream");
     await res.text();
   });
@@ -269,7 +286,9 @@ describe("POST /translate (SSE)", () => {
   });
 
   test("an input over the token limit arrives as an error event", async () => {
-    const events = await readSse(await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh", stream: true }));
+    const events = await readSse(
+      await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh", stream: true }),
+    );
     expect(events.map((e) => e.event)).toEqual(["error"]);
     expect(events[0]!.data.code).toBe("input_too_long");
     expect(events[0]!.data.details.max_input_tokens).toBe(400);
@@ -279,14 +298,22 @@ describe("POST /translate (SSE)", () => {
     mock.failWith = "device lost";
     const events = await readSse(await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true }));
     mock.failWith = undefined;
-    expect(events.at(-1)).toEqual({ event: "error", data: { code: "engine_error", message: expect.stringContaining("device lost") } });
+    expect(events.at(-1)).toEqual({
+      event: "error",
+      data: { code: "engine_error", message: expect.stringContaining("device lost") },
+    });
   });
 });
 
 describe("model selection", () => {
   test("a request for another model swaps the engine, and the default is restored for the next", async () => {
     const before = mock.launches.length;
-    const res = await post("/api/v1/translate", { text: "The fox.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    const res = await post("/api/v1/translate", {
+      text: "The fox.",
+      source_lang: "en",
+      target_lang: "zh",
+      model: DOCUMENT,
+    });
     expect(res.status).toBe(200);
     expect(((await res.json()) as any).model).toBe(DOCUMENT);
     expect(mock.launches.slice(before)).toEqual([DOCUMENT]);
@@ -304,7 +331,12 @@ describe("model selection", () => {
 
   test("the document model gets its fixed template with the whole text in place", async () => {
     mock.requests.length = 0;
-    await post("/api/v1/translate", { text: "Line one.\n\nLine two.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    await post("/api/v1/translate", {
+      text: "Line one.\n\nLine two.",
+      source_lang: "en",
+      target_lang: "zh",
+      model: DOCUMENT,
+    });
     const content = mock.requests.at(-1)!.prompt;
     expect(content).toStartWith("请将以下英文小说翻译成中文");
     expect(content).toContain("【源文】\n\nLine one.\n\nLine two.");
@@ -331,7 +363,13 @@ describe("model selection", () => {
       ["soft_constraints", { soft_constraints: ["x"] }],
       ["genre", { genre: "novel" }],
     ] as const) {
-      const res = await post("/api/v1/translate", { text: "Hi", source_lang: "en", target_lang: "zh", model: DOCUMENT, ...extra });
+      const res = await post("/api/v1/translate", {
+        text: "Hi",
+        source_lang: "en",
+        target_lang: "zh",
+        model: DOCUMENT,
+        ...extra,
+      });
       expect(res.status).toBe(400);
       expect(((await res.json()) as any).error.details.field).toBe(field);
     }
@@ -341,12 +379,22 @@ describe("model selection", () => {
     // Move off the document model first so the next request has to load it.
     await post("/api/v1/translate", { text: "你好", target_lang: "en" });
     mock.failLaunch = "model file is corrupt";
-    const failed = await post("/api/v1/translate", { text: "Hi", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    const failed = await post("/api/v1/translate", {
+      text: "Hi",
+      source_lang: "en",
+      target_lang: "zh",
+      model: DOCUMENT,
+    });
     mock.failLaunch = undefined;
     expect(failed.status).toBe(502);
     expect(((await failed.json()) as any).error.message).toContain("model file is corrupt");
 
-    const retried = await post("/api/v1/translate", { text: "Hi", source_lang: "en", target_lang: "zh", model: DOCUMENT });
+    const retried = await post("/api/v1/translate", {
+      text: "Hi",
+      source_lang: "en",
+      target_lang: "zh",
+      model: DOCUMENT,
+    });
     expect(retried.status).toBe(200);
   });
 });
@@ -379,7 +427,11 @@ describe("queueing and cancellation", () => {
     mock.delayMs = 200;
     const abortedBefore = mock.aborted;
     const ac = new AbortController();
-    const res = await post("/api/v1/translate", { text: "long", target_lang: "en", stream: true }, { signal: ac.signal });
+    const res = await post(
+      "/api/v1/translate",
+      { text: "long", target_lang: "en", stream: true },
+      { signal: ac.signal },
+    );
     const reader = res.body!.getReader();
     await reader.read();
     ac.abort();
@@ -600,22 +652,34 @@ describe("browser request checks", () => {
       expect(((await res.json()) as any).error.code).toBe("unsupported_media_type");
     }
     // A simple cross-site form POST carries no content-type at all.
-    const bare = await fetch(base + "/api/v1/translate", { method: "POST", body: translateBody, headers: { "content-type": "" } });
+    const bare = await fetch(base + "/api/v1/translate", {
+      method: "POST",
+      body: translateBody,
+      headers: { "content-type": "" },
+    });
     expect(bare.status).toBe(415);
   });
 
   test("JSON with parameters and any letter case is accepted", async () => {
-    const res = await post("/api/v1/translate", { text: "Hi", target_lang: "zh" }, {
-      headers: { "content-type": "Application/JSON; Charset=UTF-8" },
-    });
+    const res = await post(
+      "/api/v1/translate",
+      { text: "Hi", target_lang: "zh" },
+      {
+        headers: { "content-type": "Application/JSON; Charset=UTF-8" },
+      },
+    );
     expect(res.status).toBe(200);
     await res.json();
   });
 
   test("a cross-origin page is refused with 403", async () => {
-    const res = await post("/api/v1/translate", { text: "Hi", target_lang: "zh" }, {
-      headers: { origin: "https://evil.example" },
-    });
+    const res = await post(
+      "/api/v1/translate",
+      { text: "Hi", target_lang: "zh" },
+      {
+        headers: { origin: "https://evil.example" },
+      },
+    );
     expect(res.status).toBe(403);
     expect(((await res.json()) as any).error.code).toBe("forbidden_origin");
 
@@ -625,9 +689,13 @@ describe("browser request checks", () => {
 
   test("a same-origin page is served, and so is a request without an Origin", async () => {
     const port = app.server.url.port;
-    const same = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" }, {
-      headers: { origin: `http://127.0.0.1:${port}` },
-    });
+    const same = await post(
+      "/api/v1/tokenize",
+      { text: "Hi", target_lang: "zh" },
+      {
+        headers: { origin: `http://127.0.0.1:${port}` },
+      },
+    );
     expect(same.status).toBe(200);
     await same.text();
 
@@ -764,7 +832,10 @@ describe("output budget", () => {
       const text = await textWithPromptTokens(origin, 200);
       expect(await tokenCount(origin, text)).toBe(200);
       const events = await readSse(await translate(origin, { text, target_lang: "en", stream: true }));
-      expect(events.find((e) => e.event === "start")?.data).toMatchObject({ prompt_tokens: 200, max_output_tokens: 36 });
+      expect(events.find((e) => e.event === "start")?.data).toMatchObject({
+        prompt_tokens: 200,
+        max_output_tokens: 36,
+      });
     });
 
     test("an explicit max_output_tokens is clamped to the remaining context", async () => {

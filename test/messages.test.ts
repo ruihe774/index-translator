@@ -13,15 +13,27 @@ import {
   seconds,
   selectionMessage,
 } from "../public/messages";
-import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type Reason, type Selection } from "../public/select-model";
+import {
+  CHAT_MODEL,
+  DOCUMENT_MODEL,
+  LONG_THRESHOLD_LETTERS,
+  type Reason,
+  type Selection,
+} from "../public/select-model";
 
-const selection = (model: Selection["model"], reason: Reason, letters = 100): Selection => ({ model, reason, letters }) as Selection;
+const selection = (model: Selection["model"], reason: Reason, letters = 100): Selection =>
+  ({ model, reason, letters }) as Selection;
 
 describe("selectionMessage", () => {
   const cases: [Reason, Selection["model"], boolean, RegExp][] = [
     ["short", CHAT_MODEL, false, /^Model: Index-Translate-9B\. The text is within 11,000 letters/],
     ["long-document", DOCUMENT_MODEL, false, /^Model: Index-NativeLong-9B\. .*whole-document model is used/],
-    ["long-unsupported-direction", CHAT_MODEL, true, /^Warning: .*only translates Chinese to or from English or Japanese/],
+    [
+      "long-unsupported-direction",
+      CHAT_MODEL,
+      true,
+      /^Warning: .*only translates Chinese to or from English or Japanese/,
+    ],
     ["long-unknown-source", CHAT_MODEL, true, /^Warning: .*could not be determined.*"From"/],
     ["long-options", CHAT_MODEL, true, /^Warning: .*glossary, constraints or genre need Index-Translate-9B/],
     ["manual-document-unusable", DOCUMENT_MODEL, true, /^Warning: Index-NativeLong-9B cannot translate this/],
@@ -74,7 +86,9 @@ describe("adviceMessage", () => {
   });
   test("a selection warning, the same-language warning and the note keep their order", () => {
     const warned = selection(CHAT_MODEL, "long-options", LONG_THRESHOLD_LETTERS + 1);
-    expect(adviceMessage(warned, "en", "en", "Note.")).toBe(`${selectionMessage(warned).text} ${SAME_LANGUAGE_WARNING} Note.`);
+    expect(adviceMessage(warned, "en", "en", "Note.")).toBe(
+      `${selectionMessage(warned).text} ${SAME_LANGUAGE_WARNING} Note.`,
+    );
   });
 });
 
@@ -82,14 +96,22 @@ describe("healthMessage", () => {
   const queue = { running: false, waiting: 0 };
   test("ready with and without a model, and with a queue", () => {
     expect(healthMessage({ status: "ready", model: null, queue })).toEqual({ text: "Engine ready.", loading: false });
-    expect(healthMessage({ status: "ready", model: CHAT_MODEL, queue }).text).toBe("Engine ready, Index-Translate-9B loaded.");
+    expect(healthMessage({ status: "ready", model: CHAT_MODEL, queue }).text).toBe(
+      "Engine ready, Index-Translate-9B loaded.",
+    );
     expect(healthMessage({ status: "ready", model: "other-model", queue: { running: true, waiting: 2 } }).text).toBe(
       "Engine ready, other-model loaded. 2 waiting in the queue.",
     );
   });
   test("loading is the only state that keeps polling", () => {
-    expect(healthMessage({ status: "loading", model: null, queue })).toEqual({ text: "Engine loading a model…", loading: true });
-    expect(healthMessage({ status: "error", error: "bad file", model: null, queue })).toEqual({ text: "Engine error: bad file.", loading: false });
+    expect(healthMessage({ status: "loading", model: null, queue })).toEqual({
+      text: "Engine loading a model…",
+      loading: true,
+    });
+    expect(healthMessage({ status: "error", error: "bad file", model: null, queue })).toEqual({
+      text: "Engine error: bad file.",
+      loading: false,
+    });
     expect(healthMessage({ status: "idle", model: null, queue })).toEqual({ text: "Engine idle.", loading: false });
   });
 });
@@ -106,7 +128,13 @@ describe("seconds", () => {
 });
 
 describe("resultNotes", () => {
-  const ctx = { source: "一\n二\n三", translation: "1\n2\n3", model: CHAT_MODEL, sourceLang: undefined, targetLang: "en" } as const;
+  const ctx = {
+    source: "一\n二\n三",
+    translation: "1\n2\n3",
+    model: CHAT_MODEL,
+    sourceLang: undefined,
+    targetLang: "en",
+  } as const;
 
   test("a clean result has no notes", () => {
     expect(resultNotes({ finish_reason: "stop" }, ctx)).toEqual([]);
@@ -129,7 +157,10 @@ describe("resultNotes", () => {
     expect(resultNotes({ finish_reason: "stop" }, { ...doc, targetLang: "ja" })).toEqual([]);
   });
   test("all three together keep their order", () => {
-    const notes = resultNotes({ finish_reason: "length" }, { ...ctx, translation: "1", model: DOCUMENT_MODEL, sourceLang: "zh" });
+    const notes = resultNotes(
+      { finish_reason: "length" },
+      { ...ctx, translation: "1", model: DOCUMENT_MODEL, sourceLang: "zh" },
+    );
     expect(notes).toHaveLength(3);
     expect(notes[0]).toContain("output limit");
     expect(notes[1]).toContain("lines");
@@ -139,7 +170,11 @@ describe("resultNotes", () => {
 
 describe("metaLine", () => {
   test("labels the model and adds queue and generation time", () => {
-    const done = { finish_reason: "stop", usage: { prompt_tokens: 1234, completion_tokens: 56 }, timings: { queue_ms: 500, generation_ms: 1000 } };
+    const done = {
+      finish_reason: "stop",
+      usage: { prompt_tokens: 1234, completion_tokens: 56 },
+      timings: { queue_ms: 500, generation_ms: 1000 },
+    };
     expect(metaLine(CHAT_MODEL, done)).toBe("Index-Translate-9B · 1,234 prompt tokens · 56 generated · 1.5 s");
   });
 });

@@ -7,11 +7,14 @@ const fmt = (n: number) => n.toLocaleString();
 describe("describeError: input_too_long", () => {
   test("with prompt_tokens and max_input_tokens, states both counts", () => {
     expect(
-      describeError({
-        code: "input_too_long",
-        message: "the input exceeds the token limit",
-        details: { prompt_tokens: 12345, max_input_tokens: 4096 },
-      }, 413),
+      describeError(
+        {
+          code: "input_too_long",
+          message: "the input exceeds the token limit",
+          details: { prompt_tokens: 12345, max_input_tokens: 4096 },
+        },
+        413,
+      ),
     ).toBe(
       `The text is too long for one translation: ${fmt(12345)} tokens, and the limit is ${fmt(4096)}. Shorten it or translate it in parts.`,
     );
