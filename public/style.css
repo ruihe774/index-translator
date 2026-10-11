@@ -19,8 +19,13 @@
     --warn-text: light-dark(#4a3500, #ffe9a8);
     --warn-border: light-dark(#8a6100, #c9a227);
 
-    --radius: 0.75rem;
+    /* Concentric corners: an outer radius is the inner radius plus the gap
+       (padding + border) between the two edges; never below zero. */
     --radius-sm: 0.5rem;
+    --inset: 1rem;
+    --radius: calc(var(--radius-sm) + var(--inset) + 1px);
+    --radius-in-fieldset: max(0px, calc(var(--radius-sm) - 0.5rem - 1px));
+    --radius-in-output: max(0px, calc(var(--radius-sm) - 0.75rem));
     --target: 2.75rem;
     --gutter: 1rem;
     --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
@@ -230,6 +235,10 @@
     .source & {
       flex: 1;
     }
+  }
+
+  fieldset :is(input[type="text"], textarea) {
+    border-radius: var(--radius-in-fieldset);
   }
 
   fieldset {
@@ -486,7 +495,7 @@
       overflow-x: auto;
       background: var(--surface);
       border: 1px solid var(--divider);
-      border-radius: var(--radius-sm);
+      border-radius: var(--radius-in-output);
       line-height: 1.45;
 
       code {
