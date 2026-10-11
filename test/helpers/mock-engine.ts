@@ -113,6 +113,7 @@ export function config(overrides: Partial<Config> = {}): Config {
     maxQueue: 1,
     allowedOrigins: [],
     allowedHosts: [],
+    openBrowser: false,
     ...overrides,
   };
 }

@@ -17,6 +17,7 @@ No npm runtime dependencies; no build step for the web app.
 ## Layout
 
 - `src/server.ts`: entry point, signal handling (SIGINT/SIGTERM stop the child)
+- `src/open-browser.ts`: opens the default browser (`xdg-open`/`open`/`start`)
 - `src/app.ts`: routes, model selection, SSE, static files
 - `src/llama.ts`: llama-server lifecycle (one model at a time), token counting, streamed generation
 - `src/models.ts`: model registry (ids, files, kinds, document directions)
@@ -62,6 +63,7 @@ Environment variables, all optional. Defaults in `src/config.ts`.
 | `LLAMA_SERVER_BIN` | `vendor/llama.cpp/llama-server` | |
 | `LLAMA_PORT` | free port | Loopback port for the engine; a new one is picked per load if unset |
 | `PUBLIC_DIR` | `public/` | |
+| `OPEN_BROWSER` | on | Opens the web app in the default browser at startup; `0` disables. Wildcard `HOST` opens `127.0.0.1` |
 
 ## API
 

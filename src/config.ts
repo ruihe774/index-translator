@@ -43,6 +43,8 @@ export interface Config {
   allowedOrigins: string[];
   /** Host names besides loopback and HOST that /api/v1 accepts, e.g. behind a proxy. */
   allowedHosts: string[];
+  /** Open the web app in the default browser once the server is listening. */
+  openBrowser: boolean;
 }
 
 export function loadConfig(env: Env = Bun.env): Config {
@@ -75,5 +77,6 @@ export function loadConfig(env: Env = Bun.env): Config {
     maxQueue: int(env, "MAX_QUEUE", 8),
     allowedOrigins: list(env, "ALLOWED_ORIGINS"),
     allowedHosts: list(env, "ALLOWED_HOSTS"),
+    openBrowser: env.OPEN_BROWSER !== "0",
   };
 }

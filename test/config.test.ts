@@ -23,7 +23,13 @@ describe("loadConfig defaults", () => {
       maxQueue: 8,
       allowedOrigins: [],
       allowedHosts: [],
+      openBrowser: true,
     });
+  });
+
+  test("OPEN_BROWSER=0 disables the browser", () => {
+    expect(loadConfig({ OPEN_BROWSER: "0" }).openBrowser).toBe(false);
+    expect(loadConfig({ OPEN_BROWSER: "1" }).openBrowser).toBe(true);
   });
 
   test("empty values fall back to the defaults", () => {
