@@ -31,6 +31,8 @@
     --gap: 1rem;
     /* Height of the text box, the source preview and the translation: equal, so the panes line up. */
     --pane-height: clamp(16rem, 60dvh, 40rem);
+    /* Reading size of the text areas. */
+    --text-size: 1.25rem;
     --gutter: 1rem;
     --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
     /* Per language, so Han characters get Japanese or Chinese glyph forms, not the first CJK font's. */
@@ -95,7 +97,7 @@
 @layer layout {
   .site-header,
   main {
-    inline-size: min(100% - 2 * var(--gutter), 80rem);
+    inline-size: min(100% - 2 * var(--gutter), 120rem);
     margin-inline: auto;
   }
 
@@ -141,6 +143,14 @@
     border: 1px solid var(--divider);
     border-radius: var(--radius);
     box-shadow: var(--shadow);
+  }
+
+  /* Side by side: the panes fill the screen height, so "Model and options" lies below the fold.
+     The reserve is the header, panel chrome (padding, language row, button row) and the form gap. */
+  @media (min-width: 46rem) {
+    :root {
+      --pane-height: max(16rem, calc(100dvh - 17rem));
+    }
   }
 
   .panel-foot {
@@ -284,6 +294,20 @@
     resize: none;
     min-block-size: 4.5rem;
     line-height: 1.6;
+  }
+
+  /* Text areas: larger type and roomier side padding on wide screens. */
+  #text,
+  .output {
+    font-size: var(--text-size);
+    padding-inline: 0.75rem;
+  }
+
+  @media (min-width: 46rem) {
+    #text,
+    .output {
+      padding-inline: 1.5rem;
+    }
   }
 
   /* Source text box, source preview and translation: one size and position. */
@@ -485,7 +509,7 @@
 
   .output {
     flex: 1;
-    padding: 0.75rem;
+    padding-block: 0.75rem;
     line-height: 1.6;
     white-space: pre-wrap;
     overflow-wrap: anywhere;
@@ -527,21 +551,21 @@
     }
 
     .md-h1 {
-      font-size: 1.5rem;
+      font-size: 1.5em;
     }
 
     .md-h2 {
-      font-size: 1.3rem;
+      font-size: 1.3em;
     }
 
     .md-h3 {
-      font-size: 1.15rem;
+      font-size: 1.15em;
     }
 
     .md-h4,
     .md-h5,
     .md-h6 {
-      font-size: 1rem;
+      font-size: 1em;
     }
 
     ul,
