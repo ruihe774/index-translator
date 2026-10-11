@@ -7,6 +7,7 @@ import { join } from "node:path";
 import type { Config } from "./config";
 import type { WorkerReply, WorkerRequest } from "./llama-worker";
 import type { ModelSpec } from "./models";
+import { fetchCommand } from "./preflight";
 
 export type EngineState = "stopped" | "loading" | "ready" | "error";
 
@@ -166,7 +167,7 @@ let nativeWorker: NativeWorker | undefined;
 export const launchNative: Launcher = async (model, cfg) => {
   const modelPath = join(cfg.modelsDir, model.file);
   if (!(await Bun.file(modelPath).exists())) {
-    throw new EngineError(`model not found at ${modelPath}; run: uv run scripts/fetch_models.py`);
+    throw new EngineError(`model not found at ${modelPath}; run: ${fetchCommand()}`);
   }
   nativeWorker ??= new NativeWorker(() => {
     if (nativeWorker === worker) nativeWorker = undefined;

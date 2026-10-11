@@ -19,7 +19,8 @@ Dev tools (TypeScript, `@types/bun`, Playwright, doiuse, postcss) come from `nod
 - Frontend e2e/integration/a11y: `bun run e2e` (Playwright, mock engine; see `e2e/README.md`; `bunx playwright install chromium` or `CHROMIUM_PATH`)
 - Lint and format: `bun run check` (Biome, recommended rules; `bun run format` writes). Errors must stay at zero; the style warnings (`noNonNullAssertion`, `noExplicitAny`, `useTemplate`) are tolerated
 - CSS browser-support check: `bun run lint:css` (doiuse against `.browserslistrc`)
-- Setup: `bun scripts/fetch_llama.ts` (vendor/llama.cpp with the tag's headers in `include/`, checksums verified); `bun scripts/build_audiocpp.ts` (vendor/audio.cpp: `libaudiocpp.so` built from the pinned commit, about 1 min of compiling on 20 threads; needs git, cmake, a C++ compiler, glslc, libvulkan-dev, spirv-headers; AVX2 code unless `--native`; `--keep` keeps the build tree in `vendor/.build/`); `uv run scripts/fetch_models.py` (models/, about 17.5 GiB with the 3.5 GB speech model, and the example voices into voices/)
+- Setup: `bun scripts/build_llama.ts` (vendor/llama.cpp: libllama, the Vulkan backend, every CPU variant and `libllama-shim.so`, built from the pinned commit with no tools or server, about 1 min on 20 threads; same tools as below plus a C compiler; `--native` builds one CPU backend for this machine; `--keep` as below; `--shim` only recompiles `src/llama-shim.c` against what is installed); `bun scripts/build_audiocpp.ts` (vendor/audio.cpp: `libaudiocpp.so` built from the pinned commit, about 1 min of compiling on 20 threads; needs git, cmake, a C++ compiler, glslc, libvulkan-dev, spirv-headers; AVX2 code unless `--native`; `--keep` keeps the build tree in `vendor/.build/`); `bun scripts/fetch_models.ts` (models/, about 17.5 GiB with the 3.5 GB speech model, and the example voices into voices/; downloads with `curl`, resumable, checksums pinned in the script; `--model`, the server's directory settings, `HF_ENDPOINT` for a mirror)
+- AppImage: `bun scripts/build_appimage.ts` (`dist/Index_Translator-x86_64.AppImage`, about 70 MB, from the engines in `vendor/` and the running Bun; downloads appimagetool and the AppImage runtime by checksum into `vendor/.build/appimage`)
 - Markdown conformance: `bun scripts/commonmark.ts` (CommonMark spec examples against `public/markdown.ts`; divergences in `docs/markdown-conformance.md`)
 - Long-document check: `MODEL=index-nailong-9b bun scripts/longtext.ts http://127.0.0.1:3000`
 
@@ -33,7 +34,8 @@ No npm runtime dependencies; no build step for the web app.
 - `src/llama.ts`: engine state (one model at a time), token counting, streamed generation; server-thread side of the engine worker
 - `src/llama-worker.ts`: worker thread that owns libllama; loads, unloads and generations run in arrival order
 - `src/llama-ffi.ts`: `bun:ffi` bindings (blocking), ChatML prompt, tokenize/decode/sample
-- `src/llama-shim.c`: the calls that pass structs by value and the log filter; compiled at startup by `bun:ffi`'s `cc` (TinyCC) against `vendor/llama.cpp/include/llama.h`
+- `src/llama-shim.c`: the calls that pass structs by value, the log filter and the device list; compiled by `scripts/build_llama.ts` into `vendor/llama.cpp/libllama-shim.so` against the headers of the libllama built with it, and opened with `dlopen` (nothing is compiled at startup)
+- `src/preflight.ts`: what `src/server.ts` checks before it starts, and the `fetch` command to name in messages; `src/llama-probe.ts`: the process it runs to open the engine's libraries and list their devices
 - `src/models.ts`: model registry (ids, files, kinds, document directions)
 - `src/prompt.ts`: chat prompts, NativeLong document prompts, language table
 - `src/speech.ts`: the speech engine's state, lazy load and idle unload, voices from `VOICES_DIR`; server-thread side of the speech worker
@@ -44,7 +46,9 @@ No npm runtime dependencies; no build step for the web app.
 - `src/static.ts`: static files; `.ts` in `public/` transpiled on request, ETag-cached in memory, never written to disk
 - `public/`: web app (`app.ts`, `select-model.ts`, `request.ts`, `sse.ts`, `messages.ts`, `errors.ts`, `paragraphs.ts`, `glossary.ts`, `markdown.ts`, `markdown-dom.ts`, `sync-scroll.ts`, `speech-text.ts`, `speech.ts`, `style.css`)
 - `prompts/`: the four official NativeLong templates (from bilibili/Index-Translate)
-- `scripts/`: fetch and test helpers
+- `scripts/`: build, fetch and test helpers (`build_tools.ts`: what the build scripts share)
+- `packaging/appimage/`: `AppRun` (the AppImage's start script: `fetch`, `--help`, `--version`, else the server), desktop entry, icon
+- `.github/workflows/ci.yml`: checks and tests (`bun test`, Playwright), and the AppImage as an artifact
 - `e2e/`: Playwright specs (`a11y.spec.ts`: axe and WCAG layout checks; `speech.spec.ts`: reading aloud), `mock-server.ts` (real app on the `test/helpers/mock-engine.ts` mocks of both engines, scriptable via a control port)
 - `test/`: `bun test`; `test/fixtures/essays.en.txt` is the long-input fixture (30 paragraphs, 16,566 letters)
 - `docs/openapi.yaml`: API spec, served at `/api/v1/openapi.yaml`
@@ -67,6 +71,13 @@ No npm runtime dependencies; no build step for the web app.
 - Output is capped at 4 × prompt tokens + 512 unless `max_output_tokens` is set, so loops stop.
 - No authentication. Keep `HOST` on loopback or behind a proxy. `ALLOWED_ORIGINS` and
   `ALLOWED_HOSTS` control browser and proxy access.
+- `src/server.ts` runs `preflight` before anything is loaded and exits with status 1 and one
+  message when the machine cannot run the translator: the engine's libraries do not open, no CPU
+  backend loads, no Vulkan GPU while `GPU_LAYERS` is not `0` (CPU-type Vulkan devices such as
+  lavapipe do not count, as in llama.cpp), or the default model's file is missing, in that order
+  (hardware before the 17 GiB download). The libraries are opened for this in a process of its own
+  (`src/llama-probe.ts`), so the server thread never calls libllama and a crashing driver is
+  reported, not suffered. `startApp` itself does not check; tests and the e2e server use the mocks.
 - Both engines share the server's process: a crash inside llama.cpp or audio.cpp takes the server
   down, and any exit, `SIGKILL` included, releases the VRAM.
 - libaudiocpp is only called from the speech worker thread, which is started by the first
@@ -111,7 +122,7 @@ fail at startup.
 | `MAX_QUEUE` | `8` | Requests allowed to wait |
 | `GPU_LAYERS` | `all` | `all` or a layer count; `0` runs on CPU |
 | `LLAMA_THREADS` | half the logical CPUs | CPU threads for decoding |
-| `LLAMA_DIR` | `vendor/llama.cpp` | Holds `libllama`, the `libggml-*` backends and `include/llama.h`; headers must match the library |
+| `LLAMA_DIR` | `vendor/llama.cpp` | Holds `libllama`, the `libggml-*` backends and `libllama-shim`, all from one build (`include/` is only there to rebuild the shim) |
 | `PUBLIC_DIR` | `public/` | |
 | `SPEECH` | on | `0`: reading aloud is reported as unavailable and libaudiocpp is never loaded |
 | `AUDIO_DIR` | `vendor/audio.cpp` | Holds `libaudiocpp.so` (and `include/audiocpp.h` for reference); the model's spec comes from its GGUF |
@@ -145,7 +156,9 @@ Spec: `docs/openapi.yaml`. Endpoints:
 Both are Q6_K GGUF files. Measured on RX 9070 (16 GiB, RADV), llama.cpp `b11552`, 65,536 context:
 about 9,300 MiB VRAM for the chat model (the NativeLong model was not sampled); about 70 tokens/s
 generation for both; 4,400-token prompt read in under 2 s; model load or swap about 2 s with the
-file in the page cache. Output, token counts and speed match `llama-server` of the same build.
+file in the page cache. Output, token counts and speed matched `llama-server` of that tag's
+release build; our own build (`scripts/build_llama.ts`) gave the same token counts and speed in
+the long-document check (4,472 prompt tokens, 56 s, 70 tokens/s) and was not compared word for word.
 
 Speech: IndexTTS-2.5 as `index-tts2_5-q8_0.gguf` from `audio-cpp/audio.cpp-gguf` (a community
 conversion; the official release is PyTorch and names NVIDIA only), run by audio.cpp `v0.9.1`
@@ -213,11 +226,33 @@ Hence the 11,000-letter switch point.
 - The source preview, the view switches, Clear and sync scrolling have not been reviewed for
   accessibility yet (not in `A11Y-ACCEPTANCE.md`); `e2e/a11y.spec.ts` passes.
 - Reading aloud (`public/speech-text.ts` pure, `public/speech.ts` player, wiring in `app.ts`): each panel's button row starts with Listen (a loudspeaker; a square, "Stop reading…", while that side is read) and, only while reading, Pause / Resume. One side is read at a time. Listen is `aria-disabled`, with the reason as `title`, when speech is unavailable, there is no text, the translation is still running, or the language is not one the model speaks (source: the selected language or `detectSource`; output: `outputEl.lang`). Starting a translation, Clear, editing the source or changing From stops the reading. `speechSegments` builds what is spoken: for a text shown as Markdown (source: `looksLikeMarkdown`; output: `views.output.available`) from `parseLines`, never the raw text (headings and list items are utterances and get a full stop, ordered items their number, table rows "header: cell" pairs, links their text, images their alt, URLs their host, code blocks and rules nothing); plain text line by line. Utterances are packed into pieces of whole sentences (`Intl.Segmenter`; 180 characters, 60 for zh/ja; a longer sentence is cut at commas), each with the `data-line` of its top-level block, which gets `.speaking` and is scrolled into its pane. The player fetches one piece at a time, the next one while the current plays, and plays through one `AudioContext` created in the click; pause is `suspend()`. Voice and speed (selects under "Model and options", stored like the languages, hidden without voices) apply from the current piece, which is fetched again. Errors flash in `#meta`. While audio is being made and none plays (`loading`: first piece, after a jump or a voice/speed change) only Stop works: Pause shows a spinner and is `aria-disabled`, as are Previous / Next. Previous / Next block (visible only while that side is read; `SpeechPlayer.jump`) go to the start of the previous or next run of pieces with the same `line` (Previous first returns to the start of the current block); the new block is shaded at once but its audio is requested only after `JUMP_SETTLE_MS` without another jump, because an utterance cannot be cancelled and abandoned requests would fill the speech queue (`429`). `#meta` says "Block n of m". The block being read carries `aria-current` as well as `.speaking`; a blocked Listen's reason is its `aria-describedby`, not only `title`. Reviewed in `A11Y-ACCEPTANCE.md` (screen reader not run).
-- Changing the audio.cpp version (`TAG` and `COMMIT` in `scripts/build_audiocpp.ts`; the source is fetched by commit id, which is its checksum) or the speech GGUF (`scripts/fetch_models.py`, update the checksum): check the signatures declared in `src/audiocpp-ffi.ts` and the two struct layouts against the new `include/audiocpp.h` by hand (the build script only proves that the functions exist; the ABI major version is checked at load), that the library still exports only `audiocpp_*` and does not need `libggml*.so`, then a sentence per language by ear or by transcribing it, the `duration_factor` range, and VRAM beside the chat model. The speech engine has no test with the real library: `bun test` and `e2e` use the mock.
-- Changing the llama.cpp tag (`scripts/fetch_llama.ts`): update the header checksums, and check the
-  signatures declared in `src/llama-ffi.ts` against the new `llama.h` by hand, since only
-  `src/llama-shim.c` is compiled against it. The shim needs the system's C library headers
-  (`stdio.h`) at startup. Then compare output with `llama-server` of that build and rerun the
-  long-document check.
+- Changing the audio.cpp version (`TAG` and `COMMIT` in `scripts/build_audiocpp.ts`; the source is fetched by commit id, which is its checksum) or the speech GGUF (`scripts/fetch_models.ts`, update the checksum): check the signatures declared in `src/audiocpp-ffi.ts` and the two struct layouts against the new `include/audiocpp.h` by hand (the build script only proves that the functions exist; the ABI major version is checked at load), that the library still exports only `audiocpp_*` and does not need `libggml*.so`, then a sentence per language by ear or by transcribing it, the `duration_factor` range, and VRAM beside the chat model. The speech engine has no test with the real library: `bun test` and `e2e` use the mock.
+- Changing the llama.cpp tag (`TAG` and `COMMIT` in `scripts/build_llama.ts`; the source is fetched
+  by commit id, which is its checksum): check the signatures declared in `src/llama-ffi.ts` against
+  the new `llama.h` by hand, since only `src/llama-shim.c` is compiled against it (the shim is
+  linked with `--no-undefined`, so a function it calls cannot be missing), and the CMake options
+  against the new `CMakeLists.txt`. Then compare output with `llama-server` of that tag's release
+  and rerun the long-document check. After editing `src/llama-shim.c`: `bun scripts/build_llama.ts
+  --shim`, and declare new functions in `src/llama-ffi.ts`.
+- Builds that leave this machine (the AppImage) must not be `--native`. `build_llama.ts` passes
+  `-march=x86-64` itself, because a distribution's compiler may default to more (Ubuntu's
+  x86-64-v3 builds: AVX2 in every "variant"); `build_audiocpp.ts` needs AVX2 either way.
+- AppImage (`scripts/build_appimage.ts`, `packaging/appimage/`): the AppDir holds Bun in `usr/bin`
+  and the repository's layout (`src/`, `public/`, `prompts/`, `docs/openapi.yaml`,
+  `scripts/fetch_models.ts`, `vendor/` without headers) in `usr/share/index-translator`, so
+  `src/config.ts` finds everything as in a checkout; a new top-level directory the server reads
+  must be added to the script. No libraries of the build system are packed: the AppImage needs a
+  glibc and libstdc++ as new as the build system's (CI: Ubuntu 24.04), `libgomp.so.1`,
+  `libvulkan.so.1` with a driver, and `curl` for `fetch`. `AppRun` sets `MODELS_DIR` and
+  `VOICES_DIR` to `$XDG_DATA_HOME/index-translator/…` unless given, sets
+  `INDEX_TRANSLATOR_APPIMAGE` (how messages name the `fetch` command), and starts Bun with
+  `--no-env-file`. `LD_LIBRARY_PATH` is not set, on purpose: the browser is started from this
+  process. Changing `APPIMAGETOOL` or `RUNTIME`: new URL and checksum; the runtime must stay the
+  static one (no libfuse on the user's side).
+- CI (`.github/workflows/ci.yml`): `test` runs what the Commands section lists; `appimage` builds
+  both engines (cached per build script, so a changed pin or script rebuilds), packs, and checks
+  on the GPU-less runner that the AppImage stops with the Vulkan message, that with
+  `--gpu-layers 0` the packed engine loads and it stops at the missing model, and that `fetch`
+  refuses an unknown model. `BUN_VERSION` there is the Bun that ships. Nothing in CI runs a model.
 - Update `docs/openapi.yaml` and the tests in `test/api-contract.test.ts` / `test/openapi.test.ts` when the API changes.
 - Update README.md for user-visible behaviour only; keep developer detail here.

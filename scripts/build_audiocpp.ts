@@ -19,6 +19,7 @@ import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { libraryPath, libraryVersion } from "../src/audiocpp-ffi";
+import { checkout, requireTools, run } from "./build_tools";
 
 const TAG = "v0.9.1";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
@@ -43,35 +44,7 @@ const work = join(root, "vendor", ".build", "audio.cpp");
 const source = join(work, "src");
 const build = join(work, "build");
 
-/** Runs a command with its output on the terminal and throws when it fails. */
-async function run(command: string[], cwd?: string): Promise<void> {
-  console.log(`$ ${command.join(" ")}`);
-  const child = Bun.spawn(command, { cwd, stdin: "ignore", stdout: "inherit", stderr: "inherit" });
-  const code = await child.exited;
-  if (code !== 0) throw new Error(`${command[0]} failed with exit code ${code}`);
-}
-
-async function output(command: string[], cwd?: string): Promise<string> {
-  const child = Bun.spawn(command, { cwd, stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-  const text = await new Response(child.stdout).text();
-  return (await child.exited) === 0 ? text.trim() : "";
-}
-
-/** Makes `dir` a checkout of exactly `commit`, fetching nothing else of the repository's history. */
-async function checkout(repo: string, commit: string, dir: string): Promise<void> {
-  if ((await output(["git", "rev-parse", "HEAD"], dir).catch(() => "")) === commit) {
-    console.log(`reusing the source in ${dir}`);
-    return;
-  }
-  await rm(dir, { recursive: true, force: true });
-  await mkdir(dir, { recursive: true });
-  await run(["git", "init", "--quiet"], dir);
-  await run(["git", "fetch", "--quiet", "--depth", "1", repo, commit], dir);
-  await run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "FETCH_HEAD"], dir);
-}
-
-const missing = ["git", "cmake", "c++", "glslc"].filter((tool) => !Bun.which(tool));
-if (missing.length > 0) throw new Error(`${missing.join(", ")} not found; ${TOOLS_HINT}`);
+requireTools(["git", "cmake", "c++", "glslc"], TOOLS_HINT);
 
 if (!keep) await rm(work, { recursive: true, force: true });
 await checkout(REPO, COMMIT, source);

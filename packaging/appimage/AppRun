@@ -1,0 +1,54 @@
+#!/bin/sh
+# What the AppImage runs. Starts the translator with the Bun and the engines packed beside this
+# file, or downloads the models (`fetch`). The models and the voices are not in the AppImage; they
+# live in the user's data directory unless MODELS_DIR and VOICES_DIR (or the flags) say otherwise.
+set -eu
+
+here=$(dirname "$(readlink -f "$0")")
+app=$here/usr/share/index-translator
+bun=$here/usr/bin/bun
+# The name to print in instructions: the AppImage file, or this script in an unpacked AppImage.
+self=${APPIMAGE:-$0}
+
+data=${XDG_DATA_HOME:-$HOME/.local/share}/index-translator
+export MODELS_DIR="${MODELS_DIR:-$data/models}"
+export VOICES_DIR="${VOICES_DIR:-$data/voices}"
+export INDEX_TRANSLATOR_APPIMAGE="$self"
+
+case "${1:-}" in
+  fetch)
+    shift
+    # A .env file in the directory the user happens to be in is not this program's.
+    exec "$bun" --no-env-file "$app/scripts/fetch_models.ts" "$@"
+    ;;
+  -V | --version | version)
+    cat "$app/VERSION"
+    exit 0
+    ;;
+  -h | --help | help)
+    cat <<EOF
+Index Translator: a local text translator that runs on your GPU.
+
+Usage:
+  $self [--setting value ...]   start the translator and open it in the browser
+  $self fetch [--model id ...]  download the models and the example voices (about 17.5 GiB)
+  $self --version
+
+fetch downloads everything unless --model names what to get: index-translate-9b,
+index-nailong-9b, index-tts-2.5 (reading aloud, with the voices). It needs curl, and continues an
+interrupted download when run again.
+
+Settings are flags or environment variables (--port 8080 or PORT=8080). The common ones:
+  --port 3000            port to listen on
+  --models-dir DIR       where the models are (default: $data/models)
+  --voices-dir DIR       where the voices are (default: $data/voices)
+  --gpu-layers all       0 runs on the processor, without a GPU
+  --speech 0             turn reading aloud off
+  --open-browser 0       do not open the browser
+A GPU with a Vulkan driver is needed. The README lists every setting.
+EOF
+    exit 0
+    ;;
+esac
+
+exec "$bun" --no-env-file "$app/src/server.ts" "$@"

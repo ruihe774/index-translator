@@ -1,7 +1,8 @@
 // The libllama calls that pass or return structs by value, which bun:ffi cannot express, plus the
-// log filter. Compiled at startup by bun:ffi's built-in C compiler against the vendored llama.h, so
-// the struct layouts always match the library next to it. Everything else is called directly from
-// src/llama-ffi.ts.
+// log filter and the device list. Compiled by scripts/build_llama.ts into libllama-shim, against the
+// llama.h of the libllama it has just built and puts next to it, so the struct layouts always match
+// that library. After a change here: bun scripts/build_llama.ts --shim. Everything else is called
+// directly from src/llama-ffi.ts.
 
 #include "llama.h"
 
@@ -25,6 +26,28 @@ void shim_init(const char * backend_dir) {
     llama_log_set(shim_log, NULL);
     llama_backend_init();
     ggml_backend_load_all_from_path(backend_dir);
+}
+
+// The devices the loaded backends found. Returns how many, and writes them to `out` as
+// "type name: description" lines, as far as `size` bytes go. A model is offloaded to the ones of
+// type gpu and igpu; without one of type cpu nothing can run.
+int32_t shim_devices(char * out, int32_t size) {
+    static const char * const types[] = { "cpu", "gpu", "igpu", "accel", "meta" };
+    int32_t count = (int32_t) ggml_backend_dev_count();
+    int32_t used = 0;
+    if (size > 0) {
+        out[0] = '\0';
+    }
+    for (int32_t i = 0; i < count && used < size; i++) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get((size_t) i);
+        enum ggml_backend_dev_type type = ggml_backend_dev_type(dev);
+        const char * kind = (size_t) type < sizeof(types) / sizeof(types[0]) ? types[type] : "other";
+        int n = snprintf(out + used, (size_t) (size - used), "%s %s: %s\n", kind, ggml_backend_dev_name(dev), ggml_backend_dev_description(dev));
+        if (n > 0) {
+            used += n;
+        }
+    }
+    return count;
 }
 
 // A negative `n_gpu_layers` offloads every layer.

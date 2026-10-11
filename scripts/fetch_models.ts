@@ -1,0 +1,220 @@
+// Download the pinned models and verify their checksums: the two Index-Translate GGUF models and
+// the IndexTTS-2.5 GGUF for reading aloud into MODELS_DIR (./models), and the example voices into
+// VOICES_DIR (./voices). About 17.5 GiB in all. In the AppImage this is its `fetch` subcommand.
+// Usage: bun scripts/fetch_models.ts [--model index-translate-9b ...] [--models-dir DIR] [--voices-dir DIR]
+//
+//   --model  one of index-translate-9b, index-nailong-9b, index-tts-2.5 (the speech model and the
+//            voices); repeatable; all of them when not given
+//
+// The directories are the server's settings (src/config.ts), given the same way: as environment
+// variables or as flags. Files are downloaded with curl, so an interrupted download continues
+// where it stopped when this is run again, and curl's proxy settings apply. HF_ENDPOINT names
+// another host than https://huggingface.co (a mirror).
+
+import { existsSync } from "node:fs";
+import { mkdir, rename, rm } from "node:fs/promises";
+import { dirname, join } from "node:path";
+import { loadConfig } from "../src/config";
+import { MODELS } from "../src/models";
+
+export interface Download {
+  /** Path on the Hugging Face host, with the pinned revision in it. */
+  url: string;
+  sha256: string;
+  dest: string;
+  /** Kept as it is when it exists and differs: the file may be the user's own. */
+  keep?: boolean;
+}
+
+const resolveUrl = (repo: string, revision: string, file: string) => `/${repo}/resolve/${revision}/${file}`;
+
+/** Model id to repository, pinned revision and checksum; the file names are those of src/models.ts. */
+const TRANSLATION: Record<string, { repo: string; revision: string; sha256: string }> = {
+  "index-translate-9b": {
+    repo: "IndexTeam/Index-Translate-9B-GGUF",
+    revision: "645939fbab839a656f1bc39975a872bc8ad749f8",
+    sha256: "5e47c636c75de6c5065f8550869a744e049451ac591a001968872d5c8b4b7898",
+  },
+  "index-nailong-9b": {
+    repo: "IndexTeam/Index-Nailong-9B-GGUF",
+    revision: "b77c686a6063b7fd89ac781a4f349baa8d9c940a",
+    sha256: "02ec1393bb42eb01332895ec79bee8b2f2439726b973aa167c37b54eac72af95",
+  },
+};
+
+/** IndexTTS-2.5 as converted for audio.cpp (Q8_0, about 3.5 GB). */
+const SPEECH = "index-tts-2.5";
+const SPEECH_FILE = "index-tts2_5-q8_0.gguf";
+const SPEECH_URL = resolveUrl(
+  "audio-cpp/audio.cpp-gguf",
+  "1b5981b2b89a1af578ebba5c8cf34226810e1f55",
+  `IndexTTS2.5-GGUF/${SPEECH_FILE}`,
+);
+const SPEECH_SHA256 = "5e827b2072042e4a1b21ccf24a5cb4f71cb1011403067a0a9b039311d8b38628";
+
+// IndexTTS has no built-in voices: a voice is a short reference recording that it imitates. These
+// are the speaker prompts of the official demo.
+const VOICES_URL = "/spaces/IndexTeam/IndexTTS-2-Demo/resolve/b01840e8e4fd9753743a6d0466cd73ae1d634a68/examples";
+const VOICES: Record<string, string> = {
+  "voice_01.wav": "e33e6ee0107a1dd58e1d66dd90c13df3d55a8683047cc3d7ea206dad84ed3fc8",
+  "voice_02.wav": "8fe2dd1dbd54ef85a073fbc4c8fc0198f8d4523cc3320a600de0e347a3d8b491",
+  "voice_03.wav": "50e8b632efd794418919e2d33c8c2aab9189a57f4d21ef55020413be9f2b292a",
+  "voice_04.wav": "2a3d2536245f45fd5e1eef046dd768ae7b72a0dba3ec3f370f145862fe64b3b2",
+  "voice_05.wav": "eefb7f4a29a8b36f08d5cc1014ea947dbe9f7bef348f07c40263058e604a98eb",
+  "voice_06.wav": "2d85800fe261d106c3274fa792cbb952458c4b0b2e1b908340a8cd0d63c73a30",
+  "voice_07.wav": "bcb10f84e63c3fdbfe99ac4184ca403b46a6d20b50540732713d48c4c95375ce",
+  "voice_08.wav": "2e2c5f4859999b1ada95ee801d50c3c72879147269a4ed99e385fd917dae5c6f",
+  "voice_09.wav": "8702467b9b3c83a16bead578e131c4388b3ef82aeff861bd336e622a9ae8a511",
+  "voice_11.wav": "82730e38498413d4371a76e841cd91fa2f74843b79ad3b606d45ad8a7b7a736c",
+  "voice_12.wav": "d67bd4f51773677d5902409813b9bb4c1d59b8243c74fc104553b80b49edd22b",
+};
+
+export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH];
+
+/** An error whose message is all the user needs: it is printed without a stack trace. */
+export class FetchError extends Error {}
+
+/** `--model` values and what is left, which are the server's settings. */
+export function parseArgs(argv: readonly string[]): { ids: string[]; rest: string[] } {
+  const ids: string[] = [];
+  const rest: string[] = [];
+  for (let i = 0; i < argv.length; i++) {
+    const arg = argv[i] as string;
+    if (arg === "--model") {
+      const id = argv[++i];
+      if (id === undefined) throw new FetchError("--model needs a value");
+      ids.push(id);
+    } else if (arg.startsWith("--model=")) {
+      ids.push(arg.slice("--model=".length));
+    } else {
+      rest.push(arg);
+    }
+  }
+  for (const id of ids) {
+    if (!MODEL_IDS.includes(id)) throw new FetchError(`unknown model "${id}"; models are ${MODEL_IDS.join(", ")}`);
+  }
+  return { ids: ids.length > 0 ? ids : MODEL_IDS, rest };
+}
+
+/** What the chosen models consist of, and where each file goes. */
+export function plan(
+  ids: readonly string[],
+  dirs: { models: string; speechModel: string; voices: string },
+): Download[] {
+  const files: Download[] = [];
+  for (const id of ids) {
+    const pin = TRANSLATION[id];
+    if (pin) {
+      const file = MODELS.find((m) => m.id === id)!.file;
+      files.push({ url: resolveUrl(pin.repo, pin.revision, file), sha256: pin.sha256, dest: join(dirs.models, file) });
+    } else {
+      files.push({ url: SPEECH_URL, sha256: SPEECH_SHA256, dest: join(dirs.speechModel, SPEECH_FILE) });
+      for (const [name, sha256] of Object.entries(VOICES)) {
+        files.push({ url: `${VOICES_URL}/${name}`, sha256, dest: join(dirs.voices, name), keep: true });
+      }
+    }
+  }
+  return files;
+}
+
+async function sha256Of(path: string): Promise<string> {
+  const hasher = new Bun.CryptoHasher("sha256");
+  for await (const chunk of Bun.file(path).stream()) hasher.update(chunk);
+  return hasher.digest("hex");
+}
+
+/**
+ * Makes `file.dest` the pinned file: kept when it is already there and right, downloaded
+ * otherwise, to `<dest>.part` first so that only a verified file ever has the real name.
+ */
+export async function fetchFile(
+  file: Download,
+  endpoint: string,
+  curl: string,
+  log: (line: string) => void,
+): Promise<void> {
+  if (existsSync(file.dest)) {
+    const got = await sha256Of(file.dest);
+    if (got === file.sha256) return log(`ok ${file.dest}`);
+    if (file.keep) return log(`kept ${file.dest} (not the example voice of that name)`);
+    throw new FetchError(
+      `${file.dest} is not the expected file (SHA-256 ${got}, not ${file.sha256}); delete it and run this again`,
+    );
+  }
+
+  const part = `${file.dest}.part`;
+  const url = endpoint + file.url;
+  await mkdir(dirname(file.dest), { recursive: true });
+  log(`downloading ${url}`);
+  const child = Bun.spawn(
+    [
+      curl,
+      "--fail",
+      "--location",
+      "--retry",
+      "3",
+      // Goes on from the bytes that an earlier, interrupted run left in the .part file.
+      "--continue-at",
+      "-",
+      ...(process.stderr.isTTY ? ["--progress-bar"] : ["--silent", "--show-error"]),
+      "--output",
+      part,
+      url,
+    ],
+    { stdin: "ignore", stdout: "inherit", stderr: "inherit" },
+  );
+  const code = await child.exited;
+  // 22 is an HTTP error, which is also what a .part file that is already complete gets (416 for the
+  // empty range that is left to fetch), so there the file decides.
+  const got = existsSync(part) && (code === 0 || code === 22) ? await sha256Of(part) : "";
+  if (got === file.sha256) {
+    await rename(part, file.dest);
+    return log(`ok ${file.dest}`);
+  }
+  if (code !== 0) {
+    throw new FetchError(
+      `the download of ${url} failed (curl exit code ${code}); check the network connection and run this again${
+        existsSync(part) ? ", which continues where it stopped" : ""
+      }`,
+    );
+  }
+  // Not kept: continuing a wrong file would never give the right one.
+  await rm(part);
+  throw new FetchError(
+    `${url} is not the expected file (SHA-256 ${got}, not ${file.sha256}); what was downloaded is deleted, run this again`,
+  );
+}
+
+/** Downloads what `argv` asks for. Throws FetchError with the reason when something is not as pinned. */
+export async function fetchModels(
+  argv: readonly string[],
+  env: Record<string, string | undefined> = Bun.env,
+  log: (line: string) => void = console.log,
+): Promise<void> {
+  const { ids, rest } = parseArgs(argv);
+  let cfg: ReturnType<typeof loadConfig>;
+  try {
+    cfg = loadConfig(env, rest);
+  } catch (e) {
+    throw new FetchError(e instanceof Error ? e.message : String(e));
+  }
+  const curl = Bun.which("curl", { PATH: env.PATH ?? "" });
+  if (!curl) {
+    throw new FetchError(
+      "curl is needed to download the models and was not found; install it (the package is called curl everywhere) and run this again",
+    );
+  }
+  const endpoint = (env.HF_ENDPOINT || "https://huggingface.co").replace(/\/+$/, "");
+  const files = plan(ids, { models: cfg.modelsDir, speechModel: cfg.speechModelDir, voices: cfg.voicesDir });
+  for (const file of files) await fetchFile(file, endpoint, curl, log);
+}
+
+if (import.meta.main) {
+  try {
+    await fetchModels(Bun.argv.slice(2));
+  } catch (e) {
+    if (!(e instanceof FetchError)) throw e;
+    console.error(`error: ${e.message}`);
+    process.exit(1);
+  }
+}

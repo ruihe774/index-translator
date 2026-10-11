@@ -42,31 +42,60 @@ Compared with widely used online translation tools:
 
 ## Start the app
 
+There are two ways to run it: the AppImage, which is one file with everything but the models, or
+the source.
+
+Either way you need a GPU with a working Vulkan driver. It was tested on an AMD Radeon RX 9070
+(16 GiB). Without a usable GPU, set `GPU_LAYERS=0` to run on the CPU, which is much slower. If
+something the app needs is missing (no Vulkan driver, no models yet), it says what and how to get
+it, and stops.
+
+### With the AppImage
+
+`Index_Translator-x86_64.AppImage` is built for every change: on GitHub, open **Actions**, the
+latest **CI** run, and download it under **Artifacts** (GitHub hands it out as a zip file; unpack
+it). Then:
+
+```bash
+chmod +x Index_Translator-x86_64.AppImage
+./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 17.5 GiB
+./Index_Translator-x86_64.AppImage         # start; the app opens in your browser
+```
+
+Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists the options.
+
+- `fetch` puts the models into `~/.local/share/index-translator` and needs `curl`. An interrupted
+  download continues when you run it again. To leave out reading aloud (3.5 GiB):
+  `fetch --model index-translate-9b --model index-nailong-9b`.
+- It runs on x86-64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later). Besides
+  the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
+  a processor with AVX2.
+
+### From the source
+
 ```bash
 bun src/server.ts
 ```
 
 Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`.
 
-Before the first start, get the engines and the models once (about 18 GiB):
+Before the first start, build the engines and get the models once (about 17.5 GiB):
 
 ```bash
-bun scripts/fetch_llama.ts      # translation engine (llama.cpp, Vulkan): downloaded
+bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
-uv run scripts/fetch_models.py  # the two translation models, the speech model and example voices
+bun scripts/fetch_models.ts     # the two translation models, the speech model and example voices
 ```
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and download only the
-translation models with `uv run scripts/fetch_models.py --model index-translate-9b --model index-nailong-9b`.
+translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.
 
-Building the speech engine needs git, CMake, a C++ compiler, `glslc` and the Vulkan headers. On
-Debian and Ubuntu: `sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers`.
-The result runs on any x86-64 processor with AVX2.
+You need [Bun](https://bun.sh) and `curl`, and to build the engines git, CMake, a C and C++
+compiler, `glslc` and the Vulkan headers. On Debian and Ubuntu:
+`sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers`.
+The translation engine then runs on any x86-64 processor, the speech engine on those with AVX2.
 
-You need [Bun](https://bun.sh), [uv](https://docs.astral.sh/uv/), the C library headers (package
-`libc6-dev` on Debian and Ubuntu, `glibc-devel` on Fedora; already there if a C compiler is
-installed) and a GPU with a working Vulkan driver. It was tested on an AMD Radeon RX 9070 (16 GiB).
-Without a usable GPU, set `GPU_LAYERS=0` to run on the CPU, which is much slower.
+`bun scripts/build_appimage.ts` packs what you have built into an AppImage of your own, in `dist/`.
 
 ## Translate text
 
@@ -126,9 +155,10 @@ highlighted in the formatted view.
 - **Voice and speed:** choose them under **Model and options**. Speed goes from 0.5× to 2×. A
   change while listening takes effect from the sentence being read, which starts again.
 - **Voices:** the speech model imitates the speaker of a short recording. Every `.wav` file in the
-  `voices` folder is a voice; the download puts the example voices of the IndexTTS demo there. To
-  add your own, put a clean recording of a few seconds of speech (one speaker, no music) into the
-  folder and reload the page. Only use voices of people who agreed to it.
+  `voices` folder (with the AppImage: `~/.local/share/index-translator/voices`) is a voice; the
+  download puts the example voices of the IndexTTS demo there. To add your own, put a clean
+  recording of a few seconds of speech (one speaker, no music) into the folder and reload the
+  page. Only use voices of people who agreed to it.
 - **Markdown:** a text that is shown formatted is read the way it is shown. Headings, list items
   and table rows are read one by one, numbered lists with their numbers, table cells with their
   column heading, links by their text and images by their description. Code blocks are skipped.
@@ -167,6 +197,7 @@ overrides the environment variable:
 ```bash
 PORT=8080 bun src/server.ts
 bun src/server.ts --port 8080
+./Index_Translator-x86_64.AppImage --port 8080
 ```
 
 | Variable | Default | What it does |
@@ -178,7 +209,8 @@ bun src/server.ts --port 8080
 | `LLAMA_THREADS` | half the CPU threads | CPU threads for the engine; matters when running on the CPU |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
-| `VOICES_DIR` | `voices/` | Folder with the voice recordings (`.wav`) |
+| `MODELS_DIR` | `models/`; AppImage: `~/.local/share/index-translator/models` | Folder with the models; `fetch` downloads into it |
+| `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices` | Folder with the voice recordings (`.wav`) |
 | `SPEECH_IDLE_UNLOAD` | `300` | Seconds without listening after which the speech model leaves the GPU; `0` keeps it loaded |
 
 Only one translation runs at a time. Other requests wait in line.

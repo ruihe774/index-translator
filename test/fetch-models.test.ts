@@ -1,0 +1,210 @@
+// scripts/fetch_models.ts against a local server that stands in for Hugging Face, with the real curl.
+
+import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { type Download, FetchError, fetchFile, fetchModels, MODEL_IDS, parseArgs, plan } from "../scripts/fetch_models";
+import { MODELS } from "../src/models";
+
+const curl = Bun.which("curl");
+const sha256 = (bytes: Uint8Array | string) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
+
+/** 300 kB that no prefix of can be mistaken for the whole. */
+const CONTENT = new Uint8Array(300_000).map((_, i) => (i * 31 + (i >> 8)) & 0xff);
+
+let server: ReturnType<typeof Bun.serve>;
+let endpoint = "";
+let dir = "";
+/** Range headers of the requests for /file, in order. */
+let ranges: (string | null)[] = [];
+
+beforeAll(() => {
+  server = Bun.serve({
+    port: 0,
+    hostname: "127.0.0.1",
+    fetch(req) {
+      const path = new URL(req.url).pathname;
+      if (path === "/redirect") return Response.redirect("/file", 302);
+      if (path !== "/file") return new Response("not here", { status: 404 });
+      const range = req.headers.get("range");
+      ranges.push(range);
+      const from = Number(range?.match(/^bytes=(\d+)-$/)?.[1] ?? 0);
+      if (!range) return new Response(CONTENT);
+      if (from >= CONTENT.length) {
+        return new Response(null, { status: 416, headers: { "content-range": `bytes */${CONTENT.length}` } });
+      }
+      return new Response(CONTENT.subarray(from), {
+        status: 206,
+        headers: { "content-range": `bytes ${from}-${CONTENT.length - 1}/${CONTENT.length}` },
+      });
+    },
+  });
+  endpoint = `http://127.0.0.1:${server.port}`;
+});
+
+afterAll(() => server.stop(true));
+
+beforeEach(() => {
+  if (dir) rmSync(dir, { recursive: true, force: true });
+  dir = mkdtempSync(join(tmpdir(), "fetch-models-"));
+  ranges = [];
+});
+
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
+
+const file = (overrides: Partial<Download> = {}): Download => ({
+  url: "/file",
+  sha256: sha256(CONTENT),
+  dest: join(dir, "sub", "model.gguf"),
+  ...overrides,
+});
+
+async function run(download: Download): Promise<{ error?: FetchError; log: string[] }> {
+  const log: string[] = [];
+  try {
+    await fetchFile(download, endpoint, curl!, (line) => log.push(line));
+    return { log };
+  } catch (e) {
+    if (!(e instanceof FetchError)) throw e;
+    return { error: e, log };
+  }
+}
+
+describe("parseArgs", () => {
+  test("no --model means every model", () => {
+    expect(parseArgs([])).toEqual({ ids: MODEL_IDS, rest: [] });
+  });
+
+  test("--model is repeatable, in both spellings, and the rest is left for the server's settings", () => {
+    expect(parseArgs(["--model", "index-nailong-9b", "--models-dir", "/m", "--model=index-tts-2.5"])).toEqual({
+      ids: ["index-nailong-9b", "index-tts-2.5"],
+      rest: ["--models-dir", "/m"],
+    });
+  });
+
+  test("an unknown model and a missing value are refused", () => {
+    expect(() => parseArgs(["--model", "nope"])).toThrow(FetchError);
+    expect(() => parseArgs(["--model"])).toThrow("--model needs a value");
+  });
+});
+
+describe("plan", () => {
+  const dirs = { models: "/m", speechModel: "/s", voices: "/v" };
+
+  test("every model the server knows has a pinned download named like its file", () => {
+    for (const model of MODELS) {
+      const [download] = plan([model.id], dirs);
+      expect(download!.dest).toBe(join("/m", model.file));
+      expect(download!.url).toEndWith(`/${model.file}`);
+      expect(download!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    }
+  });
+
+  test("the speech model comes with the example voices, which never replace a file of the user's", () => {
+    const files = plan(["index-tts-2.5"], dirs);
+    expect(files[0]!.dest).toBe("/s/index-tts2_5-q8_0.gguf");
+    const voices = files.slice(1);
+    expect(voices.length).toBeGreaterThan(0);
+    for (const voice of voices) {
+      expect(voice.dest).toStartWith("/v/voice_");
+      expect(voice.keep).toBe(true);
+    }
+  });
+});
+
+describe.skipIf(!curl)("fetchFile", () => {
+  test("downloads into a new directory, through a redirect, and leaves no .part file", async () => {
+    const download = file({ url: "/redirect" });
+    const { error, log } = await run(download);
+    expect(error).toBeUndefined();
+    expect(sha256(readFileSync(download.dest))).toBe(download.sha256);
+    expect(existsSync(`${download.dest}.part`)).toBe(false);
+    expect(log.at(-1)).toBe(`ok ${download.dest}`);
+  });
+
+  test("a file that is already there and right is not downloaded again", async () => {
+    const download = file();
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(download.dest, CONTENT);
+    expect((await run(download)).log).toEqual([`ok ${download.dest}`]);
+    expect(ranges).toEqual([]);
+  });
+
+  test("a wrong file under the name is reported and left alone", async () => {
+    const download = file();
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(download.dest, "something else");
+    const { error } = await run(download);
+    expect(error?.message).toContain("is not the expected file");
+    expect(error?.message).toContain("delete it");
+    expect(readFileSync(download.dest, "utf8")).toBe("something else");
+    expect(ranges).toEqual([]);
+  });
+
+  test("a file of the user's under a voice's name is kept", async () => {
+    const download = file({ keep: true });
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(download.dest, "my own voice");
+    const { error, log } = await run(download);
+    expect(error).toBeUndefined();
+    expect(log[0]).toStartWith("kept ");
+    expect(readFileSync(download.dest, "utf8")).toBe("my own voice");
+  });
+
+  test("an interrupted download continues where it stopped", async () => {
+    const download = file();
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(`${download.dest}.part`, CONTENT.subarray(0, 100_000));
+    expect((await run(download)).error).toBeUndefined();
+    expect(ranges).toEqual(["bytes=100000-"]);
+    expect(sha256(readFileSync(download.dest))).toBe(download.sha256);
+  });
+
+  test("a .part file that is already complete is taken as it is", async () => {
+    const download = file();
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(`${download.dest}.part`, CONTENT);
+    expect((await run(download)).error).toBeUndefined();
+    expect(sha256(readFileSync(download.dest))).toBe(download.sha256);
+    expect(existsSync(`${download.dest}.part`)).toBe(false);
+  });
+
+  test("a download with the wrong checksum is deleted and never gets the real name", async () => {
+    const download = file({ sha256: sha256("another file") });
+    const { error } = await run(download);
+    expect(error?.message).toContain("is not the expected file");
+    expect(existsSync(download.dest)).toBe(false);
+    expect(existsSync(`${download.dest}.part`)).toBe(false);
+  });
+
+  test("a failed request says so with curl's exit code, and keeps what was already downloaded", async () => {
+    const download = file({ url: "/missing" });
+    mkdirSync(join(dir, "sub"));
+    writeFileSync(`${download.dest}.part`, CONTENT.subarray(0, 100_000));
+    const { error } = await run(download);
+    expect(error?.message).toContain("failed (curl exit code 22)");
+    expect(error?.message).toContain("continues where it stopped");
+    expect(existsSync(download.dest)).toBe(false);
+    expect(readFileSync(`${download.dest}.part`).length).toBe(100_000);
+  });
+
+  test("a host that cannot be reached fails without a stack of retries", async () => {
+    const log: string[] = [];
+    const attempt = fetchFile(file(), "http://127.0.0.1:9", curl!, (line) => log.push(line));
+    await expect(attempt).rejects.toThrow(/failed \(curl exit code 7\); check the network connection/);
+  });
+});
+
+describe("fetchModels", () => {
+  test("without curl it stops with an instruction, before anything is written", async () => {
+    const models = join(dir, "models");
+    const attempt = fetchModels(["--models-dir", models], { PATH: join(dir, "no-such-bin") });
+    await expect(attempt).rejects.toThrow(/curl is needed .* install it/);
+    expect(existsSync(models)).toBe(false);
+  });
+
+  test("a bad setting is a plain error, not a crash", async () => {
+    await expect(fetchModels(["--no-such-flag"], {})).rejects.toBeInstanceOf(FetchError);
+  });
+});

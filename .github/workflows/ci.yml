@@ -1,0 +1,136 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  # Runs the checks, and is the Bun that gets packed into the AppImage.
+  BUN_VERSION: "1.4.2"
+
+jobs:
+  test:
+    name: Checks and tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install the development tools
+        run: bun install --frozen-lockfile
+
+      - name: Lint and format
+        run: bun run check
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: CSS browser support
+        run: bun run lint:css
+
+      # Both use the mock engines: no GPU, no models.
+      - name: Unit and API integration tests
+        run: bun test
+
+      - name: Markdown conformance
+        run: bun scripts/commonmark.ts
+
+      - name: Install Chromium
+        run: bunx playwright install --with-deps chromium
+
+      - name: Browser tests (end to end, integration, accessibility)
+        run: bun run e2e
+
+      - name: Keep the Playwright report
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-report
+          path: |
+            playwright-report/
+            test-results/
+          if-no-files-found: ignore
+          retention-days: 7
+
+  appimage:
+    name: AppImage
+    # The AppImage runs on systems whose C and C++ libraries are at least as new as this one's.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install the build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
+
+      # Each engine is built from a pinned commit, so it changes only when its build script does.
+      - name: Cache the translation engine
+        id: llama
+        uses: actions/cache@v6
+        with:
+          path: vendor/llama.cpp
+          key: llama-ubuntu-24.04-x64-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+
+      - name: Build the translation engine (llama.cpp)
+        if: ${{ steps.llama.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_llama.ts
+
+      - name: Cache the speech engine
+        id: audio
+        uses: actions/cache@v6
+        with:
+          path: vendor/audio.cpp
+          key: audio-ubuntu-24.04-x64-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build the speech engine (audio.cpp)
+        if: ${{ steps.audio.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_audiocpp.ts
+
+      - name: Build the AppImage
+        run: bun scripts/build_appimage.ts
+
+      # The runner has neither a GPU nor the models, so what can be checked is that the packed
+      # program says so and stops, and that the packed engine loads when it is told to use the CPU.
+      - name: Check that the AppImage starts and stops with a reason
+        run: |
+          appimage=dist/Index_Translator-x86_64.AppImage
+          export XDG_DATA_HOME="$RUNNER_TEMP/data"
+          expect() { # <words the output must contain> <command...>
+            local want=$1 out code=0
+            shift
+            out=$("$@" 2>&1) || code=$?
+            printf '%s\n(exit code %s)\n\n' "$out" "$code"
+            [ "$code" -eq 1 ] && grep -qF -- "$want" <<<"$out"
+          }
+          expect "No GPU with a Vulkan driver was found" \
+            "$appimage" --appimage-extract-and-run --open-browser 0
+          expect "Download the models with:" \
+            "$appimage" --appimage-extract-and-run --open-browser 0 --gpu-layers 0
+          expect 'unknown model "nope"' \
+            "$appimage" --appimage-extract-and-run fetch --model nope
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Index_Translator-x86_64.AppImage
+          path: dist/Index_Translator-x86_64.AppImage
+          if-no-files-found: error

@@ -2,7 +2,7 @@
 // its chat prompt, tokenize, decode and sample. Every call here blocks its thread, so this module
 // is only used from src/llama-worker.ts.
 
-import { CString, cc, dlopen, type Pointer, suffix } from "bun:ffi";
+import { CString, dlopen, type Pointer, suffix } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
@@ -15,13 +15,15 @@ const cstr = (s: string) => Buffer.from(`${s}\0`, "utf8");
 
 const libName = (name: string) => (process.platform === "win32" ? `${name}.${suffix}` : `lib${name}.${suffix}`);
 
+export const libraryPath = (dir: string) => join(dir, libName("llama"));
+/** src/llama-shim.c as scripts/build_llama.ts compiled it, against the headers of the libllama beside it. */
+export const shimPath = (dir: string) => join(dir, libName("llama-shim"));
+
 function bind(dir: string) {
-  const libPath = join(dir, libName("llama"));
-  const include = join(dir, "include");
-  if (!existsSync(libPath) || !existsSync(join(include, "llama.h"))) {
-    throw new Error(`libllama not found in ${dir}; run: bun scripts/fetch_llama.ts`);
+  if (!existsSync(libraryPath(dir)) || !existsSync(shimPath(dir))) {
+    throw new Error(`libllama and its shim not found in ${dir}; run: bun scripts/build_llama.ts`);
   }
-  const llama = dlopen(libPath, {
+  const llama = dlopen(libraryPath(dir), {
     llama_model_free: { args: ["ptr"], returns: "void" },
     llama_free: { args: ["ptr"], returns: "void" },
     llama_model_get_vocab: { args: ["ptr"], returns: "ptr" },
@@ -36,17 +38,12 @@ function bind(dir: string) {
     llama_sampler_sample: { args: ["ptr", "ptr", "i32"], returns: "i32" },
     llama_sampler_free: { args: ["ptr"], returns: "void" },
   }).symbols;
-  const shim = cc({
-    source: join(import.meta.dir, "llama-shim.c"),
-    include: [include],
-    library: ["llama", "ggml"],
-    flags: [`-L${dir}`],
-    symbols: {
-      shim_init: { args: ["ptr"], returns: "void" },
-      shim_load_model: { args: ["ptr", "i32"], returns: "ptr" },
-      shim_new_context: { args: ["ptr", "u32", "u32", "i32"], returns: "ptr" },
-      shim_decode: { args: ["ptr", "ptr", "i32"], returns: "i32" },
-    },
+  const shim = dlopen(shimPath(dir), {
+    shim_init: { args: ["ptr"], returns: "void" },
+    shim_devices: { args: ["ptr", "i32"], returns: "i32" },
+    shim_load_model: { args: ["ptr", "i32"], returns: "ptr" },
+    shim_new_context: { args: ["ptr", "u32", "u32", "i32"], returns: "ptr" },
+    shim_decode: { args: ["ptr", "ptr", "i32"], returns: "i32" },
   }).symbols;
   shim.shim_init(cstr(dir));
   return { ...llama, ...shim };
@@ -67,6 +64,28 @@ function open(dir: string): Lib {
   return lib;
 }
 
+export interface Device {
+  /** ggml's device type; a model is offloaded to the `gpu` and `igpu` ones. */
+  type: "cpu" | "gpu" | "igpu" | "accel" | "meta" | "other";
+  /** Name and description, e.g. "Vulkan0: AMD Radeon RX 9070 (RADV GFX1201)". */
+  label: string;
+}
+
+/**
+ * What the backends in `dir` can compute on: no `gpu` without a working Vulkan driver, no `cpu` when
+ * no CPU backend could be loaded. Opens the libraries, so it is for the engine thread or a process
+ * of its own.
+ */
+export function devices(dir: string): Device[] {
+  const text = Buffer.alloc(8192);
+  open(dir).shim_devices(text, text.length);
+  const lines = text.toString("utf8", 0, text.indexOf(0)).split("\n").filter(Boolean);
+  return lines.map((line) => {
+    const space = line.indexOf(" ");
+    return { type: line.slice(0, space) as Device["type"], label: line.slice(space + 1) };
+  });
+}
+
 /**
  * The prompt for one user message, as the models' ChatML Jinja template renders it with
  * `enable_thinking=false`: the content is trimmed, and a template that knows about thinking gets
@@ -78,7 +97,7 @@ export function chatPrompt(content: string, emptyThink: boolean): string {
 }
 
 export interface ModelOptions {
-  /** Directory with libllama, its backends and `include/llama.h`. */
+  /** Directory with libllama, its backends and the shim. */
   dir: string;
   path: string;
   /** Layers to offload; negative means all. */

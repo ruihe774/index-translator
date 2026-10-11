@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Index Translator
+Comment=Translate text and whole documents locally, on your own GPU
+Exec=index-translator
+Icon=index-translator
+Terminal=true
+Categories=Office;Translation;
+Keywords=translate;translation;language;
