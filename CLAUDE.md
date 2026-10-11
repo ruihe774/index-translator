@@ -34,7 +34,7 @@ No npm runtime dependencies; no build step for the web app.
 - `src/prompt.ts`: chat prompts, NativeLong document prompts, language table
 - `src/queue.ts`: single-slot FIFO
 - `src/static.ts`: static files; `.ts` in `public/` transpiled on request, ETag-cached in memory, never written to disk
-- `public/`: web app (`app.ts`, `select-model.ts`, `request.ts`, `sse.ts`, `messages.ts`, `errors.ts`, `paragraphs.ts`, `glossary.ts`, `markdown.ts`, `markdown-dom.ts`, `style.css`)
+- `public/`: web app (`app.ts`, `select-model.ts`, `request.ts`, `sse.ts`, `messages.ts`, `errors.ts`, `paragraphs.ts`, `glossary.ts`, `markdown.ts`, `markdown-dom.ts`, `sync-scroll.ts`, `style.css`)
 - `prompts/`: the four official NativeLong templates (from bilibili/Index-Translate)
 - `scripts/`: fetch and test helpers
 - `e2e/`: Playwright specs (`a11y.spec.ts`: axe and WCAG layout checks), `mock-server.ts` (real app on the `test/helpers/mock-engine.ts` mock, scriptable via a control port)
@@ -134,6 +134,18 @@ Hence the 11,000-letter switch point.
   are limited to `http(s):` and `mailto:`. Copy and the paragraph check use the raw text. Parser
   changes keep `bun scripts/commonmark.ts` passing and `docs/markdown-conformance.md` in step. The
   rendered output's accessibility review is still pending (not yet in `A11Y-ACCEPTANCE.md`).
+- Source preview and views: after Translate, a source that passes `looksLikeMarkdown` is rendered
+  (whole, not streamed) in `#source-view` in place of the textarea; each side has a Raw / Preview
+  switch (source Raw is the textarea, re-rendered on Preview). Clear empties both sides and restores
+  the textarea. Every top-level rendered element carries `data-line` (its first line in the text;
+  plain text is one span per line).
+- Click-to-sync scrolling (`public/sync-scroll.ts`) is on only after a translation that finished
+  with `stop` and whose block count, in the source's unit, equals the source's (`alignBlocks` in
+  `public/paragraphs.ts`), and only while the source and output text are unchanged. Block i maps to
+  block i; the clicked block's top is lined up on the other side, which is a scroll container
+  (`--pane-max`). The raw textarea is measured with a hidden mirror element.
+- The source preview, the view switches, Clear and sync scrolling have not been reviewed for
+  accessibility yet (not in `A11Y-ACCEPTANCE.md`); `e2e/a11y.spec.ts` passes.
 - Changing the llama.cpp tag (`scripts/fetch_llama.ts`): update the header checksums, and check the
   signatures declared in `src/llama-ffi.ts` against the new `llama.h` by hand, since only
   `src/llama-shim.c` is compiled against it. The shim needs the system's C library headers

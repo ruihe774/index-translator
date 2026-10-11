@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { MarkdownStream, looksLikeMarkdown, parseInline, parseMarkdown, type Block } from "../public/markdown";
+import { MarkdownStream, looksLikeMarkdown, parseInline, parseLines, parseMarkdown, type Block, type ParsedBlock } from "../public/markdown";
 
 describe("looksLikeMarkdown", () => {
   test("one unambiguous construct is enough", () => {
@@ -271,6 +271,22 @@ describe("MarkdownStream", () => {
     const r = s.take();
     expect(r.done).toEqual([{ type: "heading", level: 2, children: [{ type: "text", text: "Para" }] }]);
     expect(r.tail).toEqual([{ type: "paragraph", children: [{ type: "text", text: "Next" }] }]);
+  });
+
+  test("takeParsed numbers each block by its first line in the whole text, for any chunking", () => {
+    const whole = parseLines(DOC.split("\n"));
+    for (const size of [1, 5, 13, DOC.length]) {
+      const s = new MarkdownStream();
+      const got: ParsedBlock[] = [];
+      let tail: ParsedBlock[] = [];
+      for (let i = 0; i < DOC.length; i += size) {
+        s.push(DOC.slice(i, i + size));
+        const r = s.takeParsed();
+        got.push(...r.done);
+        tail = r.tail;
+      }
+      expect([...got, ...tail]).toEqual(whole);
+    }
   });
 
   test("an open code fence stays in the tail until it closes", () => {

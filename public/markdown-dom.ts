@@ -1,8 +1,11 @@
 // Writes the translation into the output element as it streams: as plain text, or rendered from
 // Markdown when the source looked like Markdown. Elements are built with the DOM API only; no
-// string from the model is ever parsed as HTML.
+// string from the model is ever parsed as HTML. The source preview is rendered the same way.
+//
+// Each top-level element carries `data-line`, the index of its first line in the text (one span
+// per line for plain text, one element per block for Markdown), so scrolling can be synced by line.
 
-import { MarkdownStream, type Align, type Block, type Inline } from "./markdown.js";
+import { MarkdownStream, type Align, type Block, type Inline, type ParsedBlock } from "./markdown.js";
 
 export interface OutputView {
   /** Adds streamed text. Rendering may be deferred to the next frame. */
@@ -116,18 +119,32 @@ function prefersReducedMotion(): boolean {
   }
 }
 
-/** Plain text: one text node that grows. */
+/** Plain text: one span per line, holding the line and its newline; the last span grows. */
 function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
-  const text = document.createTextNode("");
-  target.replaceChildren(text);
-  if (!reduced) return { append: (t) => text.appendData(t), finish() {} };
+  target.replaceChildren();
+  let line: HTMLSpanElement | null = null;
+  let count = 0;
+  const write = (t: string) => {
+    for (const part of t.split(/(?<=\n)/)) {
+      if (!part) continue;
+      if (!line) {
+        line = el("span");
+        line.dataset.line = String(count++);
+        line.append("");
+        target.append(line);
+      }
+      (line.firstChild as Text).appendData(part);
+      if (part.endsWith("\n")) line = null;
+    }
+  };
+  if (!reduced) return { append: write, finish() {} };
 
   let pending = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = () => {
     clearTimeout(timer);
     timer = undefined;
-    if (pending) text.appendData(pending);
+    if (pending) write(pending);
     pending = "";
   };
   return {
@@ -137,6 +154,14 @@ function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
     },
     finish: flush,
   };
+}
+
+function lineNodes(parsed: ParsedBlock[]): Node[] {
+  return parsed.flatMap(({ block, line }) => {
+    const nodes = blockNode(block);
+    for (const n of nodes) if (n instanceof HTMLElement) n.dataset.line = String(line);
+    return nodes;
+  });
 }
 
 /**
@@ -155,10 +180,10 @@ function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
     clearTimeout(timer);
     frame = 0;
     timer = undefined;
-    const { done, tail: open } = stream.take();
+    const { done, tail: open } = stream.takeParsed();
     for (const node of tail) node.parentNode?.removeChild(node);
-    tail = blockNodes(open);
-    target.append(...blockNodes(done), ...tail);
+    tail = lineNodes(open);
+    target.append(...lineNodes(done), ...tail);
   };
 
   return {
@@ -176,4 +201,11 @@ export function createOutput(target: HTMLElement, markdown: boolean): OutputView
   target.classList.toggle("markdown", markdown);
   const reduced = prefersReducedMotion();
   return markdown ? markdownOutput(target, reduced) : plainOutput(target, reduced);
+}
+
+/** Writes a whole text into `target` at once, rendered as `createOutput` would stream it. */
+export function renderText(target: HTMLElement, text: string, markdown: boolean) {
+  const view = createOutput(target, markdown);
+  view.append(text);
+  view.finish();
 }

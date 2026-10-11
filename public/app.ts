@@ -7,7 +7,9 @@ import { describeError, type ApiErrorBody } from "./errors.js";
 import { sseEvents } from "./sse.js";
 import { buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.js";
 import { looksLikeMarkdown } from "./markdown.js";
-import { createOutput, type OutputView } from "./markdown-dom.js";
+import { createOutput, renderText, type OutputView } from "./markdown-dom.js";
+import { alignBlocks, type Alignment } from "./paragraphs.js";
+import { syncFrom, textareaPane, viewPane, type Pane } from "./sync-scroll.js";
 import {
   doneMessage,
   healthMessage,
@@ -48,6 +50,13 @@ const genreInput = $<HTMLInputElement>("genre");
 const translateBtn = $<HTMLButtonElement>("translate");
 const stopBtn = $<HTMLButtonElement>("stop");
 const copyBtn = $<HTMLButtonElement>("copy");
+const clearBtn = $<HTMLButtonElement>("clear");
+const sourceSwitch = $("source-switch");
+const sourceArea = $("source-area");
+const sourceView = $("source-view");
+const outputSwitch = $("output-switch");
+const outputArea = $("output-area");
+const syncHint = $("sync-hint");
 const engineEl = $("engine");
 const progressEl = $("progress");
 const errorEl = $("error");
@@ -214,6 +223,87 @@ let output: OutputView | null = null;
 /** Translate is aria-disabled while a translation runs or before the languages are loaded. */
 function setTranslateEnabled() {
   translateBtn.setAttribute("aria-disabled", String(running !== null || !languagesReady));
+  clearBtn.setAttribute("aria-disabled", String(running !== null));
+}
+
+// ---- raw and preview views -------------------------------------------------------------------
+//
+// After Translate, a source that looks like Markdown is shown rendered in place of the textarea,
+// and so is the translation. Each side has its own Raw / Preview switch; Raw on the source side is
+// the editable textarea. Clear returns the source to the plain textarea.
+
+type View = "raw" | "preview";
+
+/** Whether the switch is offered (the source looked like Markdown), and the chosen view. */
+const views = {
+  source: { available: false, view: "preview" as View },
+  output: { available: false, view: "preview" as View },
+};
+
+function showSwitch(el: HTMLElement, side: keyof typeof views) {
+  const { available, view } = views[side];
+  el.hidden = !available;
+  for (const b of el.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.view === view));
+}
+
+function showSource() {
+  const preview = views.source.available && views.source.view === "preview";
+  showSwitch(sourceSwitch, "source");
+  if (preview) renderText(sourceView, textInput.value, true);
+  else sourceView.replaceChildren();
+  sourceArea.hidden = !preview;
+  textInput.hidden = preview;
+  refreshSync();
+}
+
+/** Rebuilds the output in the chosen view; text still streaming is appended to the new view. */
+function showOutput() {
+  showSwitch(outputSwitch, "output");
+  output = createOutput(outputEl, views.output.available && views.output.view === "preview");
+  if (translation) {
+    output.append(translation);
+    output.finish();
+  }
+}
+
+function wireSwitch(el: HTMLElement, side: keyof typeof views, show: () => void) {
+  for (const b of el.querySelectorAll<HTMLButtonElement>("button")) {
+    b.addEventListener("click", () => {
+      const view = b.dataset.view as View;
+      if (views[side].view === view) return;
+      views[side].view = view;
+      show();
+    });
+  }
+}
+
+// ---- click to sync scrolling -----------------------------------------------------------------
+
+/** Set after a finished translation whose blocks match the source's, for that source and output. */
+let synced: { source: string; translation: string; alignment: Alignment } | null = null;
+
+function syncActive(): Alignment | null {
+  return synced && synced.source === textInput.value && synced.translation === translation ? synced.alignment : null;
+}
+
+function refreshSync() {
+  const on = syncActive() !== null;
+  syncHint.hidden = !on;
+  for (const el of [textInput, sourceArea, outputArea]) el.classList.toggle("synced", on);
+}
+
+function sourcePane(): Pane {
+  return textInput.hidden ? viewPane(sourceView, sourceArea) : textareaPane(textInput);
+}
+
+function onSourceClick(e: MouseEvent) {
+  const a = syncActive();
+  if (a) syncFrom(e, sourcePane(), a.source, viewPane(outputEl, outputArea), a.output);
+}
+
+function onOutputClick(e: MouseEvent) {
+  const a = syncActive();
+  if (a) syncFrom(e, viewPane(outputEl, outputArea), a.output, sourcePane(), a.source);
 }
 
 function setRunning(on: boolean) {
@@ -225,7 +315,9 @@ function setRunning(on: boolean) {
 /** Markdown is rendered when the source looks written in it; the copied text stays the raw output. */
 function clearResult(markdown: boolean) {
   translation = "";
-  output = createOutput(outputEl, markdown);
+  synced = null;
+  views.output = { available: markdown, view: "preview" };
+  showOutput();
   setText(metaEl, "");
   notesEl.replaceChildren();
   copyBtn.hidden = true;
@@ -293,7 +385,10 @@ async function translate() {
 
   const controller = new AbortController();
   running = controller;
-  clearResult(looksLikeMarkdown(text));
+  const markdown = looksLikeMarkdown(text);
+  clearResult(markdown);
+  views.source = { available: markdown, view: "preview" };
+  showSource();
   outputEl.lang = toSelect.value;
   setRunning(true);
   setText(progressEl, `Translating with ${modelLabel(sel.model)}…`);
@@ -341,6 +436,8 @@ async function translate() {
       targetLang: toSelect.value,
     });
     for (const n of notes) addNote(n);
+    const alignment = done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
+    if (alignment) synced = { source: text, translation, alignment };
     setText(metaEl, metaLine(sel.model, done));
     copyBtn.hidden = translation.length === 0;
     setText(progressEl, doneMessage(notes));
@@ -368,8 +465,25 @@ async function translate() {
     setRunning(false);
     if (hadFocus) translateBtn.focus();
     placeholderEl.hidden = translation.length > 0;
+    refreshSync();
     void pollHealth();
   }
+}
+
+/** Empties the source and the result and returns the source to the plain textarea. */
+function clearAll() {
+  if (running) return;
+  textInput.value = "";
+  showFieldError(textError, textInput, null);
+  views.source = { available: false, view: "preview" };
+  showSource();
+  clearResult(false);
+  placeholderEl.hidden = false;
+  setText(progressEl, "");
+  setText(errorEl, "");
+  refreshSync();
+  refreshSelection();
+  textInput.focus();
 }
 
 function advancedOpen() {
@@ -385,8 +499,18 @@ form.addEventListener("submit", (e) => {
 
 textInput.addEventListener("input", () => {
   if (!textError.hidden && textInput.value.trim()) showFieldError(textError, textInput, null);
+  refreshSync();
   refreshSoon();
 });
+textInput.addEventListener("click", onSourceClick);
+sourceArea.addEventListener("click", onSourceClick);
+outputArea.addEventListener("click", onOutputClick);
+wireSwitch(sourceSwitch, "source", showSource);
+wireSwitch(outputSwitch, "output", () => {
+  showOutput();
+  refreshSync();
+});
+clearBtn.addEventListener("click", clearAll);
 for (const el of [glossaryInput, hardInput, softInput, genreInput]) el.addEventListener("input", refreshSoon);
 fromSelect.addEventListener("change", refreshSelection);
 toSelect.addEventListener("change", refreshSelection);

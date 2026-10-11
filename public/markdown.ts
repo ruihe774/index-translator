@@ -730,6 +730,8 @@ export class MarkdownStream {
   private text = "";
   /** Offset in `text` where the open tail starts; everything before it has been handed out. */
   private tailStart = 0;
+  /** Index of the line at `tailStart`. */
+  private tailLine = 0;
 
   push(delta: string) {
     this.text += delta;
@@ -737,22 +739,30 @@ export class MarkdownStream {
 
   /** The blocks finished since the last call, and the current parse of the open tail. */
   take(): { done: Block[]; tail: Block[] } {
+    const { done, tail } = this.takeParsed();
+    return { done: done.map((p) => p.block), tail: tail.map((p) => p.block) };
+  }
+
+  /** As `take`, with each block's first line counted from the start of the whole text. */
+  takeParsed(): { done: ParsedBlock[]; tail: ParsedBlock[] } {
     let tail = this.text.slice(this.tailStart);
     const complete = tail.slice(0, tail.lastIndexOf("\n") + 1);
-    let done: Block[] = [];
+    let done: ParsedBlock[] = [];
     if (complete) {
       const lines = complete.split("\n");
       lines.pop(); // empty after the final newline
       const parsed = parseLines(lines);
       if (parsed.length > 1) {
         const last = parsed[parsed.length - 1]!;
-        done = parsed.slice(0, -1).map((p) => p.block);
+        done = parsed.slice(0, -1).map((p) => ({ block: p.block, line: p.line + this.tailLine }));
         let offset = 0;
         for (let k = 0; k < last.line; k++) offset += lines[k]!.length + 1;
         this.tailStart += offset;
+        this.tailLine += last.line;
         tail = tail.slice(offset);
       }
     }
-    return { done, tail: parseMarkdown(tail) };
+    const open = parseLines(tail.split("\n")).map((p) => ({ block: p.block, line: p.line + this.tailLine }));
+    return { done, tail: open };
   }
 }

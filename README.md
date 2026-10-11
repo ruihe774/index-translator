@@ -30,13 +30,16 @@ Without a usable GPU, set `GPU_LAYERS=0` to run on the CPU, which is much slower
    and about 25 more.
 2. Paste or type your text into the box.
 3. Click **Translate**. The translation appears as it is generated. Click **Stop** to end it early,
-   and **Copy translation** to copy the result.
+   and **Copy translation** to copy the result. **Clear** empties both sides for a new text.
 
 Translation starts only when you click **Translate**; it does not run while you type.
 
 If the text you enter is written in Markdown (headings, lists, code blocks, tables, links and so
-on), the translation is shown formatted, as it arrives. **Copy translation** still copies the
-Markdown source. Links open in a new tab; images are shown as links and are not loaded.
+on), the translation is shown formatted, as it arrives, and after you click **Translate** your text
+is shown formatted too. Each side has **Raw** and **Preview** buttons to switch between the
+Markdown source and the formatted view; **Raw** on your side brings back the text box for editing.
+**Copy translation** still copies the Markdown source. Links open in a new tab; images are shown as
+links and are not loaded.
 
 ### Choosing a model
 
@@ -73,6 +76,9 @@ it shows a warning. When you see one:
 
 - compare the translation with the original, paragraph by paragraph;
 - for a long text, try the other model, or split the text into sections and translate each one.
+
+When the counts match, you can click a paragraph on either side to scroll the other side to the
+same paragraph. This stops once you edit your text.
 
 The model you use also matters. In testing, Index-NativeLong-9B translated a 30-paragraph English
 document to Chinese completely, but Chinese-to-English translation of a full-length document was

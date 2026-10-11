@@ -28,6 +28,8 @@
     --radius: calc(var(--radius-md) + 1rem + 1px);
     --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.75rem));
     --target: 2.75rem;
+    /* Tallest the source preview and the translation grow before they scroll. */
+    --pane-max: max(24rem, 70dvh);
     --gutter: 1rem;
     --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
     --shadow: 0 1px 2px light-dark(rgb(20 30 60 / 0.08), rgb(0 0 0 / 0.4)), 0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
@@ -419,8 +421,56 @@
     position: relative;
     display: flex;
     min-block-size: 12rem;
+    max-block-size: var(--pane-max);
+    overflow-y: auto;
     background: var(--surface-sunken);
     border-radius: var(--radius-md);
+  }
+
+  /* The source preview takes the textarea's place. */
+  #source-area {
+    flex: 1 1 auto;
+  }
+
+  /* Each side scrolls to the paragraph clicked on the other. */
+  .output-area.synced {
+    cursor: pointer;
+  }
+
+  .pane-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: end;
+    gap: 0.5rem 1rem;
+
+    > .language {
+      flex: 1 1 12rem;
+    }
+  }
+
+  .view-switch {
+    display: flex;
+
+    > button {
+      padding-inline: 0.875rem;
+
+      &:not(:first-child) {
+        margin-inline-start: -1px;
+        border-start-start-radius: var(--radius-min);
+        border-end-start-radius: var(--radius-min);
+      }
+
+      &:not(:last-child) {
+        border-start-end-radius: var(--radius-min);
+        border-end-end-radius: var(--radius-min);
+      }
+
+      &[aria-pressed="true"] {
+        color: var(--on-accent);
+        background: var(--accent);
+        border-color: var(--accent);
+      }
+    }
   }
 
   .output {

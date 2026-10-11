@@ -163,5 +163,150 @@ test("plain source: Markdown-like output stays plain text", async ({ app }) => {
   await run(app, "Hello there");
   await expect(app.progress).toHaveText("Done.");
   await expect(app.output).toHaveText("# 不是标题\n**也不粗**");
-  await expect(app.output.locator("*")).toHaveCount(0);
+  // One span per line, nothing rendered.
+  await expect(app.output.locator("> span")).toHaveText(["# 不是标题\n", "**也不粗**"]);
+  await expect(app.output.locator(":not(span), span *")).toHaveCount(0);
+  await expect(app.page.locator("#output-switch")).toBeHidden();
+});
+
+test("Markdown source: rendered in place of the textarea after Translate, with Raw and Preview on each side", async ({ app }) => {
+  const md = "# Title\n\nSome **bold** text.";
+  await stubTranslate(app, 200, sse([["delta", { text: "# 标题\n\n一些**粗体**文字。" }], ["done", done]]));
+  await run(app, md);
+  await expect(app.progress).toHaveText("Done.");
+
+  const sourceView = app.page.locator("#source-view");
+  const sourceSwitch = app.page.locator("#source-switch");
+  const outputSwitch = app.page.locator("#output-switch");
+  await expect(app.text).toBeHidden();
+  await expect(sourceView.locator("h3")).toHaveText("Title");
+  await expect(sourceView.locator("p strong")).toHaveText("bold");
+  await expect(app.output.locator("h3")).toHaveText("标题");
+
+  // Source: Raw is the editable textarea; Preview renders what it holds now.
+  await sourceSwitch.getByRole("button", { name: "Raw" }).click();
+  await expect(app.page.locator("#source-area")).toBeHidden();
+  await expect(app.text).toBeVisible();
+  await expect(app.text).toHaveValue(md);
+  await expect(sourceSwitch.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+  await app.text.fill("## Changed");
+  await sourceSwitch.getByRole("button", { name: "Preview" }).click();
+  await expect(sourceView.locator("h4")).toHaveText("Changed");
+
+  // Output: Raw shows the Markdown as text; the other side is unaffected.
+  await outputSwitch.getByRole("button", { name: "Raw" }).click();
+  await expect(app.output).toHaveText("# 标题\n\n一些**粗体**文字。");
+  await expect(app.output.locator("h3, strong")).toHaveCount(0);
+  await expect(sourceView.locator("h4")).toBeVisible();
+  await outputSwitch.getByRole("button", { name: "Preview" }).click();
+  await expect(app.output.locator("h3")).toHaveText("标题");
+});
+
+test("plain source: the textarea stays and no switches are offered", async ({ app }) => {
+  await stubTranslate(app, 200, sse([["delta", { text: "你好" }], ["done", done]]));
+  await run(app, "Hello");
+  await expect(app.progress).toHaveText("Done.");
+  await expect(app.text).toBeVisible();
+  await expect(app.page.locator("#source-switch")).toBeHidden();
+  await expect(app.page.locator("#output-switch")).toBeHidden();
+});
+
+test("Clear empties both sides and returns the source to the plain textarea", async ({ app }) => {
+  await stubTranslate(app, 200, sse([["delta", { text: "# 标题" }], ["done", done]]));
+  await run(app, "# Title");
+  await expect(app.progress).toHaveText("Done.");
+  await expect(app.text).toBeHidden();
+
+  await app.page.getByRole("button", { name: "Clear" }).click();
+  await expect(app.text).toBeVisible();
+  await expect(app.text).toHaveValue("");
+  await expect(app.text).toBeFocused();
+  await expect(app.page.locator("#source-area")).toBeHidden();
+  await expect(app.page.locator("#source-switch")).toBeHidden();
+  await expect(app.page.locator("#output-switch")).toBeHidden();
+  await expect(app.output).toBeEmpty();
+  await expect(app.page.locator("#placeholder")).toBeVisible();
+  await expect(app.progress).toHaveText("");
+  await expect(app.copy).toBeHidden();
+  await expect(app.page.locator("#count")).toHaveText("0 letters");
+});
+
+/** Top of `el` relative to the top of the box of `scroller`. */
+async function offsetIn(app: AppPage, el: string, scroller: string): Promise<number> {
+  return app.page.evaluate(
+    ({ el, scroller }) => document.querySelector(el)!.getBoundingClientRect().top - document.querySelector(scroller)!.getBoundingClientRect().top,
+    { el, scroller },
+  );
+}
+
+const paragraphs = (n: number, make: (i: number) => string) => Array.from({ length: n }, (_, i) => make(i)).join("\n\n");
+
+test("matching paragraphs: a click on either side scrolls the other to the same paragraph", async ({ app }) => {
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  const source = "# Doc\n\n" + paragraphs(30, (i) => `Paragraph ${i} ${"word ".repeat(i % 3 ? 8 : 40)}`);
+  const translation = "# 文档\n\n" + paragraphs(30, (i) => `第${i}段 ${"字".repeat(i % 2 ? 10 : 90)}`);
+  await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
+  await run(app, source);
+  await expect(app.progress).toHaveText("Done.");
+  await expect(app.page.locator("#sync-hint")).toBeVisible();
+
+  // Output paragraph 20 is the 21st <p>; the source's matching one is the 21st <p> too.
+  await app.output.locator("p").nth(20).click();
+  const out = await offsetIn(app, "#output > p:nth-of-type(21)", "#output-area");
+  const src = await offsetIn(app, "#source-view > p:nth-of-type(21)", "#source-area");
+  expect(Math.abs(out - src)).toBeLessThan(2);
+
+  await app.page.locator("#source-view p").nth(5).click();
+  const src2 = await offsetIn(app, "#source-view > p:nth-of-type(6)", "#source-area");
+  const out2 = await offsetIn(app, "#output > p:nth-of-type(6)", "#output-area");
+  expect(Math.abs(out2 - src2)).toBeLessThan(2);
+
+  // Editing the source in Raw ends the sync.
+  await app.page.locator("#source-switch").getByRole("button", { name: "Raw" }).click();
+  await expect(app.page.locator("#sync-hint")).toBeVisible();
+  await app.text.press("End");
+  await app.text.pressSequentially("x");
+  await expect(app.page.locator("#sync-hint")).toBeHidden();
+});
+
+test("matching lines in plain text: the raw textarea and the output sync both ways", async ({ app }) => {
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  const source = Array.from({ length: 80 }, (_, i) => `Line ${i}`).join("\n");
+  const translation = Array.from({ length: 80 }, (_, i) => `第${i}行`).join("\n");
+  await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
+  await run(app, source);
+  await expect(app.progress).toHaveText("Done.");
+  await expect(app.page.locator("#sync-hint")).toBeVisible();
+
+  await app.output.locator('span[data-line="60"]').click();
+  // The lines are short and do not wrap, so line 60 starts 60 line heights below the first.
+  const inTextarea = await app.text.evaluate((t) => {
+    const style = getComputedStyle(t);
+    return parseFloat(style.borderTopWidth) + parseFloat(style.paddingTop) + 60 * parseFloat(style.lineHeight) - t.scrollTop;
+  });
+  expect(await app.text.evaluate((t) => t.scrollTop)).toBeGreaterThan(0);
+  const inOutput = await offsetIn(app, '#output > span[data-line="60"]', "#output-area");
+  expect(Math.abs(inTextarea - inOutput)).toBeLessThan(2);
+
+  // The caret line in the textarea moves the output to that line.
+  await app.page.locator("#output-area").evaluate((el) => (el.scrollTop = 0));
+  const caret = source.indexOf("Line 40");
+  await app.text.evaluate((t: HTMLTextAreaElement, c) => {
+    t.focus();
+    t.setSelectionRange(c, c);
+  }, caret);
+  await app.text.dispatchEvent("click");
+  expect(await app.page.locator("#output-area").evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+});
+
+test("paragraphs that do not match: no sync", async ({ app }) => {
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  const source = "# Doc\n\n" + paragraphs(30, (i) => `Paragraph ${i}`);
+  const translation = "# 文档\n\n" + paragraphs(25, (i) => `第${i}段`);
+  await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
+  await run(app, source);
+  await expect(app.progress).toContainText("Done, with a warning");
+  await expect(app.page.locator("#sync-hint")).toBeHidden();
+  await app.output.locator("p").nth(20).click();
+  expect(await app.page.locator("#source-area").evaluate((el) => el.scrollTop)).toBe(0);
 });

@@ -27,14 +27,14 @@ test("two columns on a desktop viewport, one column at 320 px without horizontal
   await app.page.setViewportSize({ width: 1280, height: 800 });
   await app.open();
   const source = await app.text.boundingBox();
-  const output = await app.page.locator(".output-area").boundingBox();
+  const output = await app.page.locator("#output-area").boundingBox();
   expect(source && output && Math.abs(source.y - output.y) < 200 && output.x > source.x + source.width - 1).toBe(true);
 
   await app.page.setViewportSize({ width: 320, height: 640 });
   await app.openAdvanced();
   const overflow = await app.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
   expect(overflow).toBeLessThanOrEqual(0);
-  const stacked = await app.page.locator(".output-area").boundingBox();
+  const stacked = await app.page.locator("#output-area").boundingBox();
   const field = await app.text.boundingBox();
   expect(stacked!.y).toBeGreaterThan(field!.y + field!.height);
 });
@@ -62,7 +62,7 @@ test("skip link is first in the tab order and the whole form is reachable in rea
     await app.page.keyboard.press("Tab");
     names.push(await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""));
   }
-  expect(names.slice(0, 5)).toEqual(["Skip to main content", "from", "text", "translate", "to"]);
+  expect(names.slice(0, 6)).toEqual(["Skip to main content", "from", "text", "clear", "translate", "to"]);
 });
 
 test("every control keeps a visible focus outline", async ({ app }) => {

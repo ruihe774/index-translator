@@ -42,3 +42,42 @@ export function mismatchMessage(m: Mismatch): string {
   const noun = m.unit === "lines" ? "lines" : "paragraphs";
   return `The source has ${m.source} ${noun} and the translation has ${m.output}. Parts may have been dropped, merged or repeated; check it against the source.`;
 }
+
+const BLANK = /^\s*$/;
+
+/** Index of the first line of each block, counted as `countBlocks` counts them. */
+export function blockStarts(text: string, unit: Unit): number[] {
+  const starts: number[] = [];
+  let previousBlank = true;
+  text.split("\n").forEach((line, i) => {
+    const blank = BLANK.test(line);
+    if (!blank && (unit === "lines" || previousBlank)) starts.push(i);
+    previousBlank = blank;
+  });
+  return starts;
+}
+
+export interface Alignment {
+  unit: Unit;
+  /** First line of each block, in the source and in the translation; both have the same length. */
+  source: number[];
+  output: number[];
+}
+
+/**
+ * Block i of the source matched to block i of the translation, when both have the same number of
+ * blocks (so the paragraph check passed), else null.
+ */
+export function alignBlocks(source: string, output: string): Alignment | null {
+  const unit = unitOf(source);
+  const s = blockStarts(source, unit);
+  const o = blockStarts(output, unit);
+  return s.length > 0 && s.length === o.length ? { unit, source: s, output: o } : null;
+}
+
+/** The block that holds `line`: the last one starting at or before it (the first, before any). */
+export function blockAt(starts: number[], line: number): number {
+  let k = 0;
+  while (k + 1 < starts.length && starts[k + 1]! <= line) k++;
+  return k;
+}

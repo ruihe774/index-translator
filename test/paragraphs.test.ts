@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { countBlocks, mismatchMessage, paragraphMismatch, unitOf } from "../public/paragraphs";
+import { alignBlocks, blockAt, blockStarts, countBlocks, mismatchMessage, paragraphMismatch, unitOf } from "../public/paragraphs";
 
 describe("unitOf", () => {
   test("a blank line makes the unit paragraphs, otherwise lines", () => {
@@ -75,5 +75,43 @@ describe("mismatchMessage", () => {
   test("names the unit", () => {
     expect(mismatchMessage({ unit: "lines", source: 5, output: 4 })).toStartWith("The source has 5 lines and the translation has 4.");
     expect(mismatchMessage({ unit: "paragraphs", source: 3, output: 1 })).toStartWith("The source has 3 paragraphs and");
+  });
+});
+
+describe("blockStarts", () => {
+  test("paragraphs: the first line after each run of blank lines", () => {
+    expect(blockStarts("\n\nA\na\n\n \t\nB\r\n\r\nC\n", "paragraphs")).toEqual([2, 6, 8]);
+  });
+
+  test("lines: every non-blank line", () => {
+    expect(blockStarts("A\n\nB\nC", "lines")).toEqual([0, 2, 3]);
+  });
+
+  test("counts as many blocks as countBlocks", () => {
+    for (const text of ["", "A", "A\n\n\nB\n", "\r\nA\r\n \r\nB\r\nb", "# T\n\n- a\n- b\n\n```\nx\n\ny\n```"]) {
+      for (const unit of ["paragraphs", "lines"] as const) expect(blockStarts(text, unit)).toHaveLength(countBlocks(text, unit));
+    }
+  });
+});
+
+describe("alignBlocks", () => {
+  test("pairs blocks by index when the counts match, in the source's unit", () => {
+    expect(alignBlocks("A\n\nB\nb\n\nC", "甲\n\n\n乙\n\n丙\n丙")).toEqual({ unit: "paragraphs", source: [0, 2, 5], output: [0, 3, 5] });
+    expect(alignBlocks("A\nB", "甲\n\n乙")).toEqual({ unit: "lines", source: [0, 1], output: [0, 2] });
+  });
+
+  test("null when the counts differ or there is nothing", () => {
+    expect(alignBlocks("A\n\nB\n\nC", "甲\n\n乙")).toBeNull();
+    expect(alignBlocks("A\n\nB", "甲")).toBeNull();
+    expect(alignBlocks("", "")).toBeNull();
+  });
+});
+
+describe("blockAt", () => {
+  test("the last block starting at or before the line", () => {
+    expect(blockAt([2, 5, 9], 0)).toBe(0);
+    expect(blockAt([2, 5, 9], 5)).toBe(1);
+    expect(blockAt([2, 5, 9], 8)).toBe(1);
+    expect(blockAt([2, 5, 9], 100)).toBe(2);
   });
 });
