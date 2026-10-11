@@ -543,10 +543,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchLlamaServer
     async fetch(req, server) {
       const url = new URL(req.url);
       const path = url.pathname;
-      if (!path.startsWith(API + "/")) {
-        if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method Not Allowed", { status: 405 });
-        return serveStatic(path, req);
-      }
+      if (!path.startsWith(API + "/")) return serveStatic(path, req);
 
       try {
         checkHost(req, cfg);

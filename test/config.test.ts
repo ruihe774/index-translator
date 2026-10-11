@@ -97,6 +97,22 @@ describe("loadConfig rejections", () => {
   });
 });
 
+describe("loadConfig PUBLIC_DIR", () => {
+  test("a trailing slash is dropped", () => {
+    expect(loadConfig({ PUBLIC_DIR: "/srv/site/" }).publicDir).toBe("/srv/site");
+    expect(loadConfig({ PUBLIC_DIR: "/srv/site///" }).publicDir).toBe("/srv/site");
+  });
+
+  test("a relative path is made absolute against the working directory", () => {
+    expect(loadConfig({ PUBLIC_DIR: "site" }).publicDir).toBe(resolve("site"));
+    expect(loadConfig({ PUBLIC_DIR: "./site/" }).publicDir).toBe(resolve("site"));
+  });
+
+  test("an empty value falls back to the bundled public directory", () => {
+    expect(loadConfig({ PUBLIC_DIR: "" }).publicDir).toBe(join(root, "public"));
+  });
+});
+
 describe("loadConfig LLAMA_EXTRA_ARGS", () => {
   test("split on any whitespace, dropping empty pieces", () => {
     expect(loadConfig({ LLAMA_EXTRA_ARGS: "  --flash-attn\t--no-mmap   -c 4096 \n" }).llamaExtraArgs).toEqual([
