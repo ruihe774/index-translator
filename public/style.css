@@ -20,12 +20,13 @@
     --warn-border: light-dark(#8a6100, #c9a227);
 
     /* Concentric corners: an outer radius is the inner radius plus the gap
-       (padding + border) between the two edges; never below zero. */
+       (padding + border) between the two edges. Siblings in the same container
+       share one radius, and no corner is ever square (--radius-min floor). */
+    --radius-min: 0.25rem;
     --radius-sm: 0.5rem;
-    --inset: 1rem;
-    --radius: calc(var(--radius-sm) + var(--inset) + 1px);
-    --radius-in-fieldset: max(0px, calc(var(--radius-sm) - 0.5rem - 1px));
-    --radius-in-output: max(0px, calc(var(--radius-sm) - 0.75rem));
+    --radius-md: calc(var(--radius-sm) + 0.5rem + 1px);
+    --radius: calc(var(--radius-md) + 1rem + 1px);
+    --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.75rem));
     --target: 2.75rem;
     --gutter: 1rem;
     --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
@@ -173,7 +174,7 @@
   .error-banner:not(:empty) {
     color: var(--error);
     border: 2px solid var(--error);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     padding: 0.5rem 0.75rem;
     font-weight: 600;
   }
@@ -186,7 +187,7 @@
     padding: 0.75rem 1rem;
     background: var(--surface);
     border: 2px solid var(--focus);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
 
     &:focus {
       inset-block-start: 0.5rem;
@@ -219,7 +220,7 @@
     background: var(--surface);
     color: var(--text);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     font: inherit;
   }
 
@@ -237,15 +238,15 @@
     }
   }
 
-  fieldset :is(input[type="text"], textarea) {
-    border-radius: var(--radius-in-fieldset);
+  fieldset :is(input[type="text"], select, textarea) {
+    border-radius: var(--radius-sm);
   }
 
   fieldset {
     margin: 0;
     padding: 0.5rem 0.75rem 0.75rem;
     border: 1px solid var(--divider);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     min-inline-size: 0;
 
     &:disabled {
@@ -306,7 +307,7 @@
     align-self: start;
     padding: 0.5rem 0.75rem;
     background: var(--surface-sunken);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
 
     &.warn {
       background: var(--warn-bg);
@@ -359,7 +360,7 @@
     color: var(--text);
     background: var(--surface-sunken);
     border: 1px solid var(--border);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
     cursor: pointer;
 
     &:hover {
@@ -389,7 +390,7 @@
     display: flex;
     min-block-size: 12rem;
     background: var(--surface-sunken);
-    border-radius: var(--radius-sm);
+    border-radius: var(--radius-md);
   }
 
   .output {
@@ -487,7 +488,7 @@
       font-size: 0.9em;
       padding: 0.1em 0.3em;
       background: var(--surface);
-      border-radius: 0.25rem;
+      border-radius: var(--radius-min);
     }
 
     pre {
@@ -516,13 +517,27 @@
     }
 
     table {
-      border-collapse: collapse;
+      border-collapse: separate;
+      border-spacing: 0;
+      border: 1px solid var(--divider);
+      border-radius: var(--radius-min);
+      overflow: hidden;
+
+      > :first-child > tr:first-child > * {
+        border-block-start: 0;
+      }
+
+      tr > :first-child {
+        border-inline-start: 0;
+      }
     }
 
     th,
     td {
       padding: 0.3rem 0.6rem;
-      border: 1px solid var(--divider);
+      border: 0;
+      border-block-start: 1px solid var(--divider);
+      border-inline-start: 1px solid var(--divider);
       text-align: start;
       vertical-align: top;
     }
