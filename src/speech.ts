@@ -6,10 +6,10 @@
 // IndexTTS has no built-in voices: every request names a reference recording from `VOICES_DIR`,
 // whose voice the model imitates.
 
+import { randomUUID } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { randomUUID } from "node:crypto";
 import { basename, extname, join } from "node:path";
 import type { Config } from "./config";
 
@@ -129,7 +129,8 @@ class NativeSpeech implements Speech {
   async addVoice(name: string, wav: ArrayBuffer): Promise<Voice> {
     const head = new Uint8Array(wav, 0, Math.min(12, wav.byteLength));
     const tag = (at: number) => String.fromCharCode(...head.subarray(at, at + 4));
-    if (head.length < 12 || tag(0) !== "RIFF" || tag(8) !== "WAVE") throw new SpeechError("the sample is not a WAV file");
+    if (head.length < 12 || tag(0) !== "RIFF" || tag(8) !== "WAVE")
+      throw new SpeechError("the sample is not a WAV file");
     if (this.uploads.size >= MAX_UPLOADED_VOICES) throw new SpeechError("too many uploaded voices");
     const id = `upload-${randomUUID()}`;
     const path = join(this.uploadDir, `${id}.wav`);
