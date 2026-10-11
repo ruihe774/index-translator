@@ -31,7 +31,7 @@ for (const scheme of ["light", "dark"] as const) {
     mock,
   }) => {
     await app.page.emulateMedia({ colorScheme: scheme });
-    await mock.set({ chunks: ["# 标题\n\n", "第一段。\n\n", "第二段。\n"], speech: { delayMs: 3000 } });
+    await mock.set({ chunks: ["# 标题\n\n", "第一段。\n\n", "第二段。\n"], speech: { delayMs: 1000, audioSeconds: 5 } });
     await app.open();
     await app.openAdvanced();
     await app.from.selectOption("en");
@@ -41,7 +41,9 @@ for (const scheme of ["light", "dark"] as const) {
     const listen = app.page.locator("#listen-output");
     await listen.click();
     await expect(app.output.locator(".speaking")).toHaveAttribute("aria-current", "true", { timeout: 10_000 });
+    await expect(listen).toHaveAttribute("data-state", "playing", { timeout: 10_000 });
     await app.page.locator("#next-output").click();
+    await expect(listen).toHaveAttribute("data-state", "playing", { timeout: 10_000 });
     await app.page.locator("#pause-output").click();
     await expect(app.page.locator("#pause-output")).toHaveAccessibleName("Resume reading");
     await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));

@@ -168,6 +168,8 @@ export const mockSpeech = {
     { id: "voice_02", name: "Voice 02" },
   ] as Voice[],
   delayMs: 0,
+  /** Length of the silence each utterance answers with. */
+  audioSeconds: 0.1,
   failWith: undefined as string | undefined,
   /** Every utterance asked for. */
   requests: [] as SpeechRequest[],
@@ -178,6 +180,7 @@ export function resetMockSpeech(): void {
   mockSpeech.state = "stopped";
   mockSpeech.voices.length = 2;
   mockSpeech.delayMs = 0;
+  mockSpeech.audioSeconds = 0.1;
   mockSpeech.failWith = undefined;
   mockSpeech.requests.length = 0;
   mockSpeech.aborted = 0;
@@ -212,7 +215,7 @@ export const speechLauncher: SpeechLauncher = () => ({
     }
     if (mockSpeech.failWith) throw new SpeechError(mockSpeech.failWith);
     mockSpeech.state = "ready";
-    return silentWav();
+    return silentWav(mockSpeech.audioSeconds);
   },
   async stop() {},
 });

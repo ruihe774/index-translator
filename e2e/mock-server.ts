@@ -5,7 +5,7 @@
 // A second, control server lets a test script what the mock engine says:
 //   GET    /mock           current knobs and the generations requested so far
 //   POST   /mock           set knobs: { chunks?, delayMs?, finish?, failWith?, failLaunch?, ready?,
-//                          speech?: { state?, delayMs?, failWith? } }; `speech` in the answer holds
+//                          speech?: { state?, delayMs?, audioSeconds?, failWith? } }; `speech` in the answer holds
 //                          the utterances requested from the mock speech engine
 //   DELETE /mock           reset knobs and forget recorded requests
 //   POST   /mock/restart   unload the engine so the next request loads its model again

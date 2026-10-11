@@ -716,14 +716,17 @@ function refreshSpeech() {
     // The reason is also the button's description: `title` alone is not reachable by keyboard or touch.
     why.textContent = blocked;
     prev.hidden = next.hidden = pause.hidden = !mine;
-    prev.setAttribute("aria-disabled", String(!(mine && player.canJump(-1))));
-    next.setAttribute("aria-disabled", String(!(mine && player.canJump(1))));
+    // While the next audio is being made, only Stop works.
+    const waiting = state === "loading";
+    prev.setAttribute("aria-disabled", String(waiting || !(mine && player.canJump(-1))));
+    next.setAttribute("aria-disabled", String(waiting || !(mine && player.canJump(1))));
+    pause.setAttribute("aria-disabled", String(waiting));
     prev.setAttribute("aria-label", "Previous block");
     next.setAttribute("aria-label", "Next block");
     prev.title = "Previous block (from inside a block, its start)";
     next.title = "Next block";
     pause.dataset.state = state;
-    pause.title = state === "paused" ? "Resume reading" : "Pause reading";
+    pause.title = waiting ? "Preparing the audio…" : state === "paused" ? "Resume reading" : "Pause reading";
     pause.setAttribute("aria-label", pause.title);
   }
 }
@@ -862,6 +865,7 @@ for (const side of SIDES) {
     if (speechButtons[side].next.getAttribute("aria-disabled") !== "true") jumpSpeech(1);
   });
   speechButtons[side].pause.addEventListener("click", () => {
+    if (speechButtons[side].pause.getAttribute("aria-disabled") === "true") return;
     if (player.state === "paused") player.resume();
     else player.pause();
   });
