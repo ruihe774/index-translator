@@ -6,6 +6,8 @@ import { CHAT_MODEL, DOCUMENT_MODEL, selectModel, type Choice, type Selection } 
 import { describeError, type ApiErrorBody } from "./errors.js";
 import { sseEvents } from "./sse.js";
 import { buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.js";
+import { looksLikeMarkdown } from "./markdown.js";
+import { createOutput, type OutputView } from "./markdown-dom.js";
 import {
   doneMessage,
   healthMessage,
@@ -207,7 +209,7 @@ class ApiFailure extends Error {
 
 let running: AbortController | null = null;
 let translation = "";
-let outputText: Text | null = null;
+let output: OutputView | null = null;
 
 /** Translate is aria-disabled while a translation runs or before the languages are loaded. */
 function setTranslateEnabled() {
@@ -220,10 +222,10 @@ function setRunning(on: boolean) {
   if (on) stopBtn.focus();
 }
 
-function clearResult() {
+/** Markdown is rendered when the source looks written in it; the copied text stays the raw output. */
+function clearResult(markdown: boolean) {
   translation = "";
-  outputText = document.createTextNode("");
-  outputEl.replaceChildren(outputText);
+  output = createOutput(outputEl, markdown);
   setText(metaEl, "");
   notesEl.replaceChildren();
   copyBtn.hidden = true;
@@ -291,7 +293,7 @@ async function translate() {
 
   const controller = new AbortController();
   running = controller;
-  clearResult();
+  clearResult(looksLikeMarkdown(text));
   outputEl.lang = toSelect.value;
   setRunning(true);
   setText(progressEl, `Translating with ${modelLabel(sel.model)}…`);
@@ -322,7 +324,7 @@ async function translate() {
         setText(progressEl, `Translating with ${modelLabel(data.model)}…`);
       } else if (event === "delta") {
         translation += data.text;
-        outputText!.appendData(data.text);
+        output!.append(data.text);
       } else if (event === "done") {
         done = data;
       } else if (event === "error") {
@@ -359,6 +361,7 @@ async function translate() {
       fail(message);
     }
   } finally {
+    output?.finish();
     running = null;
     stopBtn.onclick = null;
     const hadFocus = document.activeElement === stopBtn || document.activeElement === document.body;

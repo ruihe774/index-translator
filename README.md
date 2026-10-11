@@ -33,6 +33,10 @@ to run on the CPU, which is much slower.
 
 Translation starts only when you click **Translate**; it does not run while you type.
 
+If the text you enter is written in Markdown (headings, lists, code blocks, tables, links and so
+on), the translation is shown formatted, as it arrives. **Copy translation** still copies the
+Markdown source. Links open in a new tab; images are shown as links and are not loaded.
+
 ### Choosing a model
 
 Leave the model on **Automatic (by text length)** unless you have a reason to pick one yourself.

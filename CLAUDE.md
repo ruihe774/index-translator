@@ -26,7 +26,7 @@ No npm runtime dependencies; no build step for the web app.
 - `src/prompt.ts`: chat prompts, NativeLong document prompts, language table
 - `src/queue.ts`: single-slot FIFO
 - `src/static.ts`: static files; `.ts` in `public/` transpiled on request, ETag-cached in memory, never written to disk
-- `public/`: web app (`app.ts`, `select-model.ts`, `request.ts`, `sse.ts`, `messages.ts`, `errors.ts`, `paragraphs.ts`, `glossary.ts`, `style.css`)
+- `public/`: web app (`app.ts`, `select-model.ts`, `request.ts`, `sse.ts`, `messages.ts`, `errors.ts`, `paragraphs.ts`, `glossary.ts`, `markdown.ts`, `markdown-dom.ts`, `style.css`)
 - `prompts/`: the four official NativeLong templates (from bilibili/Index-Translate)
 - `scripts/`: fetch and test helpers
 - `e2e/`: Playwright specs (`a11y.spec.ts`: axe and WCAG layout checks), `mock-server.ts` (real app on the `test/helpers/mock-engine.ts` mock, scriptable via a control port)
@@ -111,5 +111,12 @@ Hence the 11,000-letter switch point.
 - UI changes keep `A11Y-ACCEPTANCE.md` (WCAG 2.2 AA) true: update the affected rows and keep `e2e/a11y.spec.ts` green. The stylesheet may use features that all browsers in `.browserslistrc` support; `bun run lint:css` enforces it.
 
 - The web app must keep working with the server's error codes (`public/errors.ts`) and the paragraph-loss check (`public/paragraphs.ts`, counted in the source's own unit).
+- Markdown output: the web app renders the output as Markdown only when the *source* passes
+  `looksLikeMarkdown` (`public/markdown.ts`); otherwise it stays plain text. The parser is pure and
+  must stay prefix-stable (a block never changes once a later complete line starts another), which
+  `MarkdownStream` relies on to append finished blocks once and rebuild only the open tail per
+  frame (`public/markdown-dom.ts`). Elements are built with the DOM API, never `innerHTML`; links
+  are limited to `http(s):` and `mailto:`. Copy and the paragraph check use the raw text. The
+  rendered output's accessibility review is still pending (not yet in `A11Y-ACCEPTANCE.md`).
 - Update `docs/openapi.yaml` and the tests in `test/api-contract.test.ts` / `test/openapi.test.ts` when the API changes.
 - Update README.md for user-visible behaviour only; keep developer detail here.

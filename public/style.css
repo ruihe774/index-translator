@@ -395,6 +395,146 @@
     }
   }
 
+  /* Rendered Markdown: block spacing instead of preserved whitespace. */
+  .output.markdown {
+    white-space: normal;
+    min-inline-size: 0;
+
+    > :first-child {
+      margin-block-start: 0;
+    }
+
+    > :last-child {
+      margin-block-end: 0;
+    }
+
+    p,
+    pre,
+    blockquote,
+    ul,
+    ol,
+    .table-scroll {
+      margin-block: 0 0.75rem;
+    }
+
+    h3,
+    h4,
+    h5,
+    h6 {
+      margin-block: 1.25rem 0.5rem;
+      line-height: 1.3;
+      text-wrap: balance;
+    }
+
+    .md-h1 {
+      font-size: 1.5rem;
+    }
+
+    .md-h2 {
+      font-size: 1.3rem;
+    }
+
+    .md-h3 {
+      font-size: 1.15rem;
+    }
+
+    .md-h4,
+    .md-h5,
+    .md-h6 {
+      font-size: 1rem;
+    }
+
+    ul,
+    ol {
+      padding-inline-start: 1.5rem;
+    }
+
+    li > :is(ul, ol, p) {
+      margin-block: 0.25rem;
+    }
+
+    li.task {
+      list-style: none;
+
+      > input {
+        margin: 0 0.4rem 0 -1.4rem;
+        vertical-align: middle;
+      }
+
+      > p:first-of-type {
+        display: inline;
+      }
+    }
+
+    blockquote {
+      margin-inline: 0;
+      padding-inline-start: 0.75rem;
+      border-inline-start: 3px solid var(--divider);
+      color: var(--muted);
+    }
+
+    code {
+      font-family: "Cascadia Mono", Menlo, "Noto Sans Mono", monospace;
+      font-size: 0.9em;
+      padding: 0.1em 0.3em;
+      background: var(--surface);
+      border-radius: 0.25rem;
+    }
+
+    pre {
+      padding: 0.75rem;
+      overflow-x: auto;
+      background: var(--surface);
+      border: 1px solid var(--divider);
+      border-radius: var(--radius-sm);
+      line-height: 1.45;
+
+      code {
+        padding: 0;
+        background: none;
+        white-space: pre;
+      }
+    }
+
+    hr {
+      border: 0;
+      border-block-start: 1px solid var(--divider);
+      margin-block: 1rem;
+    }
+
+    .table-scroll {
+      overflow-x: auto;
+    }
+
+    table {
+      border-collapse: collapse;
+    }
+
+    th,
+    td {
+      padding: 0.3rem 0.6rem;
+      border: 1px solid var(--divider);
+      text-align: start;
+      vertical-align: top;
+    }
+
+    th {
+      background: var(--surface);
+    }
+
+    .align-center {
+      text-align: center;
+    }
+
+    .align-left {
+      text-align: left;
+    }
+
+    .align-right {
+      text-align: right;
+    }
+  }
+
   .placeholder {
     padding: 0.75rem;
     color: var(--muted);

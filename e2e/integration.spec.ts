@@ -134,3 +134,34 @@ test("copy puts the translation on the clipboard", async ({ app, context }) => {
   await expect(app.progress).toHaveText("Translation copied to the clipboard.");
   expect(await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText())).toBe("你好");
 });
+
+test("Markdown source: the output is rendered, unsafe links stay text, and copy keeps the raw Markdown", async ({ app, context }) => {
+  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  const md = "# 标题\n\n- **一**\n- [链接](https://example.com)\n- [坏](javascript:alert(1))\n\n```js\nlet a = 1;\n```\n\n<b>原样</b>";
+  await stubTranslate(app, 200, sse([...[...md].map((c): [string, unknown] => ["delta", { text: c }]), ["done", done]]));
+  await run(app, "# Title\n\n- **one**\n- [link](https://example.com)");
+
+  await expect(app.progress).toHaveText("Done.");
+  await expect(app.output.locator("h3")).toHaveText("标题");
+  await expect(app.output.locator("ul > li")).toHaveCount(3);
+  await expect(app.output.locator("li strong")).toHaveText("一");
+  const link = app.output.getByRole("link", { name: "链接" });
+  await expect(link).toHaveAttribute("href", "https://example.com");
+  await expect(link).toHaveAttribute("rel", "noopener noreferrer");
+  await expect(app.output.locator("a")).toHaveCount(1);
+  await expect(app.output.locator("li").nth(2)).toHaveText("坏");
+  await expect(app.output.locator("pre > code.language-js")).toHaveText("let a = 1;");
+  await expect(app.output.locator("b")).toHaveCount(0);
+  await expect(app.output.locator("p").last()).toHaveText("<b>原样</b>");
+
+  await app.copy.click();
+  expect(await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText())).toBe(md);
+});
+
+test("plain source: Markdown-like output stays plain text", async ({ app }) => {
+  await stubTranslate(app, 200, sse([["delta", { text: "# 不是标题\n**也不粗**" }], ["done", done]]));
+  await run(app, "Hello there");
+  await expect(app.progress).toHaveText("Done.");
+  await expect(app.output).toHaveText("# 不是标题\n**也不粗**");
+  await expect(app.output.locator("*")).toHaveCount(0);
+});

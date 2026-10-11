@@ -47,6 +47,25 @@ test("streams the translation as it arrives and lets the user stop it", async ({
   await expect.poll(async () => (await mock.state()).aborted).toBeGreaterThan(0);
 });
 
+test("Markdown output is rendered while it streams: finished blocks stay in place", async ({ app, mock }) => {
+  await mock.set({ chunks: ["# 标题\n\n", "第一段。\n\n", "- 甲\n", "- 乙\n\n", "**结束**"], delayMs: 400 });
+  await app.open();
+  await app.text.fill("# Title\n\nFirst paragraph.\n\n- a\n- b\n\n**End**");
+  await app.translate.click();
+
+  const heading = app.output.locator("h3");
+  await expect(heading).toHaveText("标题");
+  await expect(app.output.locator("li").first()).toHaveText("甲");
+  // Later blocks have started, so the heading is finished: its element is kept, not rebuilt.
+  await heading.evaluate((el) => ((el as any).dataset.seen = "1"));
+  await expect(app.output.locator("li")).toHaveCount(2);
+  await expect(app.stop).toBeVisible();
+  await expect(app.progress).toHaveText("Done.");
+  await expect(app.output.locator("h3[data-seen]")).toHaveCount(1);
+  await expect(app.output.locator("p")).toHaveText(["第一段。", "结束"]);
+  await expect(app.output.locator("p strong")).toHaveText("结束");
+});
+
 test("an empty submission shows a field error and sends nothing", async ({ app, mock }) => {
   await app.open();
   await app.translate.click();
