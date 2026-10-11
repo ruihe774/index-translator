@@ -1,5 +1,29 @@
 @layer base, layout, components, utilities;
 
+/* Punctuation shared by Latin and Chinese. The Latin fonts at the head of the stacks have glyphs for
+   these code points (narrow, half-width forms), so they win. clreq wants the full-width forms of the
+   Chinese font for Chinese text: quotation marks “ ” ‘ ’ (U+2018, U+2019, U+201C, U+201D), the
+   dash U+2014, the ellipsis U+2026 and the interpunct U+00B7 (U+2027 as well). This family holds
+   only those code points, taken from the installed Simplified Chinese font, and goes first in
+   `--font-zh`; everything else falls through to the Latin and Han fonts after it. */
+@font-face {
+  font-family: "Han Punctuation SC";
+  src:
+    local("PingFang SC"), local("Microsoft YaHei"), local("Noto Sans CJK SC"), local("Noto Sans SC"),
+    local("Source Han Sans SC"), local("Source Han Sans CN"), local("Hiragino Sans GB"), local("WenQuanYi Micro Hei");
+  unicode-range: U+00B7, U+2014, U+2018-2019, U+201C-201D, U+2026-2027;
+}
+
+/* The same for Japanese (jlreq): Western quotation marks, the dashes U+2014/U+2015 (written as a
+   pair, two ems) and the ellipsis U+2026/U+2025 (also in pairs) are full-width in Japanese text. */
+@font-face {
+  font-family: "Han Punctuation JP";
+  src:
+    local("Hiragino Sans"), local("Yu Gothic UI"), local("Meiryo"), local("Noto Sans CJK JP"), local("Noto Sans JP"),
+    local("Source Han Sans JP"), local("IPAexGothic");
+  unicode-range: U+2014-2015, U+2018-2019, U+201C-201D, U+2025-2026;
+}
+
 @layer base {
   :root {
     color-scheme: light dark;
@@ -37,11 +61,11 @@
     --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
     /* Per language, so Han characters get Japanese or Chinese glyph forms, not the first CJK font's. */
     --font-ja:
-      system-ui, "Segoe UI", "Noto Sans", "Hiragino Sans", "Yu Gothic UI", "Meiryo", "Noto Sans CJK JP", "Noto Sans JP",
-      sans-serif;
+      "Han Punctuation JP", system-ui, "Segoe UI", "Noto Sans", "Hiragino Sans", "Yu Gothic UI", "Meiryo",
+      "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
     --font-zh:
-      system-ui, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", "Noto Sans SC",
-      sans-serif;
+      "Han Punctuation SC", system-ui, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
+      "Noto Sans SC", sans-serif;
     --shadow:
       0 1px 2px light-dark(rgb(20 30 60 / 0.08), rgb(0 0 0 / 0.4)),
       0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
