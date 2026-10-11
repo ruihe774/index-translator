@@ -12,7 +12,6 @@ import { alignBlocks, type Alignment } from "./paragraphs.js";
 import { syncFrom, textareaPane, viewPane, type Pane } from "./sync-scroll.js";
 import {
   adviceMessage,
-  doneMessage,
   healthMessage,
   interruption,
   metaLine,
@@ -57,10 +56,7 @@ const sourceArea = $("source-area");
 const sourceView = $("source-view");
 const outputSwitch = $("output-switch");
 const outputArea = $("output-area");
-const syncHint = $("sync-hint");
 const engineEl = $("engine");
-const progressEl = $("progress");
-const errorEl = $("error");
 const outputEl = $("output");
 const placeholderEl = $("placeholder");
 const metaEl = $("meta");
@@ -86,6 +82,25 @@ function store(key: string, value: string) {
 
 function setText(el: HTMLElement, text: string) {
   if (el.textContent !== text) el.textContent = text;
+}
+
+let metaTimer: ReturnType<typeof setTimeout> | undefined;
+let metaShown: { text: string; error: boolean } = { text: "", error: false };
+
+/** The one line under the translation: progress, the result's numbers, a stop or an error. */
+function setMeta(text: string, error = false) {
+  clearTimeout(metaTimer);
+  metaShown = { text, error };
+  metaEl.classList.toggle("error", error);
+  metaEl.setAttribute("role", error ? "alert" : "status");
+  setText(metaEl, text);
+}
+
+/** A short message that gives the line back to what it showed before. */
+function flashMeta(text: string) {
+  const before = metaShown;
+  setMeta(text);
+  metaTimer = setTimeout(() => setMeta(before.text, before.error), 3000);
 }
 
 function showFieldError(error: HTMLElement, input: HTMLElement, message: string | null) {
@@ -290,7 +305,6 @@ function syncActive(): Alignment | null {
 
 function refreshSync() {
   const on = syncActive() !== null;
-  syncHint.hidden = !on;
   for (const el of [textInput, sourceArea, outputArea]) el.classList.toggle("synced", on);
 }
 
@@ -322,7 +336,7 @@ function clearResult(markdown: boolean) {
   synced = null;
   views.output = { available: markdown, view: "preview" };
   showOutput();
-  setText(metaEl, "");
+  setMeta("");
   notesEl.replaceChildren();
   copyBtn.hidden = true;
   placeholderEl.hidden = true;
@@ -335,20 +349,18 @@ function addNote(text: string) {
 }
 
 /** Output already on screen when a translation ends early is kept, but it must not look finished. */
-function showInterruption(stopped: boolean) {
+function showInterruption(stopped: boolean, message = "") {
   const { note, showCopy } = interruption(translation, stopped);
   copyBtn.hidden = !showCopy;
-  if (note) addNote(note);
+  setMeta([message, note ?? (stopped ? "Stopped." : "")].filter(Boolean).join(" "), !stopped);
 }
 
 function fail(message: string) {
-  setText(progressEl, "");
-  setText(errorEl, message);
+  setMeta(message, true);
 }
 
 async function translate() {
   if (running) return;
-  setText(errorEl, "");
   if (!languagesReady) {
     fail("The languages are still loading. Try again in a moment.");
     return;
@@ -395,7 +407,7 @@ async function translate() {
   showSource();
   outputEl.lang = toSelect.value;
   setRunning(true);
-  setText(progressEl, `Translating with ${modelLabel(sel.model)}…`);
+  setMeta(`Translating with ${modelLabel(sel.model)}…`);
 
   let stopped = false;
   stopBtn.onclick = () => {
@@ -418,9 +430,9 @@ async function translate() {
     let done: Done | null = null;
     for await (const { event, data } of sseEvents(res.body)) {
       if (event === "queued") {
-        setText(progressEl, `Waiting in the queue, position ${data.position}…`);
+        setMeta(`Waiting in the queue, position ${data.position}…`);
       } else if (event === "start") {
-        setText(progressEl, `Translating with ${modelLabel(data.model)}…`);
+        setMeta(`Translating with ${modelLabel(data.model)}…`);
       } else if (event === "delta") {
         translation += data.text;
         output!.append(data.text);
@@ -442,13 +454,11 @@ async function translate() {
     for (const n of notes) addNote(n);
     const alignment = done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
     if (alignment) synced = { source: text, translation, alignment };
-    setText(metaEl, metaLine(sel.model, done));
+    setMeta(metaLine(sel.model, done));
     copyBtn.hidden = translation.length === 0;
-    setText(progressEl, doneMessage(notes));
   } catch (e) {
     if (stopped) {
       showInterruption(true);
-      setText(progressEl, "Stopped.");
     } else {
       const message =
         e instanceof ApiFailure
@@ -458,8 +468,7 @@ async function translate() {
             : e instanceof Error
               ? e.message
               : String(e);
-      showInterruption(false);
-      fail(message);
+      showInterruption(false, message);
     }
   } finally {
     output?.finish();
@@ -483,8 +492,6 @@ function clearAll() {
   showSource();
   clearResult(false);
   placeholderEl.hidden = false;
-  setText(progressEl, "");
-  setText(errorEl, "");
   refreshSync();
   refreshSelection();
   textInput.focus();
@@ -529,9 +536,9 @@ for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button")) {
 copyBtn.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(translation);
-    setText(progressEl, "Translation copied to the clipboard.");
+    flashMeta("Translation copied to the clipboard.");
   } catch {
-    setText(progressEl, "Copying failed. Select the translation and copy it by hand.");
+    flashMeta("Copying failed. Select the translation and copy it by hand.");
   }
 });
 

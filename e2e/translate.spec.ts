@@ -18,7 +18,7 @@ test("translates short text with the chat model and shows the result", async ({ 
   await app.translate.click();
 
   await expect(app.output).toHaveText("你好，世界");
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await expect(app.meta).toContainText("Index-Translate-9B");
   await expect(app.meta).toContainText("42 prompt tokens");
   await expect(app.copy).toBeVisible();
@@ -36,12 +36,12 @@ test("streams the translation as it arrives and lets the user stop it", async ({
   await app.translate.click();
 
   await expect(app.stop).toBeVisible();
-  await expect(app.progress).toContainText("Translating with Index-Translate-9B");
+  await expect(app.meta).toContainText("Translating with Index-Translate-9B");
   await expect(app.output).toContainText("one");
   await app.stop.click();
 
-  await expect(app.progress).toHaveText("Stopped.");
-  await expect(app.notes).toHaveText("You stopped the translation. The text above is incomplete.");
+  await expect(app.meta).toHaveText("You stopped the translation. The text above is incomplete.");
+  await expect(app.meta).toHaveText("You stopped the translation. The text above is incomplete.");
   await expect(app.output).not.toContainText("five");
   await expect(app.translate).toHaveAttribute("aria-disabled", "false");
   await expect.poll(async () => (await mock.state()).aborted).toBeGreaterThan(0);
@@ -60,7 +60,7 @@ test("Markdown output is rendered while it streams: finished blocks stay in plac
   await heading.evaluate((el) => ((el as any).dataset.seen = "1"));
   await expect(app.output.locator("li")).toHaveCount(2);
   await expect(app.stop).toBeVisible();
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await expect(app.output.locator("h3[data-seen]")).toHaveCount(1);
   await expect(app.output.locator("p")).toHaveText(["第一段。", "结束"]);
   await expect(app.output.locator("p strong")).toHaveText("结束");
@@ -82,7 +82,7 @@ test("remembers the language choice across reloads", async ({ app }) => {
   await app.to.selectOption("ja");
   await app.text.fill("Hi");
   await app.translate.click();
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await app.page.reload();
   await expect(app.to).toHaveValue("ja");
   await expect(app.from).toHaveValue("en");
@@ -99,7 +99,7 @@ test("a glossary reaches the engine and a bad glossary line is rejected in the p
 
   await app.page.getByLabel("Glossary", { exact: true }).fill("cat = 猫");
   await app.translate.click();
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   const { requests } = await mock.state();
   expect(requests[0]!.prompt).toContain("cat");
   expect(requests[0]!.prompt).toContain("猫");
@@ -115,7 +115,7 @@ test("a long English text selects the document model, swaps the engine and warns
   await expect(app.advice).toBeEmpty(); // the model is named in the status line instead
 
   await app.translate.click();
-  await expect(app.progress).toContainText("Done, with");
+  await expect(app.meta).toContainText("generated");
   await expect(app.meta).toContainText("Index-NativeLong-9B");
   await expect(app.notes.first()).toContainText(/paragraph/i);
   await expect(app.engine).toHaveText("Engine ready, Index-NativeLong-9B loaded.");
@@ -128,7 +128,7 @@ test("the manual model choice overrides the length rule", async ({ app }) => {
   await app.model("Index-NativeLong-9B").click();
   await expect(app.advice).toContainText("cannot translate this");
   await app.translate.click();
-  await expect(app.error).toContainText("Index-NativeLong-9B cannot translate this");
+  await expect(app.meta).toContainText("Index-NativeLong-9B cannot translate this");
   await app.model("Index-Translate-9B").click();
   await expect(app.advice).toBeEmpty();
 });
@@ -139,7 +139,7 @@ test("a truncated translation is flagged as incomplete", async ({ app, mock }) =
   await app.text.fill("A sentence.");
   await app.translate.click();
   await expect(app.notes.first()).toContainText("cut off because it reached the output limit");
-  await expect(app.progress).toContainText("Done, with a warning");
+  await expect(app.meta).toContainText("generated");
 });
 
 test("an engine error mid-stream keeps the partial text and says it is incomplete", async ({ app, mock }) => {
@@ -147,9 +147,9 @@ test("an engine error mid-stream keeps the partial text and says it is incomplet
   await app.open();
   await app.text.fill("A sentence.");
   await app.translate.click();
-  await expect(app.error).not.toBeEmpty();
+  await expect(app.meta).not.toBeEmpty();
   await expect(app.output).toHaveText("partial");
-  await expect(app.notes.first()).toContainText("error interrupted it");
+  await expect(app.meta).toContainText("error interrupted it");
 });
 
 test("text over the input limit shows the server's input_too_long message", async ({ app, mock }) => {
@@ -157,7 +157,7 @@ test("text over the input limit shows the server's input_too_long message", asyn
   await app.text.fill("a".repeat(30_000));
   await app.model("Index-Translate-9B").click();
   await app.translate.click();
-  await expect(app.error).toContainText("The text is too long for one translation");
+  await expect(app.meta).toContainText("The text is too long for one translation");
   expect((await mock.state()).requests).toHaveLength(0);
 });
 
@@ -176,7 +176,7 @@ test("a full queue shows the busy message", async ({ app, mock, request, baseURL
 
   await app.text.fill("third");
   await app.translate.click();
-  await expect(app.error).toHaveText("The translator is busy and its queue is full. Try again in a minute.");
+  await expect(app.meta).toHaveText("The translator is busy and its queue is full. Try again in a minute.");
   await Promise.all([first, second]);
 });
 
@@ -186,7 +186,7 @@ test("the model switches back to chat for a short text after a document load", a
   await app.model("Index-NativeLong-9B").click();
   await app.text.fill("Short text.");
   await app.translate.click();
-  await expect(app.progress).toContainText("Done");
+  await expect(app.meta).toContainText("generated");
   await expect(app.engine).toContainText("NativeLong");
   await app.model("Automatic").click();
   await app.translate.click();

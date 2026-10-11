@@ -129,12 +129,6 @@ export function resultNotes(done: Pick<Done, "finish_reason">, ctx: ResultContex
   return notes;
 }
 
-/** The progress line after a finished translation. */
-export function doneMessage(notes: string[]): string {
-  if (!notes.length) return "Done.";
-  return `Done, with ${notes.length === 1 ? "a warning" : `${notes.length} warnings`}: ${notes.join(" ")}`;
-}
-
 export function metaLine(model: ModelId, done: Done): string {
   return `${MODEL_LABELS[model]} · ${number.format(done.usage.prompt_tokens)} prompt tokens · ${number.format(done.usage.completion_tokens)} generated · ${seconds(done.timings.generation_ms + done.timings.queue_ms)}`;
 }

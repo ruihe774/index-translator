@@ -133,17 +133,12 @@
     box-shadow: var(--shadow);
   }
 
-  /* Lines that come and go (progress, warnings, hints, field errors) sit below everything
-     else in the panel, so nothing above them moves when they appear. The translation panel
-     reserves room for its usual two lines. */
+  /* Lines that come and go (warnings, hints, field errors) sit below everything else in the
+     panel, so nothing above them moves when they appear. */
   .status {
     display: flex;
     flex-direction: column;
     gap: 0.5rem;
-  }
-
-  .result .status {
-    min-block-size: 4rem;
   }
 
   .panel-foot {
@@ -157,17 +152,12 @@
 }
 
 @layer components {
-  .engine,
-  .progress {
+  .engine {
     color: var(--muted);
   }
 
   .engine a {
     color: inherit;
-  }
-
-  .progress:empty {
-    display: none;
   }
 
   .hint {
@@ -177,14 +167,6 @@
 
   .error {
     color: var(--error);
-    font-weight: 600;
-  }
-
-  .error-banner:not(:empty) {
-    color: var(--error);
-    border: 2px solid var(--error);
-    border-radius: var(--radius-md);
-    padding: 0.5rem 0.75rem;
     font-weight: 600;
   }
 
@@ -420,9 +402,14 @@
     border-radius: var(--radius-md);
   }
 
-  /* Each side scrolls to the paragraph clicked on the other. */
-  .output-area.synced {
+  /* Each side scrolls to the paragraph clicked on the other; hovering shows which one. */
+  .synced {
     cursor: pointer;
+  }
+
+  .synced [data-line]:hover {
+    background: color-mix(in srgb, var(--accent) 16%, transparent);
+    border-radius: var(--radius-min);
   }
 
   .pane-head {

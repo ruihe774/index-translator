@@ -17,7 +17,7 @@ for (const scheme of ["light", "dark"] as const) {
 
     await app.text.fill("Hello, world");
     await app.translate.click();
-    await expect(app.progress).toHaveText("Done.");
+    await expect(app.meta).toContainText("generated");
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toEqual([]);
   });

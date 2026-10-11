@@ -4,7 +4,6 @@ import {
   SAME_LANGUAGE_WARNING,
   STOPPED_NOTE,
   adviceMessage,
-  doneMessage,
   healthMessage,
   interruption,
   metaLine,
@@ -106,7 +105,7 @@ describe("seconds", () => {
   });
 });
 
-describe("resultNotes and doneMessage", () => {
+describe("resultNotes", () => {
   const ctx = { source: "一\n二\n三", translation: "1\n2\n3", model: CHAT_MODEL, sourceLang: undefined, targetLang: "en" } as const;
 
   test("a clean result has no notes", () => {
@@ -135,11 +134,6 @@ describe("resultNotes and doneMessage", () => {
     expect(notes[0]).toContain("output limit");
     expect(notes[1]).toContain("lines");
     expect(notes[2]).toContain("Chinese-to-English");
-  });
-  test("doneMessage: none, one, several", () => {
-    expect(doneMessage([])).toBe("Done.");
-    expect(doneMessage(["A."])).toBe("Done, with a warning: A.");
-    expect(doneMessage(["A.", "B."])).toBe("Done, with 2 warnings: A. B.");
   });
 });
 

@@ -45,7 +45,7 @@ test("queued, start and delta events drive the progress line and output", async 
   );
   await run(app);
   await expect(app.output).toHaveText("你好");
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await expect(app.meta).toHaveText("Index-Translate-9B · 10 prompt tokens · 3 generated · 0.5 s");
 });
 
@@ -60,7 +60,7 @@ test("sends stream:true and the chosen languages", async ({ app }) => {
   await app.to.selectOption("ja");
   await app.text.fill("Hello");
   await app.translate.click();
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   expect(sent).toMatchObject({ text: "Hello", target_lang: "ja", source_lang: "en", stream: true });
 });
 
@@ -75,7 +75,7 @@ for (const [name, status, error, message] of [
     await stubTranslate(app, status, JSON.stringify({ error }), "application/json");
     await run(app);
     // Substring match: the exact wording for each code lives in public/errors.ts and its unit tests.
-    await expect(app.error).toContainText(message.replace("The engine", "The translation engine"));
+    await expect(app.meta).toContainText(message.replace("The engine", "The translation engine"));
     await expect(app.output).toHaveText("");
     await expect(app.translate).toHaveAttribute("aria-disabled", "false");
   });
@@ -84,15 +84,15 @@ for (const [name, status, error, message] of [
 test("a dropped connection before the done event is reported", async ({ app }) => {
   await stubTranslate(app, 200, sse([["delta", { text: "part" }]]));
   await run(app);
-  await expect(app.error).toHaveText("the connection closed before the translation finished");
+  await expect(app.meta).toContainText("the connection closed before the translation finished");
   await expect(app.output).toHaveText("part");
-  await expect(app.notes.first()).toContainText("error interrupted it");
+  await expect(app.meta).toContainText("error interrupted it");
 });
 
 test("an unreachable server says so", async ({ app }) => {
   await app.page.route("**/api/v1/translate", (route) => route.abort("connectionrefused"));
   await run(app);
-  await expect(app.error).toHaveText("The server cannot be reached.");
+  await expect(app.meta).toHaveText("The server cannot be reached.");
 });
 
 test("falls back to three languages when /languages fails", async ({ app }) => {
@@ -131,7 +131,7 @@ test("copy puts the translation on the clipboard", async ({ app, context }) => {
   await stubTranslate(app, 200, sse([["delta", { text: "你好" }], ["done", done]]));
   await run(app);
   await app.copy.click();
-  await expect(app.progress).toHaveText("Translation copied to the clipboard.");
+  await expect(app.meta).toHaveText("Translation copied to the clipboard.");
   expect(await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText())).toBe("你好");
 });
 
@@ -141,7 +141,7 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   await stubTranslate(app, 200, sse([...[...md].map((c): [string, unknown] => ["delta", { text: c }]), ["done", done]]));
   await run(app, "# Title\n\n- **one**\n- [link](https://example.com)");
 
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await expect(app.output.locator("h3")).toHaveText("标题");
   await expect(app.output.locator("ul > li")).toHaveCount(3);
   await expect(app.output.locator("li strong")).toHaveText("一");
@@ -161,7 +161,7 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
 test("plain source: Markdown-like output stays plain text", async ({ app }) => {
   await stubTranslate(app, 200, sse([["delta", { text: "# 不是标题\n**也不粗**" }], ["done", done]]));
   await run(app, "Hello there");
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await expect(app.output).toHaveText("# 不是标题\n**也不粗**");
   // One span per line, nothing rendered.
   await expect(app.output.locator("> span")).toHaveText(["# 不是标题\n", "**也不粗**"]);
@@ -173,7 +173,7 @@ test("Markdown source: rendered in place of the textarea after Translate, with R
   const md = "# Title\n\nSome **bold** text.";
   await stubTranslate(app, 200, sse([["delta", { text: "# 标题\n\n一些**粗体**文字。" }], ["done", done]]));
   await run(app, md);
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
 
   const sourceView = app.page.locator("#source-view");
   const sourceSwitch = app.page.locator("#source-switch");
@@ -205,7 +205,7 @@ test("Markdown source: rendered in place of the textarea after Translate, with R
 test("plain source: the textarea stays and no switches are offered", async ({ app }) => {
   await stubTranslate(app, 200, sse([["delta", { text: "你好" }], ["done", done]]));
   await run(app, "Hello");
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await expect(app.text).toBeVisible();
   await expect(app.page.locator("#source-switch")).toBeHidden();
   await expect(app.page.locator("#output-switch")).toBeHidden();
@@ -214,7 +214,7 @@ test("plain source: the textarea stays and no switches are offered", async ({ ap
 test("Clear empties both sides and returns the source to the plain textarea", async ({ app }) => {
   await stubTranslate(app, 200, sse([["delta", { text: "# 标题" }], ["done", done]]));
   await run(app, "# Title");
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await expect(app.text).toBeHidden();
 
   await app.page.getByRole("button", { name: "Clear" }).click();
@@ -226,7 +226,7 @@ test("Clear empties both sides and returns the source to the plain textarea", as
   await expect(app.page.locator("#output-switch")).toBeHidden();
   await expect(app.output).toBeEmpty();
   await expect(app.page.locator("#placeholder")).toBeVisible();
-  await expect(app.progress).toHaveText("");
+  await expect(app.meta).toHaveText("");
   await expect(app.copy).toBeHidden();
   await expect(app.page.locator("#count")).toHaveText("0 letters");
 });
@@ -247,8 +247,8 @@ test("matching paragraphs: a click on either side scrolls the other to the same 
   const translation = "# 文档\n\n" + paragraphs(30, (i) => `第${i}段 ${"字".repeat(i % 2 ? 10 : 90)}`);
   await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
   await run(app, source);
-  await expect(app.progress).toHaveText("Done.");
-  await expect(app.page.locator("#sync-hint")).toBeVisible();
+  await expect(app.meta).toContainText("generated");
+  await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
 
   // Output paragraph 20 is the 21st <p>; the source's matching one is the 21st <p> too.
   await app.output.locator("p").nth(20).click();
@@ -263,10 +263,10 @@ test("matching paragraphs: a click on either side scrolls the other to the same 
 
   // Editing the source in Raw ends the sync.
   await app.page.locator("#source-switch").getByRole("button", { name: "Raw" }).click();
-  await expect(app.page.locator("#sync-hint")).toBeVisible();
+  await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
   await app.text.press("End");
   await app.text.pressSequentially("x");
-  await expect(app.page.locator("#sync-hint")).toBeHidden();
+  await expect(app.page.locator("#output-area")).not.toHaveClass(/synced/);
 });
 
 test("matching lines in plain text: the raw textarea and the output sync both ways", async ({ app }) => {
@@ -275,8 +275,8 @@ test("matching lines in plain text: the raw textarea and the output sync both wa
   const translation = Array.from({ length: 80 }, (_, i) => `第${i}行`).join("\n");
   await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
   await run(app, source);
-  await expect(app.progress).toHaveText("Done.");
-  await expect(app.page.locator("#sync-hint")).toBeVisible();
+  await expect(app.meta).toContainText("generated");
+  await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
 
   await app.output.locator('span[data-line="60"]').click();
   // The lines are short and do not wrap, so line 60 starts 60 line heights below the first.
@@ -305,8 +305,8 @@ test("paragraphs that do not match: no sync", async ({ app }) => {
   const translation = "# 文档\n\n" + paragraphs(25, (i) => `第${i}段`);
   await stubTranslate(app, 200, sse([["delta", { text: translation }], ["done", done]]));
   await run(app, source);
-  await expect(app.progress).toContainText("Done, with a warning");
-  await expect(app.page.locator("#sync-hint")).toBeHidden();
+  await expect(app.meta).toContainText("generated");
+  await expect(app.page.locator("#output-area")).not.toHaveClass(/synced/);
   await app.output.locator("p").nth(20).click();
   expect(await app.page.locator("#source-area").evaluate((el) => el.scrollTop)).toBe(0);
 });

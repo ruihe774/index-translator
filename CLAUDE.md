@@ -134,7 +134,7 @@ Hence the 11,000-letter switch point.
   are limited to `http(s):` and `mailto:`. Copy and the paragraph check use the raw text. Parser
   changes keep `bun scripts/commonmark.ts` passing and `docs/markdown-conformance.md` in step. The
   rendered output's accessibility review is still pending (not yet in `A11Y-ACCEPTANCE.md`).
-- Layout: the text box, the source preview and the translation share one height (`--pane-height`), so the panes line up and switching Raw/Preview shifts nothing; the text box does not resize. Under each panel's text area comes its button row (the translation panel: meta line and Copy), then a `.status` block with the lines that come and go (progress, errors, notes, sync hint, field errors, warnings), so nothing above them moves; the translation panel's `.status` reserves two lines. Stop replaces Clear while a translation runs (never both), and the three buttons share one width. Disabled (`aria-disabled`) buttons have no hover style. The model switch (Automatic / Index-Translate-9B / Index-NativeLong-9B) is a button group like Raw/Preview; only warnings (`adviceMessage`) are shown under the source, the model in use is named in the status line. The engine status in the header links to `/api/v1/health`.
+- Layout: the text box, the source preview and the translation share one height (`--pane-height`), so the panes line up and switching Raw/Preview shifts nothing; the text box does not resize. Under each panel's text area comes its button row (the translation panel: the `#meta` line and Copy). `#meta` is the one status line of the translation panel: progress while running, then the result numbers, or the stop/error text, or briefly the copy confirmation; errors are styled and `role="alert"`. Warnings after a finished translation stay in `#notes` below the button row (up to three: output limit, paragraph mismatch, zh→en loss), which is absent when empty. Stop replaces Clear while a translation runs (never both), and the three buttons share one width. Disabled (`aria-disabled`) buttons have no hover style. The model switch (Automatic / Index-Translate-9B / Index-NativeLong-9B) is a button group like Raw/Preview; only warnings (`adviceMessage`) are shown under the source, the model in use is named in the status line. The engine status in the header links to `/api/v1/health`.
 - Source preview and views: after Translate, a source that passes `looksLikeMarkdown` is rendered
   (whole, not streamed) in `#source-view` in place of the textarea; each side has a Raw / Preview
   switch (source Raw is the textarea, re-rendered on Preview). Clear empties both sides and restores
@@ -143,7 +143,7 @@ Hence the 11,000-letter switch point.
 - Click-to-sync scrolling (`public/sync-scroll.ts`) is on only after a translation that finished
   with `stop` and whose block count, in the source's unit, equals the source's (`alignBlocks` in
   `public/paragraphs.ts`), and only while the source and output text are unchanged. Block i maps to
-  block i; the clicked block's top is lined up on the other side, which is a scroll container
+  block i; blocks show a background on hover while sync is on; the clicked block's top is lined up on the other side, which is a scroll container
   (`--pane-max`). The raw textarea is measured with a hidden mirror element.
 - The source preview, the view switches, Clear and sync scrolling have not been reviewed for
   accessibility yet (not in `A11Y-ACCEPTANCE.md`); `e2e/a11y.spec.ts` passes.

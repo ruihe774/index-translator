@@ -61,8 +61,6 @@ export class AppPage {
   readonly copy: Locator;
   readonly engine: Locator;
   readonly advice: Locator;
-  readonly progress: Locator;
-  readonly error: Locator;
   readonly output: Locator;
   readonly meta: Locator;
   readonly notes: Locator;
@@ -76,8 +74,6 @@ export class AppPage {
     this.copy = page.getByRole("button", { name: "Copy translation" });
     this.engine = page.locator("#engine");
     this.advice = page.locator("#advice");
-    this.progress = page.locator("#progress");
-    this.error = page.locator("#error");
     this.output = page.locator("#output");
     this.meta = page.locator("#meta");
     this.notes = page.locator("#notes li");

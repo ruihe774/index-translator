@@ -21,7 +21,7 @@ test("source and translation areas line up, before and after a translation", asy
 
   await app.text.fill("Hello, world");
   await app.translate.click();
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   const done = { source: await box(app, "#text"), output: await box(app, "#output-area") };
   expect(done.source).toEqual(idle.source);
   expect(done.output).toEqual(idle.output);
@@ -33,7 +33,7 @@ test("long text and a long translation do not change the pane size", async ({ ap
   const before = await box(app, "#text");
   await app.text.fill("line\n\n".repeat(200));
   await app.translate.click();
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   const after = await box(app, "#text");
   expect({ ...after, y: 0 }).toEqual({ ...before, y: 0 }); // the page may scroll, the size must not change
   expect((await box(app, "#output-area")).height).toBe(before.height);
@@ -46,7 +46,7 @@ test("Raw and Preview of the source, and of the translation, have one size and p
   await app.text.fill(MARKDOWN);
   const raw = await box(app, "#text");
   await app.translate.click();
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
 
   expect(await box(app, "#source-area")).toEqual(raw);
   const outputPreview = await box(app, "#output-area");
@@ -64,30 +64,29 @@ test("the text box cannot be resized", async ({ app }) => {
   expect(await app.text.evaluate((el) => getComputedStyle(el).resize)).toBe("none");
 });
 
-test("status text sits below the translation, with the other status text", async ({ app, mock }) => {
+test("progress, errors and copy confirmations share the meta line under the translation", async ({ app, mock }) => {
   await mock.set({ chunks: [THINK, "你好"], delayMs: 300 });
   await app.open();
   await app.text.fill("Hello");
   await app.translate.click();
   const area = await box(app, "#output-area");
-  await expect(app.progress).toContainText("Translating with Index-Translate-9B");
-  expect((await box(app, "#progress")).y).toBeGreaterThanOrEqual(area.y + area.height);
-  await expect(app.progress).toHaveText("Done.");
-  expect((await box(app, "#progress")).y).toBeGreaterThanOrEqual(area.y + area.height);
+  await expect(app.meta).toContainText("Translating with Index-Translate-9B");
+  expect((await box(app, "#meta")).y).toBeGreaterThanOrEqual(area.y + area.height);
+  await expect(app.meta).toContainText("generated");
   await app.copy.click();
-  await expect(app.progress).toHaveText(/copied|Copying failed/);
-  // The meta line and Copy sit under the translation, the status lines below them.
-  expect((await box(app, "#meta")).y).toBeLessThan((await box(app, "#progress")).y);
+  await expect(app.meta).toHaveText(/copied|Copying failed/);
+  expect((await box(app, "#meta")).y).toBeGreaterThanOrEqual(area.y + area.height);
 });
 
-test("an error banner is below the translation too", async ({ app, mock }) => {
+test("an error shows in the meta line too", async ({ app, mock }) => {
   await mock.set({ failWith: "boom" });
   await app.open();
   await app.text.fill("Hello");
   await app.translate.click();
-  await expect(app.error).not.toBeEmpty();
+  await expect(app.meta).not.toBeEmpty();
+  await expect(app.meta).toHaveAttribute("role", "alert");
   const area = await box(app, "#output-area");
-  expect((await box(app, "#error")).y).toBeGreaterThanOrEqual(area.y + area.height);
+  expect((await box(app, "#meta")).y).toBeGreaterThanOrEqual(area.y + area.height);
 });
 
 test("the text box and the option boxes carry their instructions as placeholders", async ({ app }) => {
@@ -179,7 +178,7 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
   const buttons = await layout(app, sizes);
 
   await app.translate.click();
-  await expect(app.progress).toContainText("Translating");
+  await expect(app.meta).toContainText("Translating");
   await expect(app.stop).toBeVisible();
   const running = await layout(app, STABLE.filter((s) => s !== "#meta"));
   for (const [k, v] of Object.entries(running)) expect(v, `while running: ${k}`).toEqual(idle[k]);
@@ -187,9 +186,9 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
   expect(await box(app, "#stop")).toEqual(buttons["#clear"]);
   expect(await box(app, "#translate")).toEqual(buttons["#translate"]);
 
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await expect(app.copy).toBeVisible();
-  await expect(app.page.locator("#sync-hint")).toBeVisible();
+  await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
   const done = await layout(app, STABLE.filter((s) => s !== "#meta"));
   for (const [k, v] of Object.entries(done)) expect(v, `when done: ${k}`).toEqual(idle[k]);
   expect(await box(app, "#clear")).toEqual(buttons["#clear"]);
@@ -207,7 +206,7 @@ test("Clear and Stop are never shown together", async ({ app, mock }) => {
   await expect(app.stop).toBeVisible();
   await expect(clear).toBeHidden();
   await app.stop.click();
-  await expect(app.progress).toHaveText("Stopped.");
+  await expect(app.meta).toHaveText(/stopped/i);
   await expect(clear).toBeVisible();
   await expect(app.stop).toBeHidden();
 });
@@ -225,7 +224,7 @@ test("the disabled Translate button does not react to hover", async ({ app, mock
   await app.translate.hover();
   await app.page.waitForTimeout(400);
   expect(await bg()).toBe(away);
-  await expect(app.progress).toHaveText("Done.");
+  await expect(app.meta).toContainText("generated");
   await app.page.mouse.move(0, 0);
   await app.page.waitForTimeout(400);
   const enabled = await bg();
