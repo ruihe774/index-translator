@@ -99,7 +99,8 @@ function clean(text: string, lang: string): string {
   let s = text.replace(WEB_ADDRESS, hostOf);
   // "<" "|" ">" would be taken for the model's inline pronunciation syntax, <word|reading>.
   s = s.replace(/[<>|]/g, " ");
-  if (lang === "ja") s = s.replace(/\d[\d,]*(?:\.\d+)?/g, kanjiNumber);
+  // Commas count as thousands separators only in the strict form 1,234,567; "1,2,3" and "2026, then" keep theirs.
+  if (lang === "ja") s = s.replace(/\d{1,3}(?:,\d{3})+(?!\d)(?:\.\d+)?|\d+(?:\.\d+)?/g, kanjiNumber);
   s = s.replace(/\s+/g, " ").trim();
   // Spaces left between Chinese or Japanese characters, as around a link or bold text, are heard as breaks.
   return isCjk(lang) ? s.replace(CJK_GAP, "") : s;

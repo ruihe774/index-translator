@@ -130,6 +130,22 @@ describe("cleaning", () => {
     expect(texts("3. 依存関係をインストールします", true, "ja")).toEqual(["三、依存関係をインストールします。"]);
     expect(texts("2026年有15位研究人员。", false, "zh")).toEqual(["2026年有15位研究人员。"]);
   });
+
+  test("Japanese: commas are thousands separators only in the strict form", () => {
+    expect(texts("1,2,3", false, "ja")).toEqual(["一,二,三"]);
+    expect(texts("2026, then 15", false, "ja")).toEqual(["二千二十六, then 十五"]);
+    expect(texts("1,234,567円", false, "ja")).toEqual(["百二十三万四千五百六十七円"]);
+    expect(texts("1,234.5と12,3456", false, "ja")).toEqual(["千二百三十四点五と十二,三千四百五十六"]);
+    expect(texts("23.5%", false, "ja")).toEqual(["二十三点五%"]);
+  });
+
+  test("other languages leave numbers and commas alone", () => {
+    for (const lang of ["en", "zh", "es", "ar"]) {
+      expect(texts("1,2,3 and 1,234,567 in 2026, then 23.5", false, lang)).toEqual([
+        "1,2,3 and 1,234,567 in 2026, then 23.5",
+      ]);
+    }
+  });
 });
 
 test("kanjiNumber", () => {
