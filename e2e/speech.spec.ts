@@ -190,6 +190,7 @@ test("voice and speed apply from the piece being read, and are remembered", asyn
   const listen = app.page.locator("#listen-source");
   await listen.click();
   await expect.poll(async () => (await mock.state()).speech.requests.length).toBeGreaterThan(0);
+  await app.page.getByText("Reading aloud", { exact: true }).click();
   await app.page.getByLabel("Reading speed").selectOption("1.5");
   await app.page.getByLabel("Voice for reading aloud").selectOption("voice_02");
   await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
@@ -202,6 +203,7 @@ test("voice and speed apply from the piece being read, and are remembered", asyn
   expect(SPOKEN.slice(-changed.length)).toEqual(changed);
 
   await app.page.reload();
+  await app.page.getByText("Reading aloud", { exact: true }).click();
   await expect(app.page.getByLabel("Reading speed")).toHaveValue("1.5");
   await expect(app.page.getByLabel("Voice for reading aloud")).toHaveValue("voice_02");
 });
