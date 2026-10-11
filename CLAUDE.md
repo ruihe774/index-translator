@@ -14,6 +14,7 @@ Dev tools (TypeScript, `@types/bun`, Playwright, doiuse, postcss) come from `nod
 - Test: `bun test` (API tests use a mock engine; no GPU needed)
 - Typecheck: `bun run typecheck`
 - Frontend e2e/integration/a11y: `bun run e2e` (Playwright, mock engine; see `e2e/README.md`; `bunx playwright install chromium` or `CHROMIUM_PATH`)
+- Lint and format: `bun run check` (Biome, recommended rules; `bun run format` writes). Errors must stay at zero; the style warnings (`noNonNullAssertion`, `noExplicitAny`, `useTemplate`) are tolerated
 - CSS browser-support check: `bun run lint:css` (doiuse against `.browserslistrc`)
 - Setup: `bun scripts/fetch_llama.ts` (vendor/llama.cpp with the tag's headers in `include/`, checksums verified); `uv run scripts/fetch_models.py` (models/, about 14 GiB)
 - Markdown conformance: `bun scripts/commonmark.ts` (CommonMark spec examples against `public/markdown.ts`; divergences in `docs/markdown-conformance.md`)
