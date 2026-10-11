@@ -137,6 +137,86 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
+const LINK_SOURCE = "[A](https://a.example)\n\n[B](https://b.example)\n\n[C](https://c.example)";
+const LINK_OUTPUT = "[甲](https://a.example)\n\n[乙](https://a.example)\n\n[丙](https://evil.example)";
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`marked links and the link dialog pass axe in ${scheme} mode`, async ({ app, mock }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await mock.set({ chunks: [LINK_OUTPUT] });
+    await app.open();
+    await app.text.fill(LINK_SOURCE);
+    await app.translate.click();
+    await expect(app.meta).toContainText("generated");
+    await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+
+    // Paired, mismatched (marked) and missing (disabled) links are all present.
+    await expect(app.output.locator("a[data-link-paired]")).toHaveCount(1);
+    await expect(app.output.locator('a[data-link-problem="mismatch"]')).toHaveCount(1);
+    await expect(app.output.locator('a[data-link-problem="missing"][aria-disabled="true"]')).toHaveCount(1);
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+
+    for (const name of ["甲", "乙"]) {
+      await app.output.getByRole("link", { name }).click();
+      await expect(app.page.locator("dialog.link-dialog")).toBeVisible();
+      results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+      expect(results.violations).toEqual([]);
+      await app.page.keyboard.press("Escape");
+    }
+  });
+}
+
+test("the link dialog is keyboard operable: focus moves in, stays in, Esc closes and focus returns", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ chunks: [LINK_OUTPUT] });
+  await app.open();
+  await app.text.fill(LINK_SOURCE);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+
+  const link = app.output.getByRole("link", { name: "乙" });
+  await link.focus();
+  await app.page.keyboard.press("Enter");
+  const dialog = app.page.locator("dialog.link-dialog");
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAttribute("aria-labelledby", "link-dialog-title");
+  await expect(dialog).toHaveAccessibleDescription(/could not be matched/);
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  for (let i = 0; i < 4; i++) {
+    await app.page.keyboard.press("Tab");
+    // The page behind is inert: focus is in the dialog or has left the document (browser chrome).
+    expect(
+      await app.page.evaluate(
+        () => document.activeElement === document.body || !!document.activeElement?.closest("dialog"),
+      ),
+    ).toBe(true);
+  }
+  await app.page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(link).toBeFocused();
+});
+
+test("the link dialog needs no horizontal scrolling at 320 px and its buttons are 44 px", async ({ app, mock }) => {
+  await mock.set({ chunks: [LINK_OUTPUT] });
+  await app.page.setViewportSize({ width: 320, height: 640 });
+  await app.open();
+  await app.text.fill(LINK_SOURCE);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  await app.output.getByRole("link", { name: "乙" }).click();
+  const dialog = app.page.locator("dialog.link-dialog");
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+  for (const b of await dialog.getByRole("button").all()) {
+    expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+  }
+});
+
 test("the Model switch buttons report their state and are reachable by keyboard", async ({ app }) => {
   await app.open();
   await app.model("Automatic").focus();
