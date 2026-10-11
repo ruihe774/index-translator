@@ -9,7 +9,9 @@
 import type { Segment } from "./speech-text.js";
 
 /** How long a jump waits for another before the audio of its block is requested. */
-const JUMP_SETTLE_MS = 300;
+export const JUMP_SETTLE_MS = 300;
+/** The same for a change of voice or speed: moving through the speed list must not ask for every step. */
+export const UPDATE_SETTLE_MS = 300;
 
 export type PlayerState = "idle" | "loading" | "playing" | "paused";
 
@@ -109,11 +111,7 @@ export class SpeechPlayer {
     this.index = target;
     this.hooks.onSegment(this.segments[target]!);
     this.refresh();
-    const run = this.run;
-    this.jumpTimer = setTimeout(() => {
-      this.jumpTimer = null;
-      if (run === this.run) void this.play(target, 0);
-    }, JUMP_SETTLE_MS);
+    this.playAfter(target, JUMP_SETTLE_MS);
     return true;
   }
 
@@ -153,7 +151,17 @@ export class SpeechPlayer {
     this.settings = { ...this.settings, ...settings };
     if (!this.active) return;
     this.cancel();
-    void this.play(this.index, 0);
+    this.refresh();
+    this.playAfter(this.index, UPDATE_SETTLE_MS);
+  }
+
+  /** Requests the audio of piece `i` once nothing has changed for `ms`. */
+  private playAfter(i: number, ms: number): void {
+    const run = this.run;
+    this.jumpTimer = setTimeout(() => {
+      this.jumpTimer = null;
+      if (run === this.run) void this.play(i, 0);
+    }, ms);
   }
 
   private cancel(): void {
@@ -209,8 +217,10 @@ export class SpeechPlayer {
     }
     // The silence after the previous piece runs on the audio clock, which a pause stops.
     const startAt = ctx.currentTime + delayMs / 1000;
-    if (!this.loaded.has(i)) this.source = null;
-    this.refresh();
+    if (!this.loaded.has(i)) {
+      this.source = null;
+      this.refresh();
+    }
 
     let buffer: AudioBuffer;
     try {
@@ -230,6 +240,8 @@ export class SpeechPlayer {
     source.connect(ctx.destination);
     source.onended = () => {
       if (run !== this.run) return;
+      // This piece is over: nothing is playing until the next one is scheduled or has to be fetched.
+      if (this.source === source) this.source = null;
       void this.play(i + 1, this.segments[i]!.pause);
     };
     source.start(Math.max(startAt, ctx.currentTime));

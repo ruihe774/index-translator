@@ -252,6 +252,203 @@ test("without the speech engine Listen says why and the speech settings stay hid
   expect((await mock.state()).speech.requests).toEqual([]);
 });
 
+test("the rendered source is read from Preview, and the shade follows in it", async ({ app, mock }) => {
+  await mock.set({ chunks: ["# 发布说明\n\n", "完成。\n"], speech: { delayMs: 300, audioSeconds: 0.5 } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(MARKDOWN);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  const view = app.page.locator("#source-view");
+  await expect(view).toBeVisible();
+  await app.page.locator("#listen-source").click();
+  await expect(view.locator(".speaking")).toHaveText("Release notes");
+  await expect(view.locator(".speaking")).toHaveAttribute("aria-current", "true");
+  await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(SPOKEN);
+});
+
+test("switching Raw and Preview while reading keeps the reading and the shade", async ({ app, mock }) => {
+  await mock.set({ chunks: ["# 发布说明\n\n", "完成。\n"], speech: { delayMs: 200, audioSeconds: 1 } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(MARKDOWN);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  const listen = app.page.locator("#listen-source");
+  const sourceSwitch = app.page.getByRole("group", { name: "Source view" });
+  await listen.click();
+  await expect(listen).toHaveAttribute("data-state", "playing");
+  await expect(app.page.locator("#source-view .speaking")).toHaveCount(1);
+  await sourceSwitch.getByRole("button", { name: "Raw" }).click();
+  await expect(app.page.locator("#source-view")).toBeHidden();
+  await expect(listen).not.toHaveAttribute("data-state", "idle");
+  await sourceSwitch.getByRole("button", { name: "Preview" }).click();
+  await expect(app.page.locator("#source-view .speaking")).toHaveCount(1);
+  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  await expect(app.page.locator("#source-view .speaking")).toHaveCount(0);
+  // The same reading all the way: nothing was asked twice or skipped.
+  expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(SPOKEN);
+});
+
+test("a 429 in the middle of a reading is explained and the buttons return to Listen", async ({ app, mock }) => {
+  await mock.set({ speech: { audioSeconds: 0.6 } });
+  let calls = 0;
+  await app.page.route("**/api/v1/speech", (route) => {
+    if (++calls < 2) return route.continue();
+    return route.fulfill({
+      status: 429,
+      contentType: "application/json",
+      body: JSON.stringify({ error: { code: "queue_full", message: "queue is full" } }),
+    });
+  });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(MARKDOWN);
+  const listen = app.page.locator("#listen-source");
+  await listen.click();
+  await expect(app.meta).toHaveText("The translator is busy and its queue is full. Try again in a minute.");
+  await expect(listen).toHaveAttribute("data-state", "idle");
+  await expect(app.page.locator("#pause-source")).toBeHidden();
+  await expect(listen).toHaveAttribute("aria-disabled", "false");
+});
+
+test("a speech_error in the middle of a reading is shown the same way", async ({ app, mock }) => {
+  await mock.set({ speech: { audioSeconds: 0.6 } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(MARKDOWN);
+  const listen = app.page.locator("#listen-source");
+  await listen.click();
+  await expect(listen).toHaveAttribute("data-state", "playing");
+  await mock.set({ speech: { failWith: "out of memory" } });
+  await expect(app.meta).toHaveText("Reading aloud failed: out of memory.");
+  await expect(listen).toHaveAttribute("data-state", "idle");
+});
+
+test("with no voice Listen says so, and a recorded voice is not needed to see the settings", async ({ app, mock }) => {
+  await mock.set({ speech: { voices: [] } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill("Hello");
+  const listen = app.page.locator("#listen-source");
+  const why = "Reading aloud needs a voice: upload or record a sample under Model and options.";
+  await expect(listen).toHaveAttribute("aria-disabled", "true");
+  await expect(listen).toHaveAccessibleDescription(why);
+  await listen.click({ force: true });
+  await expect(app.meta).toHaveText(why);
+  await app.page.getByText("Reading aloud", { exact: true }).click();
+  await expect(app.page.getByLabel("Voice for reading aloud").locator("option")).toHaveCount(0);
+  await expect(app.page.locator("#voice-record")).toBeVisible();
+  expect((await mock.state()).speech.requests).toEqual([]);
+});
+
+test("a saved voice that the server no longer has gives way to the first one", async ({ app, mock }) => {
+  await app.page.addInitScript(() => localStorage.setItem("voice", "gone_voice"));
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill("Hello there.");
+  await app.page.getByText("Reading aloud", { exact: true }).click();
+  await expect(app.page.getByLabel("Voice for reading aloud")).toHaveValue("voice_01");
+  const listen = app.page.locator("#listen-source");
+  await expect(listen).toHaveAttribute("aria-disabled", "false");
+  await listen.click();
+  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  expect((await mock.state()).speech.requests.map((r) => r.voice)).toEqual(["voice_01"]);
+});
+
+test.describe("reading aloud that becomes available later", () => {
+  const unavailable = "Reading aloud is not available: the speech engine is not installed.";
+
+  test("pressing a blocked Listen looks again and says when it works", async ({ app, mock }) => {
+    await mock.set({ speech: { state: "unavailable" } });
+    await app.open();
+    await app.from.selectOption("en");
+    await app.text.fill("Hello there.");
+    const listen = app.page.locator("#listen-source");
+    await expect(listen).toHaveAccessibleDescription(unavailable);
+    await expect(app.page.locator("#speech-settings")).toBeHidden();
+
+    await mock.set({ speech: { state: "stopped" } });
+    await listen.click({ force: true });
+    await expect(app.meta).toHaveText("Reading aloud is available now. Press Listen to start.");
+    await expect(listen).toHaveAttribute("aria-disabled", "false");
+    await expect(listen).toHaveAccessibleDescription("");
+    await expect(app.page.locator("#speech-settings")).toBeVisible();
+    await listen.click();
+    await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+    expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(["Hello there."]);
+  });
+
+  test("regaining focus looks again once, without polling", async ({ app, mock }) => {
+    await mock.set({ speech: { state: "unavailable" } });
+    let asked = 0;
+    app.page.on("request", (r) => {
+      if (r.url().endsWith("/api/v1/voices")) asked++;
+    });
+    await app.open();
+    await app.from.selectOption("en");
+    await app.text.fill("Hello there.");
+    const listen = app.page.locator("#listen-source");
+    await expect(listen).toHaveAttribute("aria-disabled", "true");
+    expect(asked).toBe(1);
+
+    await mock.set({ speech: { state: "stopped" } });
+    // Nothing asks by itself.
+    await app.page.waitForTimeout(3500);
+    expect(asked).toBe(1);
+    await expect(listen).toHaveAttribute("aria-disabled", "true");
+
+    // A burst of events is one look.
+    await app.page.evaluate(() => {
+      window.dispatchEvent(new Event("focus"));
+      window.dispatchEvent(new Event("focus"));
+      document.dispatchEvent(new Event("visibilitychange"));
+    });
+    await expect(listen).toHaveAttribute("aria-disabled", "false");
+    expect(asked).toBe(2);
+    // Working now: further focus events ask nothing.
+    await app.page.evaluate(() => window.dispatchEvent(new Event("focus")));
+    await app.page.waitForTimeout(300);
+    expect(asked).toBe(2);
+  });
+
+  test("a voice that appears (none at first) enables Listen and fills the list", async ({ app, mock }) => {
+    await mock.set({ speech: { voices: [] } });
+    await app.open();
+    await app.from.selectOption("en");
+    await app.text.fill("Hello there.");
+    const listen = app.page.locator("#listen-source");
+    await expect(listen).toHaveAttribute("aria-disabled", "true");
+    await mock.set({ speech: { voices: [{ id: "late", name: "Late voice" }] } });
+    await listen.click({ force: true });
+    await expect(listen).toHaveAttribute("aria-disabled", "false");
+    await expect(app.page.getByLabel("Voice for reading aloud").locator("option")).toHaveText(["Late voice"]);
+  });
+
+  test("after a failed reading the voice list is refreshed when Listen is pressed again", async ({ app, mock }) => {
+    await mock.set({ speech: { failWith: "out of memory" } });
+    await app.open();
+    await app.from.selectOption("en");
+    await app.text.fill("Hello there.");
+    const listen = app.page.locator("#listen-source");
+    await listen.click();
+    await expect(app.meta).toHaveText("Reading aloud failed: out of memory.");
+    await mock.set({
+      speech: {
+        failWith: "",
+        voices: [
+          { id: "voice_01", name: "Voice 01" },
+          { id: "voice_03", name: "Voice 03" },
+        ],
+      },
+    });
+    await listen.click();
+    await expect(app.page.getByLabel("Voice for reading aloud").locator("option")).toHaveText(["Voice 01", "Voice 03"]);
+    await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  });
+});
+
 // Recording a voice sample. Chromium runs with a fake microphone (a tone) and accepts its
 // permission prompt (flags in playwright.config.ts).
 test.describe("recording a voice sample", () => {

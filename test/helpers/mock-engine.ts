@@ -188,7 +188,11 @@ export const mockSpeech = {
 
 export function resetMockSpeech(): void {
   mockSpeech.state = "stopped";
-  mockSpeech.voices.length = 2;
+  // A test may have replaced the list (e2e control port), so restore the two built-in voices.
+  mockSpeech.voices = [
+    { id: "voice_01", name: "Voice 01" },
+    { id: "voice_02", name: "Voice 02" },
+  ];
   mockSpeech.delayMs = 0;
   mockSpeech.audioSeconds = 0.1;
   mockSpeech.failWith = undefined;

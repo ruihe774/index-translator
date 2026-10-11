@@ -107,6 +107,59 @@ describe("pieces", () => {
   });
 });
 
+describe("cutting by code points", () => {
+  const LONE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+
+  test("a long word of surrogate pairs is never cut inside a pair", () => {
+    // "a" + a pair is three UTF-16 units, so a cut every 400 units would land inside a pair.
+    const word = "a😀".repeat(500);
+    for (const lang of ["en", "zh"]) {
+      const parts = texts(word, false, lang);
+      expect(parts.length).toBeGreaterThan(1);
+      for (const p of parts) {
+        expect(LONE.test(p)).toBe(false);
+        expect(Array.from(p).length).toBeLessThanOrEqual(lang === "zh" ? 150 : 400);
+      }
+      expect(parts.join("")).toBe(word);
+    }
+  });
+
+  test("the limit counts code points, so astral characters fill a piece as full as BMP ones", () => {
+    const parts = texts("𠮷".repeat(1000), false, "zh");
+    expect(parts.map((p) => Array.from(p).length)).toEqual([150, 150, 150, 150, 150, 150, 100]);
+    expect(parts.some((p) => LONE.test(p))).toBe(false);
+  });
+});
+
+describe("tables and lists that are odd", () => {
+  test("pipes inside a cell are never spoken", () => {
+    const parts = texts("| Cmd | Use |\n|---|---|\n| a \\| b | x \\| y |", true);
+    expect(parts.length).toBe(1);
+    expect(parts[0]).not.toContain("|");
+    expect(parts[0]).toMatch(/^Cmd: a b, Use: x y\.$/);
+  });
+
+  test("a table without a header row text and with empty cells", () => {
+    expect(texts("| | |\n|---|---|\n| a | |\n| | |", true)).toEqual(["a."]);
+  });
+
+  test("empty and marker-only list items are dropped, numbering follows the source", () => {
+    expect(texts("- \n- real\n- **\n- ***", true)).toEqual(["real."]);
+    expect(texts("2. \n3. third\n4. `` ", true)).toEqual(["3. third."]);
+  });
+
+  test("a list of nothing but Markdown syntax gives no pieces", () => {
+    expect(texts("- **\n- __\n- []()", true)).toEqual([]);
+  });
+
+  test("links and images in list items are read by their text", () => {
+    expect(texts("- [docs](https://example.com/a)\n- ![logo](l.png) **bold** `code`", true)).toEqual([
+      "docs.",
+      "logo bold code.",
+    ]);
+  });
+});
+
 describe("cleaning", () => {
   test("a web address is read as its host", () => {
     expect(texts("See https://www.example.com/docs/a?b=1#c for more.", false)).toEqual(["See example.com for more."]);

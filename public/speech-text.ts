@@ -141,7 +141,11 @@ function clauses(sentence: string, hard: number): string[] {
     }
     for (const word of clause.split(/(?<=\s)/)) {
       if (word.length <= hard) push(word);
-      else for (let i = 0; i < word.length; i += hard) push(word.slice(i, i + hard));
+      else {
+        // By code points: the server's limit counts them, and a slice by UTF-16 units can cut a pair.
+        const chars = Array.from(word);
+        for (let i = 0; i < chars.length; i += hard) push(chars.slice(i, i + hard).join(""));
+      }
     }
   }
   if (cur) out.push(cur);
