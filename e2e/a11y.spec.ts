@@ -31,7 +31,10 @@ for (const scheme of ["light", "dark"] as const) {
     mock,
   }) => {
     await app.page.emulateMedia({ colorScheme: scheme });
-    await mock.set({ chunks: ["# 标题\n\n", "第一段。\n\n", "第二段。\n"], speech: { delayMs: 1000, audioSeconds: 5 } });
+    await mock.set({
+      chunks: ["# 标题\n\n", "第一段。\n\n", "第二段。\n"],
+      speech: { delayMs: 1000, audioSeconds: 5 },
+    });
     await app.open();
     await app.openAdvanced();
     await app.from.selectOption("en");
