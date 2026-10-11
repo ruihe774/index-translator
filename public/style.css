@@ -517,9 +517,12 @@
       display: none;
     }
 
-    /* Waiting for the first audio: the speech model may still be loading. */
-    &[data-state="loading"] svg {
-      animation: speech-wait 0.8s ease-in-out infinite alternate;
+    /* Waiting for the first audio: the speech model may still be loading. The state is also in the
+       button's name ("Stop reading…"); without the animation (reduced motion) the glyph is static. */
+    @media (prefers-reduced-motion: no-preference) {
+      &[data-state="loading"] svg {
+        animation: speech-wait 0.8s ease-in-out infinite alternate;
+      }
     }
   }
 
@@ -533,6 +536,16 @@
   .output .speaking {
     background: color-mix(in srgb, var(--accent) 24%, transparent);
     border-radius: var(--radius-min);
+    /* A bar at the start edge, so the block is not marked by shade alone (1.4.1). */
+    box-shadow: inset 0.25rem 0 0 var(--accent);
+    /* The bar sits in padding that the negative margin takes back out of the layout (the pane
+       has at least 0.75rem of side padding), so the text neither moves nor touches the bar. */
+    padding-inline: 0.75rem 0.5rem;
+    margin-inline: -0.75rem -0.5rem;
+
+    @media (forced-colors: active) {
+      outline: 2px solid Highlight;
+    }
   }
 
   .link-dialog {

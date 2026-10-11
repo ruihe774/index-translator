@@ -25,6 +25,65 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
+for (const scheme of ["light", "dark"] as const) {
+  test(`reading aloud passes axe in ${scheme} mode, with the controls out, one block shaded and at 320 px`, async ({
+    app,
+    mock,
+  }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await mock.set({ chunks: ["# 标题\n\n", "第一段。\n\n", "第二段。\n"], speech: { delayMs: 3000 } });
+    await app.open();
+    await app.openAdvanced();
+    await app.from.selectOption("en");
+    await app.text.fill("# Title\n\nFirst.\n\nSecond.\n");
+    await app.translate.click();
+    await expect(app.meta).toContainText("generated");
+    const listen = app.page.locator("#listen-output");
+    await listen.click();
+    await expect(app.output.locator(".speaking")).toHaveAttribute("aria-current", "true", { timeout: 10_000 });
+    await app.page.locator("#next-output").click();
+    await app.page.locator("#pause-output").click();
+    await expect(app.page.locator("#pause-output")).toHaveAccessibleName("Resume reading");
+    await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+    const results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+
+    // Every speech control is a 44 px target and, like the rest, needs no horizontal scrolling.
+    for (const id of ["listen-output", "prev-output", "pause-output", "next-output"]) {
+      const box = await app.page.locator(`#${id}`).boundingBox();
+      expect(box?.width).toBeGreaterThanOrEqual(44);
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+    }
+    await app.page.setViewportSize({ width: 320, height: 640 });
+    expect(
+      await app.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
+    ).toBeLessThanOrEqual(0);
+    await listen.click();
+    await expect(app.page.locator("#pause-output")).toBeHidden();
+  });
+}
+
+test("the speech controls are reached in order and focus does not get lost when reading ends", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ speech: { delayMs: 300 } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill("One.\n\nTwo.");
+  await app.page.locator("#listen-source").focus();
+  await app.page.keyboard.press("Enter");
+  const order: string[] = [];
+  for (let i = 0; i < 4; i++) {
+    await app.page.keyboard.press("Tab");
+    order.push(await app.page.evaluate(() => document.activeElement?.id ?? ""));
+  }
+  expect(order).toEqual(["prev-source", "pause-source", "next-source", "clear"]);
+  await app.page.locator("#pause-source").focus();
+  await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  expect(await app.page.evaluate(() => document.activeElement?.id)).toBe("listen-source");
+});
+
 test("two columns on a desktop viewport, one column at 320 px without horizontal scrolling", async ({ app }) => {
   await app.page.setViewportSize({ width: 1280, height: 800 });
   await app.open();

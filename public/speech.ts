@@ -8,6 +8,9 @@
 
 import type { Segment } from "./speech-text.js";
 
+/** How long a jump waits for another before the audio of its block is requested. */
+const JUMP_SETTLE_MS = 300;
+
 export type PlayerState = "idle" | "loading" | "playing" | "paused";
 
 export interface SpeechSettings {
@@ -41,6 +44,7 @@ export class SpeechPlayer {
   private source: AudioBufferSourceNode | null = null;
   private paused = false;
   private active = false;
+  private jumpTimer: ReturnType<typeof setTimeout> | null = null;
   state: PlayerState = "idle";
 
   constructor(
@@ -84,6 +88,61 @@ export class SpeechPlayer {
     this.refresh();
   }
 
+  /**
+   * Jumps to the start of the previous (-1) or next (1) block, a block being the run of pieces that
+   * share a `line`. "Previous" first returns to the start of the block being read, as media players
+   * do. Returns false when there is nowhere to go. Works while paused (it stays paused).
+   */
+  jump(direction: -1 | 1): boolean {
+    if (!this.active) return false;
+    const target = this.blockStart(direction);
+    if (target === null) return false;
+    this.cancel();
+    // An utterance cannot be stopped on the server, so every request abandoned by a jump still
+    // takes its turn there. Pressing Next three times in a row must ask for one piece, not three:
+    // the new block is shown at once and its audio is requested once the jumping pauses.
+    this.index = target;
+    this.hooks.onSegment(this.segments[target]!);
+    this.refresh();
+    const run = this.run;
+    this.jumpTimer = setTimeout(() => {
+      this.jumpTimer = null;
+      if (run === this.run) void this.play(target, 0);
+    }, JUMP_SETTLE_MS);
+    return true;
+  }
+
+  /** The block being read, 1-based, and how many there are; null when nothing is being read. */
+  position(): { block: number; blocks: number } | null {
+    if (!this.active) return null;
+    const starts = this.starts();
+    let block = 0;
+    for (let b = 0; b < starts.length; b++) if (starts[b]! <= this.index) block = b;
+    return { block: block + 1, blocks: starts.length };
+  }
+
+  /** Whether `jump(direction)` would go anywhere. */
+  canJump(direction: -1 | 1): boolean {
+    return this.active && this.blockStart(direction) !== null;
+  }
+
+  /** Index of the first piece of each block. */
+  private starts(): number[] {
+    const starts: number[] = [];
+    this.segments.forEach((s, i) => {
+      if (i === 0 || s.line !== this.segments[i - 1]!.line) starts.push(i);
+    });
+    return starts;
+  }
+
+  private blockStart(direction: -1 | 1): number | null {
+    const starts = this.starts();
+    const current = (this.position()?.block ?? 1) - 1;
+    if (direction === 1) return starts[current + 1] ?? null;
+    if (starts[current]! < this.index) return starts[current]!;
+    return starts[current - 1] ?? null;
+  }
+
   /** A new voice or speed; while reading, the current piece starts again with it. */
   update(settings: Partial<SpeechSettings>): void {
     this.settings = { ...this.settings, ...settings };
@@ -94,6 +153,8 @@ export class SpeechPlayer {
 
   private cancel(): void {
     this.run++;
+    if (this.jumpTimer) clearTimeout(this.jumpTimer);
+    this.jumpTimer = null;
     this.abort.abort();
     this.abort = new AbortController();
     this.buffers.clear();

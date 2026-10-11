@@ -625,9 +625,30 @@ type Side = "source" | "output";
 const SIDES: Side[] = ["source", "output"];
 const SIDE_NAME: Record<Side, string> = { source: "source text", output: "translation" };
 
-const speechButtons: Record<Side, { listen: HTMLButtonElement; pause: HTMLButtonElement }> = {
-  source: { listen: $("listen-source"), pause: $("pause-source") },
-  output: { listen: $("listen-output"), pause: $("pause-output") },
+const speechButtons: Record<
+  Side,
+  {
+    listen: HTMLButtonElement;
+    pause: HTMLButtonElement;
+    prev: HTMLButtonElement;
+    next: HTMLButtonElement;
+    why: HTMLElement;
+  }
+> = {
+  source: {
+    listen: $("listen-source"),
+    pause: $("pause-source"),
+    prev: $("prev-source"),
+    next: $("next-source"),
+    why: $("listen-source-why"),
+  },
+  output: {
+    listen: $("listen-output"),
+    pause: $("pause-output"),
+    prev: $("prev-output"),
+    next: $("next-output"),
+    why: $("listen-output-why"),
+  },
 };
 
 /** Why nothing can be read aloud at all (not installed, no voices); empty when it can. */
@@ -657,6 +678,7 @@ const player = new SpeechPlayer(synthesize, {
   onSegment(segment) {
     if (speaking) speaking.line = segment?.line ?? null;
     showSpeaking(true);
+    refreshSpeech();
   },
   onError: (e) => flashMeta(failureMessage(e)),
 });
@@ -680,8 +702,10 @@ function speechBlocked(side: Side): string {
 
 function refreshSpeech() {
   for (const side of SIDES) {
-    const { listen, pause } = speechButtons[side];
+    const { listen, pause, prev, next, why } = speechButtons[side];
     const mine = speaking?.side === side;
+    // The controls that appear while reading go away when it ends: do not leave focus on one.
+    if (!mine && [pause, prev, next].includes(document.activeElement as HTMLButtonElement)) listen.focus();
     const state = mine ? player.state : "idle";
     const blocked = mine ? "" : speechBlocked(side);
     const label = mine ? `Stop reading the ${SIDE_NAME[side]}` : `Listen to the ${SIDE_NAME[side]}`;
@@ -689,7 +713,15 @@ function refreshSpeech() {
     listen.setAttribute("aria-disabled", String(blocked !== ""));
     listen.setAttribute("aria-label", label);
     listen.title = blocked || label;
-    pause.hidden = !mine;
+    // The reason is also the button's description: `title` alone is not reachable by keyboard or touch.
+    why.textContent = blocked;
+    prev.hidden = next.hidden = pause.hidden = !mine;
+    prev.setAttribute("aria-disabled", String(!(mine && player.canJump(-1))));
+    next.setAttribute("aria-disabled", String(!(mine && player.canJump(1))));
+    prev.setAttribute("aria-label", "Previous block");
+    next.setAttribute("aria-label", "Next block");
+    prev.title = "Previous block (from inside a block, its start)";
+    next.title = "Next block";
     pause.dataset.state = state;
     pause.title = state === "paused" ? "Resume reading" : "Pause reading";
     pause.setAttribute("aria-label", pause.title);
@@ -698,12 +730,16 @@ function refreshSpeech() {
 
 /** Shades the block being read in the rendered view, and scrolls its pane to it when asked. */
 function showSpeaking(scroll = false) {
-  for (const el of document.querySelectorAll(".speaking")) el.classList.remove("speaking");
+  for (const el of document.querySelectorAll(".speaking")) {
+    el.classList.remove("speaking");
+    el.removeAttribute("aria-current");
+  }
   if (!speaking || speaking.line === null) return;
   const [view, area] = speaking.side === "source" ? [sourceView, sourceArea] : [outputEl, outputArea];
   const block = view.querySelector<HTMLElement>(`:scope > [data-line="${speaking.line}"]`);
   if (!block) return;
   block.classList.add("speaking");
+  block.setAttribute("aria-current", "true");
   if (!scroll) return;
   const pane = area.getBoundingClientRect();
   const box = block.getBoundingClientRect();
@@ -715,7 +751,11 @@ function toggleSpeech(side: Side) {
     player.stop();
     return;
   }
-  if (speechBlocked(side)) return;
+  const blocked = speechBlocked(side);
+  if (blocked) {
+    flashMeta(blocked);
+    return;
+  }
   const { text, lang } = speechTarget(side);
   // Read as it is shown: rendered Markdown when the text looks like Markdown, else line by line.
   const markdown = side === "source" ? looksLikeMarkdown(text) : views.output.available;
@@ -727,6 +767,14 @@ function toggleSpeech(side: Side) {
   player.stop();
   speaking = { side, line: null };
   player.start(segments, { lang: lang!, voice: voiceSelect.value, speed: Number(speedSelect.value) });
+}
+
+/** Jumps a block back or forward and says where that is, since the shaded block may be out of view. */
+function jumpSpeech(direction: -1 | 1) {
+  if (!player.jump(direction)) return;
+  const at = player.position();
+  if (at) flashMeta(`Block ${at.block} of ${at.blocks}`);
+  refreshSpeech();
 }
 
 function stopSpeech(side?: Side) {
@@ -774,7 +822,6 @@ async function addSampleVoice(name: string, audio: ArrayBuffer) {
 const recorder = new MicRecorder();
 async function finishRecording() {
   voiceRecord.textContent = "Record";
-  voiceRecord.setAttribute("aria-pressed", "false");
   let audio: ArrayBuffer;
   try {
     audio = await recorder.stop();
@@ -801,7 +848,6 @@ voiceRecord.addEventListener("click", async () => {
     return;
   }
   voiceRecord.textContent = "Stop recording";
-  voiceRecord.setAttribute("aria-pressed", "true");
   cloneStatus.textContent = "Recording… speak for 5 to 30 seconds, then stop.";
 });
 
@@ -809,6 +855,12 @@ voiceRecord.addEventListener("click", async () => {
 
 for (const side of SIDES) {
   speechButtons[side].listen.addEventListener("click", () => toggleSpeech(side));
+  speechButtons[side].prev.addEventListener("click", () => {
+    if (speechButtons[side].prev.getAttribute("aria-disabled") !== "true") jumpSpeech(-1);
+  });
+  speechButtons[side].next.addEventListener("click", () => {
+    if (speechButtons[side].next.getAttribute("aria-disabled") !== "true") jumpSpeech(1);
+  });
   speechButtons[side].pause.addEventListener("click", () => {
     if (player.state === "paused") player.resume();
     else player.pause();

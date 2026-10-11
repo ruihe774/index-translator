@@ -108,6 +108,52 @@ test("Pause holds the reading where it is and Resume goes on; Stop ends it", asy
   expect((await mock.state()).speech.requests.length).toBe(asked);
 });
 
+test("Previous and Next jump between blocks, say where, and hand focus back when reading ends", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ speech: { delayMs: 2000 } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(MARKDOWN);
+  const listen = app.page.locator("#listen-source");
+  const prev = app.page.locator("#prev-source");
+  const next = app.page.locator("#next-source");
+  await expect(prev).toBeHidden();
+  await listen.click();
+  await expect(prev).toHaveAccessibleName("Previous block");
+  await expect(next).toHaveAccessibleName("Next block");
+  await expect(prev).toHaveAttribute("aria-disabled", "true");
+
+  // Blocks of MARKDOWN: heading, paragraph, list. Keyboard only.
+  await next.focus();
+  await app.page.keyboard.press("Enter");
+  await expect(app.meta).toHaveText("Block 2 of 3");
+  // Pressed again at once: the skipped block is never asked for (an utterance cannot be cancelled).
+  await app.page.keyboard.press("Enter");
+  await expect(app.meta).toHaveText("Block 3 of 3");
+  await expect(next).toHaveAttribute("aria-disabled", "true");
+  await expect(prev).toHaveAttribute("aria-disabled", "false");
+  await expect
+    .poll(async () => (await mock.state()).speech.requests.map((r) => r.text))
+    .toEqual(["Release notes.", "1. Install it."]);
+
+  await prev.focus();
+  await app.page.keyboard.press("Enter");
+  await expect(app.meta).toHaveText("Block 2 of 3");
+
+  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  await expect(next).toBeHidden();
+});
+
+test("a blocked Listen says why, to the eye and to assistive technology", async ({ app }) => {
+  await app.open();
+  const listen = app.page.locator("#listen-source");
+  await expect(listen).toHaveAccessibleDescription("There is no source text to read aloud yet.");
+  await listen.click({ force: true });
+  await expect(app.meta).toHaveText("There is no source text to read aloud yet.");
+});
+
 test("voice and speed apply from the piece being read, and are remembered", async ({ app, mock }) => {
   await mock.set({ speech: { delayMs: 200 } });
   await app.open();
