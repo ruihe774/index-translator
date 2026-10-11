@@ -148,6 +148,7 @@ describe("GET /voices and health", () => {
       languages: ["zh", "en", "ja", "es", "ar"],
       speed: { min: 0.5, max: 2 },
       max_chars: 1000,
+      max_sample_bytes: 8 * 1024 * 1024,
       voices: mockSpeech.voices,
     });
   });
@@ -190,5 +191,27 @@ describe("the native speech engine without audio.cpp", () => {
     } finally {
       await rm(dir, { recursive: true });
     }
+  });
+});
+
+describe("POST /voices", () => {
+  const upload = (body: string | Uint8Array, type = "audio/wav") =>
+    fetch(`${base}/api/v1/voices?name=${encodeURIComponent("My voice")}`, {
+      method: "POST",
+      headers: { "content-type": type },
+      body,
+    });
+
+  test("a WAV sample becomes a voice", async () => {
+    const wav = new Uint8Array(64);
+    wav.set(new TextEncoder().encode("RIFF"), 0);
+    const res = await upload(wav);
+    expect(res.status).toBe(201);
+    expect(((await res.json()) as { name: string }).name).toBe("My voice");
+  });
+
+  test("anything else is refused", async () => {
+    expect((await upload(new Uint8Array(64))).status).toBe(400);
+    expect((await upload("{}", "application/json")).status).toBe(415);
   });
 });

@@ -115,6 +115,47 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceList"
+    post:
+      tags: [speech]
+      operationId: addVoice
+      summary: Upload a voice sample for cloning
+      description: |
+        The body is a WAV recording (`audio/wav`, at most `max_sample_bytes`) of the voice to
+        imitate. It becomes a voice in `GET /voices` until the server stops; nothing is persisted.
+      parameters:
+        - name: name
+          in: query
+          schema:
+            type: string
+          description: Display name, at most 60 characters.
+      requestBody:
+        required: true
+        content:
+          audio/wav:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "201":
+          description: The new voice.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Voice"
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "503":
+          description: Reading aloud is not available (`speech_unavailable`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /translate:
     post:
       tags: [translation]
@@ -707,6 +748,9 @@ components:
         max_chars:
           type: integer
           description: Longest `text` of one `POST /speech`.
+        max_sample_bytes:
+          type: integer
+          description: Largest body of `POST /voices`.
         voices:
           type: array
           description: Empty when speech is unavailable or the voices directory holds no WAV file.

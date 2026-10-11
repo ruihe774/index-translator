@@ -16,6 +16,7 @@ import { findModel, MODELS, type ModelSpec } from "./models";
 import { buildDocumentPrompt, buildPrompt, DOCUMENT_DIRECTIONS, LANGUAGES, type PromptInput } from "./prompt";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 import {
+  MAX_SAMPLE_BYTES,
   MAX_SPEECH_CHARS,
   MAX_SPEED,
   MIN_SPEED,
@@ -595,12 +596,33 @@ export async function startApp(
     }
     if (speech.state === "unavailable") throw speechUnavailable(speech.error ?? "reading aloud is not available");
     const voices = await speech.voices();
-    if (voices.length === 0) throw speechUnavailable(`no voices: put a WAV recording into ${cfg.voicesDir}`);
+    if (voices.length === 0) {
+      throw speechUnavailable(`no voices: upload a sample or put a WAV recording into ${cfg.voicesDir}`);
+    }
     const voice = optionalString(body, "voice", 128) ?? voices[0]!.id;
     if (!voices.some((v) => v.id === voice)) {
       throw invalid(`unknown voice "${voice}"; see GET /api/v1/voices`, "voice");
     }
     return { text, lang, voice, speed };
+  }
+
+  async function uploadVoice(req: Request, url: URL): Promise<Response> {
+    if (speech.state === "unavailable") throw speechUnavailable(speech.error ?? "reading aloud is not available");
+    if ((req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase() !== "audio/wav") {
+      throw new ApiError(415, "unsupported_media_type", "request body must be audio/wav");
+    }
+    const declared = Number(req.headers.get("content-length"));
+    if (declared > MAX_SAMPLE_BYTES) throw new ApiError(413, "body_too_large", "the sample is too large");
+    const wav = await req.arrayBuffer();
+    if (wav.byteLength === 0) throw invalid("the body must be a WAV recording", "body");
+    if (wav.byteLength > MAX_SAMPLE_BYTES) throw new ApiError(413, "body_too_large", "the sample is too large");
+    const name = (url.searchParams.get("name") ?? "").replace(/\s+/g, " ").trim().slice(0, 60) || "Uploaded voice";
+    try {
+      return json(await speech.addVoice(name, wav), 201);
+    } catch (e) {
+      if (e instanceof SpeechError) throw invalid(e.message, "body");
+      throw e;
+    }
   }
 
   async function speak(input: SpeechRequest, signal: AbortSignal): Promise<Response> {
@@ -675,13 +697,15 @@ export async function startApp(
             return json({ languages: LANGUAGES.map(({ code, name }) => ({ code, name })) });
           }
           case "/voices": {
-            if (req.method !== "GET") return methodNotAllowed("GET");
+            if (req.method === "POST") return await uploadVoice(req, url);
+            if (req.method !== "GET") return methodNotAllowed("GET, POST");
             return json({
               status: speech.state,
               error: speech.error,
               languages: SPEECH_LANGUAGES,
               speed: { min: MIN_SPEED, max: MAX_SPEED },
               max_chars: MAX_SPEECH_CHARS,
+              max_sample_bytes: MAX_SAMPLE_BYTES,
               voices: speech.state === "unavailable" ? [] : await speech.voices(),
             });
           }

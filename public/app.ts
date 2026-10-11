@@ -25,6 +25,7 @@ import { SpeechPlayer, type SpeechSettings } from "./speech.js";
 import { canSpeak, speechSegments } from "./speech-text.js";
 import { sseEvents } from "./sse.js";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.js";
+import { audioToWav, MicRecorder, uploadVoice } from "./voice-sample.js";
 
 const API = "/api/v1";
 const HEALTH_LOADING_POLL_MS = 2000;
@@ -68,6 +69,10 @@ const notesEl = $("notes");
 const speechSettings = $("speech-settings");
 const voiceSelect = $<HTMLSelectElement>("voice");
 const speedSelect = $<HTMLSelectElement>("speed");
+const voiceFile = $<HTMLInputElement>("voice-file");
+const voiceFileButton = $("voice-file-button");
+const voiceRecord = $("voice-record");
+const cloneStatus = $("clone-status");
 
 // ---- small helpers ---------------------------------------------------------------------------
 
@@ -734,20 +739,71 @@ async function loadVoices() {
     const body = (await res.json()) as { status: string; error?: string; voices: { id: string; name: string }[] };
     if (body.status === "unavailable") {
       speechProblem = `Reading aloud is not available: ${body.error ?? "it is not installed"}.`;
-    } else if (body.voices.length === 0) {
-      speechProblem = "Reading aloud needs a voice: put a WAV recording of a speaker into the voices folder.";
     } else {
+      if (body.voices.length === 0) {
+        speechProblem = "Reading aloud needs a voice: upload or record a sample under Model and options.";
+      } else speechProblem = "";
       for (const v of body.voices) voiceSelect.append(new Option(v.name, v.id));
       const saved = stored("voice");
       if (body.voices.some((v) => v.id === saved)) voiceSelect.value = saved!;
       speechSettings.hidden = false;
-      speechProblem = "";
     }
   } catch {
     speechProblem = "Reading aloud is not available: the server cannot be reached.";
   }
   refreshSpeech();
 }
+
+/** Adds an uploaded voice to the list, selects it and tells the player. */
+async function addSampleVoice(name: string, audio: ArrayBuffer) {
+  cloneStatus.textContent = "Uploading the sample…";
+  try {
+    const voice = await uploadVoice(API, name, await audioToWav(audio));
+    voiceSelect.append(new Option(voice.name, voice.id));
+    voiceSelect.value = voice.id;
+    store("voice", voice.id);
+    player.update({ voice: voice.id });
+    speechProblem = "";
+    refreshSpeech();
+    cloneStatus.textContent = `Voice "${voice.name}" added. It is kept until the server stops.`;
+  } catch (e) {
+    cloneStatus.textContent = e instanceof Error ? e.message : String(e);
+  }
+}
+
+const recorder = new MicRecorder();
+async function finishRecording() {
+  voiceRecord.textContent = "Record";
+  voiceRecord.setAttribute("aria-pressed", "false");
+  let audio: ArrayBuffer;
+  try {
+    audio = await recorder.stop();
+  } catch (e) {
+    cloneStatus.textContent = e instanceof Error ? e.message : String(e);
+    return;
+  }
+  await addSampleVoice(`Recording ${new Date().toLocaleTimeString()}`, audio);
+}
+
+voiceFileButton.addEventListener("click", () => voiceFile.click());
+voiceFile.addEventListener("change", async () => {
+  const file = voiceFile.files?.[0];
+  voiceFile.value = "";
+  if (!file) return;
+  await addSampleVoice(file.name.replace(/\.[^.]*$/, ""), await file.arrayBuffer());
+});
+voiceRecord.addEventListener("click", async () => {
+  if (recorder.recording) return finishRecording();
+  try {
+    await recorder.start(() => void finishRecording());
+  } catch (e) {
+    cloneStatus.textContent = e instanceof Error ? e.message : String(e);
+    return;
+  }
+  voiceRecord.textContent = "Stop recording";
+  voiceRecord.setAttribute("aria-pressed", "true");
+  cloneStatus.textContent = "Recording… speak for 5 to 30 seconds, then stop.";
+});
 
 // ---- wiring ----------------------------------------------------------------------------------
 

@@ -176,6 +176,7 @@ export const mockSpeech = {
 
 export function resetMockSpeech(): void {
   mockSpeech.state = "stopped";
+  mockSpeech.voices.length = 2;
   mockSpeech.delayMs = 0;
   mockSpeech.failWith = undefined;
   mockSpeech.requests.length = 0;
@@ -191,6 +192,12 @@ export const speechLauncher: SpeechLauncher = () => ({
     return mockSpeech.state === "unavailable" ? "the speech engine is not installed" : undefined;
   },
   voices: async () => mockSpeech.voices,
+  async addVoice(name, wav) {
+    if (new TextDecoder().decode(wav.slice(0, 4)) !== "RIFF") throw new SpeechError("the sample is not a WAV file");
+    const voice = { id: `upload-${mockSpeech.voices.length}`, name };
+    mockSpeech.voices.push(voice);
+    return voice;
+  },
   async synthesize(req, signal) {
     mockSpeech.requests.push(req);
     if (mockSpeech.delayMs) {

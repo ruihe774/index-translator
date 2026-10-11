@@ -7,8 +7,9 @@
 // whose voice the model imitates.
 
 import { existsSync } from "node:fs";
-import { readdir, rm } from "node:fs/promises";
+import { mkdir, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { randomUUID } from "node:crypto";
 import { basename, extname, join } from "node:path";
 import type { Config } from "./config";
 
@@ -24,6 +25,10 @@ const MODEL_ID = "indextts";
 /** Sampling is seeded so the same sentence sounds the same when it is played again. */
 const SEED = 42;
 const START_TIMEOUT_MS = 30_000;
+
+/** Largest uploaded voice sample, and how many uploads are kept until the server stops. */
+export const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
+export const MAX_UPLOADED_VOICES = 16;
 
 export class SpeechError extends Error {}
 
@@ -50,6 +55,8 @@ export interface Speech {
   readonly state: SpeechState;
   readonly error: string | undefined;
   voices(): Promise<Voice[]>;
+  /** Keeps a WAV recording as a voice until the server stops. Rejects with SpeechError if it is not a WAV. */
+  addVoice(name: string, wav: ArrayBuffer): Promise<Voice>;
   /** One utterance as a WAV file. Rejects with SpeechError, or the signal's reason when aborted. */
   synthesize(req: SpeechRequest, signal: AbortSignal): Promise<ArrayBuffer>;
   stop(): Promise<void>;
@@ -70,6 +77,10 @@ class NativeSpeech implements Speech {
   private starting: Promise<string> | null = null;
   private failure: string | undefined;
   private readonly configPath = join(tmpdir(), `index-translator-speech-${process.pid}.json`);
+
+  /** Uploaded voices: id to file. Ids never become paths. */
+  private uploads = new Map<string, { name: string; path: string }>();
+  private readonly uploadDir = join(tmpdir(), `index-translator-voices-${process.pid}`);
 
   constructor(private cfg: Config) {}
 
@@ -105,13 +116,27 @@ class NativeSpeech implements Speech {
     } catch {
       return [];
     }
-    return files
+    const installed = files
       .filter((f) => extname(f) === ".wav")
       .sort()
       .map((f) => {
         const id = basename(f, ".wav");
         return { id, name: id.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase()) };
       });
+    return [...installed, ...[...this.uploads].map(([id, u]) => ({ id, name: u.name }))];
+  }
+
+  async addVoice(name: string, wav: ArrayBuffer): Promise<Voice> {
+    const head = new Uint8Array(wav, 0, Math.min(12, wav.byteLength));
+    const tag = (at: number) => String.fromCharCode(...head.subarray(at, at + 4));
+    if (head.length < 12 || tag(0) !== "RIFF" || tag(8) !== "WAVE") throw new SpeechError("the sample is not a WAV file");
+    if (this.uploads.size >= MAX_UPLOADED_VOICES) throw new SpeechError("too many uploaded voices");
+    const id = `upload-${randomUUID()}`;
+    const path = join(this.uploadDir, `${id}.wav`);
+    await mkdir(this.uploadDir, { recursive: true });
+    await Bun.write(path, wav);
+    this.uploads.set(id, { name, path });
+    return { id, name };
   }
 
   private async start(): Promise<string> {
@@ -192,7 +217,7 @@ class NativeSpeech implements Speech {
         body: JSON.stringify({
           model: MODEL_ID,
           input: req.text,
-          voice_ref: join(this.cfg.voicesDir, `${req.voice}.wav`),
+          voice_ref: this.uploads.get(req.voice)?.path ?? join(this.cfg.voicesDir, `${req.voice}.wav`),
           options: { language: req.lang, duration_factor: 1 / req.speed, seed: SEED },
         }),
         signal,
@@ -217,6 +242,8 @@ class NativeSpeech implements Speech {
       await child.exited;
     }
     await rm(this.configPath, { force: true });
+    await rm(this.uploadDir, { recursive: true, force: true });
+    this.uploads.clear();
   }
 }
 

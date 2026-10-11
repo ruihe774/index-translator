@@ -433,6 +433,7 @@ describe("the spec against the server", () => {
         "POST /speech",
         "POST /tokenize",
         "POST /translate",
+        "POST /voices",
       ].sort(),
     );
     for (const [op, status] of Object.entries(answers)) {
