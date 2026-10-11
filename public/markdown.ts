@@ -382,6 +382,7 @@ const EMAIL_AUTOLINK = /<([\w.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,
 const BARE_URL = /(?<![\p{L}\p{N}])https?:\/\/[^\s<]*[^\s<?!.,:;*_~'")\]]/gu;
 const WHITESPACE = /\s/u;
 const PUNCTUATION = /[\p{P}\p{S}]/u;
+const IDEOGRAPHIC = /[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}\p{Script=Bopomofo}]/u;
 
 /** A sticky regex matched at position i, without copying the rest of the string. */
 function matchAt(re: RegExp, s: string, i: number): RegExpExecArray | null {
@@ -655,8 +656,13 @@ export function parseInline(src: string): Inline[] {
       const wsAfter = WHITESPACE.test(after);
       const pBefore = PUNCTUATION.test(before);
       const pAfter = PUNCTUATION.test(after);
-      const left = !wsAfter && (!pAfter || wsBefore || pBefore);
-      const right = !wsBefore && (!pBefore || wsAfter || pAfter);
+      // Divergence from CommonMark: ideographic text has no spaces, so a run next to an
+      // ideograph may open or close even when punctuation sits on its other side
+      // ("**「日本」**です"). See docs/markdown-conformance.md.
+      const cjkBefore = IDEOGRAPHIC.test(before);
+      const cjkAfter = IDEOGRAPHIC.test(after);
+      const left = !wsAfter && (!pAfter || wsBefore || pBefore || cjkBefore);
+      const right = !wsBefore && (!pBefore || wsAfter || pAfter || cjkAfter);
       const node = textNode(src.slice(i, i + run));
       if (c !== "~" || run === 2) {
         delims.push({

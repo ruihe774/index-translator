@@ -134,6 +134,13 @@ describe("parseInline", () => {
     expect(html("*foo**bar**baz*")).toBe("<em>foo<strong>bar</strong>baz</em>");
     expect(html("a**\"foo\"**")).toBe('a**"foo"**');
     expect(html("**foo***")).toBe("<strong>foo</strong>*");
+    // Divergence: next to ideographs, a run may open or close beside punctuation.
+    expect(html("**「日本」**です")).toBe("<strong>「日本」</strong>です");
+    expect(html("私は**「日本」**")).toBe("私は<strong>「日本」</strong>");
+    expect(html("日本語~~（旧）~~です")).toBe("日本語<del>（旧）</del>です");
+    expect(html("*（注）*本文")).toBe("<em>（注）</em>本文");
+    // Latin text keeps the CommonMark rule.
+    expect(html("a**\"foo\"**b")).toBe('a**"foo"**b');
     expect(html("__foo, __bar__, baz__")).toBe("<strong>foo, <strong>bar</strong>, baz</strong>");
   });
 

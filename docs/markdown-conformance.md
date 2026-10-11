@@ -40,6 +40,12 @@ Example numbers for each reason are in `KNOWN` in `scripts/commonmark.ts`.
 
 - GFM extensions: pipe tables (with alignment), `~~strikethrough~~` (two tildes only), task list
   items `- [ ]` / `- [x]`, bare URL autolinks. The GFM spec suite has not been run.
+- Emphasis beside ideographs: CommonMark refuses `**「日本」**です` because the closing `**` follows
+  punctuation and precedes a letter. Ideographic text has no spaces, so here a delimiter run
+  (`*`, `_`, `~~`) next to an ideograph (Han, Hiragana, Katakana, Bopomofo) may open or close even
+  when punctuation is on its other side; the flanking test treats such a neighbour like whitespace.
+  Widely implemented (markdown-it and cmark plugins for CJK); no spec example involves it, so the
+  count above is unaffected. Hangul is excluded because Korean uses spaces.
 - Rendering in the page: Markdown heading levels are shifted down two (`#` becomes `<h3>`) below
   the page's own headings; an `md-h<level>` class keeps the source level for styling. Images are shown
   as links labelled with their alt text and are not loaded. Links open in a new tab and are only
