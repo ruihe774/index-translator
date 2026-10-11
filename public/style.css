@@ -414,7 +414,8 @@
     cursor: pointer;
   }
 
-  .synced [data-line]:hover {
+  .synced [data-line]:hover,
+  .synced .linked {
     background: color-mix(in srgb, var(--accent) 16%, transparent);
     border-radius: var(--radius-min);
   }

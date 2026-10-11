@@ -79,6 +79,35 @@ export function textareaPane(area: HTMLTextAreaElement): Pane {
   };
 }
 
+const LINKED = "linked";
+
+/** Removes the linked-block background from `view`. */
+export function clearLinked(view: HTMLElement) {
+  for (const el of view.querySelectorAll(`.${LINKED}`)) el.classList.remove(LINKED);
+}
+
+/**
+ * Marks the elements of `view` that show block `k`, so the block under the pointer in the other
+ * pane has its counterpart shaded here. `starts` are the first lines of the view's blocks.
+ */
+export function markLinked(view: HTMLElement, starts: number[], k: number) {
+  clearLinked(view);
+  const from = starts[k];
+  if (from === undefined) return;
+  const to = starts[k + 1] ?? Infinity;
+  for (const child of view.children) {
+    if (!(child instanceof HTMLElement) || child.dataset.line === undefined) continue;
+    const line = Number(child.dataset.line);
+    if (line >= from && line < to) child.classList.add(LINKED);
+  }
+}
+
+/** The block of the hovered element of a rendered view, or null if the pointer is not over one. */
+export function hoveredBlock(e: Event, view: HTMLElement, starts: number[]): number | null {
+  const hit = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-line]") : null;
+  return hit && view.contains(hit) ? blockAt(starts, Number(hit.dataset.line)) : null;
+}
+
 /**
  * Scrolls `to` so that the block clicked in `from` starts at the same height in both panes.
  * `fromStarts` and `toStarts` are the first lines of the blocks of each pane's text.

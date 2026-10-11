@@ -9,7 +9,7 @@ import { buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./r
 import { looksLikeMarkdown } from "./markdown.js";
 import { createOutput, renderText, type OutputView } from "./markdown-dom.js";
 import { alignBlocks, type Alignment } from "./paragraphs.js";
-import { syncFrom, textareaPane, viewPane, type Pane } from "./sync-scroll.js";
+import { clearLinked, hoveredBlock, markLinked, syncFrom, textareaPane, viewPane, type Pane } from "./sync-scroll.js";
 import {
   adviceMessage,
   healthMessage,
@@ -342,6 +342,35 @@ function onOutputClick(e: MouseEvent) {
   if (a) syncFrom(e, viewPane(outputEl, outputArea), a.output, sourcePane(), a.source);
 }
 
+/** Hovering a block of one rendered pane shades the block it maps to in the other rendered pane. */
+function onHover(e: MouseEvent, fromView: HTMLElement, toView: HTMLElement, side: "source" | "output") {
+  const a = syncActive();
+  const k = a ? hoveredBlock(e, fromView, a[side]) : null;
+  if (!a || k === null) clearLinked(toView);
+  else markLinked(toView, a[side === "source" ? "output" : "source"], k);
+}
+
+sourceArea.addEventListener("mouseover", (e) => onHover(e, sourceView, outputEl, "source"));
+outputArea.addEventListener("mouseover", (e) => onHover(e, outputEl, sourceView, "output"));
+sourceArea.addEventListener("mouseleave", () => clearLinked(outputEl));
+outputArea.addEventListener("mouseleave", () => clearLinked(sourceView));
+
+// ---- follow the stream -----------------------------------------------------------------------
+
+/** While a translation streams, the output stays scrolled to its end until the user scrolls. */
+let following = true;
+const stopFollowing = () => {
+  following = false;
+};
+for (const type of ["wheel", "touchmove", "pointerdown", "keydown"]) {
+  outputArea.addEventListener(type, stopFollowing, { passive: true });
+}
+// The output element is stretched to the scroller's height, so its size does not change as text
+// arrives; the content does.
+new MutationObserver(() => {
+  if (running && following) outputArea.scrollTop = outputArea.scrollHeight;
+}).observe(outputEl, { childList: true, subtree: true, characterData: true });
+
 function setRunning(on: boolean) {
   setTranslateEnabled();
   refreshControls();
@@ -421,6 +450,7 @@ async function translate() {
 
   const controller = new AbortController();
   running = controller;
+  following = true;
   const markdown = looksLikeMarkdown(text);
   clearResult(markdown);
   views.source = { available: markdown, view: markdown ? "preview" : "raw" };

@@ -47,7 +47,30 @@ test("streams the translation as it arrives and lets the user stop it", async ({
   await expect.poll(async () => (await mock.state()).aborted).toBeGreaterThan(0);
 });
 
-test("Markdown output is rendered while it streams: finished blocks stay in place", async ({ app, mock }) => {
+test("the output follows the stream to its end until the user scrolls", async ({ app, mock }) => {
+  const line = (n: number) => `line ${n}\n`;
+  await mock.set({ chunks: Array.from({ length: 80 }, (_, i) => line(i)), delayMs: 40 });
+  await app.open();
+  await app.text.fill("Many lines");
+  await app.translate.click();
+
+  const area = app.page.locator("#output-area");
+  const gap = () => area.evaluate((el) => el.scrollHeight - el.clientHeight - el.scrollTop);
+  await expect(app.output).toContainText("line 40");
+  expect(await area.evaluate((el) => el.scrollHeight > el.clientHeight)).toBe(true);
+  expect(await gap()).toBeLessThanOrEqual(2);
+
+  await area.hover();
+  await app.page.mouse.wheel(0, -100000);
+  // The wheel animation may stop a few pixels short of the top; what matters is that it stays away
+  // from the end while more text arrives.
+  await expect.poll(() => area.evaluate((el) => el.scrollTop)).toBeLessThan(100);
+  await expect(app.output).toContainText("line 79");
+  await expect(app.stop).toBeHidden();
+  expect(await area.evaluate((el) => el.scrollTop)).toBeLessThan(100);
+});
+
+test("Markdown output is rendered while it streams: finished blocks stay in place",async ({ app, mock }) => {
   await mock.set({ chunks: ["# 标题\n\n", "第一段。\n\n", "- 甲\n", "- 乙\n\n", "**结束**"], delayMs: 400 });
   await app.open();
   await app.text.fill("# Title\n\nFirst paragraph.\n\n- a\n- b\n\n**End**");
