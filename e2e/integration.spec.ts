@@ -99,7 +99,7 @@ test("falls back to three languages when /languages fails", async ({ app }) => {
   await app.page.route("**/api/v1/languages", (route) => route.abort());
   await app.page.goto("/");
   await expect(app.to.locator("option")).toHaveText(["English", "Chinese", "Japanese"]);
-  await expect(app.selection).toContainText("Could not load the full language list");
+  await expect(app.advice).toContainText("Could not load the full language list");
 });
 
 test("health: loading is polled until ready", async ({ app }) => {

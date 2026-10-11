@@ -11,6 +11,7 @@ import { createOutput, renderText, type OutputView } from "./markdown-dom.js";
 import { alignBlocks, type Alignment } from "./paragraphs.js";
 import { syncFrom, textareaPane, viewPane, type Pane } from "./sync-scroll.js";
 import {
+  adviceMessage,
   doneMessage,
   healthMessage,
   interruption,
@@ -18,7 +19,6 @@ import {
   modelLabel,
   resultNotes,
   selectionMessage,
-  selectionStatus,
   type Done,
   type Health,
 } from "./messages.js";
@@ -40,7 +40,8 @@ const toSelect = $<HTMLSelectElement>("to");
 const textInput = $<HTMLTextAreaElement>("text");
 const countEl = $("count");
 const textError = $("text-error");
-const selectionEl = $("selection");
+const adviceEl = $("advice");
+const modelSwitch = $("model-switch");
 const options = $<HTMLFieldSetElement>("options");
 const glossaryInput = $<HTMLTextAreaElement>("glossary");
 const glossaryError = $("glossary-error");
@@ -94,8 +95,12 @@ function showFieldError(error: HTMLElement, input: HTMLElement, message: string 
   else input.setAttribute("aria-invalid", "true");
 }
 
-function modelChoice(): Choice {
-  return (form.elements.namedItem("model") as RadioNodeList).value as Choice;
+const CHOICES: Choice[] = ["auto", CHAT_MODEL, DOCUMENT_MODEL];
+let modelChoice: Choice = "auto";
+
+function setModelChoice(choice: Choice) {
+  modelChoice = choice;
+  for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button")) b.setAttribute("aria-pressed", String(b.dataset.model === choice));
 }
 
 function hasOptions(): boolean {
@@ -110,7 +115,7 @@ function currentSelection(): Selection {
     sourceLang: fromSelect.value,
     targetLang: toSelect.value,
     hasOptions: hasOptions(),
-    choice: modelChoice(),
+    choice: modelChoice,
   });
 }
 
@@ -120,9 +125,7 @@ let languageNote = "";
 function refreshSelection() {
   const s = currentSelection();
   setText(countEl, `${number.format(s.letters)} letters`);
-  const { text, warn } = selectionStatus(s, fromSelect.value, toSelect.value, languageNote);
-  setText(selectionEl, text);
-  selectionEl.classList.toggle("warn", warn);
+  setText(adviceEl, adviceMessage(s, fromSelect.value, toSelect.value, languageNote));
   const documentModel = s.model === DOCUMENT_MODEL && s.reason !== "manual-document-unusable";
   options.disabled = documentModel;
   return s;
@@ -514,10 +517,11 @@ clearBtn.addEventListener("click", clearAll);
 for (const el of [glossaryInput, hardInput, softInput, genreInput]) el.addEventListener("input", refreshSoon);
 fromSelect.addEventListener("change", refreshSelection);
 toSelect.addEventListener("change", refreshSelection);
-for (const radio of form.querySelectorAll<HTMLInputElement>('input[name="model"]')) {
-  radio.addEventListener("change", () => {
+for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button")) {
+  b.addEventListener("click", () => {
+    setModelChoice(b.dataset.model as Choice);
     refreshSelection();
-    store("model", radio.value);
+    store("model", modelChoice);
   });
 }
 
@@ -531,8 +535,7 @@ copyBtn.addEventListener("click", async () => {
 });
 
 const savedModel = stored("model");
-const savedRadio = savedModel && form.querySelector<HTMLInputElement>(`input[name="model"][value="${CSS.escape(savedModel)}"]`);
-if (savedRadio) savedRadio.checked = true;
+if (CHOICES.includes(savedModel as Choice)) setModelChoice(savedModel as Choice);
 
 setTranslateEnabled();
 void loadLanguages();

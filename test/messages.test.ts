@@ -3,6 +3,7 @@ import {
   INTERRUPTED_NOTE,
   SAME_LANGUAGE_WARNING,
   STOPPED_NOTE,
+  adviceMessage,
   doneMessage,
   healthMessage,
   interruption,
@@ -12,7 +13,6 @@ import {
   sameLanguage,
   seconds,
   selectionMessage,
-  selectionStatus,
 } from "../public/messages";
 import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type Reason, type Selection } from "../public/select-model";
 
@@ -60,24 +60,22 @@ describe("sameLanguage", () => {
   });
 });
 
-describe("selectionStatus", () => {
+describe("adviceMessage", () => {
   const base = selection(CHAT_MODEL, "short");
-  const baseText = selectionMessage(base).text;
 
-  test("no extras: the selection sentence alone", () => {
-    expect(selectionStatus(base, "auto", "en", "")).toEqual({ text: baseText, warn: false });
+  test("nothing to warn about: empty, the model sentence is not repeated", () => {
+    expect(adviceMessage(base, "auto", "en", "")).toBe("");
+    expect(adviceMessage(selection(CHAT_MODEL, "manual"), "auto", "en", "")).toBe("");
   });
-  test("the same-language warning is appended and makes the box a warning", () => {
-    expect(selectionStatus(base, "en", "en", "")).toEqual({ text: `${baseText} ${SAME_LANGUAGE_WARNING}`, warn: true });
+  test("the same-language warning", () => {
+    expect(adviceMessage(base, "en", "en", "")).toBe(SAME_LANGUAGE_WARNING);
   });
-  test("the language note is appended without making it a warning", () => {
-    expect(selectionStatus(base, "auto", "en", "Only three languages.")).toEqual({ text: `${baseText} Only three languages.`, warn: false });
+  test("the language note", () => {
+    expect(adviceMessage(base, "auto", "en", "Only three languages.")).toBe("Only three languages.");
   });
-  test("both extras keep their order, and an existing warning stays one", () => {
+  test("a selection warning, the same-language warning and the note keep their order", () => {
     const warned = selection(CHAT_MODEL, "long-options", LONG_THRESHOLD_LETTERS + 1);
-    const r = selectionStatus(warned, "en", "en", "Note.");
-    expect(r.warn).toBe(true);
-    expect(r.text).toBe(`${selectionMessage(warned).text} ${SAME_LANGUAGE_WARNING} Note.`);
+    expect(adviceMessage(warned, "en", "en", "Note.")).toBe(`${selectionMessage(warned).text} ${SAME_LANGUAGE_WARNING} Note.`);
   });
 });
 

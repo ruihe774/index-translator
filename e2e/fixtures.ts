@@ -60,7 +60,7 @@ export class AppPage {
   readonly stop: Locator;
   readonly copy: Locator;
   readonly engine: Locator;
-  readonly selection: Locator;
+  readonly advice: Locator;
   readonly progress: Locator;
   readonly error: Locator;
   readonly output: Locator;
@@ -70,12 +70,12 @@ export class AppPage {
   constructor(readonly page: Page) {
     this.from = page.getByLabel("From", { exact: true });
     this.to = page.getByLabel("To", { exact: true });
-    this.text = page.getByLabel("Text to translate (required)");
+    this.text = page.getByRole("textbox", { name: "Text to translate" });
     this.translate = page.getByRole("button", { name: "Translate", exact: true });
     this.stop = page.getByRole("button", { name: "Stop" });
     this.copy = page.getByRole("button", { name: "Copy translation" });
     this.engine = page.locator("#engine");
-    this.selection = page.locator("#selection");
+    this.advice = page.locator("#advice");
     this.progress = page.locator("#progress");
     this.error = page.locator("#error");
     this.output = page.locator("#output");
@@ -91,7 +91,7 @@ export class AppPage {
   }
 
   model(name: "Automatic" | "Index-Translate-9B" | "Index-NativeLong-9B") {
-    return this.page.getByRole("radio", { name: new RegExp(name) });
+    return this.page.getByRole("group", { name: "Model" }).getByRole("button", { name, exact: true });
   }
 
   async openAdvanced() {

@@ -684,7 +684,17 @@ describe("browser request checks", () => {
     });
   });
 
-  test("HOST itself is an allowed Host, so a wildcard bind works with its own address", async () => {
+  // Some sandboxes have no IPv6 at all (EAFNOSUPPORT on listen), which says nothing about the code.
+  const ipv6 = (() => {
+    try {
+      Bun.serve({ hostname: "::1", port: 0, fetch: () => new Response() }).stop(true);
+      return true;
+    } catch {
+      return false;
+    }
+  })();
+
+  test.skipIf(!ipv6)("HOST itself is an allowed Host, so a wildcard bind works with its own address", async () => {
     await withApp({ host: "::1" }, async (extra) => {
       const res = await fetch(`http://[::1]:${extra.server.url.port}/api/v1/health`, { headers: { host: "[::1]" } });
       expect(res.status).toBe(200);

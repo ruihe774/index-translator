@@ -65,14 +65,17 @@ export function sameLanguage(from: string, to: string): boolean {
 export const SAME_LANGUAGE_WARNING =
   "Warning: the source and target languages are the same, so the translation may only repeat the text. Check the From and To choices.";
 
-/** The full text under the model choice: the selection sentence plus any language warnings. */
-export function selectionStatus(s: Selection, from: string, to: string, languageNote: string): { text: string; warn: boolean } {
+/**
+ * What the page says about the current inputs: only the warnings (a model that will struggle with
+ * the text, equal languages, a short language list). The model in use is named in the status line.
+ */
+export function adviceMessage(s: Selection, from: string, to: string, languageNote: string): string {
+  const parts: string[] = [];
   const { text, warn } = selectionMessage(s);
-  const same = sameLanguage(from, to);
-  const parts = [text];
-  if (same) parts.push(SAME_LANGUAGE_WARNING);
+  if (warn) parts.push(text);
+  if (sameLanguage(from, to)) parts.push(SAME_LANGUAGE_WARNING);
   if (languageNote) parts.push(languageNote);
-  return { text: parts.join(" "), warn: warn || same };
+  return parts.join(" ");
 }
 
 export interface Health {

@@ -134,6 +134,7 @@ Hence the 11,000-letter switch point.
   are limited to `http(s):` and `mailto:`. Copy and the paragraph check use the raw text. Parser
   changes keep `bun scripts/commonmark.ts` passing and `docs/markdown-conformance.md` in step. The
   rendered output's accessibility review is still pending (not yet in `A11Y-ACCEPTANCE.md`).
+- Layout: the text box, the source preview and the translation share one height (`--pane-height`), so the panes line up and switching Raw/Preview shifts nothing; the text box does not resize. Status text (progress, errors, notes, meta) sits below the panes. The model switch (Automatic / Index-Translate-9B / Index-NativeLong-9B) is a button group like Raw/Preview; only warnings (`adviceMessage`) are shown under the source, the model in use is named in the status line. The engine status in the header links to `/api/v1/health`.
 - Source preview and views: after Translate, a source that passes `looksLikeMarkdown` is rendered
   (whole, not streamed) in `#source-view` in place of the textarea; each side has a Raw / Preview
   switch (source Raw is the textarea, re-rendered on Preview). Clear empties both sides and restores

@@ -43,7 +43,7 @@ links and are not loaded.
 
 ### Choosing a model
 
-Leave the model on **Automatic (by text length)** unless you have a reason to pick one yourself.
+Leave the model on **Automatic** (it picks by text length) unless you have a reason to pick one yourself.
 The app then chooses:
 
 - **Index-Translate-9B** for short texts (up to about 11,000 letters) and any language.

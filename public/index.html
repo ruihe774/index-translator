@@ -13,7 +13,7 @@
 
     <header class="site-header">
       <h1>Index Translator</h1>
-      <p id="engine" role="status" class="engine">Checking the translation engine…</p>
+      <p role="status" class="engine"><a id="engine" href="/api/v1/health">Checking the translation engine…</a></p>
     </header>
 
     <main id="main" tabindex="-1">
@@ -32,15 +32,15 @@
               </div>
             </div>
 
-            <div class="field grow">
-              <label for="text">Text to translate (required)</label>
-              <textarea id="text" name="text" rows="10" required aria-required="true" aria-describedby="count text-error" dir="auto"></textarea>
-              <div id="source-area" class="output-area grow" hidden>
+            <div class="field">
+              <textarea id="text" name="text" required aria-required="true" aria-label="Text to translate" aria-describedby="count text-error" placeholder="Text to translate" dir="auto"></textarea>
+              <div id="source-area" class="output-area" hidden>
                 <div id="source-view" class="output" dir="auto"></div>
               </div>
               <p id="text-error" class="error" hidden></p>
             </div>
 
+            <p id="advice" class="advice"></p>
             <div class="panel-foot">
               <p id="count" class="hint"></p>
               <div class="actions">
@@ -64,14 +64,13 @@
               </div>
             </div>
 
-            <p id="progress" role="status" class="progress"></p>
-            <p id="error" role="alert" class="error-banner"></p>
-
-            <div id="output-area" class="output-area grow">
+            <div id="output-area" class="output-area">
               <div id="output" class="output" dir="auto"></div>
               <p id="placeholder" class="placeholder">The translation appears here.</p>
             </div>
 
+            <p id="error" role="alert" class="error-banner"></p>
+            <p id="progress" role="status" class="progress"></p>
             <ul id="notes" class="notes"></ul>
             <p id="sync-hint" class="hint" hidden>Click a paragraph on either side to scroll the other side to it.</p>
             <div class="panel-foot">
@@ -82,23 +81,14 @@
         </div>
 
         <section class="settings" aria-labelledby="settings-heading">
-          <h2 id="settings-heading">Model and options</h2>
-          <fieldset class="models">
-            <legend>Model</legend>
-            <div class="choice">
-              <input type="radio" id="model-auto" name="model" value="auto" checked />
-              <label for="model-auto">Automatic (by text length)</label>
+          <div class="settings-head">
+            <h2 id="settings-heading">Model and options</h2>
+            <div id="model-switch" class="view-switch" role="group" aria-label="Model">
+              <button type="button" data-model="auto" aria-pressed="true">Automatic</button>
+              <button type="button" data-model="index-translate-9b" aria-pressed="false">Index-Translate-9B</button>
+              <button type="button" data-model="index-nailong-9b" aria-pressed="false">Index-NativeLong-9B</button>
             </div>
-            <div class="choice">
-              <input type="radio" id="model-chat" name="model" value="index-translate-9b" />
-              <label for="model-chat">Index-Translate-9B</label>
-            </div>
-            <div class="choice">
-              <input type="radio" id="model-document" name="model" value="index-nailong-9b" />
-              <label for="model-document">Index-NativeLong-9B</label>
-            </div>
-          </fieldset>
-          <p id="selection" class="selection"></p>
+          </div>
 
           <details id="advanced">
             <summary>Glossary and constraints</summary>
@@ -108,19 +98,16 @@
               </p>
               <div class="field">
                 <label for="glossary">Glossary</label>
-                <textarea id="glossary" name="glossary" rows="3" aria-describedby="glossary-hint glossary-error"></textarea>
-                <p id="glossary-hint" class="hint">One entry per line: source term = target term.</p>
+                <textarea id="glossary" name="glossary" rows="3" aria-describedby="glossary-error" placeholder="One entry per line: source term = target term"></textarea>
                 <p id="glossary-error" class="error" hidden></p>
               </div>
               <div class="field">
                 <label for="hard">Hard constraints</label>
-                <textarea id="hard" name="hard" rows="2" aria-describedby="hard-hint"></textarea>
-                <p id="hard-hint" class="hint">One per line, for example keeping placeholders or JSON unchanged. Chinese works best.</p>
+                <textarea id="hard" name="hard" rows="2" placeholder="One per line, for example keeping placeholders or JSON unchanged. Chinese works best."></textarea>
               </div>
               <div class="field">
                 <label for="soft">Soft constraints</label>
-                <textarea id="soft" name="soft" rows="2" aria-describedby="soft-hint"></textarea>
-                <p id="soft-hint" class="hint">One per line, for example tone or register. Chinese works best.</p>
+                <textarea id="soft" name="soft" rows="2" placeholder="One per line, for example tone or register. Chinese works best."></textarea>
               </div>
               <div class="field">
                 <label for="genre">Genre</label>
@@ -133,8 +120,5 @@
       </form>
     </main>
 
-    <footer>
-      <p><a href="/api/v1/openapi.yaml">API specification</a> · <a href="/api/v1/health">Engine health (JSON)</a></p>
-    </footer>
   </body>
 </html>

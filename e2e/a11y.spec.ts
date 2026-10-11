@@ -62,7 +62,7 @@ test("skip link is first in the tab order and the whole form is reachable in rea
     await app.page.keyboard.press("Tab");
     names.push(await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""));
   }
-  expect(names.slice(0, 6)).toEqual(["Skip to main content", "from", "text", "clear", "translate", "to"]);
+  expect(names.slice(0, 6)).toEqual(["Skip to main content", "engine", "from", "text", "clear", "translate"]);
 });
 
 test("every control keeps a visible focus outline", async ({ app }) => {
@@ -85,3 +85,38 @@ test("pointer targets are at least 24 px", async ({ app }) => {
   expect(small).toEqual([]);
 });
 
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`placeholder text has 4.5:1 contrast in ${scheme} mode`, async ({ app }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await app.open();
+    await app.openAdvanced();
+    const ratios = await app.page.evaluate(() => {
+      const lum = (c: string) => {
+        const [r, g, b] = c.match(/[\d.]+/g)!.slice(0, 3).map((v) => {
+          const x = Number(v) / 255;
+          return x <= 0.03928 ? x / 12.92 : ((x + 0.055) / 1.055) ** 2.4;
+        });
+        return 0.2126 * r! + 0.7152 * g! + 0.0722 * b!;
+      };
+      return ["text", "glossary", "hard", "soft"].map((id) => {
+        const el = document.getElementById(id)!;
+        const a = lum(getComputedStyle(el, "::placeholder").color);
+        const b = lum(getComputedStyle(el).backgroundColor);
+        return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
+      });
+    });
+    for (const r of ratios) expect(r).toBeGreaterThanOrEqual(4.5);
+  });
+}
+
+test("the Model switch buttons report their state and are reachable by keyboard", async ({ app }) => {
+  await app.open();
+  await app.model("Automatic").focus();
+  await app.page.keyboard.press("Tab");
+  await app.page.keyboard.press("Enter");
+  await expect(app.model("Index-Translate-9B")).toHaveAttribute("aria-pressed", "true");
+  await app.page.keyboard.press("Tab");
+  await app.page.keyboard.press("Space");
+  await expect(app.model("Index-NativeLong-9B")).toHaveAttribute("aria-pressed", "true");
+});

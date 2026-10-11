@@ -3,6 +3,7 @@
 - **Standard:** WCAG 2.2 Level AA (a11y-acceptance skill, criteria A11Y-01…51)
 - **Scope:** full: the single-page web app in `public/` (`index.html`, `style.css`, `app.ts`, `select-model.ts`). Redesign: two panels (source, translation) side by side from about 46 rem, settings below; new `style.css`, restructured `index.html`; `app.ts` unchanged. Rows re-checked: 04, 05, 07, 13, 16, 17, 21, 22, 24, 25, 26, 34, 42, 47
 - **Date:** 2026-10-11 (updated for the two-column redesign; rows not listed in the change note below are unchanged)
+- **Layout pass (equal-size panes, status line at the bottom, placeholders, Model switch, engine link, no footer):** rows 04, 16, 21, 30, 32, 34, 38, 39, 40, 42 re-checked. `a11y_check.py lint public/index.html` → 0 FAIL, 1 WARN (A11Y-30, below); `e2e/a11y.spec.ts` axe light and dark idle and with result → 0 violations; 320 px reflow, Tab order, placeholder contrast and Model-switch keyboard tests pass
 - **Tools run:**
   - Redesign pass: `a11y_check.py lint public/index.html` → 0 FAIL, 0 WARN; `a11y_check.py contrast` on the new tokens (values in A11Y-21/22); `e2e/a11y.spec.ts` in Chromium (axe-core via `@axe-core/playwright`, WCAG 2.0/2.1/2.2 A+AA tags, light and dark, idle and with a result: 0 violations; reflow, text spacing, Tab order, focus outline, target size); `bun run lint:css`. Not repeated for the redesign: the manual keyboard runs of A11Y-20 and A11Y-33 (`app.ts` untouched, `translate.spec.ts` still passes)
   - Earlier pass (2026-10-10), kept for rows not re-checked:
@@ -11,7 +12,7 @@
   - Browser (Claude in-app browser, `http://localhost:3000/`, launch config `.claude/launch.json`): keyboard Tab order and focus rings in light and dark; a real translation run (success and Stop); empty-text and malformed-glossary validation; 320 px and 640 px viewports (the 640 px check stands in for 200 % zoom); text-spacing override
   - axe-core 4.10.2 (cdnjs) injected into the rendered page, WCAG 2.0/2.1/2.2 A and AA rule sets, in dark and light: 0 violations
 - **Known limits:** 200 % zoom is emulated by a 640 CSS px viewport (same reflow as 200 % zoom on a 1280 px display), not by the browser's zoom control. The screen reader check is not done (see Open items).
-- **Summary:** 36 PASS · 0 FAIL · 15 N/A · 0 BLOCKED · 0 UNVERIFIED
+- **Summary:** 37 PASS · 0 FAIL · 14 N/A · 0 BLOCKED · 0 UNVERIFIED
 
 Status values: `PASS` · `FAIL` · `N/A (reason)` · `BLOCKED (what is needed)` · `UNVERIFIED (why)`.
 BP rows (best practice) never block acceptance.
@@ -21,7 +22,7 @@ BP rows (best practice) never block acceptance.
 | A11Y-01 | Page language | PASS | `<html lang="en">`, index.html:2; lint |
 | A11Y-02 | Language of parts | PASS | Chinese genre examples wrapped in `<span lang="zh">` (index.html, `genre-hint`); `#output` gets `lang` = target language code in `translate()` (app.ts); model names are proper nouns |
 | A11Y-03 | Page title | PASS | One `<title>`: "Translate – Index Translator"; single-page site |
-| A11Y-04 | Landmarks | One `<main id="main">`, `<header>`, `<footer>`; no `<nav>`; both panels are `<section aria-labelledby>`, as is Model and options; axe `region` clean (`e2e/a11y.spec.ts`) |
+| A11Y-04 | Landmarks | PASS | One `<main id="main">`, `<header>`; no `<footer>` (removed), no `<nav>`; both panels are `<section aria-labelledby>`, as is Model and options; axe `region` clean (`e2e/a11y.spec.ts`) |
 | A11Y-05 | Headings | PASS | `h1` "Index Translator"; `h2` per section: "Source text" and "Translation" (visually hidden, `.sr-only`), "Model and options" (visible); no skipped levels |
 | A11Y-06 | Semantic structure | PASS | Result notes are a `<ul>`; radio group is `fieldset`/`legend`; no tables |
 | A11Y-07 | Meaningful sequence & sensory cues | PASS | DOM order equals visual order: engine status, source panel, translation panel, settings. The two-column layout is a CSS grid with no `order`, so reflow to one column keeps the same sequence; no instruction refers to shape, position or colour |
@@ -33,7 +34,7 @@ BP rows (best practice) never block acceptance.
 | A11Y-13 | Keyboard operable | PASS | Only native `button`, `a[href]`, `select`, `input`, `textarea`, `details`; the single `click` handler is on a `<button>` (Copy); Stop is a `<button>`; Tab walk in `e2e/a11y.spec.ts` |
 | A11Y-14 | No keyboard trap | PASS | No `keydown`/`keypress` handlers, iframes, dialogs or custom widgets (grep of `public/`); Tab moved through every control in the browser |
 | A11Y-15 | Character key shortcuts | PASS | No shortcuts defined (no key handlers) |
-| A11Y-16 | Focus order | PASS | No `tabindex` > 0; the only `tabindex` is `-1` on `<main>`; Stop uses `hidden` while inactive; source order = visual order; Tab order (e2e): skip link, From, text, Translate, To, then model radios, Glossary summary, footer links |
+| A11Y-16 | Focus order | PASS | No `tabindex` > 0; the only `tabindex` is `-1` on `<main>`; Stop uses `hidden` while inactive; source order = visual order; Tab order (e2e): skip link, engine status link, From, text, Clear, Translate, To, then the Model switch buttons and the Glossary summary |
 | A11Y-17 | Visible focus | PASS | Global `:focus-visible` `3px solid var(--focus)`, offset 2px (`#1a56db` light on `#ffffff`/`#f3f5fa` 6.18/5.66:1; `#8ab4f8` dark on `#1a1d25` 7.99:1); e2e asserts an outline of at least 2px on From, text, Translate and To. `main` (skip-link target) keeps the global ring too; the new stylesheet has no `outline: none` anywhere |
 | A11Y-18 | Focus not obscured | PASS | No `position: sticky`/`fixed` content (grep of `style.css`); skip link is the only positioned element and is on screen only while focused |
 | A11Y-19 | Bypass blocks (skip link) | PASS | `<a class="skip-link" href="#main">` is the first focusable element (confirmed by Tab in browser), becomes visible on `:focus`, activating it moves focus to `<main id="main" tabindex="-1">` |
@@ -47,19 +48,19 @@ BP rows (best practice) never block acceptance.
 | A11Y-27 | Images of text | PASS | No images |
 | A11Y-28 | Orientation | PASS | No orientation lock in CSS or JS |
 | A11Y-29 | Content on hover/focus | N/A (no hover or focus popups, no `title` attributes) | |
-| A11Y-30 | Labels | PASS | Every `select`, `input`, `textarea` has a visible `<label for>`; model radios are in `fieldset` + `legend` "Model"; no placeholder-only labels; lint; axe `label` clean |
+| A11Y-30 | Labels | PASS | Selects and the option fields have a visible `<label for>`. The main text box is named by `aria-label="Text to translate"` and shows that text as its placeholder (requested design; no visible label once text is typed, lint WARN accepted). The Model buttons are a `role="group"` named "Model"; axe `label` clean |
 | A11Y-31 | Input purpose (autocomplete) | N/A (no fields collecting data about the user) | |
-| A11Y-32 | Instructions & required fields | PASS | Label reads "Text to translate (required)" and `required` + `aria-required="true"` are set; glossary format and other hints are linked with `aria-describedby` |
+| A11Y-32 | Instructions & required fields | PASS | The text box is `required` + `aria-required="true"`; "required" is no longer in visible text (requested), the empty-submit error says what is needed. The glossary and constraint instructions are placeholders, so they disappear once typing starts; the glossary error message repeats the format. Placeholder colour is `--muted` at full opacity (7.9/8.6:1 on surface, e2e asserts >= 4.5:1) |
 | A11Y-33 | Error identification & suggestion | PASS | Browser, empty text + Translate: focus on `#text`, `aria-invalid="true"`, `aria-describedby` = `text-error`, visible "Enter some text to translate." Browser, glossary line "this line has no equals sign": focus on `#glossary`, `aria-invalid="true"`, `aria-describedby` = `glossary-hint glossary-error` → "Glossary line 1 must look like: source term = target term.", `<details>` opened |
 | A11Y-34 | Status messages | PASS | `#engine` and `#progress` are `role="status"`, `#error` is `role="alert"`; all exist (empty or populated) in the HTML before any content is injected, and moved into the panels in this redesign without being re-created. `#progress` reads "Done." / "Stopped." after a run (e2e). The translation output is deliberately not a live region. Screen reader output not heard |
 | A11Y-35 | Predictable on focus/input | PASS | Changing a select, radio or text only refreshes the displayed model explanation; submitting needs the Translate button |
 | A11Y-36 | Error prevention | N/A (no legal, financial or data-modifying submissions) | |
 | A11Y-37 | Redundant entry & accessible authentication | N/A (no multi-step entry, no authentication; paste is not blocked) | |
 | A11Y-38 | Accessible names | PASS | Buttons "Translate", "Stop", "Copy translation" and links have visible text as their names; lint; axe `button-name`, `link-name` clean |
-| A11Y-39 | Link purpose | PASS | "API specification", "Engine health (JSON)" |
-| A11Y-40 | Custom widgets follow APG | N/A (no custom widgets; `details`, `fieldset`/radio, `select` are native) | |
+| A11Y-39 | Link purpose | PASS | One content link: the engine status text ("Engine ready, …"), which opens the health JSON; the status text names the engine state, not the destination, which is stated by the link being in the engine status region |
+| A11Y-40 | Custom widgets follow APG | PASS | The Model switch is a group of `button`s with `aria-pressed`, the same pattern as Raw/Preview; Tab and Enter/Space (e2e). `details`, `select` are native | |
 | A11Y-41 | Consistent help | N/A (single page, no help mechanism) | |
-| A11Y-42 | Target size | PASS | `--target: 2.75rem` (44 px) minimum block and inline size for buttons, selects, inputs and summary; radio rows 44 px tall; e2e asserts every visible button, select, input, summary and textarea is at least 24x24. Footer links are inline text (exempt) |
+| A11Y-42 | Target size | PASS | `--target: 2.75rem` (44 px) minimum block and inline size for buttons, selects, inputs and summary; radio rows 44 px tall; e2e asserts every visible button, select, input, summary and textarea is at least 24x24. The engine link is inline text (exempt); the Model switch buttons are 44 px tall |
 | A11Y-43 | Gestures & dragging | N/A (none) | |
 | A11Y-44 | Pointer cancellation | PASS | Actions use `submit`/`click` only; no `mousedown`/`touchstart` |
 | A11Y-45 | Pause, stop, hide | PASS | Nothing moves or blinks. The engine status is refreshed on load, on return to the tab and after each translation; it repeats automatically only while a model load is in progress (2 s), not as a standing timer |

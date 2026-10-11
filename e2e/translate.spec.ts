@@ -112,7 +112,7 @@ test("a long English text selects the document model, swaps the engine and warns
   await app.to.selectOption("zh");
   const paragraph = "word ".repeat(1000).trim();
   await app.text.fill([paragraph, paragraph, paragraph].join("\n\n"));
-  await expect(app.selection).toContainText("whole-document model is used");
+  await expect(app.advice).toBeEmpty(); // the model is named in the status line instead
 
   await app.translate.click();
   await expect(app.progress).toContainText("Done, with");
@@ -125,12 +125,12 @@ test("a long English text selects the document model, swaps the engine and warns
 test("the manual model choice overrides the length rule", async ({ app }) => {
   await app.open();
   await app.text.fill("short");
-  await app.model("Index-NativeLong-9B").check();
-  await expect(app.selection).toContainText("cannot translate this");
+  await app.model("Index-NativeLong-9B").click();
+  await expect(app.advice).toContainText("cannot translate this");
   await app.translate.click();
   await expect(app.error).toContainText("Index-NativeLong-9B cannot translate this");
-  await app.model("Index-Translate-9B").check();
-  await expect(app.selection).toHaveText("Model: Index-Translate-9B, as you chose.");
+  await app.model("Index-Translate-9B").click();
+  await expect(app.advice).toBeEmpty();
 });
 
 test("a truncated translation is flagged as incomplete", async ({ app, mock }) => {
@@ -155,7 +155,7 @@ test("an engine error mid-stream keeps the partial text and says it is incomplet
 test("text over the input limit shows the server's input_too_long message", async ({ app, mock }) => {
   await app.open();
   await app.text.fill("a".repeat(30_000));
-  await app.model("Index-Translate-9B").check();
+  await app.model("Index-Translate-9B").click();
   await app.translate.click();
   await expect(app.error).toContainText("The text is too long for one translation");
   expect((await mock.state()).requests).toHaveLength(0);
@@ -183,12 +183,12 @@ test("a full queue shows the busy message", async ({ app, mock, request, baseURL
 test("the model switches back to chat for a short text after a document load", async ({ app, mock }) => {
   await app.open();
   await app.from.selectOption("en");
-  await app.model("Index-NativeLong-9B").check();
+  await app.model("Index-NativeLong-9B").click();
   await app.text.fill("Short text.");
   await app.translate.click();
   await expect(app.progress).toContainText("Done");
   await expect(app.engine).toContainText("NativeLong");
-  await app.model("Automatic").check();
+  await app.model("Automatic").click();
   await app.translate.click();
   await expect(app.engine).toHaveText("Engine ready, Index-Translate-9B loaded.");
   // The mock was reset after the startup load of the chat model, so only the swaps are recorded.
