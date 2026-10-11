@@ -105,26 +105,56 @@ function blockNodes(blocks: Block[], tight = false): Node[] {
   return blocks.flatMap((b) => blockNode(b, tight));
 }
 
+/** With prefers-reduced-motion: reduce, streamed text is shown in batches this far apart. */
+export const REDUCED_MOTION_FLUSH_MS = 1000;
+
+function prefersReducedMotion(): boolean {
+  try {
+    return matchMedia("(prefers-reduced-motion: reduce)").matches;
+  } catch {
+    return false;
+  }
+}
+
 /** Plain text: one text node that grows. */
-function plainOutput(target: HTMLElement): OutputView {
+function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
   const text = document.createTextNode("");
   target.replaceChildren(text);
-  return { append: (t) => text.appendData(t), finish() {} };
+  if (!reduced) return { append: (t) => text.appendData(t), finish() {} };
+
+  let pending = "";
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const flush = () => {
+    clearTimeout(timer);
+    timer = undefined;
+    if (pending) text.appendData(pending);
+    pending = "";
+  };
+  return {
+    append(t) {
+      pending += t;
+      timer ??= setTimeout(flush, REDUCED_MOTION_FLUSH_MS);
+    },
+    finish: flush,
+  };
 }
 
 /**
  * Markdown, rendered incrementally: finished blocks are appended once and left alone; only the
  * blocks of the open tail are rebuilt, at most once per animation frame.
  */
-function markdownOutput(target: HTMLElement): OutputView {
+function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
   target.replaceChildren();
   const stream = new MarkdownStream();
   let tail: Node[] = [];
   let frame = 0;
+  let timer: ReturnType<typeof setTimeout> | undefined;
 
   const render = () => {
     cancelAnimationFrame(frame);
+    clearTimeout(timer);
     frame = 0;
+    timer = undefined;
     const { done, tail: open } = stream.take();
     for (const node of tail) node.parentNode?.removeChild(node);
     tail = blockNodes(open);
@@ -134,7 +164,8 @@ function markdownOutput(target: HTMLElement): OutputView {
   return {
     append(t) {
       stream.push(t);
-      if (!frame) frame = requestAnimationFrame(render);
+      if (reduced) timer ??= setTimeout(render, REDUCED_MOTION_FLUSH_MS);
+      else if (!frame) frame = requestAnimationFrame(render);
     },
     finish: render,
   };
@@ -143,5 +174,6 @@ function markdownOutput(target: HTMLElement): OutputView {
 /** Clears `target` and returns the view that streamed text should be written to. */
 export function createOutput(target: HTMLElement, markdown: boolean): OutputView {
   target.classList.toggle("markdown", markdown);
-  return markdown ? markdownOutput(target) : plainOutput(target);
+  const reduced = prefersReducedMotion();
+  return markdown ? markdownOutput(target, reduced) : plainOutput(target, reduced);
 }
