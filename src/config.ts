@@ -61,7 +61,8 @@ export function loadConfig(env: Env = Bun.env): Config {
   return {
     host: env.HOST ?? "127.0.0.1",
     port: int(env, "PORT", 3000, { max: 65535 }),
-    publicDir: env.PUBLIC_DIR ?? join(root, "public"),
+    // Resolved so a relative path, a trailing slash or "./" cannot break the static traversal check.
+    publicDir: resolve(env.PUBLIC_DIR || join(root, "public")),
     specPath: join(root, "docs", "openapi.yaml"),
     modelsDir: env.MODELS_DIR ?? join(root, "models"),
     defaultModel,
