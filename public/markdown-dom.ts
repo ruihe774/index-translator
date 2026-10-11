@@ -5,6 +5,7 @@
 // Each top-level element carries `data-line`, the index of its first line in the text (one span
 // per line for plain text, one element per block for Markdown), so scrolling can be synced by line.
 
+import { LINK_NOTE, type LinkReference, linkProblem } from "./links.js";
 import { type Align, type Block, type Inline, MarkdownStream, type ParsedBlock } from "./markdown.js";
 
 export interface OutputView {
@@ -213,6 +214,26 @@ function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
     },
     finish: render,
   };
+}
+
+/** Marks the links under a freshly rendered, complete output. */
+export function checkLinks(root: HTMLElement, ref: LinkReference) {
+  for (const a of root.querySelectorAll<HTMLAnchorElement>("a[href]")) {
+    const href = a.getAttribute("href") ?? "";
+    const line = Number(a.closest<HTMLElement>("[data-line]")?.dataset.line ?? 0);
+    const problem = linkProblem(ref, href, line);
+    if (!problem) continue;
+    a.dataset.linkProblem = problem;
+    a.title = LINK_NOTE[problem];
+    const note = el("span", [document.createTextNode(` (${LINK_NOTE[problem]})`)], "sr-only");
+    a.append(note);
+    if (problem === "missing") {
+      // Not a link any more: no target to follow, still announced as a disabled link.
+      a.removeAttribute("href");
+      a.setAttribute("role", "link");
+      a.setAttribute("aria-disabled", "true");
+    }
+  }
 }
 
 /** Clears `target` and returns the view that streamed text should be written to. */

@@ -3,8 +3,9 @@
 // reads the form, calls the API and writes the results to the page.
 
 import { type ApiErrorBody, describeError } from "./errors.js";
+import { type LinkReference, linkReference } from "./links.js";
 import { looksLikeMarkdown } from "./markdown.js";
-import { createOutput, type OutputView, renderText } from "./markdown-dom.js";
+import { checkLinks, createOutput, type OutputView, renderText } from "./markdown-dom.js";
 import {
   adviceMessage,
   type Done,
@@ -319,6 +320,16 @@ function showOutput() {
   if (translation) {
     output.append(translation);
     output.finish();
+    applyLinkCheck();
+  }
+}
+
+/** Set when a translation ends: what the output's links are checked against. */
+let linkCheck: { translation: string; ref: LinkReference } | null = null;
+
+function applyLinkCheck() {
+  if (linkCheck && linkCheck.translation === translation && outputEl.classList.contains("markdown")) {
+    checkLinks(outputEl, linkCheck.ref);
   }
 }
 
@@ -404,6 +415,7 @@ function setRunning(on: boolean) {
 function clearResult(markdown: boolean) {
   translation = "";
   synced = null;
+  linkCheck = null;
   views.output = { available: markdown, view: "preview" };
   showOutput();
   setMeta("");
@@ -527,6 +539,12 @@ async function translate() {
     const alignment = done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
     if (alignment) synced = { source: text, translation, alignment };
     setMeta(metaLine(sel.model, done));
+    if (markdown) {
+      // Checked on the finished text; the output element is rendered in full first.
+      output?.finish();
+      linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
+      applyLinkCheck();
+    }
   } catch (e) {
     if (stopped) {
       showInterruption(true);

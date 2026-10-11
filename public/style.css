@@ -626,6 +626,16 @@
       margin-block: 1rem;
     }
 
+    /* Link check: the dashed rule and the strike-through keep the state visible without colour. */
+    a[data-link-problem] {
+      color: var(--error);
+      border-block-end: 2px dashed currentcolor;
+    }
+
+    a[data-link-problem="missing"] {
+      text-decoration: line-through;
+    }
+
     .table-scroll {
       overflow-x: auto;
     }

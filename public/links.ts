@@ -1,0 +1,78 @@
+// Link check for rendered Markdown output. A translation may rewrite, invent or misplace a link
+// target; the targets a link may have are the ones in the source. Pure parts are testable without a
+// DOM; `checkLinks` applies the verdicts to the rendered output.
+//
+// - "missing": the target occurs nowhere in the source. The link is disabled.
+// - "mismatch": the target occurs in the source but not in the source block that the output block
+//   was matched to, or the blocks could not be matched at all. The link is marked, not disabled.
+
+import { type Block, type Inline, parseLines } from "./markdown.js";
+import { type Alignment, blockAt } from "./paragraphs.js";
+
+export type LinkProblem = "missing" | "mismatch";
+
+export interface LinkReference {
+  /** The source text; a target found in it, however written, is not missing. */
+  text: string;
+  /** Every target of the parsed source links, per top-level block start line. */
+  byLine: Map<number, Set<string>>;
+  /** Block alignment of source and output, or null when the paragraph check failed. */
+  alignment: Alignment | null;
+}
+
+function inlineHrefs(nodes: Inline[], into: Set<string>) {
+  for (const n of nodes) {
+    if (n.type === "link" || n.type === "image") into.add(n.href);
+    if ("children" in n) inlineHrefs(n.children, into);
+  }
+}
+
+function blockHrefs(b: Block, into: Set<string>) {
+  switch (b.type) {
+    case "heading":
+    case "paragraph":
+      inlineHrefs(b.children, into);
+      break;
+    case "quote":
+      for (const c of b.children) blockHrefs(c, into);
+      break;
+    case "list":
+      for (const item of b.items) for (const c of item.children) blockHrefs(c, into);
+      break;
+    case "table":
+      for (const cell of [...b.head, ...b.rows.flat()]) inlineHrefs(cell, into);
+      break;
+  }
+}
+
+export function linkReference(source: string, alignment: Alignment | null): LinkReference {
+  const byLine = new Map<number, Set<string>>();
+  for (const { block, line } of parseLines(source.split("\n"))) {
+    const set = byLine.get(line) ?? new Set<string>();
+    blockHrefs(block, set);
+    byLine.set(line, set);
+  }
+  return { text: source, byLine, alignment };
+}
+
+/**
+ * What is wrong with a link in the output, or null. `outputLine` is the first line of the output's
+ * top-level block that holds the link.
+ */
+export function linkProblem(ref: LinkReference, href: string, outputLine: number): LinkProblem | null {
+  if (!ref.text.includes(href)) return "missing";
+  const a = ref.alignment;
+  if (!a) return "mismatch";
+  const k = blockAt(a.output, outputLine);
+  const sourceBlock = new Set<string>();
+  for (const [line, hrefs] of ref.byLine) {
+    if (blockAt(a.source, line) === k) for (const h of hrefs) sourceBlock.add(h);
+  }
+  return sourceBlock.has(href) ? null : "mismatch";
+}
+
+export const LINK_NOTE: Record<LinkProblem, string> = {
+  missing: "This link target is not in the source text; the link is disabled.",
+  mismatch:
+    "This link target differs from the source link in the matching paragraph, or the paragraphs could not be matched.",
+};
