@@ -92,5 +92,5 @@ if (!keep) {
 const version = libraryVersion(dest);
 const seconds = Math.round((performance.now() - started) / 1000);
 console.log(
-  `ok ${dest} (${TAG}, C API ${version.abi}, ${native ? "this machine's CPU" : "AVX2"}, built in ${seconds} s)`,
+  `ok ${dest} (${TAG}, C API ${version.abi}, ${native ? "this machine's CPU" : process.arch === "x64" ? "AVX2" : process.arch}, built in ${seconds} s)`,
 );

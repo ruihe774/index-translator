@@ -66,10 +66,18 @@ jobs:
           retention-days: 7
 
   appimage:
-    name: AppImage
+    name: AppImage (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
     # The AppImage runs on systems whose C and C++ libraries are at least as new as this one's.
-    runs-on: ubuntu-24.04
-    timeout-minutes: 60
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v7
 
@@ -89,7 +97,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-ubuntu-24.04-x64-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
@@ -100,7 +108,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-ubuntu-24.04-x64-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts') }}
+          key: audio-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
@@ -113,7 +121,7 @@ jobs:
       # program says so and stops, and that the packed engine loads when it is told to use the CPU.
       - name: Check that the AppImage starts and stops with a reason
         run: |
-          appimage=dist/Index_Translator-x86_64.AppImage
+          appimage=dist/Index_Translator-${{ matrix.arch }}.AppImage
           export XDG_DATA_HOME="$RUNNER_TEMP/data"
           expect() { # <words the output must contain> <command...>
             local want=$1 out code=0
@@ -131,6 +139,6 @@ jobs:
 
       - uses: actions/upload-artifact@v7
         with:
-          name: Index_Translator-x86_64.AppImage
-          path: dist/Index_Translator-x86_64.AppImage
+          name: Index_Translator-${{ matrix.arch }}.AppImage
+          path: dist/Index_Translator-${{ matrix.arch }}.AppImage
           if-no-files-found: error

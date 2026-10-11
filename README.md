@@ -52,9 +52,10 @@ it, and stops.
 
 ### With the AppImage
 
-`Index_Translator-x86_64.AppImage` is built for every change: on GitHub, open **Actions**, the
-latest **CI** run, and download it under **Artifacts** (GitHub hands it out as a zip file; unpack
-it). Then:
+`Index_Translator-x86_64.AppImage` and `Index_Translator-aarch64.AppImage` are built for every
+change: on GitHub, open **Actions**, the latest **CI** run, and download the one for your
+processor under **Artifacts** (GitHub hands it out as a zip file; unpack it). The commands below
+use the x86-64 name. Then:
 
 ```bash
 chmod +x Index_Translator-x86_64.AppImage
@@ -67,9 +68,9 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
 - `fetch` puts the models into `~/.local/share/index-translator` and needs `curl`. An interrupted
   download continues when you run it again. To leave out reading aloud (3.5 GiB):
   `fetch --model index-translate-9b --model index-nailong-9b`.
-- It runs on x86-64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later). Besides
+- It runs on x86-64 or aarch64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later). Besides
   the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
-  a processor with AVX2.
+  an x86-64 processor with AVX2.
 
 ### From the source
 

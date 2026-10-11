@@ -1,4 +1,4 @@
-// Pack the app into one file that runs on other Linux machines: dist/Index_Translator-x86_64.AppImage,
+// Pack the app into one file that runs on other Linux machines: dist/Index_Translator-<arch>.AppImage (x86_64 or aarch64, as the machine),
 // with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and
 // the prebuilt shim, libaudiocpp). The models and the voices are not packed; the AppImage's `fetch`
 // subcommand (scripts/fetch_models.ts) downloads them into the user's data directory.
@@ -19,21 +19,36 @@ import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { download, output, run } from "./build_tools";
 
-const NAME = "Index_Translator-x86_64.AppImage";
+/** The checksums of the two downloaded tools, per architecture (`process.arch` names the key). */
+const ARCHES = {
+  x64: {
+    name: "x86_64",
+    appimagetool: "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+    runtime: "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+  },
+  arm64: {
+    name: "aarch64",
+    appimagetool: "f0837e7448a0c1e4e650a93bb3e85802546e60654ef287576f46c71c126a9158",
+    runtime: "00cbdfcf917cc6c0ff6d3347d59e0ca1f7f45a6df1a428a0d6d8a78664d87444",
+  },
+} as const;
+const arch = ARCHES[process.arch as keyof typeof ARCHES];
+if (process.platform !== "linux" || !arch) {
+  throw new Error("the AppImage is built on, and for, x86-64 or aarch64 Linux");
+}
+const ARCH = arch.name;
+
+const NAME = `Index_Translator-${ARCH}.AppImage`;
 
 const APPIMAGETOOL = {
-  url: "https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-x86_64.AppImage",
-  sha256: "ed4ce84f0d9caff66f50bcca6ff6f35aae54ce8135408b3fa33abfc3cb384eb0",
+  url: `https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${ARCH}.AppImage`,
+  sha256: arch.appimagetool,
 };
 /** What every AppImage starts with: mounts the image and runs AppRun. Static, so it needs no libfuse on the user's system. */
 const RUNTIME = {
-  url: "https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-x86_64",
-  sha256: "2fca8b443c92510f1483a883f60061ad09b46b978b2631c807cd873a47ec260d",
+  url: `https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${ARCH}`,
+  sha256: arch.runtime,
 };
-
-if (process.platform !== "linux" || process.arch !== "x64") {
-  throw new Error("the AppImage is built on, and for, x86-64 Linux");
-}
 if (Bun.argv.length > 2) throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
 
 const root = resolve(import.meta.dir, "..");
@@ -104,8 +119,8 @@ await cp(join(packaging, "index-translator.desktop"), join(appDir, "index-transl
 await cp(join(packaging, "index-translator.svg"), join(appDir, "index-translator.svg"));
 
 await mkdir(work, { recursive: true });
-const appimagetool = join(work, "appimagetool-x86_64.AppImage");
-const runtime = join(work, "runtime-x86_64");
+const appimagetool = join(work, `appimagetool-${ARCH}.AppImage`);
+const runtime = join(work, `runtime-${ARCH}`);
 await tool(APPIMAGETOOL, appimagetool);
 await chmod(appimagetool, 0o755);
 await tool(RUNTIME, runtime);
@@ -126,7 +141,7 @@ await run(
     out,
   ],
   undefined,
-  { ARCH: "x86_64", VERSION: commit },
+  { ARCH, VERSION: commit },
 );
 
 // The result starts: its own Bun runs from inside it and reads the packed files.
