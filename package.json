@@ -6,10 +6,14 @@
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p public/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "e2e": "playwright test",
-    "lint:css": "bun scripts/lint_css.ts"
+    "lint:css": "bun scripts/lint_css.ts",
+    "lint": "biome lint .",
+    "format": "biome format --write .",
+    "check": "biome check ."
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
+    "@biomejs/biome": "2.5.15",
     "@playwright/test": "1.56.1",
     "@types/bun": "^1.4.2",
     "browserslist": "^4.29.3",
