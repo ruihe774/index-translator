@@ -251,3 +251,73 @@ test("without the speech engine Listen says why and the speech settings stay hid
   await expect(app.page.locator("#speech-settings")).toBeHidden();
   expect((await mock.state()).speech.requests).toEqual([]);
 });
+
+// Recording a voice sample. Chromium runs with a fake microphone (a tone) and accepts its
+// permission prompt (flags in playwright.config.ts).
+test.describe("recording a voice sample", () => {
+  test("Record, Stop and the new voice is selected", async ({ app }) => {
+    await app.open();
+    await app.page.getByText("Reading aloud", { exact: true }).click();
+    const record = app.page.locator("#voice-record");
+    const status = app.page.locator("#clone-status");
+    await record.click();
+    await expect(record).toHaveText("Stop recording");
+    await expect(status).toContainText("Recording");
+    await app.page.waitForTimeout(1500); // the sample must be at least a second long
+    await record.click();
+    await expect(record).toHaveText("Record");
+    await expect(status).toContainText(/Voice "Recording .*" added/);
+    await expect(app.page.getByLabel("Voice for reading aloud").locator("option:checked")).toContainText("Recording");
+  });
+
+  test("a second click during the permission prompt opens no second stream, and every track ends", async ({ app }) => {
+    await app.page.addInitScript(() => {
+      const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+      const w = window as unknown as { __streams: MediaStream[]; __release: () => void };
+      w.__streams = [];
+      let release = () => {};
+      const gate = new Promise<void>((r) => {
+        release = r;
+      });
+      w.__release = release;
+      navigator.mediaDevices.getUserMedia = async (c) => {
+        await gate;
+        const s = await real(c);
+        w.__streams.push(s);
+        return s;
+      };
+    });
+    await app.open();
+    await app.page.getByText("Reading aloud", { exact: true }).click();
+    const record = app.page.locator("#voice-record");
+    await record.click();
+    await record.click(); // the prompt is still open
+    await app.page.evaluate(() => (window as unknown as { __release: () => void }).__release());
+    await expect(record).toHaveText("Stop recording");
+    await app.page.waitForTimeout(1200);
+    await record.click();
+    await expect(record).toHaveText("Record");
+    await expect(app.page.locator("#clone-status")).toContainText(/added/);
+    const result = await app.page.evaluate(() => {
+      const streams = (window as unknown as { __streams: MediaStream[] }).__streams;
+      const live = streams.flatMap((s) => s.getTracks()).filter((t) => t.readyState === "live");
+      return { streams: streams.length, live: live.length };
+    });
+    expect(result).toEqual({ streams: 1, live: 0 });
+  });
+
+  test("a denied microphone is explained and Record works again", async ({ app }) => {
+    await app.page.addInitScript(() => {
+      navigator.mediaDevices.getUserMedia = () =>
+        Promise.reject(new DOMException("Permission denied", "NotAllowedError"));
+    });
+    await app.open();
+    await app.page.getByText("Reading aloud", { exact: true }).click();
+    const record = app.page.locator("#voice-record");
+    await record.click();
+    await expect(app.page.locator("#clone-status")).toContainText("Microphone access was denied");
+    await expect(record).toHaveText("Record");
+    await record.click();
+    await expect(app.page.locator("#clone-status")).toContainText("Microphone access was denied");
+  });
+});

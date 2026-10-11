@@ -7,6 +7,9 @@
   through a control port (`/mock`).
 - `speech.spec.ts`: reading aloud against the mock speech engine, which answers each utterance
   with a tenth of a second of silence and records what it was asked to say (`speech` in `/mock`).
+  The Record tests use Chromium's fake microphone: `playwright.config.ts` passes
+  `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream` (a tone, prompt accepted);
+  the denial test stubs `getUserMedia`.
 - `integration.spec.ts`: real page, API stubbed with `page.route`, for error codes and SSE framing.
 
 Setup: `bun install`, then `bunx playwright install chromium`, or set `CHROMIUM_PATH` to an
