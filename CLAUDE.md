@@ -11,6 +11,7 @@ Dev tools (TypeScript, `@types/bun`, Playwright, doiuse, postcss) come from `nod
 `bun --install=…` / `-i` do not fetch them for `bun run` scripts, so the plain install step is required.
 
 - Run: `bun src/server.ts` (http://127.0.0.1:3000)
+- Dev: `bun run dev` (`bun --watch` restarts the process on backend changes, `DEV_RELOAD=1` makes open pages reload on `public/` changes and after a restart; `OPEN_BROWSER=0`; each restart reloads the model)
 - Test: `bun test` (API tests use a mock engine; no GPU needed)
 - Typecheck: `bun run typecheck`
 - Frontend e2e/integration/a11y: `bun run e2e` (Playwright, mock engine; see `e2e/README.md`; `bunx playwright install chromium` or `CHROMIUM_PATH`)
@@ -81,6 +82,7 @@ Environment variables, all optional. Defaults in `src/config.ts`.
 | `LLAMA_THREADS` | half the logical CPUs | CPU threads for decoding |
 | `LLAMA_DIR` | `vendor/llama.cpp` | Holds `libllama`, the `libggml-*` backends and `include/llama.h`; headers must match the library |
 | `PUBLIC_DIR` | `public/` | |
+| `DEV_RELOAD` | off | `1`: serves `/__dev/reload` (SSE) and injects its script into HTML; development only (`src/dev-reload.ts`, `src/dev-watch.ts`) |
 | `OPEN_BROWSER` | on | Opens the web app in the default browser at startup; `0` disables. Wildcard `HOST` opens `127.0.0.1` |
 
 ## API

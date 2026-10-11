@@ -153,6 +153,7 @@ export function config(overrides: Partial<Config> = {}): Config {
     allowedOrigins: [],
     allowedHosts: [],
     openBrowser: false,
+    devReload: false,
     ...overrides,
   };
 }

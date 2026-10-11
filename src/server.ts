@@ -5,6 +5,7 @@ import { loadConfig } from "./config";
 import { openBrowser } from "./open-browser";
 
 const cfg = loadConfig();
+if (cfg.devReload) await import("./dev-watch");
 const app = await startApp(cfg);
 console.error(`[server] listening on ${app.server.url} (default model ${cfg.defaultModel}, context ${cfg.ctxSize})`);
 

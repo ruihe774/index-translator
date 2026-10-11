@@ -23,7 +23,13 @@ describe("loadConfig defaults", () => {
       allowedOrigins: [],
       allowedHosts: [],
       openBrowser: true,
+      devReload: false,
     });
+  });
+
+  test("DEV_RELOAD=1 enables the development reload", () => {
+    expect(loadConfig({ DEV_RELOAD: "1" }).devReload).toBe(true);
+    expect(loadConfig({ DEV_RELOAD: "0" }).devReload).toBe(false);
   });
 
   test("OPEN_BROWSER=0 disables the browser", () => {

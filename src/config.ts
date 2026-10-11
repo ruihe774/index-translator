@@ -48,6 +48,8 @@ export interface Config {
   allowedHosts: string[];
   /** Open the web app in the default browser once the server is listening. */
   openBrowser: boolean;
+  /** Development: reload the open page when `public/` changes or the server restarts. */
+  devReload: boolean;
 }
 
 export function loadConfig(env: Env = Bun.env): Config {
@@ -80,5 +82,6 @@ export function loadConfig(env: Env = Bun.env): Config {
     allowedOrigins: list(env, "ALLOWED_ORIGINS"),
     allowedHosts: list(env, "ALLOWED_HOSTS"),
     openBrowser: env.OPEN_BROWSER !== "0",
+    devReload: env.DEV_RELOAD === "1",
   };
 }

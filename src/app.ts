@@ -2,6 +2,7 @@
 
 import type { Server } from "bun";
 import { CONTEXT_MARGIN, type Config } from "./config";
+import { createDevReload, DEV_PREFIX } from "./dev-reload";
 import {
   Engine,
   EngineError,
@@ -515,6 +516,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchNative): Pr
   }
 
   const serveStatic = createStaticServer(cfg.publicDir);
+  const devReload = cfg.devReload ? createDevReload(cfg.publicDir) : undefined;
 
   /**
    * Counts a request's prompt without entering the queue and without loading or swapping a model.
@@ -562,7 +564,14 @@ export async function startApp(cfg: Config, launch: Launcher = launchNative): Pr
     async fetch(req, server) {
       const url = new URL(req.url);
       const path = url.pathname;
-      if (!path.startsWith(API + "/")) return serveStatic(path, req);
+      if (devReload && path.startsWith(DEV_PREFIX)) {
+        const res = devReload.handle(path, req, server);
+        if (res) return res;
+      }
+      if (!path.startsWith(API + "/")) {
+        const res = await serveStatic(path, req);
+        return devReload ? devReload.inject(res) : res;
+      }
 
       try {
         checkHost(req, cfg);
@@ -630,6 +639,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchNative): Pr
     server,
     engine,
     async stop() {
+      devReload?.close();
       await server.stop(true);
       await engine.unload();
     },

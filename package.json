@@ -3,6 +3,7 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "dev": "OPEN_BROWSER=0 DEV_RELOAD=1 bun --watch src/server.ts",
     "test": "bun test",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p public/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
     "e2e": "playwright test",
