@@ -198,6 +198,10 @@ test("output links ask for confirmation, with other wording for links that do no
   );
   await run(app, source);
   await expect(app.meta).toContainText("generated");
+  // The status line is set before the final render and the link check (in `finally`); clicking
+  // earlier would find unchecked links, which get the warning wording.
+  await expect(app.output.locator("a[data-link-paired=true]")).toHaveCount(1);
+  await expect(app.output.locator("a[data-link-problem=mismatch]")).toHaveCount(1);
 
   const dialog = app.page.locator("dialog.link-dialog");
   const open = app.page.evaluate(() => {
@@ -219,7 +223,8 @@ test("output links ask for confirmation, with other wording for links that do no
   await expect(dialog.getByRole("heading")).toHaveText("Open this unverified link?");
   await dialog.getByRole("button", { name: "Open anyway" }).click();
   await expect(dialog).toBeHidden();
-  expect(await app.page.evaluate(() => (globalThis as any).opened)).toEqual(["https://a.example/"]);
+  // The `close` event that resolves the dialog is queued after the dialog is already hidden.
+  await expect.poll(() => app.page.evaluate(() => (globalThis as any).opened)).toEqual(["https://a.example/"]);
 
   // A target absent from the source is disabled and opens nothing.
   await expect(app.output.locator("a[aria-disabled=true]")).toHaveText(/丙/);
