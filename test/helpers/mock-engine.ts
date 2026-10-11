@@ -10,7 +10,14 @@ import { join, resolve } from "node:path";
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
 import { EngineError, type FinishReason, type GenerationEvent, type Launcher, type Running } from "../../src/llama";
-import { SpeechError, type SpeechLauncher, type SpeechRequest, type SpeechState, type Voice } from "../../src/speech";
+import {
+  SpeechError,
+  type SpeechLauncher,
+  type SpeechRequest,
+  type SpeechState,
+  type Voice,
+  validateSample,
+} from "../../src/speech";
 
 export const root = resolve(import.meta.dir, "..", "..");
 
@@ -138,8 +145,7 @@ export const launcher: Launcher = async (model) => {
 };
 
 /** A tenth of a second of silence: 22.05 kHz, mono, 16-bit PCM, as the speech engine answers. */
-export function silentWav(seconds = 0.1): ArrayBuffer {
-  const rate = 22050;
+export function silentWav(seconds = 0.1, rate = 22050): ArrayBuffer {
   const samples = Math.round(rate * seconds);
   const view = new DataView(new ArrayBuffer(44 + samples * 2));
   const ascii = (at: number, s: string) => {
@@ -202,7 +208,7 @@ export const speechLauncher: SpeechLauncher = () => ({
   },
   voices: async () => mockSpeech.voices,
   async addVoice(name, wav) {
-    if (new TextDecoder().decode(wav.slice(0, 4)) !== "RIFF") throw new SpeechError("the sample is not a WAV file");
+    validateSample(wav);
     const voice = { id: `upload-${mockSpeech.voices.length}`, name };
     mockSpeech.voices.push(voice);
     return voice;

@@ -17,8 +17,12 @@ import { buildDocumentPrompt, buildPrompt, DOCUMENT_DIRECTIONS, LANGUAGES, type 
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 import {
   MAX_SAMPLE_BYTES,
+  MAX_SAMPLE_RATE,
+  MAX_SAMPLE_SECONDS,
   MAX_SPEECH_CHARS,
   MAX_SPEED,
+  MIN_SAMPLE_RATE,
+  MIN_SAMPLE_SECONDS,
   MIN_SPEED,
   nativeSpeech,
   SPEECH_LANGUAGES,
@@ -713,6 +717,8 @@ export async function startApp(
               speed: { min: MIN_SPEED, max: MAX_SPEED },
               max_chars: MAX_SPEECH_CHARS,
               max_sample_bytes: MAX_SAMPLE_BYTES,
+              sample_seconds: { min: MIN_SAMPLE_SECONDS, max: MAX_SAMPLE_SECONDS },
+              sample_rate: { min: MIN_SAMPLE_RATE, max: MAX_SAMPLE_RATE },
               voices: speech.state === "unavailable" ? [] : await speech.voices(),
             });
           }

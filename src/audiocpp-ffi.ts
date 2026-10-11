@@ -119,7 +119,10 @@ export class SpeechModel {
     const out = new BigUint64Array(1);
     check(lib, lib.audiocpp_registry_create(null, out), "audiocpp_registry_create");
     const registry = handle(out);
+    // Each handle is freed only once it exists, newest first. audiocpp.h keeps parents alive
+    // internally, so the order is a courtesy, and freeing NULL would be a no-op anyway.
     let model: Pointer | null = null;
+    let session: Pointer | null = null;
     try {
       // struct audiocpp_model_config { const char * family_hint, * config_id, * weight_id, * model_spec_override; }
       const config = structWithString(opts.family, 32);
@@ -135,9 +138,11 @@ export class SpeechModel {
         lib.audiocpp_session_create(model, cstr("tts"), cstr("offline"), backend, null, out),
         "audiocpp_session_create",
       );
-      return new SpeechModel(lib, registry, model, handle(out));
+      session = handle(out);
+      return new SpeechModel(lib, registry, model, session);
     } catch (e) {
-      lib.audiocpp_model_free(model);
+      if (session) lib.audiocpp_session_free(session);
+      if (model) lib.audiocpp_model_free(model);
       lib.audiocpp_registry_free(registry);
       throw e;
     }

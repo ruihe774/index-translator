@@ -14,7 +14,7 @@ import { basename, extname, join } from "node:path";
 import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
 import type { SpeechWorkerReply, SpeechWorkerRequest } from "./speech-worker";
-import { readWav } from "./wav";
+import { type Pcm, readWav } from "./wav";
 
 /** The languages IndexTTS-2.5 speaks. Any other text comes out as noise, so it is refused. */
 export const SPEECH_LANGUAGES = ["zh", "en", "ja", "es", "ar"];
@@ -32,6 +32,12 @@ const THREADS = 4;
 /** Largest uploaded voice sample, and how many uploads are kept until the server stops. */
 export const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
 export const MAX_UPLOADED_VOICES = 16;
+
+/** Recording limits of an uploaded sample: a few seconds suffice, a long one only slows every utterance. */
+export const MIN_SAMPLE_SECONDS = 1;
+export const MAX_SAMPLE_SECONDS = 60;
+export const MIN_SAMPLE_RATE = 8000;
+export const MAX_SAMPLE_RATE = 192000;
 
 export class SpeechError extends Error {}
 
@@ -77,6 +83,29 @@ export type SpeechLauncher = (cfg: Config) => Speech;
 type Send<T> = T extends unknown ? Omit<T, "req"> : never;
 
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
+
+/** Decodes an uploaded sample and checks its sample rate and duration. Throws SpeechError. */
+export function validateSample(wav: ArrayBuffer): Pcm {
+  let pcm: Pcm;
+  try {
+    pcm = readWav(new Uint8Array(wav));
+  } catch (e) {
+    throw new SpeechError(`the sample cannot be used: ${messageOf(e)}`);
+  }
+  if (pcm.sampleRate < MIN_SAMPLE_RATE || pcm.sampleRate > MAX_SAMPLE_RATE) {
+    throw new SpeechError(
+      `the sample rate of ${pcm.sampleRate} Hz is not supported (${MIN_SAMPLE_RATE} to ${MAX_SAMPLE_RATE} Hz)`,
+    );
+  }
+  const seconds = pcm.samples.length / pcm.channels / pcm.sampleRate;
+  if (seconds < MIN_SAMPLE_SECONDS) {
+    throw new SpeechError(`the sample is too short (${seconds.toFixed(2)} s; at least ${MIN_SAMPLE_SECONDS} s)`);
+  }
+  if (seconds > MAX_SAMPLE_SECONDS) {
+    throw new SpeechError(`the sample is too long (${seconds.toFixed(1)} s; at most ${MAX_SAMPLE_SECONDS} s)`);
+  }
+  return pcm;
+}
 
 /** Starts the thread that owns libaudiocpp; replaceable in tests. */
 export type SpeechWorkerFactory = () => Worker;
@@ -131,12 +160,8 @@ export class NativeSpeech implements Speech {
   }
 
   async voices(): Promise<Voice[]> {
-    let files: string[];
-    try {
-      files = await readdir(this.cfg.voicesDir);
-    } catch {
-      return [];
-    }
+    // A missing voices directory still leaves the uploads.
+    const files = await readdir(this.cfg.voicesDir).catch(() => [] as string[]);
     const installed = files
       .filter((f) => extname(f) === ".wav")
       .sort()
@@ -149,11 +174,7 @@ export class NativeSpeech implements Speech {
 
   async addVoice(name: string, wav: ArrayBuffer): Promise<Voice> {
     // Decoded once here, so a recording the engine could not read is refused when it is uploaded.
-    try {
-      readWav(new Uint8Array(wav));
-    } catch (e) {
-      throw new SpeechError(`the sample cannot be used: ${messageOf(e)}`);
-    }
+    validateSample(wav);
     if (this.uploads.size >= MAX_UPLOADED_VOICES) throw new SpeechError("too many uploaded voices");
     const id = `upload-${randomUUID()}`;
     const path = join(this.uploadDir, `${id}.wav`);

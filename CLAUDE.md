@@ -129,7 +129,8 @@ Spec: `docs/openapi.yaml`. Endpoints:
 - `GET /api/v1/languages`: codes with short forms
 - `GET /api/v1/health`: engine state, loaded model, limits, queue, speech engine state
 - `POST /api/v1/speech`: `{ text, lang, voice?, speed? }` to one WAV (22.05 kHz mono); `503 speech_unavailable` when not installed, `502 speech_error`
-- `GET /api/v1/voices`: speech state, voices, languages, speed range, text limit
+- `GET /api/v1/voices`: speech state, voices, languages, speed range, text limit, upload limits (bytes, 1 to 60 s, 8 to 192 kHz)
+- `POST /api/v1/voices`: WAV upload (`audio/wav`, 8 MiB, at most 16 kept); `400` outside the duration or sample-rate limits (`validateSample` in `src/speech.ts`)
 
 ## Models
 

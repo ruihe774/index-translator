@@ -126,7 +126,9 @@ paths:
       summary: Upload a voice sample for cloning
       description: |
         The body is a WAV recording (`audio/wav`, at most `max_sample_bytes`) of the voice to
-        imitate. It becomes a voice in `GET /voices` until the server stops; nothing is persisted.
+        imitate. It must last between `sample_seconds.min` and `sample_seconds.max` seconds and have a
+        sample rate within `sample_rate` (`400` otherwise). It becomes a voice in `GET /voices`
+        until the server stops; nothing is persisted. At most 16 uploads are kept.
       parameters:
         - name: name
           in: query
@@ -757,6 +759,24 @@ components:
         max_sample_bytes:
           type: integer
           description: Largest body of `POST /voices`.
+        sample_seconds:
+          type: object
+          description: Duration a `POST /voices` recording must have, in seconds.
+          required: [min, max]
+          properties:
+            min:
+              type: number
+            max:
+              type: number
+        sample_rate:
+          type: object
+          description: Sample rate a `POST /voices` recording must have, in Hz.
+          required: [min, max]
+          properties:
+            min:
+              type: integer
+            max:
+              type: integer
         voices:
           type: array
           description: Empty when speech is unavailable or the voices directory holds no WAV file.

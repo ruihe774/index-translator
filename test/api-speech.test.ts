@@ -2,12 +2,13 @@
 // of the real one that need no audio.cpp: what it reports when nothing is installed, and how it
 // lists voices.
 
-import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type App, startApp } from "../src/app";
-import { NativeSpeech, nativeSpeech } from "../src/speech";
+import { MAX_UPLOADED_VOICES, NativeSpeech, nativeSpeech, SpeechError, validateSample } from "../src/speech";
 import {
   config,
   launcher,
@@ -181,6 +182,8 @@ describe("GET /voices and health", () => {
       speed: { min: 0.5, max: 2 },
       max_chars: 1000,
       max_sample_bytes: 8 * 1024 * 1024,
+      sample_seconds: { min: 1, max: 60 },
+      sample_rate: { min: 8000, max: 192000 },
       voices: mockSpeech.voices,
     });
   });
@@ -307,24 +310,347 @@ describe("NativeSpeech with a fake worker", () => {
   });
 });
 
+describe("NativeSpeech state machine with a scripted worker", () => {
+  /** Answers like speech-worker.ts unless `manual`. */
+  function scripted() {
+    const w: any = {
+      posted: [] as any[],
+      listeners: {} as Record<string, () => void>,
+      failLoad: undefined as string | undefined,
+      manual: false,
+      onmessage: null,
+      onerror: null,
+      terminated: false,
+      postMessage(m: any) {
+        w.posted.push(m);
+        if (!w.manual) setTimeout(() => w.answer(m), 1);
+      },
+      answer(m: any) {
+        if (m.type === "load" && w.failLoad) w.onmessage({ data: { req: m.req, type: "error", message: w.failLoad } });
+        else if (m.type === "synthesize") w.onmessage({ data: { req: m.req, type: "audio", wav: silentWav() } });
+        else w.onmessage({ data: { req: m.req, type: "ok" } });
+      },
+      addEventListener(type: string, fn: () => void) {
+        w.listeners[type] = fn;
+      },
+      terminate() {
+        w.terminated = true;
+      },
+    };
+    return w;
+  }
+  const kinds = (w: any) => w.posted.map((m: any) => m.type);
+  const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
+  const say = (speech: NativeSpeech) => speech.synthesize(request, new AbortController().signal, () => {});
+  const wav = () => silentWav(1.5, 16000);
+  const quiet = () => spyOn(console, "error").mockImplementation(() => {});
+
+  async function setup(overrides: object = {}) {
+    const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
+    await writeFile(join(dir, `libaudiocpp.${process.platform === "darwin" ? "dylib" : "so"}`), "");
+    const workers: any[] = [];
+    const speech = new NativeSpeech(config({ speech: true, audioDir: dir, speechModelDir: dir, ...overrides }), () => {
+      const w = scripted();
+      workers.push(w);
+      return w;
+    });
+    return { workers, speech, cleanup: () => rm(dir, { recursive: true }) };
+  }
+
+  test("stopped, then starting while the model loads, then ready", async () => {
+    const { workers, speech, cleanup } = await setup();
+    const log = quiet();
+    try {
+      expect(speech.state).toBe("stopped");
+      expect(workers).toHaveLength(0);
+      const result = say(speech);
+      expect(speech.state).toBe("starting");
+      expect(await result).toBeInstanceOf(ArrayBuffer);
+      expect(speech.state).toBe("ready");
+      expect(speech.error).toBeUndefined();
+      await say(speech);
+      expect(kinds(workers[0])).toEqual(["load", "synthesize", "synthesize"]);
+      expect(workers).toHaveLength(1);
+    } finally {
+      log.mockRestore();
+      await cleanup();
+    }
+  });
+
+  test("a failed load is the error state, and the next request tries again", async () => {
+    const { workers, speech, cleanup } = await setup();
+    const log = quiet();
+    try {
+      const first = say(speech);
+      workers[0].failLoad = "out of memory";
+      await expect(first).rejects.toThrow("the speech model could not be loaded: out of memory");
+      expect(speech.state).toBe("error");
+      expect(speech.error).toContain("out of memory");
+
+      workers[0].failLoad = undefined;
+      await say(speech);
+      expect(speech.state).toBe("ready");
+      expect(speech.error).toBeUndefined();
+      expect(kinds(workers[0])).toEqual(["load", "load", "synthesize"]);
+    } finally {
+      log.mockRestore();
+      await cleanup();
+    }
+  });
+
+  test("the model is unloaded after SPEECH_IDLE_UNLOAD and loaded again by the next request", async () => {
+    const { workers, speech, cleanup } = await setup({ speechIdleUnload: 0.03 });
+    const log = quiet();
+    try {
+      await say(speech);
+      expect(speech.state).toBe("ready");
+      await Bun.sleep(120);
+      expect(kinds(workers[0])).toEqual(["load", "synthesize", "unload"]);
+      expect(speech.state).toBe("stopped");
+      await say(speech);
+      expect(speech.state).toBe("ready");
+      expect(kinds(workers[0])).toEqual(["load", "synthesize", "unload", "load", "synthesize"]);
+      expect(workers).toHaveLength(1);
+    } finally {
+      log.mockRestore();
+      await speech.stop();
+      await cleanup();
+    }
+  });
+
+  test("an utterance in flight postpones the unload", async () => {
+    const { workers, speech, cleanup } = await setup({ speechIdleUnload: 0.03 });
+    const log = quiet();
+    try {
+      await say(speech);
+      workers[0].manual = true;
+      const slow = say(speech);
+      await Bun.sleep(100);
+      expect(kinds(workers[0])).toEqual(["load", "synthesize", "synthesize"]);
+      workers[0].answer(workers[0].posted[2]);
+      await slow;
+      workers[0].manual = false;
+      await Bun.sleep(100);
+      expect(kinds(workers[0]).at(-1)).toBe("unload");
+    } finally {
+      log.mockRestore();
+      await speech.stop();
+      await cleanup();
+    }
+  });
+
+  test.each([
+    ["onerror", (w: any) => w.onerror({ message: "boom" }), "the speech thread failed: boom"],
+    ["close", (w: any) => w.listeners.close(), "the speech thread exited"],
+  ])("a worker crash (%s) rejects waiters, and the next request starts a new worker", async (_n, crash, message) => {
+    const { workers, speech, cleanup } = await setup();
+    const log = quiet();
+    try {
+      await say(speech);
+      workers[0].manual = true;
+      const waiter = say(speech).then(
+        () => null,
+        (e) => e,
+      );
+      await Bun.sleep(5);
+      crash(workers[0]);
+      const error = await waiter;
+      expect(error).toBeInstanceOf(SpeechError);
+      expect(error.message).toBe(message);
+      expect(speech.state).toBe("error");
+      expect(speech.error).toBe(message);
+
+      await say(speech);
+      expect(workers).toHaveLength(2);
+      expect(kinds(workers[1])).toEqual(["load", "synthesize"]);
+      expect(speech.state).toBe("ready");
+      // The dead worker's late close does not take the new one down.
+      workers[0].listeners.close();
+      expect(speech.state).toBe("ready");
+    } finally {
+      log.mockRestore();
+      await cleanup();
+    }
+  });
+
+  test("a crash while the model loads rejects the request", async () => {
+    const { workers, speech, cleanup } = await setup();
+    const log = quiet();
+    try {
+      const result = say(speech).then(
+        () => null,
+        (e) => e,
+      );
+      workers[0].onerror({ message: "segfault" });
+      expect((await result).message).toContain("segfault");
+      expect(speech.state).toBe("error");
+    } finally {
+      log.mockRestore();
+      await cleanup();
+    }
+  });
+
+  test("stop() unloads, ends the worker and deletes the uploads", async () => {
+    const { workers, speech, cleanup } = await setup();
+    const log = quiet();
+    try {
+      await say(speech);
+      const voice = await speech.addVoice("Mine", wav());
+      expect((await speech.voices()).map((v) => v.id)).toContain(voice.id);
+      const uploadDir = join(tmpdir(), `index-translator-voices-${process.pid}`);
+      expect(existsSync(join(uploadDir, `${voice.id}.wav`))).toBe(true);
+
+      await speech.stop();
+      expect(kinds(workers[0]).at(-1)).toBe("unload");
+      expect(workers[0].terminated).toBe(true);
+      expect(existsSync(uploadDir)).toBe(false);
+      expect(await speech.voices()).toEqual([]);
+      expect(speech.state).toBe("stopped");
+    } finally {
+      log.mockRestore();
+      await cleanup();
+    }
+  });
+
+  test("at most 16 uploads are kept", async () => {
+    const { speech, cleanup } = await setup();
+    try {
+      for (let i = 0; i < MAX_UPLOADED_VOICES; i++) await speech.addVoice(`v${i}`, wav());
+      await expect(speech.addVoice("one more", wav())).rejects.toThrow("too many uploaded voices");
+      expect(await speech.voices()).toHaveLength(MAX_UPLOADED_VOICES);
+      await speech.stop();
+      await speech.addVoice("again", wav());
+    } finally {
+      await speech.stop();
+      await cleanup();
+    }
+  });
+
+  test("addVoice refuses samples outside the limits without keeping them", async () => {
+    const { speech, cleanup } = await setup();
+    try {
+      await expect(speech.addVoice("x", silentWav(0.5, 16000))).rejects.toThrow("too short");
+      await expect(speech.addVoice("x", silentWav(1.5, 4000))).rejects.toThrow("sample rate");
+      await expect(speech.addVoice("x", new ArrayBuffer(100))).rejects.toThrow(SpeechError);
+      expect(await speech.voices()).toEqual([]);
+    } finally {
+      await cleanup();
+    }
+  });
+});
+
 describe("POST /voices", () => {
-  const upload = (body: string | Uint8Array, type = "audio/wav") =>
-    fetch(`${base}/api/v1/voices?name=${encodeURIComponent("My voice")}`, {
+  const upload = (body: string | Uint8Array, type = "audio/wav", name: string | null = "My voice") =>
+    fetch(`${base}/api/v1/voices${name === null ? "" : `?name=${encodeURIComponent(name)}`}`, {
       method: "POST",
       headers: { "content-type": type },
       body,
     });
+  const sample = (seconds = 1.5, rate = 16000) => new Uint8Array(silentWav(seconds, rate));
+  const errorOf = async (res: Response) => ((await res.json()) as any).error;
 
   test("a WAV sample becomes a voice", async () => {
-    const wav = new Uint8Array(64);
-    wav.set(new TextEncoder().encode("RIFF"), 0);
-    const res = await upload(wav);
+    const res = await upload(sample());
     expect(res.status).toBe(201);
     expect(((await res.json()) as { name: string }).name).toBe("My voice");
   });
 
   test("anything else is refused", async () => {
-    expect((await upload(new Uint8Array(64))).status).toBe(400);
+    const res = await upload(new Uint8Array(64));
+    expect(res.status).toBe(400);
+    expect((await errorOf(res)).details.field).toBe("body");
     expect((await upload("{}", "application/json")).status).toBe(415);
+    expect((await upload("{}", "text/plain")).status).toBe(415);
+  });
+
+  test("the content type may carry parameters and any case", async () => {
+    expect((await upload(sample(), "Audio/WAV; charset=binary")).status).toBe(201);
+  });
+
+  test("an empty body is a 400", async () => {
+    expect((await upload(new Uint8Array(0))).status).toBe(400);
+  });
+
+  test("413 when content-length is over 8 MiB, and when the body is, without a length", async () => {
+    const big = new Uint8Array(8 * 1024 * 1024 + 1);
+    const declared = await upload(big);
+    expect(declared.status).toBe(413);
+    expect((await errorOf(declared)).code).toBe("body_too_large");
+
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(big);
+        controller.close();
+      },
+    });
+    const chunked = await fetch(`${base}/api/v1/voices`, {
+      method: "POST",
+      headers: { "content-type": "audio/wav" },
+      body: stream,
+      duplex: "half",
+    } as RequestInit);
+    expect(chunked.status).toBe(413);
+  });
+
+  test("the name is trimmed, whitespace is collapsed, and it is cut at 60 characters", async () => {
+    const named = async (name: string | null) =>
+      ((await (await upload(sample(), "audio/wav", name)).json()) as any).name;
+    expect(await named("  My \n  new\t voice  ")).toBe("My new voice");
+    expect(await named("a".repeat(80))).toBe("a".repeat(60));
+    expect(await named("   ")).toBe("Uploaded voice");
+    expect(await named("")).toBe("Uploaded voice");
+    expect(await named(null)).toBe("Uploaded voice");
+  });
+
+  test.each([
+    ["shorter than 1 s", sample(0.5), "too short"],
+    ["longer than 60 s", sample(61, 8000), "too long"],
+    ["below 8 kHz", sample(1.5, 7999), "sample rate"],
+    ["above 192 kHz", sample(0.2, 192001), "sample rate"],
+  ])("a sample %s is a 400", async (_what, wav, message) => {
+    const res = await upload(wav);
+    expect(res.status).toBe(400);
+    const error = await errorOf(res);
+    expect(error.code).toBe("invalid_request");
+    expect(error.details.field).toBe("body");
+    expect(error.message).toContain(message);
+  });
+
+  test("the limits are inclusive at 1 s, 60 s, 8 kHz and 192 kHz", async () => {
+    for (const wav of [sample(1, 8000), sample(60, 8000), sample(1, 192000)]) {
+      expect((await upload(wav)).status).toBe(201);
+    }
+  });
+});
+
+describe("POST /speech speed range", () => {
+  test.each([0.5, 1, 2])("speed %d is accepted", async (speed) => {
+    expect((await speak({ text: "Hi", lang: "en", speed })).status).toBe(200);
+    expect(mockSpeech.requests.at(-1)?.speed).toBe(speed);
+  });
+
+  test.each([0.49, 2.01, 0, -1])("speed %d is refused", async (speed) => {
+    const res = await speak({ text: "Hi", lang: "en", speed });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as any).error.details.field).toBe("speed");
+    expect(mockSpeech.requests).toEqual([]);
+  });
+});
+
+describe("validateSample", () => {
+  /** silentWav is mono; the header is patched to two channels, which halves the duration. */
+  const stereo = (seconds: number, rate: number) => {
+    const wav = new Uint8Array(silentWav(seconds, rate));
+    new DataView(wav.buffer).setUint16(22, 2, true);
+    return wav.buffer as ArrayBuffer;
+  };
+
+  test("the duration counts frames, not samples", () => {
+    expect(() => validateSample(stereo(2, 8000))).not.toThrow();
+    expect(() => validateSample(stereo(1.5, 8000))).toThrow("too short");
+  });
+
+  test("garbage is a SpeechError", () => {
+    expect(() => validateSample(new ArrayBuffer(8))).toThrow(SpeechError);
   });
 });
