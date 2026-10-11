@@ -76,8 +76,8 @@ test("status text sits below the translation, with the other status text", async
   expect((await box(app, "#progress")).y).toBeGreaterThanOrEqual(area.y + area.height);
   await app.copy.click();
   await expect(app.progress).toHaveText(/copied|Copying failed/);
-  const progress = await box(app, "#progress");
-  expect((await box(app, "#meta")).y).toBeGreaterThan(progress.y);
+  // The meta line and Copy sit under the translation, the status lines below them.
+  expect((await box(app, "#meta")).y).toBeLessThan((await box(app, "#progress")).y);
 });
 
 test("an error banner is below the translation too", async ({ app, mock }) => {
@@ -158,4 +158,78 @@ test("a warning shows under the source, a plain choice shows nothing", async ({ 
   await expect(app.advice).toContainText("source and target languages are the same");
   await app.to.selectOption("zh");
   await expect(app.advice).toBeEmpty();
+});
+
+const STABLE = ["#text", "#output-area", "#count", "#translate", "#meta", "#settings-heading", "#from", "#to"];
+
+async function layout(app: AppPage, selectors = STABLE) {
+  const out: Record<string, unknown> = {};
+  for (const s of selectors) out[s] = await box(app, s);
+  return out;
+}
+
+test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
+  await app.page.setViewportSize({ width: 1280, height: 1000 });
+  await mock.set({ chunks: [THINK, "你好，世界"], delayMs: 400 });
+  await app.open();
+  await app.text.fill("Hello, world");
+  await expect(app.page.locator("#count")).toHaveText("10 letters"); // the count follows the text after a short delay
+  const idle = await layout(app);
+  const sizes = ["#clear", "#translate"];
+  const buttons = await layout(app, sizes);
+
+  await app.translate.click();
+  await expect(app.progress).toContainText("Translating");
+  await expect(app.stop).toBeVisible();
+  const running = await layout(app, STABLE.filter((s) => s !== "#meta"));
+  for (const [k, v] of Object.entries(running)) expect(v, `while running: ${k}`).toEqual(idle[k]);
+  // Stop sits where Clear was, and Translate has not moved.
+  expect(await box(app, "#stop")).toEqual(buttons["#clear"]);
+  expect(await box(app, "#translate")).toEqual(buttons["#translate"]);
+
+  await expect(app.progress).toHaveText("Done.");
+  await expect(app.copy).toBeVisible();
+  await expect(app.page.locator("#sync-hint")).toBeVisible();
+  const done = await layout(app, STABLE.filter((s) => s !== "#meta"));
+  for (const [k, v] of Object.entries(done)) expect(v, `when done: ${k}`).toEqual(idle[k]);
+  expect(await box(app, "#clear")).toEqual(buttons["#clear"]);
+  expect(await box(app, "#translate")).toEqual(buttons["#translate"]);
+});
+
+test("Clear and Stop are never shown together", async ({ app, mock }) => {
+  await mock.set({ chunks: [THINK, "一", "二", "三"], delayMs: 500 });
+  await app.open();
+  const clear = app.page.getByRole("button", { name: "Clear" });
+  await expect(clear).toBeVisible();
+  await expect(app.stop).toBeHidden();
+  await app.text.fill("Hello");
+  await app.translate.click();
+  await expect(app.stop).toBeVisible();
+  await expect(clear).toBeHidden();
+  await app.stop.click();
+  await expect(app.progress).toHaveText("Stopped.");
+  await expect(clear).toBeVisible();
+  await expect(app.stop).toBeHidden();
+});
+
+test("the disabled Translate button does not react to hover", async ({ app, mock }) => {
+  await mock.set({ chunks: [THINK, "一", "二"], delayMs: 600 });
+  await app.open();
+  await app.text.fill("Hello");
+  const bg = () => app.translate.evaluate((el) => getComputedStyle(el).backgroundColor);
+  await app.translate.click();
+  await expect(app.translate).toHaveAttribute("aria-disabled", "true");
+  await app.page.mouse.move(0, 0);
+  await app.page.waitForTimeout(400); // the colour change is a 0.15 s transition
+  const away = await bg();
+  await app.translate.hover();
+  await app.page.waitForTimeout(400);
+  expect(await bg()).toBe(away);
+  await expect(app.progress).toHaveText("Done.");
+  await app.page.mouse.move(0, 0);
+  await app.page.waitForTimeout(400);
+  const enabled = await bg();
+  await app.translate.hover();
+  await app.page.waitForTimeout(400);
+  expect(await bg()).not.toBe(enabled); // an enabled button still reacts
 });

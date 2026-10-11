@@ -133,8 +133,17 @@
     box-shadow: var(--shadow);
   }
 
-  .panel > .panel-foot {
-    margin-block-start: auto;
+  /* Lines that come and go (progress, warnings, hints, field errors) sit below everything
+     else in the panel, so nothing above them moves when they appear. The translation panel
+     reserves room for its usual two lines. */
+  .status {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .result .status {
+    min-block-size: 4rem;
   }
 
   .panel-foot {
@@ -361,6 +370,11 @@
     display: flex;
     flex-wrap: wrap;
     gap: 0.75rem;
+
+    /* Clear, Stop and Translate share one width, so swapping Clear for Stop moves nothing. */
+    > button {
+      min-inline-size: 6.5rem;
+    }
   }
 
   button {
@@ -375,7 +389,7 @@
     border-radius: var(--radius-md);
     cursor: pointer;
 
-    &:hover {
+    &:hover:not([aria-disabled="true"]) {
       background: color-mix(in srgb, var(--accent) 14%, var(--surface-sunken));
     }
 
@@ -384,7 +398,7 @@
       background: var(--accent);
       border-color: var(--accent);
 
-      &:hover {
+      &:hover:not([aria-disabled="true"]) {
         background: color-mix(in srgb, var(--accent) 88%, var(--text));
       }
     }

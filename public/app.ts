@@ -226,7 +226,6 @@ let output: OutputView | null = null;
 /** Translate is aria-disabled while a translation runs or before the languages are loaded. */
 function setTranslateEnabled() {
   translateBtn.setAttribute("aria-disabled", String(running !== null || !languagesReady));
-  clearBtn.setAttribute("aria-disabled", String(running !== null));
 }
 
 // ---- raw and preview views -------------------------------------------------------------------
@@ -311,7 +310,9 @@ function onOutputClick(e: MouseEvent) {
 
 function setRunning(on: boolean) {
   setTranslateEnabled();
+  // Stop takes Clear's place while a translation runs; the two are never shown together.
   stopBtn.hidden = !on;
+  clearBtn.hidden = on;
   if (on) stopBtn.focus();
 }
 

@@ -37,10 +37,8 @@
               <div id="source-area" class="output-area" hidden>
                 <div id="source-view" class="output" dir="auto"></div>
               </div>
-              <p id="text-error" class="error" hidden></p>
             </div>
 
-            <p id="advice" class="advice"></p>
             <div class="panel-foot">
               <p id="count" class="hint"></p>
               <div class="actions">
@@ -48,6 +46,10 @@
                 <button type="button" id="stop" hidden>Stop</button>
                 <button type="submit" id="translate" class="primary">Translate</button>
               </div>
+            </div>
+            <div class="status">
+              <p id="text-error" class="error" hidden></p>
+              <p id="advice" class="advice"></p>
             </div>
           </section>
 
@@ -69,13 +71,15 @@
               <p id="placeholder" class="placeholder">The translation appears here.</p>
             </div>
 
-            <p id="error" role="alert" class="error-banner"></p>
-            <p id="progress" role="status" class="progress"></p>
-            <ul id="notes" class="notes"></ul>
-            <p id="sync-hint" class="hint" hidden>Click a paragraph on either side to scroll the other side to it.</p>
             <div class="panel-foot">
               <p id="meta" class="hint"></p>
               <button type="button" id="copy" hidden>Copy translation</button>
+            </div>
+            <div class="status">
+              <p id="progress" role="status" class="progress"></p>
+              <p id="error" role="alert" class="error-banner"></p>
+              <ul id="notes" class="notes"></ul>
+              <p id="sync-hint" class="hint" hidden>Click a paragraph on either side to scroll the other side to it.</p>
             </div>
           </section>
         </div>
