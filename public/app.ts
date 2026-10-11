@@ -10,6 +10,8 @@ import {
   type Selection,
 } from "./select-model.js";
 import { mismatchMessage, paragraphMismatch } from "./paragraphs.js";
+import { describeError, type ApiErrorBody } from "./errors.js";
+import { sseEvents } from "./sse.js";
 
 const API = "/api/v1";
 const MODEL_LABELS: Record<ModelId, string> = {
@@ -250,59 +252,12 @@ async function pollHealth() {
 
 // ---- translating -----------------------------------------------------------------------------
 
-interface ApiErrorBody {
-  code?: string;
-  message?: string;
-  details?: Record<string, unknown>;
-}
-
 class ApiFailure extends Error {
   constructor(
     public body: ApiErrorBody,
     public status: number,
   ) {
     super(body.message ?? `HTTP ${status}`);
-  }
-}
-
-function describeError(e: ApiErrorBody | undefined, status?: number): string {
-  const d = e?.details ?? {};
-  switch (e?.code) {
-    case "input_too_long":
-      return d.prompt_tokens && d.max_input_tokens
-        ? `The text is too long for one translation: ${number.format(Number(d.prompt_tokens))} tokens, and the limit is ${number.format(Number(d.max_input_tokens))}. Shorten it or translate it in parts.`
-        : "The text is too long for one translation. Shorten it or translate it in parts.";
-    case "queue_full":
-      return "The translator is busy and its queue is full. Try again in a minute.";
-    case "engine_unavailable":
-      return "The translation engine is loading or switching models. Try again in a moment.";
-    case "body_too_large":
-      return "The request is too large to send.";
-    default:
-      if (e?.message) return e.message;
-      return status ? `The server answered with an error (HTTP ${status}).` : "Something went wrong.";
-  }
-}
-
-async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerator<{ event: string; data: any }> {
-  const reader = body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
-  for (;;) {
-    const { value, done } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-    for (let end = buffer.indexOf("\n\n"); end >= 0; end = buffer.indexOf("\n\n")) {
-      const block = buffer.slice(0, end);
-      buffer = buffer.slice(end + 2);
-      let event = "message";
-      const data: string[] = [];
-      for (const line of block.split("\n")) {
-        if (line.startsWith("event:")) event = line.slice(6).trim();
-        else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
-      }
-      if (data.length) yield { event, data: JSON.parse(data.join("\n")) };
-    }
   }
 }
 
@@ -450,12 +405,21 @@ async function translate() {
       copyBtn.hidden = translation.length === 0;
       if (translation) addNote("You stopped the translation. The text above is incomplete.");
       setText(progressEl, "Stopped.");
-    } else if (e instanceof ApiFailure) {
-      fail(describeError(e.body, e.status));
-    } else if (e instanceof TypeError) {
-      fail("The server cannot be reached.");
     } else {
-      fail(e instanceof Error ? e.message : String(e));
+      const message =
+        e instanceof ApiFailure
+          ? describeError(e.body, e.status)
+          : e instanceof TypeError
+            ? "The server cannot be reached."
+            : e instanceof Error
+              ? e.message
+              : String(e);
+      // Output already on screen is kept, but it must not look finished.
+      if (translation) {
+        copyBtn.hidden = false;
+        addNote("The translation is incomplete because an error interrupted it. The text above is partial.");
+      }
+      fail(message);
     }
   } finally {
     running = null;
