@@ -1,24 +1,25 @@
 // The web app: one page, talking to the REST/SSE API of the same server.
+// Everything with logic that can be tested without a DOM lives in the sibling modules; this file
+// reads the form, calls the API and writes the results to the page.
 
-import {
-  CHAT_MODEL,
-  DOCUMENT_MODEL,
-  LONG_THRESHOLD_LETTERS,
-  selectModel,
-  type Choice,
-  type ModelId,
-  type Selection,
-} from "./select-model.js";
-import { mismatchMessage, paragraphMismatch } from "./paragraphs.js";
+import { CHAT_MODEL, DOCUMENT_MODEL, selectModel, type Choice, type Selection } from "./select-model.js";
 import { describeError, type ApiErrorBody } from "./errors.js";
 import { sseEvents } from "./sse.js";
-import { parseGlossary } from "./glossary.js";
+import { buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.js";
+import {
+  doneMessage,
+  healthMessage,
+  interruption,
+  metaLine,
+  modelLabel,
+  resultNotes,
+  selectionMessage,
+  selectionStatus,
+  type Done,
+  type Health,
+} from "./messages.js";
 
 const API = "/api/v1";
-const MODEL_LABELS: Record<ModelId, string> = {
-  [CHAT_MODEL]: "Index-Translate-9B",
-  [DOCUMENT_MODEL]: "Index-NativeLong-9B",
-};
 const HEALTH_LOADING_POLL_MS = 2000;
 let healthTimer: ReturnType<typeof setTimeout> | undefined;
 const number = new Intl.NumberFormat();
@@ -86,20 +87,8 @@ function modelChoice(): Choice {
   return (form.elements.namedItem("model") as RadioNodeList).value as Choice;
 }
 
-function lines(value: string): string[] {
-  return value
-    .split("\n")
-    .map((l) => l.trim())
-    .filter(Boolean);
-}
-
-/**
- * Glossary, hard or soft constraints need the chat model. Genre does not count here: the backend
- * (src/prompt.ts buildPrompt) only uses genre inside the constraint prompt, so with no glossary or
- * constraints it is ignored, and the document model rejects it (src/app.ts checkDocumentRequest).
- */
 function hasOptions(): boolean {
-  return Boolean(glossaryInput.value.trim() || hardInput.value.trim() || softInput.value.trim());
+  return formHasOptions({ glossary: glossaryInput.value, hard: hardInput.value, soft: softInput.value });
 }
 
 // ---- model selection display -----------------------------------------------------------------
@@ -114,69 +103,15 @@ function currentSelection(): Selection {
   });
 }
 
-function selectionMessage(s: Selection): { text: string; warn: boolean } {
-  const name = MODEL_LABELS[s.model];
-  const limit = number.format(LONG_THRESHOLD_LETTERS);
-  const long = s.letters > LONG_THRESHOLD_LETTERS;
-  switch (s.reason) {
-    case "short":
-      return { text: `Model: ${name}. The text is within ${limit} letters, which it translates reliably.`, warn: false };
-    case "long-document":
-      return {
-        text: `Model: ${name}. The text is over ${limit} letters, so the whole-document model is used. The first request after a switch takes a few seconds longer.`,
-        warn: false,
-      };
-    case "long-unsupported-direction":
-      return {
-        text: `Warning: the text is over ${limit} letters, but Index-NativeLong-9B only translates Chinese to or from English or Japanese. Index-Translate-9B will be used and may drop or repeat paragraphs. Translate the text in parts to be safe.`,
-        warn: true,
-      };
-    case "long-unknown-source":
-      return {
-        text: `Warning: the text is over ${limit} letters and its language could not be determined. Choose the source language under "From" to allow the whole-document model. Index-Translate-9B will be used and may drop or repeat paragraphs.`,
-        warn: true,
-      };
-    case "long-options":
-      return {
-        text: `Warning: the text is over ${limit} letters, but a glossary, constraints or genre need Index-Translate-9B, which may drop or repeat paragraphs. Clear them to allow the whole-document model.`,
-        warn: true,
-      };
-    case "manual":
-      return long && s.model === CHAT_MODEL
-        ? {
-            text: `Warning: you chose ${name} for a text over ${limit} letters. It may drop or repeat paragraphs.`,
-            warn: true,
-          }
-        : { text: `Model: ${name}, as you chose.`, warn: false };
-    case "manual-document-unusable":
-      return {
-        text: `Warning: Index-NativeLong-9B cannot translate this. It needs a source language, a direction of Chinese to or from English or Japanese, and no glossary, constraints or genre.`,
-        warn: true,
-      };
-  }
-}
-
-/** An explicit source equal to the target. "auto" is not compared: it may detect another language. */
-function sameLanguage(): boolean {
-  const from = fromSelect.value;
-  return from !== "" && from !== "auto" && from === toSelect.value;
-}
-
 /** Set when /languages could not be loaded and the built-in short list is offered instead. */
 let languageNote = "";
 
 function refreshSelection() {
   const s = currentSelection();
   setText(countEl, `${number.format(s.letters)} letters`);
-  const { text, warn } = selectionMessage(s);
-  const same = sameLanguage();
-  const parts = [text];
-  if (same) {
-    parts.push("Warning: the source and target languages are the same, so the translation may only repeat the text. Check the From and To choices.");
-  }
-  if (languageNote) parts.push(languageNote);
-  setText(selectionEl, parts.join(" "));
-  selectionEl.classList.toggle("warn", warn || same);
+  const { text, warn } = selectionStatus(s, fromSelect.value, toSelect.value, languageNote);
+  setText(selectionEl, text);
+  selectionEl.classList.toggle("warn", warn);
   const documentModel = s.model === DOCUMENT_MODEL && s.reason !== "manual-document-unusable";
   options.disabled = documentModel;
   return s;
@@ -248,20 +183,7 @@ async function pollHealth() {
   let loading = false;
   try {
     const res = await fetch(`${API}/health`);
-    const h = (await res.json()) as {
-      status: string;
-      error?: string;
-      model: string | null;
-      queue: { running: boolean; waiting: number };
-    };
-    const model = h.model ? MODEL_LABELS[h.model as ModelId] ?? h.model : null;
-    if (h.status === "ready") {
-      text = `Engine ready${model ? `, ${model} loaded` : ""}.`;
-      if (h.queue.waiting > 0) text += ` ${h.queue.waiting} waiting in the queue.`;
-    } else if (h.status === "loading") {
-      text = "Engine loading a model…";
-      loading = true;
-    } else text = `Engine ${h.status}${h.error ? `: ${h.error}` : ""}.`;
+    ({ text, loading } = healthMessage((await res.json()) as Health));
   } catch {
     text = "The server cannot be reached.";
   }
@@ -281,10 +203,6 @@ class ApiFailure extends Error {
   ) {
     super(body.message ?? `HTTP ${status}`);
   }
-}
-
-function seconds(ms: number): string {
-  return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
 }
 
 let running: AbortController | null = null;
@@ -318,6 +236,13 @@ function addNote(text: string) {
   notesEl.append(li);
 }
 
+/** Output already on screen when a translation ends early is kept, but it must not look finished. */
+function showInterruption(stopped: boolean) {
+  const { note, showCopy } = interruption(translation, stopped);
+  copyBtn.hidden = !showCopy;
+  if (note) addNote(note);
+}
+
 function fail(message: string) {
   setText(progressEl, "");
   setText(errorEl, message);
@@ -345,35 +270,21 @@ async function translate() {
     return;
   }
 
-  const body: Record<string, unknown> = {
-    model: sel.model,
+  const built = buildRequest(sel.model, sel.sourceLang, {
     text,
-    target_lang: toSelect.value,
-    stream: true,
-  };
-  if (sel.sourceLang) body.source_lang = sel.sourceLang;
-  if (sel.model === CHAT_MODEL) {
-    const { glossary, error } = parseGlossary(glossaryInput.value);
-    if (error) {
-      advancedOpen();
-      const message =
-        error.kind === "duplicate"
-          ? `Glossary line ${error.line} repeats the source term "${error.term}". Each source term may appear only once.`
-          : `Glossary line ${error.line} must look like: source term = target term.`;
-      showFieldError(glossaryError, glossaryInput, message);
-      glossaryInput.focus();
-      return;
-    }
-    showFieldError(glossaryError, glossaryInput, null);
-    const hasGlossary = Object.keys(glossary).length > 0;
-    if (hasGlossary) body.glossary = glossary;
-    if (hardInput.value.trim()) body.hard_constraints = lines(hardInput.value);
-    if (softInput.value.trim()) body.soft_constraints = lines(softInput.value);
-    // Genre is sent only with a glossary or constraints; alone the backend ignores it (see hasOptions).
-    if (genreInput.value.trim() && (hasGlossary || body.hard_constraints || body.soft_constraints)) {
-      body.genre = genreInput.value.trim();
-    }
+    targetLang: toSelect.value,
+    glossary: glossaryInput.value,
+    hard: hardInput.value,
+    soft: softInput.value,
+    genre: genreInput.value,
+  });
+  if ("glossaryProblem" in built) {
+    advancedOpen();
+    showFieldError(glossaryError, glossaryInput, glossaryMessage(built.glossaryProblem));
+    glossaryInput.focus();
+    return;
   }
+  showFieldError(glossaryError, glossaryInput, null);
 
   store("from", fromSelect.value);
   store("to", toSelect.value);
@@ -383,7 +294,7 @@ async function translate() {
   clearResult();
   outputEl.lang = toSelect.value;
   setRunning(true);
-  setText(progressEl, `Translating with ${MODEL_LABELS[sel.model]}…`);
+  setText(progressEl, `Translating with ${modelLabel(sel.model)}…`);
 
   let stopped = false;
   stopBtn.onclick = () => {
@@ -395,7 +306,7 @@ async function translate() {
     const res = await fetch(`${API}/translate`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
+      body: JSON.stringify(built.body),
       signal: controller.signal,
     });
     if (!res.ok || !res.body) {
@@ -403,12 +314,12 @@ async function translate() {
       throw new ApiFailure(payload?.error ?? {}, res.status);
     }
 
-    let done: { finish_reason: string; usage: { prompt_tokens: number; completion_tokens: number }; timings: { queue_ms: number; generation_ms: number } } | null = null;
+    let done: Done | null = null;
     for await (const { event, data } of sseEvents(res.body)) {
       if (event === "queued") {
         setText(progressEl, `Waiting in the queue, position ${data.position}…`);
       } else if (event === "start") {
-        setText(progressEl, `Translating with ${MODEL_LABELS[data.model as ModelId] ?? data.model}…`);
+        setText(progressEl, `Translating with ${modelLabel(data.model)}…`);
       } else if (event === "delta") {
         translation += data.text;
         outputText!.appendData(data.text);
@@ -420,29 +331,20 @@ async function translate() {
     }
     if (!done) throw new Error("the connection closed before the translation finished");
 
-    const notes: string[] = [];
-    if (done.finish_reason === "length") {
-      notes.push("The translation was cut off because it reached the output limit. It is incomplete.");
-    }
-    const mismatch = paragraphMismatch(text, translation);
-    if (mismatch) notes.push(mismatchMessage(mismatch));
-    if (sel.model === DOCUMENT_MODEL && sel.sourceLang === "zh" && toSelect.value === "en") {
-      notes.push("Long Chinese-to-English output can silently lose content. Check that every part of the source is present.");
-    }
+    const notes = resultNotes(done, {
+      source: text,
+      translation,
+      model: sel.model,
+      sourceLang: sel.sourceLang,
+      targetLang: toSelect.value,
+    });
     for (const n of notes) addNote(n);
-    setText(
-      metaEl,
-      `${MODEL_LABELS[sel.model]} · ${number.format(done.usage.prompt_tokens)} prompt tokens · ${number.format(done.usage.completion_tokens)} generated · ${seconds(done.timings.generation_ms + done.timings.queue_ms)}`,
-    );
+    setText(metaEl, metaLine(sel.model, done));
     copyBtn.hidden = translation.length === 0;
-    setText(
-      progressEl,
-      notes.length ? `Done, with ${notes.length === 1 ? "a warning" : `${notes.length} warnings`}: ${notes.join(" ")}` : "Done.",
-    );
+    setText(progressEl, doneMessage(notes));
   } catch (e) {
     if (stopped) {
-      copyBtn.hidden = translation.length === 0;
-      if (translation) addNote("You stopped the translation. The text above is incomplete.");
+      showInterruption(true);
       setText(progressEl, "Stopped.");
     } else {
       const message =
@@ -453,11 +355,7 @@ async function translate() {
             : e instanceof Error
               ? e.message
               : String(e);
-      // Output already on screen is kept, but it must not look finished.
-      if (translation) {
-        copyBtn.hidden = false;
-        addNote("The translation is incomplete because an error interrupted it. The text above is partial.");
-      }
+      showInterruption(false);
       fail(message);
     }
   } finally {
