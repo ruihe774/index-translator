@@ -824,6 +824,8 @@ async function addSampleVoice(name: string, audio: ArrayBuffer) {
 
 const recorder = new MicRecorder();
 async function finishRecording() {
+  // Idempotent: the 30 s limit and a click on Stop may both arrive; the first one wins.
+  if (!recorder.recording) return;
   voiceRecord.textContent = "Record";
   let audio: ArrayBuffer;
   try {
@@ -844,6 +846,8 @@ voiceFile.addEventListener("change", async () => {
 });
 voiceRecord.addEventListener("click", async () => {
   if (recorder.recording) return finishRecording();
+  if (recorder.starting || recorder.stopping) return; // a permission prompt or a stop is already under way
+  cloneStatus.textContent = "Waiting for the microphone…";
   try {
     await recorder.start(() => void finishRecording());
   } catch (e) {

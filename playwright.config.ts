@@ -23,7 +23,14 @@ export default defineConfig({
   projects: [
     {
       name: "chromium",
-      use: { ...devices["Desktop Chrome"], launchOptions: { executablePath } },
+      use: {
+        ...devices["Desktop Chrome"],
+        launchOptions: {
+          executablePath,
+          // A fake microphone (a tone) whose permission prompt is accepted, for the Record button.
+          args: ["--use-fake-device-for-media-stream", "--use-fake-ui-for-media-stream"],
+        },
+      },
     },
   ],
   webServer: {
