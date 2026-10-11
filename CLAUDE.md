@@ -6,6 +6,10 @@ docs: README.md.
 
 ## Commands
 
+Dev tools (TypeScript, `@types/bun`, Playwright, doiuse, postcss) come from `node_modules`. Run
+`bun install` before `typecheck`, `lint:css` or `e2e` whenever `node_modules` is missing or stale.
+`bun --install=…` / `-i` do not fetch them for `bun run` scripts, so the plain install step is required.
+
 - Run: `bun src/server.ts` (http://127.0.0.1:3000)
 - Test: `bun test` (API tests use a mock engine; no GPU needed)
 - Typecheck: `bun run typecheck`
