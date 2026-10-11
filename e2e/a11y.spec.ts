@@ -2,7 +2,7 @@
 // The acceptance record is A11Y-ACCEPTANCE.md.
 
 import AxeBuilder from "@axe-core/playwright";
-import { THINK, expect, test } from "./fixtures";
+import { expect, THINK, test } from "./fixtures";
 
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 

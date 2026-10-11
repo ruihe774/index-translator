@@ -5,10 +5,10 @@
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
 import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { Engine, EngineError, launchNative, type GenerationEvent, type Launcher } from "../src/llama";
+import { Engine, EngineError, type GenerationEvent, type Launcher, launchNative } from "../src/llama";
 import { chatPrompt } from "../src/llama-ffi";
 import { MODELS } from "../src/models";
-import { TEMPLATE, config, fakeModel, mock, resetMock, type FakeModel } from "./helpers/mock-engine";
+import { config, type FakeModel, fakeModel, mock, resetMock, TEMPLATE } from "./helpers/mock-engine";
 
 // ---- fake launcher -------------------------------------------------------------------------
 

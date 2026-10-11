@@ -10,7 +10,7 @@
 // Tests call it through e2e/fixtures.ts.
 
 import { startApp } from "../src/app";
-import { CHAT, DOCUMENT, config, launcher, mock, resetMock, waitReady } from "../test/helpers/mock-engine";
+import { CHAT, config, DOCUMENT, launcher, mock, resetMock, waitReady } from "../test/helpers/mock-engine";
 
 const port = Number(process.env.E2E_PORT ?? 3100);
 const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 3101);

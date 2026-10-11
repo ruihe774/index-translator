@@ -2,7 +2,7 @@
 // These cover what the mock engine cannot produce on demand: error envelopes, status codes, an
 // unreachable server, SSE framing and the health polling.
 
-import { expect, test, AppPage } from "./fixtures";
+import { type AppPage, expect, test } from "./fixtures";
 
 const sse = (events: [string, unknown][]) =>
   events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("");

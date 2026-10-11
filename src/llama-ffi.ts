@@ -2,7 +2,7 @@
 // its chat prompt, tokenize, decode and sample. Every call here blocks its thread, so this module
 // is only used from src/llama-worker.ts.
 
-import { CString, cc, dlopen, suffix, type Pointer } from "bun:ffi";
+import { CString, cc, dlopen, type Pointer, suffix } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 

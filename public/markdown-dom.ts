@@ -5,7 +5,7 @@
 // Each top-level element carries `data-line`, the index of its first line in the text (one span
 // per line for plain text, one element per block for Markdown), so scrolling can be synced by line.
 
-import { MarkdownStream, type Align, type Block, type Inline, type ParsedBlock } from "./markdown.js";
+import { type Align, type Block, type Inline, MarkdownStream, type ParsedBlock } from "./markdown.js";
 
 export interface OutputView {
   /** Adds streamed text. Rendering may be deferred to the next frame. */

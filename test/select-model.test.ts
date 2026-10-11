@@ -2,12 +2,12 @@ import { describe, expect, test } from "bun:test";
 import {
   CHAT_MODEL,
   DOCUMENT_DIRECTIONS as CLIENT_DIRECTIONS,
-  DOCUMENT_MODEL,
-  LONG_THRESHOLD_LETTERS,
   countLetters,
+  DOCUMENT_MODEL,
   detectSource,
-  selectModel,
+  LONG_THRESHOLD_LETTERS,
   type SelectionInput,
+  selectModel,
 } from "../public/select-model";
 import { DOCUMENT_DIRECTIONS } from "../src/prompt";
 

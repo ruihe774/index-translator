@@ -4,7 +4,7 @@
 // Without a file, the pinned spec version is downloaded. Exit 1 when an example fails that is not
 // listed below, or a listed one passes (then update the list and the document).
 
-import { parseMarkdown, type Block, type Inline } from "../public/markdown";
+import { type Block, type Inline, parseMarkdown } from "../public/markdown";
 
 const SPEC_VERSION = "0.31.2";
 

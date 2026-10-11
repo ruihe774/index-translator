@@ -3,10 +3,10 @@
 // model each load was for.
 
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { startApp, type App } from "../src/app";
+import { type App, startApp } from "../src/app";
 import type { Config } from "../src/config";
 import { buildDocumentPrompt } from "../src/prompt";
-import { CHAT, DOCUMENT, TEMPLATE, config, launcher, mock, postTo, readSse, waitReady } from "./helpers/mock-engine";
+import { CHAT, config, DOCUMENT, launcher, mock, postTo, readSse, TEMPLATE, waitReady } from "./helpers/mock-engine";
 
 let app: App;
 let base: string;

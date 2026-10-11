@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
-import { MarkdownStream, looksLikeMarkdown, parseInline, parseLines, parseMarkdown, type Block, type ParsedBlock } from "../public/markdown";
+import { type Block, looksLikeMarkdown, MarkdownStream, type ParsedBlock, parseInline, parseLines, parseMarkdown } from "../public/markdown";
 
 describe("looksLikeMarkdown", () => {
   test("one unambiguous construct is enough", () => {

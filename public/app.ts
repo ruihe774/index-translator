@@ -2,25 +2,25 @@
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
-import { CHAT_MODEL, DOCUMENT_MODEL, detectSource, selectModel, type Choice, type Selection } from "./select-model.js";
-import { describeError, type ApiErrorBody } from "./errors.js";
-import { sseEvents } from "./sse.js";
-import { buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.js";
+import { type ApiErrorBody, describeError } from "./errors.js";
 import { looksLikeMarkdown } from "./markdown.js";
-import { createOutput, renderText, type OutputView } from "./markdown-dom.js";
-import { alignBlocks, type Alignment } from "./paragraphs.js";
-import { clearLinked, hoveredBlock, markLinked, syncFrom, textareaPane, viewPane, type Pane } from "./sync-scroll.js";
+import { createOutput, type OutputView, renderText } from "./markdown-dom.js";
 import {
   adviceMessage,
+  type Done,
+  type Health,
   healthMessage,
   interruption,
   metaLine,
   modelLabel,
   resultNotes,
   selectionMessage,
-  type Done,
-  type Health,
 } from "./messages.js";
+import { type Alignment, alignBlocks } from "./paragraphs.js";
+import { buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
+import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.js";
+import { sseEvents } from "./sse.js";
+import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.js";
 
 const API = "/api/v1";
 const HEALTH_LOADING_POLL_MS = 2000;

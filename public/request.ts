@@ -1,6 +1,6 @@
 // Builds the /translate request body from the form's values. Pure: no DOM access.
 
-import { parseGlossary, type GlossaryProblem } from "./glossary.js";
+import { type GlossaryProblem, parseGlossary } from "./glossary.js";
 import { CHAT_MODEL, type ModelId } from "./select-model.js";
 
 export interface FormValues {

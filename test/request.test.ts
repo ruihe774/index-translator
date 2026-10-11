@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { buildRequest, glossaryMessage, hasOptions, lines, type FormValues } from "../public/request";
+import { buildRequest, type FormValues, glossaryMessage, hasOptions, lines } from "../public/request";
 import { CHAT_MODEL, DOCUMENT_MODEL } from "../public/select-model";
 
 const form = (over: Partial<FormValues> = {}): FormValues => ({ text: "hello", targetLang: "zh", glossary: "", hard: "", soft: "", genre: "", ...over });

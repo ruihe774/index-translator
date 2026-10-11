@@ -3,9 +3,9 @@
 // Usage: bun scripts/lint_css.ts [file.css ...]   (exit 1 if a feature is unsupported)
 
 import { readFile } from "node:fs/promises";
-import postcss from "postcss";
-import doiuse from "doiuse";
 import browserslist from "browserslist";
+import doiuse from "doiuse";
+import postcss from "postcss";
 
 const files = Bun.argv.slice(2);
 if (files.length === 0) files.push("public/style.css");

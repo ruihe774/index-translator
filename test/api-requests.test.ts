@@ -3,9 +3,9 @@
 // Findings the server gets wrong are written as test.failing and listed in the report.
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { startApp, type App } from "../src/app";
+import { type App, startApp } from "../src/app";
 import { buildDocumentPrompt, buildPrompt } from "../src/prompt";
-import { CHAT, DOCUMENT, TEMPLATE, config, launcher, mock, postTo, readSse, resetMock, waitReady } from "./helpers/mock-engine";
+import { CHAT, config, DOCUMENT, launcher, mock, postTo, readSse, resetMock, TEMPLATE, waitReady } from "./helpers/mock-engine";
 
 const MiB = 1024 * 1024;
 

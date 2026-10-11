@@ -4,7 +4,7 @@
 // Usage: [MODEL=index-nailong-9b] bun scripts/longtext.ts [base-url] [output-dir]
 
 import { join } from "node:path";
-import { countLetters, englishEssays, missingParagraphs, repeatedMarkers, withMarkers, type Fixture } from "../test/fixtures";
+import { countLetters, englishEssays, type Fixture, missingParagraphs, repeatedMarkers, withMarkers } from "../test/fixtures";
 
 export async function translateStream(baseUrl: string, body: Record<string, unknown>) {
   const res = await fetch(`${baseUrl}/api/v1/translate`, {

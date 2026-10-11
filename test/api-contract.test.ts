@@ -6,7 +6,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
-import { startApp, type App } from "../src/app";
+import { type App, startApp } from "../src/app";
 import { MODELS } from "../src/models";
 import { CHAT, config, launcher, mock, postTo, readSse, resetMock, root, waitReady } from "./helpers/mock-engine";
 

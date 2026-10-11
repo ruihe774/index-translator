@@ -1,11 +1,11 @@
 // Prompt builders matching the training-side templates of Index-Translate
 // (ported from inference/llm/translate.py in bilibili/Index-Translate).
 
+import nailongEnZh from "../prompts/nailong_en-zh.txt" with { type: "text" };
+import nailongJaZh from "../prompts/nailong_ja-zh.txt" with { type: "text" };
 // Fixed NativeLong templates, copied from inference/llm/prompts/ in bilibili/Index-Translate.
 import nailongZhEn from "../prompts/nailong_zh-en.txt" with { type: "text" };
-import nailongEnZh from "../prompts/nailong_en-zh.txt" with { type: "text" };
 import nailongZhJa from "../prompts/nailong_zh-ja.txt" with { type: "text" };
-import nailongJaZh from "../prompts/nailong_ja-zh.txt" with { type: "text" };
 
 const DOCUMENT_TEMPLATES: Record<string, string> = {
   "zh-en": nailongZhEn,

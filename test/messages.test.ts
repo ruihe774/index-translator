@@ -1,14 +1,14 @@
 import { describe, expect, test } from "bun:test";
 import {
-  INTERRUPTED_NOTE,
-  SAME_LANGUAGE_WARNING,
-  STOPPED_NOTE,
   adviceMessage,
   healthMessage,
+  INTERRUPTED_NOTE,
   interruption,
   metaLine,
   modelLabel,
   resultNotes,
+  SAME_LANGUAGE_WARNING,
+  STOPPED_NOTE,
   sameLanguage,
   seconds,
   selectionMessage,

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { DOCUMENT_DIRECTIONS, buildDocumentPrompt } from "../src/prompt";
+import { buildDocumentPrompt, DOCUMENT_DIRECTIONS } from "../src/prompt";
 
 describe("buildDocumentPrompt", () => {
   test("has a template for each supported direction", () => {

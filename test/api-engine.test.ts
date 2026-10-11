@@ -8,10 +8,10 @@
 // resetMock() afterwards.
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { startApp, type App } from "../src/app";
+import { type App, startApp } from "../src/app";
 import type { Config } from "../src/config";
 import { EngineError, type Launcher } from "../src/llama";
-import { CHAT, DOCUMENT, config, fakeModel, mock, postTo, resetMock, waitReady, type SseEvent } from "./helpers/mock-engine";
+import { CHAT, config, DOCUMENT, fakeModel, mock, postTo, resetMock, type SseEvent, waitReady } from "./helpers/mock-engine";
 
 afterEach(() => resetMock());
 
