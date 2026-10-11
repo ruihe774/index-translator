@@ -67,10 +67,6 @@ main {
   padding-bottom: 2rem;
 }
 
-main:focus {
-  outline: none;
-}
-
 p {
   margin: 0;
 }
