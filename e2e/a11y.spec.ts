@@ -18,6 +18,8 @@ for (const scheme of ["light", "dark"] as const) {
     await app.text.fill("Hello, world");
     await app.translate.click();
     await expect(app.meta).toContainText("generated");
+    // Buttons fade their background; axe would read the blended colours mid-transition.
+    await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toEqual([]);
   });
