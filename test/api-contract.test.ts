@@ -8,6 +8,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type App, startApp } from "../src/app";
 import { MODELS } from "../src/models";
+import { MAX_SPEECH_CHARS, MAX_SPEED, MIN_SPEED, SPEECH_LANGUAGES } from "../src/speech";
 import { CHAT, config, launcher, mock, postTo, readSse, resetMock, root, waitReady } from "./helpers/mock-engine";
 
 const spec = Bun.YAML.parse(readFileSync(join(root, "docs", "openapi.yaml"), "utf8")) as any;
@@ -243,6 +244,21 @@ describe("GET responses", () => {
     }
   });
 
+  test("GET /voices matches VoiceList; POST /speech without an engine is a 503 that matches Error", async () => {
+    const voices = await (await fetch(base + "/api/v1/voices")).json();
+    expect(check("VoiceList", voices)).toEqual([]);
+    const res = await post("/api/v1/speech", { text: "Hello", lang: "en" });
+    expect(res.status).toBe(503);
+    expect(check("Error", await res.json())).toEqual([]);
+  });
+
+  test("the speech languages and limits in the spec are the server's", () => {
+    const request = spec.components.schemas.SpeechRequest.properties;
+    expect(request.lang.enum).toEqual(SPEECH_LANGUAGES);
+    expect(request.text.maxLength).toBe(MAX_SPEECH_CHARS);
+    expect([request.speed.minimum, request.speed.maximum]).toEqual([MIN_SPEED, MAX_SPEED]);
+  });
+
   test("GET /languages matches the inline response schema of the spec", async () => {
     const body = await (await fetch(base + "/api/v1/languages")).json();
     expect(problems(documented("/languages", "get", "200"), body)).toEqual([]);
@@ -408,7 +424,16 @@ describe("the spec against the server", () => {
       answers[`${method.toUpperCase()} ${path}`] = res.status;
     }
     expect(Object.keys(answers).sort()).toEqual(
-      ["GET /health", "GET /languages", "GET /models", "GET /openapi.yaml", "POST /tokenize", "POST /translate"].sort(),
+      [
+        "GET /health",
+        "GET /languages",
+        "GET /models",
+        "GET /openapi.yaml",
+        "GET /voices",
+        "POST /speech",
+        "POST /tokenize",
+        "POST /translate",
+      ].sort(),
     );
     for (const [op, status] of Object.entries(answers)) {
       expect({ op, served: ![404, 405].includes(status) }).toEqual({ op, served: true });

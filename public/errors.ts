@@ -22,6 +22,10 @@ export function describeError(e: ApiErrorBody | undefined, status?: number): str
       return "The translation engine is loading or switching models. Try again in a moment.";
     case "body_too_large":
       return "The request is too large to send.";
+    case "speech_unavailable":
+      return `Reading aloud is not available${e.message ? `: ${e.message}` : ""}.`;
+    case "speech_error":
+      return `Reading aloud failed${e.message ? `: ${e.message}` : ""}.`;
   }
   // No recognised code: a bare 429 or 503 still tells the user the server is busy, not broken.
   if (status === 429) return "The translator is busy. Try again in a minute.";

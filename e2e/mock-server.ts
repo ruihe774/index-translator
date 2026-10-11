@@ -4,13 +4,26 @@
 //
 // A second, control server lets a test script what the mock engine says:
 //   GET    /mock           current knobs and the generations requested so far
-//   POST   /mock           set knobs: { chunks?, delayMs?, finish?, failWith?, failLaunch?, ready? }
+//   POST   /mock           set knobs: { chunks?, delayMs?, finish?, failWith?, failLaunch?, ready?,
+//                          speech?: { state?, delayMs?, failWith? } }; `speech` in the answer holds
+//                          the utterances requested from the mock speech engine
 //   DELETE /mock           reset knobs and forget recorded requests
 //   POST   /mock/restart   unload the engine so the next request loads its model again
 // Tests call it through e2e/fixtures.ts.
 
 import { startApp } from "../src/app";
-import { CHAT, config, DOCUMENT, launcher, mock, resetMock, waitReady } from "../test/helpers/mock-engine";
+import {
+  CHAT,
+  config,
+  DOCUMENT,
+  launcher,
+  mock,
+  mockSpeech,
+  resetMock,
+  resetMockSpeech,
+  speechLauncher,
+  waitReady,
+} from "../test/helpers/mock-engine";
 
 const port = Number(process.env.E2E_PORT ?? 3100);
 const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 3101);
@@ -18,6 +31,7 @@ const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 3101);
 const app = await startApp(
   config({ port, ctxSize: 65536, maxInputTokens: 28000, maxQueue: 1, defaultModel: CHAT }),
   launcher,
+  speechLauncher,
 );
 await waitReady(app);
 
@@ -36,13 +50,16 @@ const control = Bun.serve({
     if (req.method === "POST") {
       const patch = (await req.json()) as Record<string, unknown>;
       for (const key of KNOBS) if (key in patch) (mock as any)[key] = patch[key];
+      // { speech: { state?, delayMs?, failWith? } } scripts the mock speech engine.
+      if (patch.speech) Object.assign(mockSpeech, patch.speech);
     } else if (req.method === "DELETE") {
       resetMock();
+      resetMockSpeech();
       mock.requests.length = 0;
       mock.aborted = 0;
       mock.launches.length = 0;
     }
-    return Response.json({ ...mock, models: { CHAT, DOCUMENT } });
+    return Response.json({ ...mock, models: { CHAT, DOCUMENT }, speech: mockSpeech });
   },
 });
 

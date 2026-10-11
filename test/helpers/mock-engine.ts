@@ -10,6 +10,7 @@ import { join, resolve } from "node:path";
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
 import { EngineError, type FinishReason, type GenerationEvent, type Launcher, type Running } from "../../src/llama";
+import { SpeechError, type SpeechLauncher, type SpeechRequest, type SpeechState, type Voice } from "../../src/speech";
 
 export const root = resolve(import.meta.dir, "..", "..");
 
@@ -136,6 +137,79 @@ export const launcher: Launcher = async (model) => {
   });
 };
 
+/** A tenth of a second of silence: 22.05 kHz, mono, 16-bit PCM, as the speech engine answers. */
+export function silentWav(seconds = 0.1): ArrayBuffer {
+  const rate = 22050;
+  const samples = Math.round(rate * seconds);
+  const view = new DataView(new ArrayBuffer(44 + samples * 2));
+  const ascii = (at: number, s: string) => {
+    for (let i = 0; i < s.length; i++) view.setUint8(at + i, s.charCodeAt(i));
+  };
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + samples * 2, true);
+  ascii(8, "WAVEfmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, 1, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * 2, true);
+  view.setUint16(32, 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, "data");
+  view.setUint32(40, samples * 2, true);
+  return view.buffer;
+}
+
+export const mockSpeech = {
+  /** What `state` reports; "unavailable" makes requests fail as when nothing is installed. */
+  state: "stopped" as SpeechState,
+  voices: [
+    { id: "voice_01", name: "Voice 01" },
+    { id: "voice_02", name: "Voice 02" },
+  ] as Voice[],
+  delayMs: 0,
+  failWith: undefined as string | undefined,
+  /** Every utterance asked for. */
+  requests: [] as SpeechRequest[],
+  aborted: 0,
+};
+
+export function resetMockSpeech(): void {
+  mockSpeech.state = "stopped";
+  mockSpeech.delayMs = 0;
+  mockSpeech.failWith = undefined;
+  mockSpeech.requests.length = 0;
+  mockSpeech.aborted = 0;
+}
+
+/** Stands in for the audio.cpp child process: answers every utterance with silence. */
+export const speechLauncher: SpeechLauncher = () => ({
+  get state() {
+    return mockSpeech.state;
+  },
+  get error() {
+    return mockSpeech.state === "unavailable" ? "the speech engine is not installed" : undefined;
+  },
+  voices: async () => mockSpeech.voices,
+  async synthesize(req, signal) {
+    mockSpeech.requests.push(req);
+    if (mockSpeech.delayMs) {
+      await Promise.race([
+        Bun.sleep(mockSpeech.delayMs),
+        new Promise((wake) => signal.addEventListener("abort", wake)),
+      ]);
+    }
+    if (signal.aborted) {
+      mockSpeech.aborted++;
+      signal.throwIfAborted();
+    }
+    if (mockSpeech.failWith) throw new SpeechError(mockSpeech.failWith);
+    mockSpeech.state = "ready";
+    return silentWav();
+  },
+  async stop() {},
+});
+
 export function config(overrides: Partial<Config> = {}): Config {
   return {
     host: "127.0.0.1",
@@ -154,6 +228,12 @@ export function config(overrides: Partial<Config> = {}): Config {
     allowedHosts: [],
     openBrowser: false,
     devReload: false,
+    speech: true,
+    audioDir: "/nonexistent/audio.cpp",
+    speechModelDir: "/nonexistent/IndexTTS2.5-GGUF",
+    voicesDir: "/nonexistent/voices",
+    speechBackend: "cpu",
+    speechIdleUnload: 0,
     ...overrides,
   };
 }

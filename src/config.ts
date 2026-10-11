@@ -50,6 +50,18 @@ export interface Config {
   openBrowser: boolean;
   /** Development: reload the open page when `public/` changes or the server restarts. */
   devReload: boolean;
+  /** Reading aloud; false never starts the speech engine. */
+  speech: boolean;
+  /** Directory with `audiocpp_server` (audio.cpp) and its backend libraries. */
+  audioDir: string;
+  /** Directory holding the IndexTTS-2.5 GGUF. */
+  speechModelDir: string;
+  /** Reference recordings (`*.wav`), one per voice. */
+  voicesDir: string;
+  /** audio.cpp backend for speech: `vulkan` or `cpu`. */
+  speechBackend: string;
+  /** Seconds without a speech request after which the speech model leaves the GPU; 0 keeps it. */
+  speechIdleUnload: number;
 }
 
 export function loadConfig(env: Env = Bun.env): Config {
@@ -83,5 +95,11 @@ export function loadConfig(env: Env = Bun.env): Config {
     allowedHosts: list(env, "ALLOWED_HOSTS"),
     openBrowser: env.OPEN_BROWSER !== "0",
     devReload: env.DEV_RELOAD === "1",
+    speech: env.SPEECH !== "0",
+    audioDir: resolve(env.AUDIO_DIR || join(root, "vendor", "audio.cpp")),
+    speechModelDir: resolve(env.SPEECH_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "IndexTTS2.5-GGUF")),
+    voicesDir: resolve(env.VOICES_DIR || join(root, "voices")),
+    speechBackend: env.SPEECH_BACKEND || "vulkan",
+    speechIdleUnload: int(env, "SPEECH_IDLE_UNLOAD", 300),
   };
 }

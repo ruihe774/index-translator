@@ -15,6 +15,17 @@ import {
 import { findModel, MODELS, type ModelSpec } from "./models";
 import { buildDocumentPrompt, buildPrompt, DOCUMENT_DIRECTIONS, LANGUAGES, type PromptInput } from "./prompt";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
+import {
+  MAX_SPEECH_CHARS,
+  MAX_SPEED,
+  MIN_SPEED,
+  nativeSpeech,
+  SPEECH_LANGUAGES,
+  type Speech,
+  SpeechError,
+  type SpeechLauncher,
+  type SpeechRequest,
+} from "./speech";
 import { createStaticServer } from "./static";
 
 const API = "/api/v1";
@@ -50,6 +61,9 @@ function errorResponse(e: unknown): Response {
   }
   if (e instanceof EngineError) {
     return json({ error: { code: "engine_error", message: e.message } }, 502);
+  }
+  if (e instanceof SpeechError) {
+    return json({ error: { code: "speech_error", message: e.message } }, 502);
   }
   console.error("[api] unexpected error:", e);
   return json({ error: { code: "internal_error", message: "internal server error" } }, 500);
@@ -294,23 +308,31 @@ interface Result {
 export interface App {
   server: Server<undefined>;
   engine: Engine;
+  speech: Speech;
   stop(): Promise<void>;
 }
 
-export async function startApp(cfg: Config, launch: Launcher = launchNative): Promise<App> {
+export async function startApp(
+  cfg: Config,
+  launch: Launcher = launchNative,
+  launchSpeech: SpeechLauncher = nativeSpeech,
+): Promise<App> {
   const engine = new Engine(cfg, launch);
   const queue = new SlotQueue(cfg.maxQueue);
+  const speech = launchSpeech(cfg);
+  // Speech has its own line: it runs in another process and does not hold the translation engine.
+  const speechQueue = new SlotQueue(cfg.maxQueue);
   const defaultModel = findModel(cfg.defaultModel)!;
 
-  function enterQueue(onPosition?: (position: number) => void): Ticket {
+  function enterQueue(onPosition?: (position: number) => void, line = queue): Ticket {
     try {
-      return queue.enter(onPosition);
+      return line.enter(onPosition);
     } catch (e) {
       if (e instanceof QueueFullError) {
         throw new ApiError(
           429,
           "queue_full",
-          "too many translations are waiting; try again later",
+          `too many ${line === queue ? "translations" : "speech requests"} are waiting; try again later`,
           {
             max_queue: cfg.maxQueue,
           },
@@ -553,6 +575,50 @@ export async function startApp(cfg: Config, launch: Launcher = launchNative): Pr
     };
   }
 
+  function speechUnavailable(message: string): ApiError {
+    return new ApiError(503, "speech_unavailable", message);
+  }
+
+  async function parseSpeechRequest(body: Record<string, unknown>): Promise<SpeechRequest> {
+    if (typeof body.text !== "string" || !body.text.trim()) throw invalid("text must be a non-empty string", "text");
+    const text = optionalString(body, "text", MAX_SPEECH_CHARS)!;
+    const lang = optionalString(body, "lang", 16)?.trim().toLowerCase();
+    if (!lang || !SPEECH_LANGUAGES.includes(lang)) {
+      throw new ApiError(400, "invalid_request", `lang must be one of ${SPEECH_LANGUAGES.join(", ")}`, {
+        field: "lang",
+        supported: SPEECH_LANGUAGES,
+      });
+    }
+    const speed = body.speed ?? 1;
+    if (typeof speed !== "number" || !(speed >= MIN_SPEED && speed <= MAX_SPEED)) {
+      throw invalid(`speed must be a number from ${MIN_SPEED} to ${MAX_SPEED}`, "speed");
+    }
+    if (speech.state === "unavailable") throw speechUnavailable(speech.error ?? "reading aloud is not available");
+    const voices = await speech.voices();
+    if (voices.length === 0) throw speechUnavailable(`no voices: put a WAV recording into ${cfg.voicesDir}`);
+    const voice = optionalString(body, "voice", 128) ?? voices[0]!.id;
+    if (!voices.some((v) => v.id === voice)) {
+      throw invalid(`unknown voice "${voice}"; see GET /api/v1/voices`, "voice");
+    }
+    return { text, lang, voice, speed };
+  }
+
+  async function speak(input: SpeechRequest, signal: AbortSignal): Promise<Response> {
+    const ticket = enterQueue(undefined, speechQueue);
+    const onAbort = () => ticket.leave();
+    signal.addEventListener("abort", onAbort);
+    try {
+      if (!(await ticket.ready) || signal.aborted) throw cancelled();
+      const wav = await speech.synthesize(input, signal);
+      return new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store" } });
+    } catch (e) {
+      throw signal.aborted ? cancelled() : e;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      ticket.leave();
+    }
+  }
+
   const methodNotAllowed = (allow: string) =>
     errorResponse(new ApiError(405, "method_not_allowed", `use ${allow}`, undefined, { allow }));
 
@@ -586,6 +652,7 @@ export async function startApp(cfg: Config, launch: Launcher = launchNative): Pr
                 model: engine.loaded?.id ?? null,
                 limits: limits(),
                 queue: { running: queue.running, waiting: queue.depth, max_waiting: cfg.maxQueue },
+                speech: { status: speech.state, error: speech.error },
               },
               engine.state === "ready" ? 200 : 503,
             );
@@ -606,6 +673,24 @@ export async function startApp(cfg: Config, launch: Launcher = launchNative): Pr
           case "/languages": {
             if (req.method !== "GET") return methodNotAllowed("GET");
             return json({ languages: LANGUAGES.map(({ code, name }) => ({ code, name })) });
+          }
+          case "/voices": {
+            if (req.method !== "GET") return methodNotAllowed("GET");
+            return json({
+              status: speech.state,
+              error: speech.error,
+              languages: SPEECH_LANGUAGES,
+              speed: { min: MIN_SPEED, max: MAX_SPEED },
+              max_chars: MAX_SPEECH_CHARS,
+              voices: speech.state === "unavailable" ? [] : await speech.voices(),
+            });
+          }
+          case "/speech": {
+            if (req.method !== "POST") return methodNotAllowed("POST");
+            const input = await parseSpeechRequest(await parseBody(req));
+            // The first request starts the engine and loads the model.
+            server.timeout(req, 0);
+            return await speak(input, req.signal);
           }
           case "/openapi.yaml": {
             if (req.method !== "GET") return methodNotAllowed("GET");
@@ -638,9 +723,11 @@ export async function startApp(cfg: Config, launch: Launcher = launchNative): Pr
   return {
     server,
     engine,
+    speech,
     async stop() {
       devReload?.close();
       await server.stop(true);
+      await speech.stop();
       await engine.unload();
     },
   };

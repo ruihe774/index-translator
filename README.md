@@ -30,6 +30,9 @@ Compared with widely used online translation tools:
   and shown formatted as they arrive, with a Raw / Preview switch on each side, and Copy gives you
   the Markdown back.
 - **Streaming with Stop.** Text appears as it is generated, and you can stop at any time.
+- **Reads aloud, locally.** Listen to your text or the translation in Chinese, English, Japanese,
+  Spanish or Arabic, with pause, speed and a choice of voices. The speech model (IndexTTS-2.5)
+  also runs on your GPU. A Markdown document is read as a document, not as its markup.
 - **Correct Chinese and Japanese typography.** Line breaking and fonts follow Japanese and Chinese
   typesetting rules instead of using one font for every language.
 - **Accessible.** The interface is checked against WCAG 2.2 AA, including keyboard use and screen
@@ -45,12 +48,16 @@ bun src/server.ts
 
 Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`.
 
-Before the first start, download the engine and the models once (about 14 GiB):
+Before the first start, download the engines and the models once (about 18 GiB):
 
 ```bash
 bun scripts/fetch_llama.ts      # translation engine (llama.cpp, Vulkan)
-uv run scripts/fetch_models.py  # the two translation models
+bun scripts/fetch_audiocpp.ts   # speech engine (audio.cpp, Vulkan)
+uv run scripts/fetch_models.py  # the two translation models, the speech model and example voices
 ```
+
+Reading aloud is optional. To leave it out, skip `fetch_audiocpp.ts` and download only the
+translation models with `uv run scripts/fetch_models.py --model index-translate-9b --model index-nailong-9b`.
 
 You need [Bun](https://bun.sh), [uv](https://docs.astral.sh/uv/), the C library headers (package
 `libc6-dev` on Debian and Ubuntu, `glibc-devel` on Fedora; already there if a C compiler is
@@ -102,6 +109,35 @@ In **Automatic** mode, entering any of these makes the app use Index-Translate-9
 Index-NativeLong-9B by hand while they are filled in, the app warns that the request cannot be
 translated with that model.
 
+## Listen to a text
+
+Each side has a **Listen** button (the loudspeaker) under its text. Click it to hear the source
+text or the finished translation. While it reads, the button becomes **Stop**, and a **Pause**
+button next to it holds the reading and resumes it at the same place. The paragraph being read is
+highlighted in the formatted view.
+
+- **Languages:** Chinese, English, Japanese, Spanish and Arabic. For other languages the button
+  is switched off. For the source text, choose its language under **From** if the app cannot tell
+  it by itself.
+- **Voice and speed:** choose them under **Model and options**. Speed goes from 0.5× to 2×. A
+  change while listening takes effect from the sentence being read, which starts again.
+- **Voices:** the speech model imitates the speaker of a short recording. Every `.wav` file in the
+  `voices` folder is a voice; the download puts the example voices of the IndexTTS demo there. To
+  add your own, put a clean recording of a few seconds of speech (one speaker, no music) into the
+  folder and reload the page. Only use voices of people who agreed to it.
+- **Markdown:** a text that is shown formatted is read the way it is shown. Headings, list items
+  and table rows are read one by one, numbered lists with their numbers, table cells with their
+  column heading, links by their text and images by their description. Code blocks are skipped.
+
+The first sentence takes about five seconds longer, because the speech model is loaded when you
+first listen. It needs about 5.7 GiB of GPU memory beside the translation model and is unloaded
+again after five minutes without listening. Speech is generated sentence by sentence, about four
+times faster than it is spoken, so long texts start right away.
+
+Known limits: numbers written in digits are read correctly in Chinese, English, Spanish and
+Japanese, but not reliably in Arabic, and unusual formats (for example `$1,200`) may be read
+oddly in any language.
+
 ## Check long translations
 
 Language models can occasionally drop or repeat paragraphs, and this is not reported as an error.
@@ -134,5 +170,8 @@ PORT=8080 bun src/server.ts
 | `GPU_LAYERS` | `all` | Layers to run on the GPU; `0` runs on the CPU |
 | `LLAMA_THREADS` | half the CPU threads | CPU threads for the engine; matters when running on the CPU |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
+| `SPEECH` | on | `0` turns reading aloud off |
+| `VOICES_DIR` | `voices/` | Folder with the voice recordings (`.wav`) |
+| `SPEECH_IDLE_UNLOAD` | `300` | Seconds without listening after which the speech model leaves the GPU; `0` keeps it loaded |
 
 Only one translation runs at a time. Other requests wait in line.

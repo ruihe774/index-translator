@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Index Translator API
-  version: 1.1.0
+  version: 1.2.0
   summary: Text translation backed by locally deployed Index-Translate models.
   description: |
     The backend runs Index-Translate models through llama.cpp and exposes them over REST.
@@ -31,13 +31,90 @@ info:
     FIFO queue; when it is full the backend answers `429`. Closing the connection cancels a
     waiting or running translation.
 
+    **Reading aloud.** `POST /speech` turns one short text into speech with IndexTTS-2.5, which
+    runs in a separate engine process (audio.cpp) beside the translation model. It speaks
+    Chinese, English, Japanese, Spanish and Arabic. The model has no built-in voices: a voice is
+    a reference recording on the server (`GET /voices`) that the model imitates. One request is
+    one utterance, returned whole; a client reads a document by sending it sentence by sentence.
+    The speech engine starts with the first request and loads its model then, so that request
+    takes a few seconds longer. Speech requests have their own queue of the same size.
+
     **Errors.** Every error response has the same JSON envelope, see `Error`.
 servers:
   - url: /api/v1
 tags:
   - name: translation
+  - name: speech
   - name: service
 paths:
+  /speech:
+    post:
+      tags: [speech]
+      operationId: speak
+      summary: Read a text aloud
+      description: |
+        Returns the audio of the whole text as one WAV file (22.05 kHz, mono, 16-bit PCM). The
+        text is spoken as it is given: the server does not strip Markdown or split long input.
+        Closing the connection gives up the request's place in the queue.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/SpeechRequest"
+            examples:
+              plain:
+                value:
+                  text: Reading is a way of thinking with another person's mind.
+                  lang: en
+              voiceAndSpeed:
+                value:
+                  text: 今天天气很好，我们一起去公园散步吧。
+                  lang: zh
+                  voice: voice_05
+                  speed: 1.25
+      responses:
+        "200":
+          description: The spoken text.
+          content:
+            audio/wav:
+              schema:
+                type: string
+                format: binary
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/QueueFull"
+        "502":
+          description: The speech engine failed to start or to synthesize the text (`speech_error`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: |
+            Reading aloud is not available (`speech_unavailable`): it is turned off, the speech
+            engine or its model is not installed, or there is no voice. The message says which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /voices:
+    get:
+      tags: [speech]
+      operationId: listVoices
+      summary: Voices, languages and limits for reading aloud
+      responses:
+        "200":
+          description: Whether speech can be used, and with which voices.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/VoiceList"
   /translate:
     post:
       tags: [translation]
@@ -303,7 +380,7 @@ components:
                 prompt_tokens: 31250
                 max_input_tokens: 28000
     QueueFull:
-      description: Too many translations are already waiting (`queue_full`).
+      description: Too many translations, or too many speech requests, are already waiting (`queue_full`).
       headers:
         Retry-After:
           schema:
@@ -557,6 +634,84 @@ components:
               type: integer
             max_waiting:
               type: integer
+        speech:
+          type: object
+          description: The speech engine. It does not affect `status` or the HTTP status of this endpoint.
+          required: [status]
+          properties:
+            status:
+              $ref: "#/components/schemas/SpeechStatus"
+            error:
+              type: string
+              description: Why speech is `unavailable`, or why the last start failed.
+    SpeechStatus:
+      type: string
+      enum: [unavailable, stopped, starting, ready, error]
+      description: |
+        `unavailable`: turned off, or the engine or its model is not installed. `stopped`:
+        installed and started by the first `POST /speech`. `error`: the last start failed; the
+        next request tries again.
+    SpeechRequest:
+      type: object
+      required: [text, lang]
+      properties:
+        text:
+          type: string
+          minLength: 1
+          maxLength: 1000
+          description: The text to speak, at most 1,000 characters. Must contain a non-blank character.
+        lang:
+          type: string
+          enum: [zh, en, ja, es, ar]
+          description: Language of the text.
+        voice:
+          type: string
+          description: A voice id from `GET /voices`. Default is the first voice listed.
+        speed:
+          type: number
+          minimum: 0.5
+          maximum: 2
+          default: 1
+          description: |
+            Speaking rate; 2 is twice as fast. This is the model's duration control (the audio
+            lasts 1/speed as long), not faster playback.
+    Voice:
+      type: object
+      required: [id, name]
+      properties:
+        id:
+          type: string
+          description: File name of the reference recording in the voices directory, without `.wav`.
+        name:
+          type: string
+    VoiceList:
+      type: object
+      required: [status, languages, speed, max_chars, voices]
+      properties:
+        status:
+          $ref: "#/components/schemas/SpeechStatus"
+        error:
+          type: string
+        languages:
+          type: array
+          items:
+            type: string
+        speed:
+          type: object
+          required: [min, max]
+          properties:
+            min:
+              type: number
+            max:
+              type: number
+        max_chars:
+          type: integer
+          description: Longest `text` of one `POST /speech`.
+        voices:
+          type: array
+          description: Empty when speech is unavailable or the voices directory holds no WAV file.
+          items:
+            $ref: "#/components/schemas/Voice"
     Error:
       type: object
       required: [error]
@@ -575,6 +730,8 @@ components:
                 - queue_full
                 - engine_error
                 - engine_unavailable
+                - speech_error
+                - speech_unavailable
                 - not_found
                 - method_not_allowed
                 - unsupported_media_type

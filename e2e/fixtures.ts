@@ -11,12 +11,16 @@ export interface MockKnobs {
   finish?: "stop" | "length";
   failWith?: string | null;
   failLaunch?: string | null;
+  /** The mock speech engine: `state: "unavailable"` is an install without it. */
+  speech?: { state?: string; delayMs?: number; failWith?: string };
 }
 
 export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs">> {
   requests: { prompt: string; maxTokens: number }[];
   aborted: number;
   launches: string[];
+  /** `requests` are the utterances asked of the speech engine, in order. */
+  speech: { requests: { text: string; lang: string; voice: string; speed: number }[] };
 }
 
 export interface Mock {

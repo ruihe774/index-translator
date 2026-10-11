@@ -21,6 +21,8 @@ import {
 import { type Alignment, alignBlocks } from "./paragraphs.js";
 import { buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
 import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.js";
+import { SpeechPlayer, type SpeechSettings } from "./speech.js";
+import { canSpeak, speechSegments } from "./speech-text.js";
 import { sseEvents } from "./sse.js";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.js";
 
@@ -63,6 +65,9 @@ const outputEl = $("output");
 const placeholderEl = $("placeholder");
 const metaEl = $("meta");
 const notesEl = $("notes");
+const speechSettings = $("speech-settings");
+const voiceSelect = $<HTMLSelectElement>("voice");
+const speedSelect = $<HTMLSelectElement>("speed");
 
 // ---- small helpers ---------------------------------------------------------------------------
 
@@ -299,6 +304,7 @@ function refreshControls() {
   for (const b of outputSwitch.querySelectorAll("button")) b.setAttribute("aria-disabled", String(!hasOutput));
   clearBtn.setAttribute("aria-disabled", String(!hasText && !hasOutput));
   copyBtn.setAttribute("aria-disabled", String(!hasOutput || running !== null));
+  refreshSpeech();
 }
 
 function showSource() {
@@ -311,6 +317,7 @@ function showSource() {
   textInput.hidden = preview;
   refreshControls();
   refreshSync();
+  showSpeaking();
 }
 
 /** Rebuilds the output in the chosen view; text still streaming is appended to the new view. */
@@ -322,6 +329,7 @@ function showOutput() {
     output.append(translation);
     output.finish();
     applyLinkCheck();
+    showSpeaking();
   }
 }
 
@@ -454,6 +462,13 @@ function fail(message: string) {
   setMeta(message, true);
 }
 
+/** A failed request as a sentence for the user. */
+function failureMessage(e: unknown): string {
+  if (e instanceof ApiFailure) return describeError(e.body, e.status);
+  if (e instanceof TypeError) return "The server cannot be reached.";
+  return e instanceof Error ? e.message : String(e);
+}
+
 async function translate() {
   if (running) return;
   if (!languagesReady) {
@@ -494,6 +509,7 @@ async function translate() {
   store("from", fromSelect.value);
   store("to", toSelect.value);
 
+  stopSpeech();
   const controller = new AbortController();
   running = controller;
   following = true;
@@ -558,15 +574,7 @@ async function translate() {
     if (stopped) {
       showInterruption(true);
     } else {
-      const message =
-        e instanceof ApiFailure
-          ? describeError(e.body, e.status)
-          : e instanceof TypeError
-            ? "The server cannot be reached."
-            : e instanceof Error
-              ? e.message
-              : String(e);
-      showInterruption(false, message);
+      showInterruption(false, failureMessage(e));
     }
   } finally {
     output?.finish();
@@ -586,6 +594,7 @@ async function translate() {
 /** Empties the source and the result and returns the source to the plain textarea. */
 function clearAll() {
   if (running || clearBtn.getAttribute("aria-disabled") === "true") return;
+  stopSpeech();
   textInput.value = "";
   showFieldError(textError, textInput, null);
   views.source = { available: false, view: "raw" };
@@ -601,7 +610,164 @@ function advancedOpen() {
   $<HTMLDetailsElement>("advanced").open = true;
 }
 
+// ---- reading aloud ---------------------------------------------------------------------------
+//
+// Each side has a Listen button; one side is read at a time. What is spoken comes from
+// `speechSegments`: the parsed Markdown when the text is shown rendered, never its raw markers.
+// The block being read is shaded in the rendered view. Voice and speed are shared by both sides.
+
+type Side = "source" | "output";
+const SIDES: Side[] = ["source", "output"];
+const SIDE_NAME: Record<Side, string> = { source: "source text", output: "translation" };
+
+const speechButtons: Record<Side, { listen: HTMLButtonElement; pause: HTMLButtonElement }> = {
+  source: { listen: $("listen-source"), pause: $("pause-source") },
+  output: { listen: $("listen-output"), pause: $("pause-output") },
+};
+
+/** Why nothing can be read aloud at all (not installed, no voices); empty when it can. */
+let speechProblem = "Checking whether reading aloud is available…";
+/** The side being read and the first line of the block being spoken. */
+let speaking: { side: Side; line: number | null } | null = null;
+
+async function synthesize(text: string, settings: SpeechSettings, signal: AbortSignal): Promise<ArrayBuffer> {
+  const res = await fetch(`${API}/speech`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ text, lang: settings.lang, voice: settings.voice || undefined, speed: settings.speed }),
+    signal,
+  });
+  if (!res.ok) {
+    const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
+    throw new ApiFailure(payload?.error ?? {}, res.status);
+  }
+  return res.arrayBuffer();
+}
+
+const player = new SpeechPlayer(synthesize, {
+  onState(state) {
+    if (state === "idle") speaking = null;
+    refreshSpeech();
+  },
+  onSegment(segment) {
+    if (speaking) speaking.line = segment?.line ?? null;
+    showSpeaking(true);
+  },
+  onError: (e) => flashMeta(failureMessage(e)),
+});
+
+function speechTarget(side: Side): { text: string; lang: string | undefined } {
+  return side === "source"
+    ? { text: textInput.value, lang: sourceLangOf() }
+    : { text: translation, lang: outputEl.lang || undefined };
+}
+
+/** Why this side cannot be read aloud right now; empty when it can. */
+function speechBlocked(side: Side): string {
+  if (speechProblem) return speechProblem;
+  const { text, lang } = speechTarget(side);
+  if (!text.trim()) return `There is no ${SIDE_NAME[side]} to read aloud yet.`;
+  if (side === "output" && running) return "The translation can be read aloud once it is finished.";
+  if (!lang) return "Choose the language under From to have this text read aloud.";
+  if (!canSpeak(lang)) return "Reading aloud is available for Chinese, English, Japanese, Spanish and Arabic.";
+  return "";
+}
+
+function refreshSpeech() {
+  for (const side of SIDES) {
+    const { listen, pause } = speechButtons[side];
+    const mine = speaking?.side === side;
+    const state = mine ? player.state : "idle";
+    const blocked = mine ? "" : speechBlocked(side);
+    const label = mine ? `Stop reading the ${SIDE_NAME[side]}` : `Listen to the ${SIDE_NAME[side]}`;
+    listen.dataset.state = state;
+    listen.setAttribute("aria-disabled", String(blocked !== ""));
+    listen.setAttribute("aria-label", label);
+    listen.title = blocked || label;
+    pause.hidden = !mine;
+    pause.dataset.state = state;
+    pause.title = state === "paused" ? "Resume reading" : "Pause reading";
+    pause.setAttribute("aria-label", pause.title);
+  }
+}
+
+/** Shades the block being read in the rendered view, and scrolls its pane to it when asked. */
+function showSpeaking(scroll = false) {
+  for (const el of document.querySelectorAll(".speaking")) el.classList.remove("speaking");
+  if (!speaking || speaking.line === null) return;
+  const [view, area] = speaking.side === "source" ? [sourceView, sourceArea] : [outputEl, outputArea];
+  const block = view.querySelector<HTMLElement>(`:scope > [data-line="${speaking.line}"]`);
+  if (!block) return;
+  block.classList.add("speaking");
+  if (!scroll) return;
+  const pane = area.getBoundingClientRect();
+  const box = block.getBoundingClientRect();
+  if (box.top < pane.top || box.bottom > pane.bottom) area.scrollTop += box.top - pane.top - 8;
+}
+
+function toggleSpeech(side: Side) {
+  if (speaking?.side === side) {
+    player.stop();
+    return;
+  }
+  if (speechBlocked(side)) return;
+  const { text, lang } = speechTarget(side);
+  // Read as it is shown: rendered Markdown when the text looks like Markdown, else line by line.
+  const markdown = side === "source" ? looksLikeMarkdown(text) : views.output.available;
+  const segments = speechSegments(text, markdown, lang!);
+  if (segments.length === 0) {
+    flashMeta("There is nothing to read aloud in this text.");
+    return;
+  }
+  player.stop();
+  speaking = { side, line: null };
+  player.start(segments, { lang: lang!, voice: voiceSelect.value, speed: Number(speedSelect.value) });
+}
+
+function stopSpeech(side?: Side) {
+  if (speaking && (side === undefined || speaking.side === side)) player.stop();
+}
+
+async function loadVoices() {
+  try {
+    const res = await fetch(`${API}/voices`);
+    const body = (await res.json()) as { status: string; error?: string; voices: { id: string; name: string }[] };
+    if (body.status === "unavailable") {
+      speechProblem = `Reading aloud is not available: ${body.error ?? "it is not installed"}.`;
+    } else if (body.voices.length === 0) {
+      speechProblem = "Reading aloud needs a voice: put a WAV recording of a speaker into the voices folder.";
+    } else {
+      for (const v of body.voices) voiceSelect.append(new Option(v.name, v.id));
+      const saved = stored("voice");
+      if (body.voices.some((v) => v.id === saved)) voiceSelect.value = saved!;
+      speechSettings.hidden = false;
+      speechProblem = "";
+    }
+  } catch {
+    speechProblem = "Reading aloud is not available: the server cannot be reached.";
+  }
+  refreshSpeech();
+}
+
 // ---- wiring ----------------------------------------------------------------------------------
+
+for (const side of SIDES) {
+  speechButtons[side].listen.addEventListener("click", () => toggleSpeech(side));
+  speechButtons[side].pause.addEventListener("click", () => {
+    if (player.state === "paused") player.resume();
+    else player.pause();
+  });
+}
+voiceSelect.addEventListener("change", () => {
+  store("voice", voiceSelect.value);
+  player.update({ voice: voiceSelect.value });
+});
+speedSelect.addEventListener("change", () => {
+  store("speed", speedSelect.value);
+  player.update({ speed: Number(speedSelect.value) });
+});
+const savedSpeed = stored("speed");
+if ([...speedSelect.options].some((o) => o.value === savedSpeed)) speedSelect.value = savedSpeed!;
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -610,6 +776,7 @@ form.addEventListener("submit", (e) => {
 
 textInput.addEventListener("input", () => {
   if (!textError.hidden && textInput.value.trim()) showFieldError(textError, textInput, null);
+  stopSpeech("source");
   refreshControls();
   refreshSync();
   refreshSoon();
@@ -624,7 +791,11 @@ wireSwitch(outputSwitch, "output", () => {
 });
 clearBtn.addEventListener("click", clearAll);
 for (const el of [glossaryInput, hardInput, softInput, genreInput]) el.addEventListener("input", refreshSoon);
-fromSelect.addEventListener("change", refreshSelection);
+fromSelect.addEventListener("change", () => {
+  stopSpeech("source");
+  refreshSelection();
+  refreshSpeech();
+});
 toSelect.addEventListener("change", refreshSelection);
 for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button")) {
   b.addEventListener("click", () => {
@@ -650,5 +821,6 @@ if (CHOICES.includes(savedModel as Choice)) setModelChoice(savedModel as Choice)
 setTranslateEnabled();
 refreshControls();
 void loadLanguages();
+void loadVoices();
 void pollHealth();
 document.addEventListener("visibilitychange", () => void pollHealth());

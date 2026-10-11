@@ -41,6 +41,17 @@
             </div>
 
             <div class="panel-foot">
+              <!-- biome-ignore lint/a11y/useSemanticElements: a div group keeps the layout; a fieldset needs a legend and resets -->
+              <div class="speech" role="group" aria-label="Read the source text aloud">
+                <button type="button" id="listen-source" class="icon" data-state="idle" aria-disabled="true">
+                  <svg class="when-idle" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z" /></svg>
+                  <svg class="when-active" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z" /></svg>
+                </button>
+                <button type="button" id="pause-source" class="icon" data-state="idle" hidden>
+                  <svg class="when-playing" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>
+                  <svg class="when-paused" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                </button>
+              </div>
               <p id="count" class="hint"></p>
               <div class="actions">
                 <button type="button" id="clear" aria-disabled="true">Clear</button>
@@ -72,6 +83,17 @@
             </div>
 
             <div class="panel-foot">
+              <!-- biome-ignore lint/a11y/useSemanticElements: a div group keeps the layout; a fieldset needs a legend and resets -->
+              <div class="speech" role="group" aria-label="Read the translation aloud">
+                <button type="button" id="listen-output" class="icon" data-state="idle" aria-disabled="true">
+                  <svg class="when-idle" viewBox="0 0 24 24" aria-hidden="true"><path d="M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z" /></svg>
+                  <svg class="when-active" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6h12v12H6z" /></svg>
+                </button>
+                <button type="button" id="pause-output" class="icon" data-state="idle" hidden>
+                  <svg class="when-playing" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 5h4v14H6zm8 0h4v14h-4z" /></svg>
+                  <svg class="when-paused" viewBox="0 0 24 24" aria-hidden="true"><path d="M8 5v14l11-7z" /></svg>
+                </button>
+              </div>
               <p id="meta" role="status" class="hint"></p>
               <button type="button" id="copy" aria-label="Copy translation" aria-disabled="true">Copy</button>
             </div>
@@ -87,6 +109,24 @@
               <button type="button" data-model="auto" aria-pressed="true">Automatic</button>
               <button type="button" data-model="index-translate-9b" aria-pressed="false">Index-Translate-9B</button>
               <button type="button" data-model="index-nailong-9b" aria-pressed="false">Index-NativeLong-9B</button>
+            </div>
+          </div>
+
+          <div id="speech-settings" class="speech-settings" hidden>
+            <div class="field">
+              <label for="voice">Voice for reading aloud</label>
+              <select id="voice"></select>
+            </div>
+            <div class="field">
+              <label for="speed">Reading speed</label>
+              <select id="speed">
+                <option value="0.5">0.5× (slowest)</option>
+                <option value="0.75">0.75×</option>
+                <option value="1" selected>1× (normal)</option>
+                <option value="1.25">1.25×</option>
+                <option value="1.5">1.5×</option>
+                <option value="2">2× (fastest)</option>
+              </select>
             </div>
           </div>
 

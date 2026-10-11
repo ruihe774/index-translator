@@ -185,6 +185,26 @@
     gap: var(--gap);
     min-block-size: var(--target);
   }
+
+  /* Listen and Pause sit at the start of each button row; the letter count stays next to them. */
+  .speech {
+    display: flex;
+    gap: var(--gap);
+  }
+
+  #count {
+    margin-inline-end: auto;
+  }
+
+  .speech-settings {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap);
+
+    > .field {
+      flex: 0 1 18rem;
+    }
+  }
 }
 
 @layer components {
@@ -465,6 +485,44 @@
       border: 1px dashed var(--border);
       cursor: default;
     }
+  }
+
+  /* Listen / Stop and Pause / Resume: square, one glyph each; `data-state` picks the glyph. */
+  button.icon {
+    display: inline-grid;
+    place-items: center;
+    inline-size: var(--target);
+    padding: 0;
+
+    svg {
+      inline-size: 1.5rem;
+      block-size: 1.5rem;
+      fill: currentcolor;
+    }
+
+    &[data-state="idle"] .when-active,
+    &:not([data-state="idle"]) .when-idle,
+    &[data-state="paused"] .when-playing,
+    &:not([data-state="paused"]) .when-paused {
+      display: none;
+    }
+
+    /* Waiting for the first audio: the speech model may still be loading. */
+    &[data-state="loading"] svg {
+      animation: speech-wait 0.8s ease-in-out infinite alternate;
+    }
+  }
+
+  @keyframes speech-wait {
+    to {
+      opacity: 0.25;
+    }
+  }
+
+  /* The block being read aloud. */
+  .output .speaking {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
+    border-radius: var(--radius-min);
   }
 
   .link-dialog {

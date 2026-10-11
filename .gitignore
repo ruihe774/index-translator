@@ -5,3 +5,4 @@
 .env
 /test-results/
 /playwright-report/
+/voices/
