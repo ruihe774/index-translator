@@ -1,10 +1,11 @@
 // Download the pinned models and verify their checksums: the two Index-Translate GGUF models and
-// the IndexTTS-2.5 GGUF for reading aloud into MODELS_DIR (./models), and the example voices into
-// VOICES_DIR (./voices). About 17.5 GiB in all. In the AppImage this is its `fetch` subcommand.
+// the IndexTTS-2.5 GGUF for reading aloud and the BS-RoFormer GGUF that separates an uploaded voice
+// sample from music and noise into MODELS_DIR (./models), and the example voices into VOICES_DIR
+// (./voices). About 17.7 GiB in all. In the AppImage this is its `fetch` subcommand.
 // Usage: bun scripts/fetch_models.ts [--model index-translate-9b ...] [--models-dir DIR] [--voices-dir DIR]
 //
 //   --model  one of index-translate-9b, index-nailong-9b, index-tts-2.5 (the speech model and the
-//            voices); repeatable; all of them when not given
+//            voices), bs-roformer (the voice separation model); repeatable; all of them when not given
 //
 // The directories are the server's settings (src/config.ts), given the same way: as environment
 // variables or as flags. Files are downloaded with curl, so an interrupted download continues
@@ -52,6 +53,16 @@ const SPEECH_URL = resolveUrl(
 );
 const SPEECH_SHA256 = "5e827b2072042e4a1b21ccf24a5cb4f71cb1011403067a0a9b039311d8b38628";
 
+/** BS-RoFormer (ep368) as converted for audio.cpp (Q8_0, 173 MB), from the same repository and revision. */
+const SEPARATION = "bs-roformer";
+const SEPARATION_FILE = "bs-roformer-ep368-q8_0.gguf";
+const SEPARATION_URL = resolveUrl(
+  "audio-cpp/audio.cpp-gguf",
+  "1b5981b2b89a1af578ebba5c8cf34226810e1f55",
+  `BS-RoFormer-ep368-GGUF/${SEPARATION_FILE}`,
+);
+const SEPARATION_SHA256 = "9a55a8cad369d00f6e0fb208bb0cd87e30e25430772b8491e20a4eace6423ad2";
+
 // IndexTTS has no built-in voices: a voice is a short reference recording that it imitates. These
 // are the speaker prompts of the official demo.
 const VOICES_URL = "/spaces/IndexTeam/IndexTTS-2-Demo/resolve/b01840e8e4fd9753743a6d0466cd73ae1d634a68/examples";
@@ -69,7 +80,7 @@ const VOICES: Record<string, string> = {
   "voice_12.wav": "d67bd4f51773677d5902409813b9bb4c1d59b8243c74fc104553b80b49edd22b",
 };
 
-export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH];
+export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH, SEPARATION];
 
 /** An error whose message is all the user needs: it is printed without a stack trace. */
 export class FetchError extends Error {}
@@ -99,7 +110,7 @@ export function parseArgs(argv: readonly string[]): { ids: string[]; rest: strin
 /** What the chosen models consist of, and where each file goes. */
 export function plan(
   ids: readonly string[],
-  dirs: { models: string; speechModel: string; voices: string },
+  dirs: { models: string; speechModel: string; separationModel: string; voices: string },
 ): Download[] {
   const files: Download[] = [];
   for (const id of ids) {
@@ -107,6 +118,12 @@ export function plan(
     if (pin) {
       const file = MODELS.find((m) => m.id === id)!.file;
       files.push({ url: resolveUrl(pin.repo, pin.revision, file), sha256: pin.sha256, dest: join(dirs.models, file) });
+    } else if (id === SEPARATION) {
+      files.push({
+        url: SEPARATION_URL,
+        sha256: SEPARATION_SHA256,
+        dest: join(dirs.separationModel, SEPARATION_FILE),
+      });
     } else {
       files.push({ url: SPEECH_URL, sha256: SPEECH_SHA256, dest: join(dirs.speechModel, SPEECH_FILE) });
       for (const [name, sha256] of Object.entries(VOICES)) {
@@ -205,7 +222,12 @@ export async function fetchModels(
     );
   }
   const endpoint = (env.HF_ENDPOINT || "https://huggingface.co").replace(/\/+$/, "");
-  const files = plan(ids, { models: cfg.modelsDir, speechModel: cfg.speechModelDir, voices: cfg.voicesDir });
+  const files = plan(ids, {
+    models: cfg.modelsDir,
+    speechModel: cfg.speechModelDir,
+    separationModel: cfg.separationModelDir,
+    voices: cfg.voicesDir,
+  });
   for (const file of files) await fetchFile(file, endpoint, curl, log);
 }
 

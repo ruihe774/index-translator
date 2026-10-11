@@ -129,6 +129,12 @@ paths:
         imitate. It must last between `sample_seconds.min` and `sample_seconds.max` seconds and have a
         sample rate within `sample_rate` (`400` otherwise). It becomes a voice in `GET /voices`
         until the server stops; nothing is persisted. At most 16 uploads are kept.
+
+        When the voice separation model (BS-RoFormer) is installed, the voice is first taken out of
+        music and background noise, and the separated voice is what is kept. The speech model is
+        unloaded while that runs (a few seconds, depending on the length) and loaded again by the
+        next utterance; utterances requested meanwhile wait for it. Without the model the sample
+        is kept as it was uploaded.
       parameters:
         - name: name
           in: query
@@ -157,6 +163,12 @@ paths:
           $ref: "#/components/responses/TooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "502":
+          description: The engine failed to separate the voice from the recording (`speech_error`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "503":
           description: Reading aloud is not available (`speech_unavailable`).
           content:

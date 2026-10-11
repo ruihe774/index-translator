@@ -3,13 +3,16 @@
 // unloads and utterances run in arrival order, and an utterance cannot be stopped once it started.
 
 import { readFileSync } from "node:fs";
-import { SpeechModel, type SpeechModelOptions } from "./audiocpp-ffi";
-import { readWav, writeWav } from "./wav";
+import { SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
+import { readWav, resample, writeWav } from "./wav";
 
 export type SpeechWorkerRequest =
   | { type: "load"; req: number; options: SpeechModelOptions }
   | { type: "unload"; req: number }
-  | { type: "synthesize"; req: number; text: string; lang: string; voicePath: string; speed: number };
+  | { type: "synthesize"; req: number; text: string; lang: string; voicePath: string; speed: number }
+  // Frees the speech model, loads the separation model, takes the vocals out of the WAV recording,
+  // and frees the separation model again. The speech model is not loaded afterwards.
+  | { type: "separate"; req: number; options: SpeechModelOptions; wav: ArrayBuffer };
 
 export type SpeechWorkerReply =
   | { type: "ok"; req: number }
@@ -20,6 +23,8 @@ declare var self: Worker;
 
 /** Sampling is seeded so the same sentence sounds the same when it is played again. */
 const SEED = 42;
+/** The only sample rate BS-RoFormer accepts. */
+const SEPARATOR_RATE = 44100;
 
 let model: SpeechModel | undefined;
 
@@ -43,6 +48,19 @@ function handle(msg: SpeechWorkerRequest): SpeechWorkerReply {
         seed: String(SEED),
       });
       return { type: "audio", req: msg.req, wav: writeWav(pcm) };
+    }
+    case "separate": {
+      // Only one of the two models is on the GPU at a time.
+      model?.free();
+      model = undefined;
+      // The separation model takes 44.1 kHz, mono or stereo, and nothing else.
+      const mixture = resample(readWav(new Uint8Array(msg.wav)), SEPARATOR_RATE, 2);
+      const separator = VoiceSeparator.load(msg.options);
+      try {
+        return { type: "audio", req: msg.req, wav: writeWav(separator.vocals(mixture)) };
+      } finally {
+        separator.free();
+      }
     }
   }
 }

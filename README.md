@@ -59,14 +59,14 @@ use the x86-64 name. Then:
 
 ```bash
 chmod +x Index_Translator-x86_64.AppImage
-./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 17.5 GiB
+./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 17.7 GiB
 ./Index_Translator-x86_64.AppImage         # start; the app opens in your browser
 ```
 
 Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists the options.
 
 - `fetch` puts the models into `~/.local/share/index-translator` and needs `curl`. An interrupted
-  download continues when you run it again. To leave out reading aloud (3.5 GiB):
+  download continues when you run it again. To leave out reading aloud (3.7 GiB):
   `fetch --model index-translate-9b --model index-nailong-9b`.
 - It runs on x86-64 or aarch64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later). Besides
   the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
@@ -80,12 +80,12 @@ bun src/server.ts
 
 Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`.
 
-Before the first start, build the engines and get the models once (about 17.5 GiB):
+Before the first start, build the engines and get the models once (about 17.7 GiB):
 
 ```bash
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
-bun scripts/fetch_models.ts     # the two translation models, the speech model and example voices
+bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, example voices
 ```
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and download only the
@@ -160,6 +160,12 @@ highlighted in the formatted view.
   download puts the example voices of the IndexTTS demo there. To add your own, put a clean
   recording of a few seconds of speech (one speaker, no music) into the folder and reload the
   page. Only use voices of people who agreed to it.
+- **Your own voice sample:** under **Model and options** you can also record or upload a sample.
+  It is kept until the app stops. The voice is first taken out of any music and background noise
+  by a separation model (BS-RoFormer), which takes a few seconds; the speech model leaves the GPU
+  while that runs and is loaded again by the next sentence, which takes about five seconds. Without
+  the separation model (`fetch --model bs-roformer`, 0.2 GiB) the sample is used as it is, so a
+  clean recording matters then.
 - **Markdown:** a text that is shown formatted is read the way it is shown. Headings, list items
   and table rows are read one by one, numbered lists with their numbers, table cells with their
   column heading, links by their text and images by their description. Code blocks are skipped.

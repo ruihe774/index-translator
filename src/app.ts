@@ -25,6 +25,7 @@ import {
   MIN_SAMPLE_SECONDS,
   MIN_SPEED,
   nativeSpeech,
+  SeparationError,
   SPEECH_LANGUAGES,
   type Speech,
   SpeechError,
@@ -624,7 +625,8 @@ export async function startApp(
     try {
       return json(await speech.addVoice(name, wav), 201);
     } catch (e) {
-      if (e instanceof SpeechError) throw invalid(e.message, "body");
+      // Not the client's doing: the sample was fine, the engine could not separate it. Mapped by onError.
+      if (e instanceof SpeechError && !(e instanceof SeparationError)) throw invalid(e.message, "body");
       throw e;
     }
   }

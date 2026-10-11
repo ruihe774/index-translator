@@ -31,12 +31,13 @@ Index Translator: a local text translator that runs on your GPU.
 
 Usage:
   $self [--setting value ...]   start the translator and open it in the browser
-  $self fetch [--model id ...]  download the models and the example voices (about 17.5 GiB)
+  $self fetch [--model id ...]  download the models and the example voices (about 17.7 GiB)
   $self --version
 
 fetch downloads everything unless --model names what to get: index-translate-9b,
-index-nailong-9b, index-tts-2.5 (reading aloud, with the voices). It needs curl, and continues an
-interrupted download when run again.
+index-nailong-9b, index-tts-2.5 (reading aloud, with the voices), bs-roformer (takes the voice out
+of music and noise in an uploaded sample). It needs curl, and continues an interrupted download
+when run again.
 
 Settings are flags or environment variables (--port 8080 or PORT=8080). The common ones:
   --port 3000            port to listen on

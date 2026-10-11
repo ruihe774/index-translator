@@ -4,10 +4,12 @@
 // seconds without one, so the translation model has the GPU to itself until somebody listens.
 //
 // IndexTTS has no built-in voices: every request names a reference recording from `VOICES_DIR`,
-// whose voice the model imitates.
+// whose voice the model imitates. A recording that is uploaded first goes through BS-RoFormer
+// (when its model is installed), which takes the voice out of music and background noise; the
+// speech model is unloaded while that runs, so the two never share the GPU.
 
 import { randomUUID } from "node:crypto";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
@@ -27,6 +29,8 @@ export const MAX_SPEED = 2;
 
 /** audio.cpp's name for the IndexTTS-2 family of models. */
 const FAMILY = "index_tts2";
+/** audio.cpp's name for the BS-RoFormer family, which separates the vocals of a recording from the rest. */
+const SEPARATION_FAMILY = "bs_roformer";
 /** CPU threads for the parts of the model that do not run on the GPU. */
 const THREADS = 4;
 
@@ -41,6 +45,9 @@ export const MIN_SAMPLE_RATE = 8000;
 export const MAX_SAMPLE_RATE = 192000;
 
 export class SpeechError extends Error {}
+
+/** Separating the voice from an uploaded sample failed in the engine; the sample itself may be fine. */
+export class SeparationError extends SpeechError {}
 
 export interface Voice {
   id: string;
@@ -66,7 +73,11 @@ export interface Speech {
   readonly state: SpeechState;
   readonly error: string | undefined;
   voices(): Promise<Voice[]>;
-  /** Keeps a WAV recording as a voice until the server stops. Rejects with SpeechError if it is not a WAV. */
+  /**
+   * Keeps a WAV recording as a voice until the server stops, with its voice separated from music and
+   * noise when the separation model is installed. Rejects with SpeechError if it is not a usable WAV,
+   * and with SeparationError if the separation failed.
+   */
   addVoice(name: string, wav: ArrayBuffer): Promise<Voice>;
   /**
    * One utterance as a WAV file. Rejects with SpeechError, or the signal's reason when aborted,
@@ -127,6 +138,8 @@ export class NativeSpeech implements Speech {
   /** Utterances asked for that the worker has not finished, whether or not their client still waits. */
   private pending = 0;
   private idle: Timer | undefined;
+  /** Set while a sample is being separated, which needs the GPU to itself; settles when it is over. */
+  private separating: Promise<void> | null = null;
 
   /** Uploaded voices: id to file. Ids never become paths. */
   private uploads = new Map<string, { name: string; path: string }>();
@@ -176,13 +189,70 @@ export class NativeSpeech implements Speech {
   async addVoice(name: string, wav: ArrayBuffer): Promise<Voice> {
     // Decoded once here, so a recording the engine could not read is refused when it is uploaded.
     validateSample(wav);
-    if (this.uploads.size >= MAX_UPLOADED_VOICES) throw new SpeechError("too many uploaded voices");
+    const tooMany = () => new SpeechError("too many uploaded voices");
+    if (this.uploads.size >= MAX_UPLOADED_VOICES) throw tooMany();
+    const voice = this.separationInstalled() ? await this.separate(wav) : wav;
+    // Uploads that finished while this one was being separated may have filled the slots.
+    if (this.uploads.size >= MAX_UPLOADED_VOICES) throw tooMany();
     const id = `upload-${randomUUID()}`;
     const path = join(this.uploadDir, `${id}.wav`);
     await mkdir(this.uploadDir, { recursive: true });
-    await Bun.write(path, wav);
+    await Bun.write(path, voice);
     this.uploads.set(id, { name, path });
     return { id, name };
+  }
+
+  /** The BS-RoFormer GGUF in `SEPARATION_MODEL_DIR`, if the speech engine and the model are installed. */
+  private separationModel(): string | undefined {
+    if (this.missing()) return undefined;
+    const dir = this.cfg.separationModelDir;
+    const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(".gguf")) : undefined;
+    return file ? join(dir, file) : undefined;
+  }
+
+  private separationInstalled(): boolean {
+    return this.separationModel() !== undefined;
+  }
+
+  /**
+   * The voice of a WAV recording without music and noise, as a WAV file. The speech model is freed
+   * for it and loaded again by the next utterance. Separations run one at a time, and utterances
+   * not yet sent to the worker wait until it is over.
+   */
+  private async separate(wav: ArrayBuffer): Promise<ArrayBuffer> {
+    while (this.separating) await this.separating;
+    let finished!: () => void;
+    this.separating = new Promise<void>((resolve) => {
+      finished = resolve;
+    });
+    try {
+      // A load in progress ends first, or it would report a model that is gone.
+      await this.loading?.catch(() => {});
+      const modelPath = this.separationModel();
+      if (!modelPath) throw new SeparationError("the separation model is gone");
+      clearTimeout(this.idle);
+      this.loaded = false;
+      const started = performance.now();
+      const reply = await this.call({
+        type: "separate",
+        options: {
+          dir: this.cfg.audioDir,
+          modelPath,
+          family: SEPARATION_FAMILY,
+          backend: this.cfg.speechBackend,
+          threads: THREADS,
+        },
+        wav,
+      }).catch((e) => {
+        throw new SeparationError(`separating the voice failed: ${messageOf(e)}`);
+      });
+      if (reply.type !== "audio") throw new SeparationError(`unexpected ${reply.type} reply to a separation`);
+      console.error(`[speech] voice separated (${Math.round(performance.now() - started)} ms)`);
+      return reply.wav;
+    } finally {
+      this.separating = null;
+      finished();
+    }
   }
 
   /** One request to the worker, one reply. */
@@ -266,7 +336,11 @@ export class NativeSpeech implements Speech {
 
   /** `posted` is set once the utterance has been handed to the worker, which cannot take it back. */
   private async run(req: SpeechRequest, signal: AbortSignal, posted: { value: boolean }): Promise<ArrayBuffer> {
-    await this.ready();
+    // The model is checked again after every wait: a separation that starts in between frees it.
+    do {
+      while (this.separating) await this.separating;
+      await this.ready();
+    } while (this.separating || !this.loaded);
     // Gone while the model was loading: the utterance is never sent.
     signal.throwIfAborted();
     posted.value = true;

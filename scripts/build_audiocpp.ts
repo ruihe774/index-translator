@@ -1,5 +1,6 @@
 // Build the speech engine: audio.cpp's C API (libaudiocpp) from the pinned source, with the Vulkan
-// backend and only the IndexTTS-2 model family, into ./vendor/audio.cpp.
+// backend and only the model families the server uses (IndexTTS-2 for speech, RoFormer for
+// separating a voice from music and noise in a recording), into ./vendor/audio.cpp.
 // Usage: bun scripts/build_audiocpp.ts [--native] [--keep]
 //
 //   --native  build the CPU code for this machine's processor; the library may then die with
@@ -25,8 +26,11 @@ const TAG = "v0.9.1";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
 const COMMIT = "cf124a67cc55d8f65a9a15eec69edbff0fb212c8";
 const REPO = "https://github.com/0xShug0/audio.cpp.git";
-/** audio.cpp's CMake names of the model families to compile in; all of them take about ten times as long. */
-const MODELS = ["index_tts2"];
+/**
+ * audio.cpp's CMake names of the model families to compile in; all of them take about ten times as long.
+ * `roformer` holds BS-RoFormer (used) and Mel-Band RoFormer, which share their code.
+ */
+const MODELS = ["index_tts2", "roformer"];
 
 const TOOLS_HINT =
   "on Debian and Ubuntu: sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers";
@@ -60,6 +64,9 @@ try {
     ...(Bun.which("ninja") ? ["-G", "Ninja"] : []),
     "-DCMAKE_BUILD_TYPE=Release",
     "-DAUDIOCPP_BUILD_C_API=ON",
+    // The BS-RoFormer GGUF embeds only a legacy model spec; the library then needs the current one
+    // from its own catalog, which this compiles in (no model_specs/ directory at run time).
+    "-DAUDIOCPP_DEPLOYMENT_BUILD=ON",
     "-DENGINE_ENABLE_VULKAN=ON",
     `-DENGINE_ENABLE_NATIVE_CPU=${native ? "ON" : "OFF"}`,
     // Static ggml inside the library; the "all variants" mode would build shared ggml libraries.

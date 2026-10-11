@@ -1,6 +1,7 @@
 // libaudiocpp (audio.cpp's C API, include/audiocpp.h) through bun:ffi: the synchronous calls the
-// speech worker needs to load a text-to-speech model and synthesize with it. Every call here
-// blocks its thread, so this module is only used from src/speech-worker.ts.
+// speech worker needs to load a text-to-speech model and synthesize with it, or to load a source
+// separation model and take the vocals out of a recording. Every call here blocks its thread, so
+// this module is only used from src/speech-worker.ts.
 //
 // The library must be the build of scripts/build_audiocpp.ts, which has its own ggml linked in and
 // hidden. audio.cpp's ggml is a fork with the same library name as llama.cpp's; a libaudiocpp that
@@ -36,10 +37,13 @@ function bind(dir: string) {
     audiocpp_request_create: { args: [], returns: "ptr" },
     audiocpp_request_free: { args: ["ptr"], returns: "void" },
     audiocpp_request_set_text: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
+    audiocpp_request_set_audio: { args: ["ptr", "ptr", "usize", "i32", "i32"], returns: "i32" },
     audiocpp_request_set_voice_audio: { args: ["ptr", "ptr", "usize", "i32", "i32"], returns: "i32" },
     audiocpp_request_set_option: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
     audiocpp_result_free: { args: ["ptr"], returns: "void" },
     audiocpp_result_audio: { args: ["ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
+    audiocpp_result_named_audio_count: { args: ["ptr"], returns: "usize" },
+    audiocpp_result_named_audio: { args: ["ptr", "usize", "ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
   }).symbols;
   const abi = lib.audiocpp_abi_version();
   if (abi >> 16 !== ABI_MAJOR) {
@@ -103,18 +107,19 @@ export interface SpeechModelOptions {
   threads: number;
 }
 
-/** One text-to-speech model with one session. Not thread-safe; `free()` must be called to release its memory. */
-export class SpeechModel {
+/** A loaded model with an offline session for one task; the handles `free()` releases. */
+class Loaded {
   private freed = false;
 
-  private constructor(
-    private lib: Lib,
+  protected constructor(
+    protected lib: Lib,
     private registry: Pointer,
     private model: Pointer,
-    private session: Pointer,
+    protected session: Pointer,
   ) {}
 
-  static load(opts: SpeechModelOptions): SpeechModel {
+  /** Loads the model and creates its session for `task` (`tts`, `sep`, ...). */
+  protected static open(opts: SpeechModelOptions, task: string): [Lib, Pointer, Pointer, Pointer] {
     const lib = open(opts.dir);
     const out = new BigUint64Array(1);
     check(lib, lib.audiocpp_registry_create(null, out), "audiocpp_registry_create");
@@ -135,17 +140,32 @@ export class SpeechModel {
       backend.writeInt32LE(opts.threads, 12);
       check(
         lib,
-        lib.audiocpp_session_create(model, cstr("tts"), cstr("offline"), backend, null, out),
+        lib.audiocpp_session_create(model, cstr(task), cstr("offline"), backend, null, out),
         "audiocpp_session_create",
       );
       session = handle(out);
-      return new SpeechModel(lib, registry, model, session);
+      return [lib, registry, model, session];
     } catch (e) {
       if (session) lib.audiocpp_session_free(session);
       if (model) lib.audiocpp_model_free(model);
       lib.audiocpp_registry_free(registry);
       throw e;
     }
+  }
+
+  free(): void {
+    if (this.freed) return;
+    this.freed = true;
+    this.lib.audiocpp_session_free(this.session);
+    this.lib.audiocpp_model_free(this.model);
+    this.lib.audiocpp_registry_free(this.registry);
+  }
+}
+
+/** One text-to-speech model with one session. Not thread-safe; `free()` must be called to release its memory. */
+export class SpeechModel extends Loaded {
+  static load(opts: SpeechModelOptions): SpeechModel {
+    return new SpeechModel(...Loaded.open(opts, "tts"));
   }
 
   /**
@@ -190,12 +210,60 @@ export class SpeechModel {
       lib.audiocpp_result_free(result);
     }
   }
+}
 
-  free(): void {
-    if (this.freed) return;
-    this.freed = true;
-    this.lib.audiocpp_session_free(this.session);
-    this.lib.audiocpp_model_free(this.model);
-    this.lib.audiocpp_registry_free(this.registry);
+/** A source separation model (BS-RoFormer) with one session. Same rules as `SpeechModel`. */
+export class VoiceSeparator extends Loaded {
+  static load(opts: SpeechModelOptions): VoiceSeparator {
+    return new VoiceSeparator(...Loaded.open(opts, "sep"));
+  }
+
+  /**
+   * The vocals of `mixture`, which must have the model's sample rate (44.1 kHz) and one or two
+   * channels, with the model's channel count. Blocks until the whole recording is done.
+   */
+  vocals(mixture: Pcm): Pcm {
+    const lib = this.lib;
+    const out = new BigUint64Array(1);
+    const request = lib.audiocpp_request_create();
+    if (!request) throw new Error("audio.cpp could not create a request (out of memory?)");
+    try {
+      const frames = mixture.samples.length / mixture.channels;
+      check(
+        lib,
+        lib.audiocpp_request_set_audio(request, mixture.samples, frames, mixture.sampleRate, mixture.channels),
+        "audiocpp_request_set_audio",
+      );
+      check(lib, lib.audiocpp_session_run(this.session, request, out), "audiocpp_session_run");
+    } finally {
+      lib.audiocpp_request_free(request);
+    }
+
+    const result = handle(out);
+    try {
+      // The stems come as named audio: "vocals" and "instrumental" (the mixture minus the vocals).
+      const count = Number(lib.audiocpp_result_named_audio_count(result));
+      for (let i = 0; i < count; i++) {
+        const id = new BigUint64Array(1);
+        const samples = new BigUint64Array(1);
+        const frames = new BigUint64Array(1);
+        const sampleRate = new Int32Array(1);
+        const channels = new Int32Array(1);
+        check(
+          lib,
+          lib.audiocpp_result_named_audio(result, i, id, samples, frames, sampleRate, channels),
+          "audiocpp_result_named_audio",
+        );
+        if (new CString(handle(id)).toString() !== "vocals") continue;
+        const length = Number(frames[0]) * channels[0]!;
+        if (length < 1) throw new Error("audio.cpp returned no vocals");
+        // Borrowed until the result is freed, so it is copied.
+        const borrowed = new Float32Array(toArrayBuffer(handle(samples), 0, length * 4));
+        return { samples: borrowed.slice(), sampleRate: sampleRate[0]!, channels: channels[0]! };
+      }
+      throw new Error("audio.cpp returned no vocals stem");
+    } finally {
+      lib.audiocpp_result_free(result);
+    }
   }
 }

@@ -11,6 +11,7 @@ import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
 import { EngineError, type FinishReason, type GenerationEvent, type Launcher, type Running } from "../../src/llama";
 import {
+  SeparationError,
   SpeechError,
   type SpeechLauncher,
   type SpeechRequest,
@@ -177,6 +178,8 @@ export const mockSpeech = {
   /** Length of the silence each utterance answers with. */
   audioSeconds: 0.1,
   failWith: undefined as string | undefined,
+  /** Makes an upload fail as when the engine cannot separate the voice from the recording. */
+  separationFailWith: undefined as string | undefined,
   /** Every utterance asked for. */
   requests: [] as SpeechRequest[],
   aborted: 0,
@@ -196,6 +199,7 @@ export function resetMockSpeech(): void {
   mockSpeech.delayMs = 0;
   mockSpeech.audioSeconds = 0.1;
   mockSpeech.failWith = undefined;
+  mockSpeech.separationFailWith = undefined;
   mockSpeech.requests.length = 0;
   mockSpeech.aborted = 0;
   mockSpeech.ignoreAbort = false;
@@ -213,6 +217,7 @@ export const speechLauncher: SpeechLauncher = () => ({
   voices: async () => mockSpeech.voices,
   async addVoice(name, wav) {
     validateSample(wav);
+    if (mockSpeech.separationFailWith) throw new SeparationError(mockSpeech.separationFailWith);
     const voice = { id: `upload-${mockSpeech.voices.length}`, name };
     mockSpeech.voices.push(voice);
     return voice;
@@ -275,6 +280,7 @@ export function config(overrides: Partial<Config> = {}): Config {
     speech: true,
     audioDir: "/nonexistent/audio.cpp",
     speechModelDir: "/nonexistent/IndexTTS2.5-GGUF",
+    separationModelDir: "/nonexistent/BS-RoFormer-ep368-GGUF",
     voicesDir: "/nonexistent/voices",
     speechBackend: "cpu",
     speechIdleUnload: 0,

@@ -90,7 +90,7 @@ describe("parseArgs", () => {
 });
 
 describe("plan", () => {
-  const dirs = { models: "/m", speechModel: "/s", voices: "/v" };
+  const dirs = { models: "/m", speechModel: "/s", separationModel: "/b", voices: "/v" };
 
   test("every model the server knows has a pinned download named like its file", () => {
     for (const model of MODELS) {
@@ -99,6 +99,17 @@ describe("plan", () => {
       expect(download!.url).toEndWith(`/${model.file}`);
       expect(download!.sha256).toMatch(/^[0-9a-f]{64}$/);
     }
+  });
+
+  test("the separation model is one pinned file in its own directory", () => {
+    const files = plan(["bs-roformer"], dirs);
+    expect(files).toHaveLength(1);
+    expect(files[0]!.dest).toBe("/b/bs-roformer-ep368-q8_0.gguf");
+    expect(files[0]!.url).toContain("/audio-cpp/audio.cpp-gguf/resolve/");
+    expect(files[0]!.url).toEndWith("/BS-RoFormer-ep368-GGUF/bs-roformer-ep368-q8_0.gguf");
+    expect(files[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(files[0]!.keep).toBeUndefined();
+    expect(MODEL_IDS).toContain("bs-roformer");
   });
 
   test("the speech model comes with the example voices, which never replace a file of the user's", () => {

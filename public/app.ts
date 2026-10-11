@@ -849,7 +849,8 @@ async function recheckVoicesNow(announce: boolean) {
 
 /** Adds an uploaded voice to the list, selects it and tells the player. */
 async function addSampleVoice(name: string, audio: ArrayBuffer) {
-  cloneStatus.textContent = "Uploading the sample…";
+  // The server may first take the voice out of music and noise, which takes a few seconds.
+  cloneStatus.textContent = "Processing the sample…";
   try {
     const voice = await uploadVoice(API, name, await audioToWav(audio));
     voiceSelect.append(new Option(voice.name, voice.id));

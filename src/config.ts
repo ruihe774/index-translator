@@ -56,6 +56,8 @@ export interface Config {
   audioDir: string;
   /** Directory holding the IndexTTS-2.5 GGUF. */
   speechModelDir: string;
+  /** Directory holding the BS-RoFormer GGUF that takes the voice out of an uploaded sample; without it samples are used as they are. */
+  separationModelDir: string;
   /** Reference recordings (`*.wav`), one per voice. */
   voicesDir: string;
   /** audio.cpp backend for speech: `vulkan` or `cpu`. */
@@ -82,6 +84,7 @@ export const SETTING_NAMES = [
   "SPEECH",
   "AUDIO_DIR",
   "SPEECH_MODEL_DIR",
+  "SEPARATION_MODEL_DIR",
   "VOICES_DIR",
   "SPEECH_BACKEND",
   "SPEECH_IDLE_UNLOAD",
@@ -148,6 +151,9 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     speech: env.SPEECH !== "0",
     audioDir: resolve(env.AUDIO_DIR || join(root, "vendor", "audio.cpp")),
     speechModelDir: resolve(env.SPEECH_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "IndexTTS2.5-GGUF")),
+    separationModelDir: resolve(
+      env.SEPARATION_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "BS-RoFormer-ep368-GGUF"),
+    ),
     voicesDir: resolve(env.VOICES_DIR || join(root, "voices")),
     speechBackend: env.SPEECH_BACKEND || "vulkan",
     speechIdleUnload: int(env, "SPEECH_IDLE_UNLOAD", 300),

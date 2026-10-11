@@ -8,7 +8,14 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type App, startApp } from "../src/app";
-import { MAX_UPLOADED_VOICES, NativeSpeech, nativeSpeech, SpeechError, validateSample } from "../src/speech";
+import {
+  MAX_UPLOADED_VOICES,
+  NativeSpeech,
+  nativeSpeech,
+  SeparationError,
+  SpeechError,
+  validateSample,
+} from "../src/speech";
 import {
   config,
   launcher,
@@ -311,24 +318,30 @@ describe("NativeSpeech with a fake worker", () => {
 });
 
 describe("NativeSpeech state machine with a scripted worker", () => {
+  /** A test sets this to keep the worker from answering a load, and answers it itself. */
+  let holdLoads = false;
   /** Answers like speech-worker.ts unless `manual`. */
   function scripted() {
     const w: any = {
       posted: [] as any[],
       listeners: {} as Record<string, () => void>,
       failLoad: undefined as string | undefined,
+      failSeparation: undefined as string | undefined,
       manual: false,
       onmessage: null,
       onerror: null,
       terminated: false,
       postMessage(m: any) {
         w.posted.push(m);
-        if (!w.manual) setTimeout(() => w.answer(m), 1);
+        if (!w.manual && !(holdLoads && m.type === "load")) setTimeout(() => w.answer(m), 1);
       },
       answer(m: any) {
         if (m.type === "load" && w.failLoad) w.onmessage({ data: { req: m.req, type: "error", message: w.failLoad } });
         else if (m.type === "synthesize") w.onmessage({ data: { req: m.req, type: "audio", wav: silentWav() } });
-        else w.onmessage({ data: { req: m.req, type: "ok" } });
+        else if (m.type === "separate") {
+          if (w.failSeparation) w.onmessage({ data: { req: m.req, type: "error", message: w.failSeparation } });
+          else w.onmessage({ data: { req: m.req, type: "audio", wav: separated() } });
+        } else w.onmessage({ data: { req: m.req, type: "ok" } });
       },
       addEventListener(type: string, fn: () => void) {
         w.listeners[type] = fn;
@@ -343,18 +356,25 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
   const say = (speech: NativeSpeech) => speech.synthesize(request, new AbortController().signal, () => {});
   const wav = () => silentWav(1.5, 16000);
+  /** What the worker answers a separation with: recognizably not the uploaded sample. */
+  const separated = () => silentWav(2, 44100);
   const quiet = () => spyOn(console, "error").mockImplementation(() => {});
 
-  async function setup(overrides: object = {}) {
+  /** `separation`: the separation model is installed (a .gguf file in its directory). */
+  async function setup(overrides: object = {}, separation = false) {
     const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
     await writeFile(join(dir, `libaudiocpp.${process.platform === "darwin" ? "dylib" : "so"}`), "");
+    if (separation) await writeFile(join(dir, "bs-roformer.gguf"), "");
     const workers: any[] = [];
-    const speech = new NativeSpeech(config({ speech: true, audioDir: dir, speechModelDir: dir, ...overrides }), () => {
-      const w = scripted();
-      workers.push(w);
-      return w;
-    });
-    return { workers, speech, cleanup: () => rm(dir, { recursive: true }) };
+    const speech = new NativeSpeech(
+      config({ speech: true, audioDir: dir, speechModelDir: dir, separationModelDir: dir, ...overrides }),
+      () => {
+        const w = scripted();
+        workers.push(w);
+        return w;
+      },
+    );
+    return { dir, workers, speech, cleanup: () => rm(dir, { recursive: true }) };
   }
 
   test("stopped, then starting while the model loads, then ready", async () => {
@@ -537,6 +557,172 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       await cleanup();
     }
   });
+
+  describe("separating the voice of an uploaded sample", () => {
+    test("without the separation model the sample is kept as it is, and no worker is started", async () => {
+      const { dir, workers, speech, cleanup } = await setup();
+      try {
+        const voice = await speech.addVoice("Mine", wav());
+        expect(workers).toHaveLength(0);
+        const kept = await Bun.file(
+          join(tmpdir(), `index-translator-voices-${process.pid}`, `${voice.id}.wav`),
+        ).bytes();
+        expect(kept).toEqual(new Uint8Array(wav()));
+        expect(dir).toBeTruthy();
+      } finally {
+        await speech.stop();
+        await cleanup();
+      }
+    });
+
+    test("the speech model is freed for it, the separated voice is what is kept, and speech loads again after", async () => {
+      const { dir, workers, speech, cleanup } = await setup({}, true);
+      const log = quiet();
+      try {
+        await say(speech);
+        expect(speech.state).toBe("ready");
+
+        const voice = await speech.addVoice("Mine", wav());
+        const separation = workers[0].posted.find((m: any) => m.type === "separate");
+        expect(separation.options).toMatchObject({
+          dir,
+          modelPath: join(dir, "bs-roformer.gguf"),
+          family: "bs_roformer",
+          backend: "cpu",
+        });
+        // The recording as uploaded goes to the worker, which does the rest on the speech thread.
+        expect(new Uint8Array(separation.wav)).toEqual(new Uint8Array(wav()));
+        expect(speech.state).toBe("stopped");
+        const kept = await Bun.file(
+          join(tmpdir(), `index-translator-voices-${process.pid}`, `${voice.id}.wav`),
+        ).bytes();
+        expect(kept).toEqual(new Uint8Array(separated()));
+
+        await say(speech);
+        expect(speech.state).toBe("ready");
+        expect(kinds(workers[0])).toEqual(["load", "synthesize", "separate", "load", "synthesize"]);
+      } finally {
+        log.mockRestore();
+        await speech.stop();
+        await cleanup();
+      }
+    });
+
+    test("an utterance asked for during the separation waits for it, then loads the speech model again", async () => {
+      const { workers, speech, cleanup } = await setup({}, true);
+      const log = quiet();
+      try {
+        await say(speech);
+        workers[0].manual = true;
+        const upload = speech.addVoice("Mine", wav());
+        await Bun.sleep(5);
+        const waiting = say(speech);
+        await Bun.sleep(20);
+        // Nothing but the separation is with the worker: the utterance does not find the model gone.
+        expect(kinds(workers[0])).toEqual(["load", "synthesize", "separate"]);
+
+        workers[0].answer(workers[0].posted[2]);
+        await upload;
+        await Bun.sleep(5);
+        expect(kinds(workers[0])).toEqual(["load", "synthesize", "separate", "load"]);
+        workers[0].manual = false;
+        workers[0].answer(workers[0].posted[3]);
+        expect(await waiting).toBeInstanceOf(ArrayBuffer);
+        expect(kinds(workers[0])).toEqual(["load", "synthesize", "separate", "load", "synthesize"]);
+      } finally {
+        log.mockRestore();
+        await speech.stop();
+        await cleanup();
+      }
+    });
+
+    test("an utterance already with the worker finishes before the separation starts", async () => {
+      const { workers, speech, cleanup } = await setup({}, true);
+      const log = quiet();
+      try {
+        await say(speech);
+        workers[0].manual = true;
+        const speaking = say(speech);
+        await Bun.sleep(5);
+        const upload = speech.addVoice("Mine", wav());
+        await Bun.sleep(5);
+        expect(kinds(workers[0])).toEqual(["load", "synthesize", "synthesize", "separate"]);
+        workers[0].answer(workers[0].posted[2]);
+        await speaking;
+        workers[0].answer(workers[0].posted[3]);
+        await upload;
+        workers[0].manual = false;
+      } finally {
+        log.mockRestore();
+        await speech.stop();
+        await cleanup();
+      }
+    });
+
+    test("a separation waits for a model that is loading, and two uploads run one after the other", async () => {
+      const { workers, speech, cleanup } = await setup({}, true);
+      const log = quiet();
+      try {
+        holdLoads = true;
+        const loading = say(speech);
+        expect(speech.state).toBe("starting");
+        const first = speech.addVoice("One", wav());
+        const second = speech.addVoice("Two", wav());
+        await Bun.sleep(10);
+        expect(kinds(workers[0])).toEqual(["load"]);
+        // The utterance was first, but a separation was asked for before its model finished loading,
+        // so the model goes again and the utterance is made after both separations.
+        holdLoads = false;
+        workers[0].answer(workers[0].posted[0]);
+        await Promise.all([first, second]);
+        await loading;
+        expect(kinds(workers[0])).toEqual(["load", "separate", "separate", "load", "synthesize"]);
+      } finally {
+        holdLoads = false;
+        log.mockRestore();
+        await speech.stop();
+        await cleanup();
+      }
+    });
+
+    test("a failed separation is a SeparationError, keeps nothing, and leaves speech working", async () => {
+      const { workers, speech, cleanup } = await setup({}, true);
+      const log = quiet();
+      try {
+        await say(speech);
+        workers[0].failSeparation = "out of memory";
+        const error = await speech.addVoice("Mine", wav()).then(
+          () => null,
+          (e) => e,
+        );
+        expect(error).toBeInstanceOf(SeparationError);
+        expect(error).toBeInstanceOf(SpeechError);
+        expect(error.message).toBe("separating the voice failed: out of memory");
+        expect(await speech.voices()).toEqual([]);
+
+        await say(speech);
+        expect(speech.state).toBe("ready");
+        // The next upload separates again, and a later separation does not wait for the failed one.
+        workers[0].failSeparation = undefined;
+        await speech.addVoice("Mine", wav());
+        expect(await speech.voices()).toHaveLength(1);
+      } finally {
+        log.mockRestore();
+        await speech.stop();
+        await cleanup();
+      }
+    });
+
+    test("a sample outside the limits is refused before the speech model is touched", async () => {
+      const { workers, speech, cleanup } = await setup({}, true);
+      try {
+        await expect(speech.addVoice("x", silentWav(0.5, 16000))).rejects.toThrow("too short");
+        expect(workers).toHaveLength(0);
+      } finally {
+        await cleanup();
+      }
+    });
+  });
 });
 
 describe("POST /voices", () => {
@@ -553,6 +739,18 @@ describe("POST /voices", () => {
     const res = await upload(sample());
     expect(res.status).toBe(201);
     expect(((await res.json()) as { name: string }).name).toBe("My voice");
+  });
+
+  test("a separation that fails in the engine is a 502, not a bad request, and keeps no voice", async () => {
+    const before = mockSpeech.voices.length;
+    mockSpeech.separationFailWith = "separating the voice failed: out of memory";
+    const res = await upload(sample());
+    expect(res.status).toBe(502);
+    expect(await errorOf(res)).toEqual({
+      code: "speech_error",
+      message: "separating the voice failed: out of memory",
+    });
+    expect(mockSpeech.voices).toHaveLength(before);
   });
 
   test("anything else is refused", async () => {
