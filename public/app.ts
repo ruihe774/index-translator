@@ -680,7 +680,10 @@ const player = new SpeechPlayer(synthesize, {
     showSpeaking(true);
     refreshSpeech();
   },
-  onError: (e) => flashMeta(failureMessage(e)),
+  onError(e) {
+    flashMeta(failureMessage(e));
+    voicesStale = true;
+  },
 });
 
 function speechTarget(side: Side): { text: string; lang: string | undefined } {
@@ -757,8 +760,12 @@ function toggleSpeech(side: Side) {
   const blocked = speechBlocked(side);
   if (blocked) {
     flashMeta(blocked);
+    // Reading aloud may have become available since the page loaded.
+    if (speechProblem) void recheckVoicesNow(true);
     return;
   }
+  // After a failure the voice list may be out of date; the reading goes on with what is selected.
+  if (voicesStale) void loadVoices();
   const { text, lang } = speechTarget(side);
   // Read as it is shown: rendered Markdown when the text looks like Markdown, else line by line.
   const markdown = side === "source" ? looksLikeMarkdown(text) : views.output.available;
@@ -784,25 +791,60 @@ function stopSpeech(side?: Side) {
   if (speaking && (side === undefined || speaking.side === side)) player.stop();
 }
 
-async function loadVoices() {
-  try {
-    const res = await fetch(`${API}/voices`);
-    const body = (await res.json()) as { status: string; error?: string; voices: { id: string; name: string }[] };
-    if (body.status === "unavailable") {
-      speechProblem = `Reading aloud is not available: ${body.error ?? "it is not installed"}.`;
-    } else {
-      if (body.voices.length === 0) {
-        speechProblem = "Reading aloud needs a voice: upload or record a sample under Model and options.";
-      } else speechProblem = "";
-      for (const v of body.voices) voiceSelect.append(new Option(v.name, v.id));
-      const saved = stored("voice");
-      if (body.voices.some((v) => v.id === saved)) voiceSelect.value = saved!;
-      speechSettings.hidden = false;
+/** A reading failed: the voice list or the engine may have changed, so look again at the next chance. */
+let voicesStale = false;
+let voicesCheck: Promise<void> | null = null;
+let voicesCheckedAt = 0;
+/** Events (focus, visibility) can come in bursts; a passive re-check is at most this often. */
+const VOICES_RECHECK_MS = 3000;
+
+/**
+ * Asks the server for the voices and brings the Listen buttons and the voice list in line with the
+ * answer, every time: speech may have been installed, or a voice added or lost, since the last look.
+ */
+function loadVoices(): Promise<void> {
+  voicesCheck ??= (async () => {
+    try {
+      const res = await fetch(`${API}/voices`);
+      const body = (await res.json()) as { status: string; error?: string; voices: { id: string; name: string }[] };
+      if (body.status === "unavailable") {
+        speechProblem = `Reading aloud is not available: ${body.error ?? "it is not installed"}.`;
+      } else {
+        if (body.voices.length === 0) {
+          speechProblem = "Reading aloud needs a voice: upload or record a sample under Model and options.";
+        } else speechProblem = "";
+        const before = voiceSelect.value;
+        const wanted = [before, stored("voice")].find((id) => body.voices.some((v) => v.id === id));
+        voiceSelect.replaceChildren(...body.voices.map((v) => new Option(v.name, v.id)));
+        if (wanted) voiceSelect.value = wanted;
+        // The voice being read with is gone: the next piece uses the one now selected.
+        if (voiceSelect.value !== before && voiceSelect.value) player.update({ voice: voiceSelect.value });
+        speechSettings.hidden = false;
+      }
+      voicesStale = false;
+    } catch {
+      speechProblem = "Reading aloud is not available: the server cannot be reached.";
     }
-  } catch {
-    speechProblem = "Reading aloud is not available: the server cannot be reached.";
-  }
-  refreshSpeech();
+    voicesCheckedAt = Date.now();
+    refreshSpeech();
+  })().finally(() => {
+    voicesCheck = null;
+  });
+  return voicesCheck;
+}
+
+/** On focus or visibility: look again only when reading aloud is not working, and not in a burst. */
+function recheckVoices() {
+  if (!speechProblem && !voicesStale) return;
+  if (Date.now() - voicesCheckedAt < VOICES_RECHECK_MS) return;
+  void loadVoices();
+}
+
+/** The person tried to use reading aloud while it was blocked or after it failed: look again now. */
+async function recheckVoicesNow(announce: boolean) {
+  const had = speechProblem;
+  await loadVoices();
+  if (announce && had && !speechProblem) flashMeta("Reading aloud is available now. Press Listen to start.");
 }
 
 /** Adds an uploaded voice to the list, selects it and tells the player. */
@@ -877,10 +919,12 @@ for (const side of SIDES) {
 voiceSelect.addEventListener("change", () => {
   store("voice", voiceSelect.value);
   player.update({ voice: voiceSelect.value });
+  if (speechProblem || voicesStale) void recheckVoicesNow(false);
 });
 speedSelect.addEventListener("change", () => {
   store("speed", speedSelect.value);
   player.update({ speed: Number(speedSelect.value) });
+  if (speechProblem || voicesStale) void recheckVoicesNow(false);
 });
 const savedSpeed = stored("speed");
 if ([...speedSelect.options].some((o) => o.value === savedSpeed)) speedSelect.value = savedSpeed!;
@@ -939,4 +983,8 @@ refreshControls();
 void loadLanguages();
 void loadVoices();
 void pollHealth();
-document.addEventListener("visibilitychange", () => void pollHealth());
+document.addEventListener("visibilitychange", () => {
+  void pollHealth();
+  if (document.visibilityState === "visible") recheckVoices();
+});
+window.addEventListener("focus", recheckVoices);

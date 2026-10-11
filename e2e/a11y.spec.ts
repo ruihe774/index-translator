@@ -68,6 +68,48 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
+for (const scheme of ["light", "dark"] as const) {
+  test(`the voice-clone group passes axe in ${scheme} mode in its error states`, async ({ app }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await app.page.addInitScript(() => {
+      navigator.mediaDevices.getUserMedia = () =>
+        Promise.reject(new DOMException("Permission denied", "NotAllowedError"));
+    });
+    await app.open();
+    await app.page.getByText("Reading aloud", { exact: true }).click();
+    const group = app.page.getByRole("group", { name: "Clone a voice" });
+    const status = app.page.locator("#clone-status");
+    await expect(group.getByRole("button", { name: "Record" })).toBeVisible();
+    await expect(group.getByRole("button", { name: "Upload audio…" })).toBeVisible();
+
+    // Record refused: the reason is in the status line, a live region.
+    await group.getByRole("button", { name: "Record" }).click();
+    await expect(status).toContainText("Microphone access was denied");
+    await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+
+    // Upload refused: a file that is not audio.
+    await app.page
+      .locator("#voice-file")
+      .setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("no") });
+    await expect(status).not.toContainText("Microphone access was denied");
+    await expect(status).toHaveText(/\S/);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+
+    // The group keeps 44 px targets and fits 320 px with the error showing.
+    for (const name of ["Record", "Upload audio…"]) {
+      const box = await group.getByRole("button", { name }).boundingBox();
+      expect(box?.height).toBeGreaterThanOrEqual(44);
+    }
+    await app.page.setViewportSize({ width: 320, height: 640 });
+    expect(
+      await app.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
+    ).toBeLessThanOrEqual(0);
+  });
+}
+
 test("the speech controls are reached in order and focus does not get lost when reading ends", async ({
   app,
   mock,
