@@ -1,0 +1,3 @@
+[test]
+# Playwright specs under e2e/ run with `bun run e2e`, not `bun test`.
+root = "test"

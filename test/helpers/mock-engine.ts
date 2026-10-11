@@ -1,11 +1,10 @@
-// Shared harness for API tests: a mock llama-server that runs in-process, a launcher that starts
+// Shared harness for API tests and the Playwright mock server (e2e/mock-server.ts): a mock llama-server that runs in-process, a launcher that starts
 // one per model load, and small request/SSE helpers. No GPU or model files are needed.
 //
 // The mock tokenizer counts one token per character and the chat template adds TEMPLATE.length tokens.
 // `mock` is module state shared by every test file in the run: tests that change it must restore it
 // (or call resetMock() in afterEach/finally), because bun runs test files in one process.
 
-import { expect } from "bun:test";
 import { join, resolve } from "node:path";
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
@@ -120,7 +119,7 @@ export function config(overrides: Partial<Config> = {}): Config {
 
 export async function waitReady(app: App): Promise<void> {
   for (let i = 0; i < 100 && app.engine.state !== "ready"; i++) await Bun.sleep(20);
-  expect(app.engine.state).toBe("ready");
+  if (app.engine.state !== "ready") throw new Error(`engine not ready: ${app.engine.state}`);
 }
 
 /** POST JSON (or a raw string body) to `base + path`. */

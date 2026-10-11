@@ -4,9 +4,11 @@
   "type": "module",
   "scripts": {
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p public/tsconfig.json"
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p public/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
+    "e2e": "playwright test"
   },
   "devDependencies": {
+    "@playwright/test": "1.56.1",
     "@types/bun": "^1.4.2",
     "typescript": "^7.0.2"
   }

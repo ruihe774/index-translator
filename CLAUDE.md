@@ -9,6 +9,7 @@ docs: README.md.
 - Run: `bun src/server.ts` (http://127.0.0.1:3000)
 - Test: `bun test` (API tests use a mock engine; no GPU needed)
 - Typecheck: `bun run typecheck`
+- Frontend e2e/integration: `bun run e2e` (Playwright, mock engine; see `e2e/README.md`; `bunx playwright install chromium` or `CHROMIUM_PATH`)
 - Setup: `bun scripts/fetch_llama.ts` (vendor/llama.cpp, checksum verified); `uv run scripts/fetch_models.py` (models/, about 14 GiB)
 - Long-document check: `MODEL=index-nailong-9b bun scripts/longtext.ts http://127.0.0.1:3000`
 
@@ -27,6 +28,7 @@ No npm runtime dependencies; no build step for the web app.
 - `public/`: web app (`app.ts`, `select-model.ts`, `request.ts`, `sse.ts`, `messages.ts`, `errors.ts`, `paragraphs.ts`, `glossary.ts`, `style.css`)
 - `prompts/`: the four official NativeLong templates (from bilibili/Index-Translate)
 - `scripts/`: fetch and test helpers
+- `e2e/`: Playwright specs, `mock-server.ts` (real app on the `test/helpers/mock-engine.ts` mock, scriptable via a control port)
 - `test/`: `bun test`; `test/fixtures/essays.en.txt` is the long-input fixture (30 paragraphs, 16,566 letters)
 - `docs/openapi.yaml`: API spec, served at `/api/v1/openapi.yaml`
 
