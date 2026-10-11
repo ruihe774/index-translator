@@ -32,12 +32,13 @@ info:
     waiting or running translation.
 
     **Reading aloud.** `POST /speech` turns one short text into speech with IndexTTS-2.5, which
-    runs in a separate engine process (audio.cpp) beside the translation model. It speaks
+    runs with its own engine (audio.cpp) beside the translation model. It speaks
     Chinese, English, Japanese, Spanish and Arabic. The model has no built-in voices: a voice is
     a reference recording on the server (`GET /voices`) that the model imitates. One request is
     one utterance, returned whole; a client reads a document by sending it sentence by sentence.
-    The speech engine starts with the first request and loads its model then, so that request
-    takes a few seconds longer. Speech requests have their own queue of the same size.
+    The speech model is loaded by the first request, which therefore takes a few seconds longer,
+    and is unloaded again after a while without requests. Speech requests have their own queue of
+    the same size.
 
     **Errors.** Every error response has the same JSON envelope, see `Error`.
 servers:
@@ -55,7 +56,8 @@ paths:
       description: |
         Returns the audio of the whole text as one WAV file (22.05 kHz, mono, 16-bit PCM). The
         text is spoken as it is given: the server does not strip Markdown or split long input.
-        Closing the connection gives up the request's place in the queue.
+        Closing the connection gives up the request's place in the queue. An utterance that is
+        already being synthesized is finished and thrown away, and the next request waits for it.
       requestBody:
         required: true
         content:
@@ -90,7 +92,7 @@ paths:
         "429":
           $ref: "#/components/responses/QueueFull"
         "502":
-          description: The speech engine failed to start or to synthesize the text (`speech_error`).
+          description: The speech engine failed to load its model or to synthesize the text (`speech_error`).
           content:
             application/json:
               schema:
@@ -684,14 +686,15 @@ components:
               $ref: "#/components/schemas/SpeechStatus"
             error:
               type: string
-              description: Why speech is `unavailable`, or why the last start failed.
+              description: Why speech is `unavailable`, or why the model could not be loaded last time.
     SpeechStatus:
       type: string
       enum: [unavailable, stopped, starting, ready, error]
       description: |
         `unavailable`: turned off, or the engine or its model is not installed. `stopped`:
-        installed and started by the first `POST /speech`. `error`: the last start failed; the
-        next request tries again.
+        installed, the model is not loaded; a `POST /speech` loads it (`starting`, then `ready`)
+        and it is unloaded again when idle. `error`: the last load failed; the next request tries
+        again.
     SpeechRequest:
       type: object
       required: [text, lang]

@@ -48,16 +48,20 @@ bun src/server.ts
 
 Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`.
 
-Before the first start, download the engines and the models once (about 18 GiB):
+Before the first start, get the engines and the models once (about 18 GiB):
 
 ```bash
-bun scripts/fetch_llama.ts      # translation engine (llama.cpp, Vulkan)
-bun scripts/fetch_audiocpp.ts   # speech engine (audio.cpp, Vulkan)
+bun scripts/fetch_llama.ts      # translation engine (llama.cpp, Vulkan): downloaded
+bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
 uv run scripts/fetch_models.py  # the two translation models, the speech model and example voices
 ```
 
-Reading aloud is optional. To leave it out, skip `fetch_audiocpp.ts` and download only the
+Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and download only the
 translation models with `uv run scripts/fetch_models.py --model index-translate-9b --model index-nailong-9b`.
+
+Building the speech engine needs git, CMake, a C++ compiler, `glslc` and the Vulkan headers. On
+Debian and Ubuntu: `sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers`.
+The result runs on any x86-64 processor with AVX2.
 
 You need [Bun](https://bun.sh), [uv](https://docs.astral.sh/uv/), the C library headers (package
 `libc6-dev` on Debian and Ubuntu, `glibc-devel` on Fedora; already there if a C compiler is

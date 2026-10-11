@@ -2,8 +2,9 @@
 
 Local translation app. One Bun process serves the REST/SSE API and the static web app, and runs
 llama.cpp in-process (libllama through `bun:ffi`, Vulkan) on a worker thread that holds one model
-at a time. Reading aloud (IndexTTS-2.5) is the one part outside the process: audio.cpp's
-`audiocpp_server` runs as a child on a loopback port. User-facing docs: README.md.
+at a time. Reading aloud (IndexTTS-2.5) runs in the same process too: audio.cpp's C API
+(libaudiocpp, built from source) through `bun:ffi` on a second worker thread. User-facing docs:
+README.md.
 
 ## Commands
 
@@ -18,7 +19,7 @@ Dev tools (TypeScript, `@types/bun`, Playwright, doiuse, postcss) come from `nod
 - Frontend e2e/integration/a11y: `bun run e2e` (Playwright, mock engine; see `e2e/README.md`; `bunx playwright install chromium` or `CHROMIUM_PATH`)
 - Lint and format: `bun run check` (Biome, recommended rules; `bun run format` writes). Errors must stay at zero; the style warnings (`noNonNullAssertion`, `noExplicitAny`, `useTemplate`) are tolerated
 - CSS browser-support check: `bun run lint:css` (doiuse against `.browserslistrc`)
-- Setup: `bun scripts/fetch_llama.ts` (vendor/llama.cpp with the tag's headers in `include/`, checksums verified); `bun scripts/fetch_audiocpp.ts` (vendor/audio.cpp, the `vulkan-portable` build; the plain `vulkan` build needs AVX-512 and dies with SIGILL without it); `uv run scripts/fetch_models.py` (models/, about 17.5 GiB with the 3.5 GB speech model, and the example voices into voices/)
+- Setup: `bun scripts/fetch_llama.ts` (vendor/llama.cpp with the tag's headers in `include/`, checksums verified); `bun scripts/build_audiocpp.ts` (vendor/audio.cpp: `libaudiocpp.so` built from the pinned commit, about 1 min of compiling on 20 threads; needs git, cmake, a C++ compiler, glslc, libvulkan-dev, spirv-headers; AVX2 code unless `--native`; `--keep` keeps the build tree in `vendor/.build/`); `uv run scripts/fetch_models.py` (models/, about 17.5 GiB with the 3.5 GB speech model, and the example voices into voices/)
 - Markdown conformance: `bun scripts/commonmark.ts` (CommonMark spec examples against `public/markdown.ts`; divergences in `docs/markdown-conformance.md`)
 - Long-document check: `MODEL=index-nailong-9b bun scripts/longtext.ts http://127.0.0.1:3000`
 
@@ -26,7 +27,7 @@ No npm runtime dependencies; no build step for the web app.
 
 ## Layout
 
-- `src/server.ts`: entry point, signal handling (SIGINT/SIGTERM stop the child)
+- `src/server.ts`: entry point, signal handling (SIGINT/SIGTERM free the models and stop)
 - `src/open-browser.ts`: opens the default browser (`xdg-open`/`open`/`start`)
 - `src/app.ts`: routes, model selection, SSE, static files
 - `src/llama.ts`: engine state (one model at a time), token counting, streamed generation; server-thread side of the engine worker
@@ -35,7 +36,10 @@ No npm runtime dependencies; no build step for the web app.
 - `src/llama-shim.c`: the calls that pass structs by value and the log filter; compiled at startup by `bun:ffi`'s `cc` (TinyCC) against `vendor/llama.cpp/include/llama.h`
 - `src/models.ts`: model registry (ids, files, kinds, document directions)
 - `src/prompt.ts`: chat prompts, NativeLong document prompts, language table
-- `src/speech.ts`: the speech engine: starts, supervises and calls the `audiocpp_server` child; voices from `VOICES_DIR`
+- `src/speech.ts`: the speech engine's state, lazy load and idle unload, voices from `VOICES_DIR`; server-thread side of the speech worker
+- `src/speech-worker.ts`: worker thread that owns libaudiocpp; loads, unloads and utterances run in arrival order, each to its end
+- `src/audiocpp-ffi.ts`: `bun:ffi` bindings (blocking) to audio.cpp's C API (`vendor/audio.cpp/include/audiocpp.h`); no C shim, the two config structs are written into buffers
+- `src/wav.ts`: WAV decoding (voice recordings: PCM 8 to 32 bits, float 32/64) and 16-bit PCM writing
 - `src/queue.ts`: single-slot FIFO
 - `src/static.ts`: static files; `.ts` in `public/` transpiled on request, ETag-cached in memory, never written to disk
 - `public/`: web app (`app.ts`, `select-model.ts`, `request.ts`, `sse.ts`, `messages.ts`, `errors.ts`, `paragraphs.ts`, `glossary.ts`, `markdown.ts`, `markdown-dom.ts`, `sync-scroll.ts`, `speech-text.ts`, `speech.ts`, `style.css`)
@@ -63,13 +67,20 @@ No npm runtime dependencies; no build step for the web app.
 - Output is capped at 4 × prompt tokens + 512 unless `max_output_tokens` is set, so loops stop.
 - No authentication. Keep `HOST` on loopback or behind a proxy. `ALLOWED_ORIGINS` and
   `ALLOWED_HOSTS` control browser and proxy access.
-- The engine shares the server's process: a crash inside llama.cpp takes the server down, and any
-  exit, `SIGKILL` included, releases the VRAM.
-- The speech engine is a child process, started by the first `POST /speech` (never at startup) and
-  wrapped in `setpriv --pdeathsig KILL` when `setpriv` exists, so it too dies with the server
-  however the server dies; without `setpriv` only a clean shutdown stops it. Its model is loaded
-  by its first synthesis and unloaded after `SPEECH_IDLE_UNLOAD` seconds. If the child exits, the
-  next request starts it again.
+- Both engines share the server's process: a crash inside llama.cpp or audio.cpp takes the server
+  down, and any exit, `SIGKILL` included, releases the VRAM.
+- libaudiocpp is only called from the speech worker thread, which is started by the first
+  `POST /speech` (never at startup). The model is loaded by that request and freed after
+  `SPEECH_IDLE_UNLOAD` seconds without one (timer in `src/speech.ts`; state back to `stopped`);
+  the next request loads it again. A failed load is retried by the next request.
+- libaudiocpp must have its ggml linked in statically with only `audiocpp_*` exported, which is
+  what `scripts/build_audiocpp.ts` builds. audio.cpp's ggml is a fork (0.12, own ops) with the
+  same SONAME `libggml.so.0` as llama.cpp's: a build with shared ggml libraries binds to the one
+  libllama loaded and dies with an undefined symbol, or alone finds no backend because it looks
+  for them beside the `bun` executable.
+- An utterance cannot be stopped: the C API has no abort. A request whose client goes away is
+  answered at once and leaves its queue slot; the worker finishes the utterance, which nobody
+  receives, and the next one waits behind it (a few seconds at most, given the client's pieces).
 - Speech has its own single-slot queue (`MAX_QUEUE` waiting) and never holds the translation
   queue: a translation and a synthesis may run on the GPU at the same time.
 - `POST /speech` speaks the text as given: one request, one utterance, at most 1,000 characters,
@@ -96,8 +107,8 @@ Environment variables, all optional. Defaults in `src/config.ts`.
 | `LLAMA_THREADS` | half the logical CPUs | CPU threads for decoding |
 | `LLAMA_DIR` | `vendor/llama.cpp` | Holds `libllama`, the `libggml-*` backends and `include/llama.h`; headers must match the library |
 | `PUBLIC_DIR` | `public/` | |
-| `SPEECH` | on | `0`: reading aloud is reported as unavailable and the child is never started |
-| `AUDIO_DIR` | `vendor/audio.cpp` | Holds `audiocpp_server`, its `libggml-*` libraries and `model_specs/` |
+| `SPEECH` | on | `0`: reading aloud is reported as unavailable and libaudiocpp is never loaded |
+| `AUDIO_DIR` | `vendor/audio.cpp` | Holds `libaudiocpp.so` (and `include/audiocpp.h` for reference); the model's spec comes from its GGUF |
 | `SPEECH_MODEL_DIR` | `MODELS_DIR/IndexTTS2.5-GGUF` | Directory with the one IndexTTS-2.5 GGUF |
 | `VOICES_DIR` | `voices/` | One `*.wav` reference recording per voice; read on every `GET /voices` |
 | `SPEECH_BACKEND` | `vulkan` | audio.cpp backend; `cpu` works but is far slower than real time |
@@ -131,11 +142,21 @@ file in the page cache. Output, token counts and speed match `llama-server` of t
 
 Speech: IndexTTS-2.5 as `index-tts2_5-q8_0.gguf` from `audio-cpp/audio.cpp-gguf` (a community
 conversion; the official release is PyTorch and names NVIDIA only), run by audio.cpp `v0.9.1`
-(family `index_tts2`). Measured on the same card: about 5,700 MiB VRAM once loaded (15,400 MiB
-of 16,304 with the chat model, peak 15,480 during a 36 s utterance; no slowdown of either side),
-freed by the idle unload; engine start plus model load about 5 s; then 0.25 to 0.3 of real time
-(a 6 s sentence in 1.6 s). Speed is the model's `duration_factor` (1/speed), range 0.5 to 2.
-Output transcribed back with Qwen3-ASR matched the text for zh, en, ja, es and ar. Not
+(family `index_tts2`, the only family compiled into our libaudiocpp). Measured in-process on the
+same card: about 2,600 MiB VRAM after the load and 5,100 after the first utterance (15,000 MiB
+of 16,304 with the chat model, up to 15,500 once several voices have been used), back to the
+chat model's 9,900 half a second after the idle unload; model load about 5 s; then about 0.3 of
+real time (a 3.9 s sentence in 1.2 s). A translation and utterances at the same time share the
+GPU: about 57 tokens/s instead of 71, and 0.6 of real time instead of 0.3; the release's
+`audiocpp_server` as a child process measured the same in every respect, so being in-process
+costs and gains no speed. Speed is the model's `duration_factor` (1/speed), range 0.5 to 2.
+The C API's output equals that of `audiocpp_cli` built from the same tree to 16-bit rounding;
+the AVX2 and `--native` builds give the same samples, the release binaries slightly different
+ones (3.59 s instead of 3.87 s for one sentence). With the same seed a sentence sounds the same
+again, except that a voice's first use after another voice differs once from its later uses
+(the release server does the same). Output of the release build transcribed back with Qwen3-ASR
+matched the text for zh, en, ja, es and ar; our own build was checked for parity with the CLI
+and for all five languages producing audio, not transcribed or listened to. Not
 normalized by audio.cpp: digits in Japanese ("2026年" was read "二十二年年"; `speech-text.ts`
 writes them in kanji first) and in Arabic (garbled, not handled). German input produced noise.
 
@@ -185,7 +206,7 @@ Hence the 11,000-letter switch point.
 - The source preview, the view switches, Clear and sync scrolling have not been reviewed for
   accessibility yet (not in `A11Y-ACCEPTANCE.md`); `e2e/a11y.spec.ts` passes.
 - Reading aloud (`public/speech-text.ts` pure, `public/speech.ts` player, wiring in `app.ts`): each panel's button row starts with Listen (a loudspeaker; a square, "Stop reading…", while that side is read) and, only while reading, Pause / Resume. One side is read at a time. Listen is `aria-disabled`, with the reason as `title`, when speech is unavailable, there is no text, the translation is still running, or the language is not one the model speaks (source: the selected language or `detectSource`; output: `outputEl.lang`). Starting a translation, Clear, editing the source or changing From stops the reading. `speechSegments` builds what is spoken: for a text shown as Markdown (source: `looksLikeMarkdown`; output: `views.output.available`) from `parseLines`, never the raw text (headings and list items are utterances and get a full stop, ordered items their number, table rows "header: cell" pairs, links their text, images their alt, URLs their host, code blocks and rules nothing); plain text line by line. Utterances are packed into pieces of whole sentences (`Intl.Segmenter`; 180 characters, 60 for zh/ja; a longer sentence is cut at commas), each with the `data-line` of its top-level block, which gets `.speaking` and is scrolled into its pane. The player fetches one piece at a time, the next one while the current plays, and plays through one `AudioContext` created in the click; pause is `suspend()`. Voice and speed (selects under "Model and options", stored like the languages, hidden without voices) apply from the current piece, which is fetched again. Errors flash in `#meta`. Not reviewed for accessibility (not in `A11Y-ACCEPTANCE.md`); `e2e/a11y.spec.ts` passes, its tab-order list includes Listen.
-- Changing the audio.cpp tag (`scripts/fetch_audiocpp.ts`) or the speech GGUF (`scripts/fetch_models.py`): update the checksums, then check a sentence per language by ear or by transcribing it, the `duration_factor` range, and VRAM beside the chat model.
+- Changing the audio.cpp version (`TAG` and `COMMIT` in `scripts/build_audiocpp.ts`; the source is fetched by commit id, which is its checksum) or the speech GGUF (`scripts/fetch_models.py`, update the checksum): check the signatures declared in `src/audiocpp-ffi.ts` and the two struct layouts against the new `include/audiocpp.h` by hand (the build script only proves that the functions exist; the ABI major version is checked at load), that the library still exports only `audiocpp_*` and does not need `libggml*.so`, then a sentence per language by ear or by transcribing it, the `duration_factor` range, and VRAM beside the chat model. The speech engine has no test with the real library: `bun test` and `e2e` use the mock.
 - Changing the llama.cpp tag (`scripts/fetch_llama.ts`): update the header checksums, and check the
   signatures declared in `src/llama-ffi.ts` against the new `llama.h` by hand, since only
   `src/llama-shim.c` is compiled against it. The shim needs the system's C library headers

@@ -183,7 +183,7 @@ export function resetMockSpeech(): void {
   mockSpeech.aborted = 0;
 }
 
-/** Stands in for the audio.cpp child process: answers every utterance with silence. */
+/** Stands in for the audio.cpp speech engine: answers every utterance with silence. */
 export const speechLauncher: SpeechLauncher = () => ({
   get state() {
     return mockSpeech.state;

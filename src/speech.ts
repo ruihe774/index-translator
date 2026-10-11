@@ -1,7 +1,7 @@
-// Reading aloud with IndexTTS-2.5. The model runs in audio.cpp's `audiocpp_server`, a child process
-// on a loopback port that only this server talks to. It is started by the first speech request,
-// loads the model on its first synthesis and frees it again after `SPEECH_IDLE_UNLOAD` seconds
-// without one, so the translation model has the GPU to itself until somebody listens.
+// Reading aloud with IndexTTS-2.5, in-process through audio.cpp's C API (libaudiocpp, bun:ffi).
+// The library runs on a worker thread (src/speech-worker.ts); this file is the server-thread side.
+// The model is loaded by the first speech request and freed again after `SPEECH_IDLE_UNLOAD`
+// seconds without one, so the translation model has the GPU to itself until somebody listens.
 //
 // IndexTTS has no built-in voices: every request names a reference recording from `VOICES_DIR`,
 // whose voice the model imitates.
@@ -11,7 +11,10 @@ import { existsSync } from "node:fs";
 import { mkdir, readdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, extname, join } from "node:path";
+import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
+import type { SpeechWorkerReply, SpeechWorkerRequest } from "./speech-worker";
+import { readWav } from "./wav";
 
 /** The languages IndexTTS-2.5 speaks. Any other text comes out as noise, so it is refused. */
 export const SPEECH_LANGUAGES = ["zh", "en", "ja", "es", "ar"];
@@ -21,10 +24,10 @@ export const MAX_SPEECH_CHARS = 1000;
 export const MIN_SPEED = 0.5;
 export const MAX_SPEED = 2;
 
-const MODEL_ID = "indextts";
-/** Sampling is seeded so the same sentence sounds the same when it is played again. */
-const SEED = 42;
-const START_TIMEOUT_MS = 30_000;
+/** audio.cpp's name for the IndexTTS-2 family of models. */
+const FAMILY = "index_tts2";
+/** CPU threads for the parts of the model that do not run on the GPU. */
+const THREADS = 4;
 
 /** Largest uploaded voice sample, and how many uploads are kept until the server stops. */
 export const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
@@ -46,8 +49,9 @@ export interface SpeechRequest {
 }
 
 /**
- * `unavailable`: turned off, or the engine, the model or the voices are missing (`error` says which);
- * `stopped`: installed, not running yet; `starting`; `ready`; `error`: the last start failed.
+ * `unavailable`: turned off, or the engine or the model is missing (`error` says which);
+ * `stopped`: installed, the model is not loaded; `starting`: loading it; `ready`; `error`: the
+ * last load failed.
  */
 export type SpeechState = "unavailable" | "stopped" | "starting" | "ready" | "error";
 
@@ -64,19 +68,22 @@ export interface Speech {
 
 export type SpeechLauncher = (cfg: Config) => Speech;
 
-function freePort(): number {
-  const probe = Bun.listen({ hostname: "127.0.0.1", port: 0, socket: { data() {} } });
-  const port = probe.port;
-  probe.stop(true);
-  return port;
-}
+type Send<T> = T extends unknown ? Omit<T, "req"> : never;
+
+const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 class NativeSpeech implements Speech {
-  private child: Bun.Subprocess | null = null;
-  private base: string | null = null;
-  private starting: Promise<string> | null = null;
+  /** The thread that owns libaudiocpp, started by the first request. */
+  private worker: Worker | null = null;
+  private waiting = new Map<number, (reply: SpeechWorkerReply) => void>();
+  private lastReq = 0;
+
+  private loaded = false;
+  private loading: Promise<void> | null = null;
   private failure: string | undefined;
-  private readonly configPath = join(tmpdir(), `index-translator-speech-${process.pid}.json`);
+  /** Utterances asked for that the worker has not finished, whether or not their client still waits. */
+  private pending = 0;
+  private idle: Timer | undefined;
 
   /** Uploaded voices: id to file. Ids never become paths. */
   private uploads = new Map<string, { name: string; path: string }>();
@@ -84,14 +91,12 @@ class NativeSpeech implements Speech {
 
   constructor(private cfg: Config) {}
 
-  private get binary(): string {
-    return join(this.cfg.audioDir, "audiocpp_server");
-  }
-
   /** Why speech cannot run at all, checked each time so an install does not need a restart. */
   private missing(): string | undefined {
     if (!this.cfg.speech) return "reading aloud is turned off (SPEECH=0)";
-    if (!existsSync(this.binary)) return "the speech engine is not installed; run bun scripts/fetch_audiocpp.ts";
+    if (!existsSync(libraryPath(this.cfg.audioDir))) {
+      return "the speech engine is not installed; run bun scripts/build_audiocpp.ts";
+    }
     if (!existsSync(this.cfg.speechModelDir)) {
       return "the speech model is not installed; run uv run scripts/fetch_models.py --model index-tts-2.5";
     }
@@ -100,13 +105,13 @@ class NativeSpeech implements Speech {
 
   get state(): SpeechState {
     if (this.missing()) return "unavailable";
-    if (this.base) return "ready";
-    if (this.starting) return "starting";
+    if (this.loaded) return "ready";
+    if (this.loading) return "starting";
     return this.failure ? "error" : "stopped";
   }
 
   get error(): string | undefined {
-    return this.missing() ?? (this.base || this.starting ? undefined : this.failure);
+    return this.missing() ?? (this.loaded || this.loading ? undefined : this.failure);
   }
 
   async voices(): Promise<Voice[]> {
@@ -127,10 +132,12 @@ class NativeSpeech implements Speech {
   }
 
   async addVoice(name: string, wav: ArrayBuffer): Promise<Voice> {
-    const head = new Uint8Array(wav, 0, Math.min(12, wav.byteLength));
-    const tag = (at: number) => String.fromCharCode(...head.subarray(at, at + 4));
-    if (head.length < 12 || tag(0) !== "RIFF" || tag(8) !== "WAVE")
-      throw new SpeechError("the sample is not a WAV file");
+    // Decoded once here, so a recording the engine could not read is refused when it is uploaded.
+    try {
+      readWav(new Uint8Array(wav));
+    } catch (e) {
+      throw new SpeechError(`the sample cannot be used: ${messageOf(e)}`);
+    }
     if (this.uploads.size >= MAX_UPLOADED_VOICES) throw new SpeechError("too many uploaded voices");
     const id = `upload-${randomUUID()}`;
     const path = join(this.uploadDir, `${id}.wav`);
@@ -140,109 +147,130 @@ class NativeSpeech implements Speech {
     return { id, name };
   }
 
-  private async start(): Promise<string> {
-    const port = freePort();
-    await Bun.write(
-      this.configPath,
-      JSON.stringify({
-        host: "127.0.0.1",
-        port,
-        backend: this.cfg.speechBackend,
-        device: 0,
-        threads: 4,
-        lazy_load: true,
-        idle_unload_ms: this.cfg.speechIdleUnload * 1000,
-        models: [{ id: MODEL_ID, family: "index_tts2", path: this.cfg.speechModelDir, task: "tts", mode: "offline" }],
-      }),
-    );
-    // The child must not outlive this process and keep its VRAM: setpriv makes the kernel kill it
-    // when we die, however we die. Without setpriv only a clean shutdown stops it.
-    const command = [this.binary, "--config", this.configPath, "--no-ui"];
-    const guard = Bun.which("setpriv");
-    const child = Bun.spawn(guard ? [guard, "--pdeathsig", "KILL", ...command] : command, {
-      cwd: this.cfg.audioDir,
-      stdin: "ignore",
-      stdout: "ignore",
-      stderr: "inherit",
+  /** One request to the worker, one reply. */
+  private call(msg: Send<SpeechWorkerRequest>): Promise<SpeechWorkerReply> {
+    const worker = this.worker ?? this.startWorker();
+    return new Promise((resolve, reject) => {
+      const req = ++this.lastReq;
+      this.waiting.set(req, (reply) => {
+        this.waiting.delete(req);
+        if (reply.type === "error") reject(new SpeechError(reply.message));
+        else resolve(reply);
+      });
+      worker.postMessage({ ...msg, req });
     });
-    this.child = child;
-    const base = `http://127.0.0.1:${port}`;
-    void child.exited.then((code) => {
-      if (this.child !== child) return;
-      this.child = null;
-      this.base = null;
-      this.failure = `the speech engine exited (code ${code})`;
-      console.error(`[speech] ${this.failure}`);
-    });
-
-    const deadline = Date.now() + START_TIMEOUT_MS;
-    while (this.child === child) {
-      try {
-        if ((await fetch(`${base}/health`)).ok) {
-          this.base = base;
-          this.failure = undefined;
-          console.error(`[speech] engine ready on port ${port}`);
-          return base;
-        }
-      } catch {
-        // not listening yet
-      }
-      if (Date.now() > deadline) {
-        child.kill();
-        break;
-      }
-      await Bun.sleep(100);
-    }
-    this.failure ??= "the speech engine did not start";
-    throw new SpeechError(this.failure);
   }
 
-  private ready(): Promise<string> {
-    if (this.base) return Promise.resolve(this.base);
-    this.starting ??= this.start().finally(() => {
-      this.starting = null;
-    });
-    return this.starting;
+  private startWorker(): Worker {
+    // Not referenced: the server decides when the process ends, not an idle speech thread.
+    const worker = new Worker(new URL("./speech-worker.ts", import.meta.url).href, { ref: false });
+    worker.onmessage = (event: MessageEvent<SpeechWorkerReply>) => this.waiting.get(event.data.req)?.(event.data);
+    // If the thread dies its model is gone with it; the next request starts another.
+    const lost = (reason: string) => {
+      if (this.worker !== worker) return;
+      this.worker = null;
+      this.loaded = false;
+      this.failure = reason;
+      console.error(`[speech] ${reason}`);
+      for (const [req, deliver] of this.waiting) deliver({ type: "error", req, message: reason });
+    };
+    worker.onerror = (event) => lost(`the speech thread failed: ${event.message}`);
+    worker.addEventListener("close", () => lost("the speech thread exited"));
+    this.worker = worker;
+    return worker;
   }
 
-  async synthesize(req: SpeechRequest, signal: AbortSignal): Promise<ArrayBuffer> {
-    const missing = this.missing();
-    if (missing) throw new SpeechError(missing);
-    const base = await this.ready();
-    signal.throwIfAborted();
-    let res: Response;
+  private async load(): Promise<void> {
+    const started = performance.now();
     try {
-      res = await fetch(`${base}/v1/audio/speech`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          model: MODEL_ID,
-          input: req.text,
-          voice_ref: this.uploads.get(req.voice)?.path ?? join(this.cfg.voicesDir, `${req.voice}.wav`),
-          options: { language: req.lang, duration_factor: 1 / req.speed, seed: SEED },
-        }),
-        signal,
+      await this.call({
+        type: "load",
+        options: {
+          dir: this.cfg.audioDir,
+          modelPath: this.cfg.speechModelDir,
+          family: FAMILY,
+          backend: this.cfg.speechBackend,
+          threads: THREADS,
+        },
       });
     } catch (e) {
-      signal.throwIfAborted();
-      throw new SpeechError(`the speech engine cannot be reached: ${e instanceof Error ? e.message : e}`);
+      this.failure = `the speech model could not be loaded: ${messageOf(e)}`;
+      console.error(`[speech] ${this.failure}`);
+      throw new SpeechError(this.failure);
     }
-    if (!res.ok) {
-      const body = (await res.json().catch(() => null)) as { error?: { message?: string } } | null;
-      throw new SpeechError(body?.error?.message ?? `the speech engine answered HTTP ${res.status}`);
-    }
-    return res.arrayBuffer();
+    this.loaded = true;
+    this.failure = undefined;
+    console.error(`[speech] model ready (${Math.round(performance.now() - started)} ms)`);
+  }
+
+  private ready(): Promise<void> {
+    if (this.loaded) return Promise.resolve();
+    this.loading ??= this.load().finally(() => {
+      this.loading = null;
+    });
+    return this.loading;
+  }
+
+  /** Frees the model once nothing has been asked of it for `SPEECH_IDLE_UNLOAD` seconds. */
+  private unloadWhenIdle(): void {
+    clearTimeout(this.idle);
+    if (this.pending > 0 || !this.loaded || this.cfg.speechIdleUnload <= 0) return;
+    this.idle = setTimeout(() => {
+      if (this.pending > 0 || !this.loaded) return;
+      // A request that arrives from here on loads the model again; the worker frees it first.
+      this.loaded = false;
+      this.call({ type: "unload" }).then(
+        () => console.error("[speech] model unloaded after being idle"),
+        () => {},
+      );
+    }, this.cfg.speechIdleUnload * 1000);
+    this.idle.unref();
+  }
+
+  private async run(req: SpeechRequest, signal: AbortSignal): Promise<ArrayBuffer> {
+    await this.ready();
+    // Gone while the model was loading: the utterance is not started.
+    signal.throwIfAborted();
+    const reply = await this.call({
+      type: "synthesize",
+      text: req.text,
+      lang: req.lang,
+      voicePath: this.uploads.get(req.voice)?.path ?? join(this.cfg.voicesDir, `${req.voice}.wav`),
+      speed: req.speed,
+    });
+    if (reply.type !== "audio") throw new SpeechError(`unexpected ${reply.type} reply to an utterance`);
+    return reply.wav;
+  }
+
+  synthesize(req: SpeechRequest, signal: AbortSignal): Promise<ArrayBuffer> {
+    const missing = this.missing();
+    if (missing) return Promise.reject(new SpeechError(missing));
+    if (signal.aborted) return Promise.reject(signal.reason);
+    clearTimeout(this.idle);
+    this.pending++;
+    const work = this.run(req, signal).finally(() => {
+      this.pending--;
+      this.unloadWhenIdle();
+    });
+    // The library cannot stop an utterance. An aborted request is answered at once; the worker
+    // finishes the utterance, nobody receives it, and whatever comes next waits behind it.
+    return new Promise((resolve, reject) => {
+      const onAbort = () => reject(signal.reason);
+      signal.addEventListener("abort", onAbort, { once: true });
+      work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
+    });
   }
 
   async stop(): Promise<void> {
-    const child = this.child;
-    this.child = null;
-    this.base = null;
-    if (child) {
-      child.kill();
-      await child.exited;
+    clearTimeout(this.idle);
+    const worker = this.worker;
+    if (worker) {
+      // Waits for a running utterance, then frees the model.
+      await this.call({ type: "unload" }).catch(() => {});
+      if (this.worker === worker) this.worker = null;
+      worker.terminate();
     }
-    await rm(this.configPath, { force: true });
+    this.loaded = false;
     await rm(this.uploadDir, { recursive: true, force: true });
     this.uploads.clear();
   }

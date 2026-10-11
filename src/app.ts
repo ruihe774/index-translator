@@ -321,7 +321,7 @@ export async function startApp(
   const engine = new Engine(cfg, launch);
   const queue = new SlotQueue(cfg.maxQueue);
   const speech = launchSpeech(cfg);
-  // Speech has its own line: it runs in another process and does not hold the translation engine.
+  // Speech has its own line: it runs on its own thread and does not hold the translation engine.
   const speechQueue = new SlotQueue(cfg.maxQueue);
   const defaultModel = findModel(cfg.defaultModel)!;
 

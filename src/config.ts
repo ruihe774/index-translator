@@ -50,9 +50,9 @@ export interface Config {
   openBrowser: boolean;
   /** Development: reload the open page when `public/` changes or the server restarts. */
   devReload: boolean;
-  /** Reading aloud; false never starts the speech engine. */
+  /** Reading aloud; false never loads the speech engine. */
   speech: boolean;
-  /** Directory with `audiocpp_server` (audio.cpp) and its backend libraries. */
+  /** Directory with `libaudiocpp` (audio.cpp's C API), as scripts/build_audiocpp.ts leaves it. */
   audioDir: string;
   /** Directory holding the IndexTTS-2.5 GGUF. */
   speechModelDir: string;
