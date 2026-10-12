@@ -321,7 +321,7 @@ test("Clear empties both sides and returns the source to the plain textarea", as
   await expect(app.meta).toContainText("generated");
   await expect(app.text).toBeHidden();
 
-  await app.page.getByRole("button", { name: "Clear" }).click();
+  await app.page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect(app.text).toBeVisible();
   await expect(app.text).toHaveValue("");
   await expect(app.text).toBeFocused();
@@ -332,7 +332,7 @@ test("Clear empties both sides and returns the source to the plain textarea", as
   await expect(app.page.locator("#placeholder")).toBeVisible();
   await expect(app.meta).toHaveText("");
   await expect(app.copy).toHaveAttribute("aria-disabled", "true");
-  await expect(app.page.getByRole("button", { name: "Clear" })).toHaveAttribute("aria-disabled", "true");
+  await expect(app.page.getByRole("button", { name: "Clear", exact: true })).toHaveAttribute("aria-disabled", "true");
   await expect(app.page.locator("#count")).toHaveText("0 letters");
 });
 

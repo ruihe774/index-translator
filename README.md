@@ -184,6 +184,15 @@ In **Automatic** mode, entering any of these makes the app use Index-Translate-9
 Index-NativeLong-9B by hand while they are filled in, the app warns that the request cannot be
 translated with that model.
 
+## History
+
+The **History** panel under **Model and options** lists your last 50 finished translations, newest
+first, with the time, languages and model. **Restore** puts the text, the languages and the
+translation back on the page without translating again; **Delete** removes one entry and **Clear
+history** all of them. The history lives in your browser's local storage only: the server never
+receives or stores it, and it is not shared between browsers. Clearing the site's data in the
+browser clears it too.
+
 ## Listen to a text
 
 Each side has a **Listen** button (the loudspeaker) under its text. Click it to hear the source

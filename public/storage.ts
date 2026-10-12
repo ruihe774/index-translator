@@ -9,10 +9,13 @@ export function stored(key: string): string | null {
   }
 }
 
-export function store(key: string, value: string) {
+/** Whether the browser took the value; callers that can do without it ignore the answer. */
+export function store(key: string, value: string): boolean {
   try {
     localStorage.setItem(key, value);
+    return true;
   } catch {
     // storage is only a convenience
+    return false;
   }
 }

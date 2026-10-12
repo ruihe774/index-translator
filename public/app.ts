@@ -9,6 +9,8 @@ import type { SpeechControls } from "./elements/speech-controls.js";
 import type { ViewSwitch } from "./elements/view-switch.js";
 import type { VoiceSettings } from "./elements/voice-settings.js";
 import type { ApiErrorBody } from "./errors.js";
+import { type HistoryEntry, loadHistory, newId, saveHistory, withEntry } from "./history.js";
+import { initHistoryUi } from "./history-ui.js";
 import { confirmLink } from "./link-dialog.js";
 import { type LinkReference, linkReference } from "./links.js";
 import { looksLikeMarkdown } from "./markdown.js";
@@ -187,6 +189,7 @@ async function loadLanguages() {
       : toSelect.options[0]!.value;
   setState({ languagesReady: true });
   refreshSelection();
+  historyUi.show(history); // now with the language names
 }
 
 /** Counts up for each poll; a response from an earlier poll is stale and must not overwrite a newer one. */
@@ -488,6 +491,17 @@ async function translate() {
     if (alignment) synced = { source: text, translation, alignment };
     metaEl.show(metaLine(sel.model, done));
     if (markdown) linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
+    if (translation.trim()) {
+      addToHistory({
+        id: newId(),
+        at: Date.now(),
+        from: fromSelect.value,
+        to: toSelect.value,
+        model: sel.model,
+        source: text,
+        translation,
+      });
+    }
   } catch (e) {
     if (stopped) {
       showInterruption(true);
@@ -522,6 +536,69 @@ function clearAll() {
   refreshSync();
   refreshSelection();
   textInput.focus();
+}
+
+// ---- history ---------------------------------------------------------------------------------
+//
+// history.ts: finished translations in this browser's local storage; nothing goes to the server.
+
+let history: HistoryEntry[] = loadHistory();
+
+function languageName(code: string): string {
+  if (code === "auto") return "Detected language";
+  return [...toSelect.options].find((o) => o.value === code)?.textContent ?? code;
+}
+
+const historyUi = initHistoryUi({
+  list: $("history-list"),
+  empty: $("history-empty"),
+  count: $("history-count"),
+  clear: $("history-clear"),
+  languageName,
+  restore: restoreEntry,
+  remove: (entry) => {
+    setHistory(history.filter((e) => e.id !== entry.id));
+    const next = document.querySelector<HTMLElement>("#history-list button:not([data-restore])");
+    (next ?? $("history-clear")).focus();
+  },
+  clearAll: () => {
+    setHistory([]);
+    $("history-clear").focus();
+  },
+});
+
+/** Saves the list; a browser that refuses all storage still keeps it until the page is closed. */
+function setHistory(list: HistoryEntry[]) {
+  const kept = saveHistory(list);
+  history = kept.length === 0 && list.length > 0 ? list : kept;
+  historyUi.show(history);
+}
+
+function addToHistory(entry: HistoryEntry) {
+  setHistory(withEntry(history, entry));
+}
+
+/** Puts a kept translation back on the page as if it had just finished. */
+function restoreEntry(entry: HistoryEntry) {
+  if (state.running) return;
+  speech.stop();
+  textInput.value = entry.source;
+  showFieldError(textError, textInput, null);
+  const has = (select: HTMLSelectElement, v: string) => [...select.options].some((o) => o.value === v);
+  if (has(fromSelect, entry.from)) fromSelect.value = entry.from;
+  if (has(toSelect, entry.to)) toSelect.value = entry.to;
+  const markdown = looksLikeMarkdown(entry.source);
+  clearResult(markdown);
+  views.source = { available: markdown, view: markdown ? "preview" : "raw" };
+  showSource();
+  outputEl.lang = toSelect.value;
+  setState({ translation: entry.translation });
+  showOutput();
+  placeholderEl.hidden = true;
+  refreshSelection();
+  refreshSync();
+  metaEl.show(`Restored from the history (${modelLabel(entry.model)}).`);
+  textInput.closest("section")?.scrollIntoView({ block: "start" });
 }
 
 function advancedOpen() {
@@ -609,10 +686,14 @@ bindRender(
     copy: copyBtn,
     sourceSwitch,
     outputSwitch,
-    after: speech.refresh,
+    after: () => {
+      speech.refresh();
+      historyUi.setBusy(state.running !== null);
+    },
   }),
 );
 refreshControls();
+historyUi.show(history);
 void loadLanguages();
 void speech.loadVoices();
 void pollHealth();

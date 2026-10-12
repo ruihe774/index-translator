@@ -242,7 +242,7 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
 test("Clear and Stop are never shown together", async ({ app, mock }) => {
   await mock.set({ chunks: [THINK, "一", "二", "三"], delayMs: 500 });
   await app.open();
-  const clear = app.page.getByRole("button", { name: "Clear" });
+  const clear = app.page.getByRole("button", { name: "Clear", exact: true });
   await expect(clear).toBeVisible();
   await expect(app.stop).toBeHidden();
   await app.text.fill("Hello");
