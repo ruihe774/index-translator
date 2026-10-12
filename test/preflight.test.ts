@@ -37,17 +37,29 @@ describe("preflight", () => {
   });
 
   test("no Vulkan device is a problem that names the driver and the way out", () => {
-    const problem = preflight(config({ modelsDir: withModel }), () => NO_GPU);
+    const problem = preflight(config({ modelsDir: withModel }), () => NO_GPU, {}, "linux");
     expect(problem).toContain("No GPU with a Vulkan driver was found");
     expect(problem).toContain("mesa-vulkan-drivers");
     expect(problem).toContain("GPU_LAYERS=0");
   });
 
   test("a system without the Vulkan loader is told to install that", () => {
-    const problem = preflight(config({ modelsDir: withModel }), () => ({ ...NO_GPU, vulkanLoader: false }));
+    const problem = preflight(
+      config({ modelsDir: withModel }),
+      () => ({ ...NO_GPU, vulkanLoader: false }),
+      {},
+      "linux",
+    );
     expect(problem).toContain("libvulkan.so.1");
     expect(problem).toContain("libvulkan1");
     expect(problem).toContain("GPU_LAYERS=0");
+  });
+
+  test("on Windows the messages name the driver, vulkan-1.dll and the Visual C++ runtime", () => {
+    const cfg = config({ modelsDir: withModel });
+    expect(preflight(cfg, () => NO_GPU, {}, "win32")).toContain("AMD, Intel or NVIDIA");
+    expect(preflight(cfg, () => ({ ...NO_GPU, vulkanLoader: false }), {}, "win32")).toContain("vulkan-1.dll");
+    expect(preflight(cfg, () => ({ ...GPU, cpu: false }), {}, "win32")).toContain("Visual C++");
   });
 
   test("GPU_LAYERS=0 needs no GPU", () => {
@@ -59,7 +71,7 @@ describe("preflight", () => {
 
   test("no CPU backend is a problem even with a GPU, with what the libraries said about it", () => {
     const log = "load_backend: loaded Vulkan backend\nload_backend: failed to load x.so: libgomp.so.1: cannot open";
-    const problem = preflight(config({ modelsDir: withModel }), () => ({ ...GPU, cpu: false, log }));
+    const problem = preflight(config({ modelsDir: withModel }), () => ({ ...GPU, cpu: false, log }), {}, "linux");
     expect(problem).toContain("processor backend cannot be loaded");
     expect(problem).toContain("libgomp1");
     expect(problem).toContain("failed to load x.so");

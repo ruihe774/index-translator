@@ -4,7 +4,16 @@
 // that library. After a change here: bun scripts/build_llama.ts --shim. Everything else is called
 // directly from src/llama-ffi.ts.
 
+#include <stdio.h>
+
 #include "llama.h"
+
+// The functions bun:ffi looks up by name; a Windows DLL exports only what is marked.
+#if defined(_WIN32)
+#    define SHIM_API __declspec(dllexport)
+#else
+#    define SHIM_API __attribute__((visibility("default")))
+#endif
 
 static enum ggml_log_level shim_log_level = GGML_LOG_LEVEL_INFO;
 
@@ -22,7 +31,7 @@ static void shim_log(enum ggml_log_level level, const char * text, void * user_d
 }
 
 // Once per process. `backend_dir` holds the libggml-* backends (Vulkan, CPU variants).
-void shim_init(const char * backend_dir) {
+SHIM_API void shim_init(const char * backend_dir) {
     llama_log_set(shim_log, NULL);
     llama_backend_init();
     ggml_backend_load_all_from_path(backend_dir);
@@ -31,7 +40,7 @@ void shim_init(const char * backend_dir) {
 // The devices the loaded backends found. Returns how many, and writes them to `out` as
 // "type name: description" lines, as far as `size` bytes go. A model is offloaded to the ones of
 // type gpu and igpu; without one of type cpu nothing can run.
-int32_t shim_devices(char * out, int32_t size) {
+SHIM_API int32_t shim_devices(char * out, int32_t size) {
     static const char * const types[] = { "cpu", "gpu", "igpu", "accel", "meta" };
     int32_t count = (int32_t) ggml_backend_dev_count();
     int32_t used = 0;
@@ -51,14 +60,14 @@ int32_t shim_devices(char * out, int32_t size) {
 }
 
 // A negative `n_gpu_layers` offloads every layer.
-struct llama_model * shim_load_model(const char * path, int32_t n_gpu_layers) {
+SHIM_API struct llama_model * shim_load_model(const char * path, int32_t n_gpu_layers) {
     struct llama_model_params params = llama_model_default_params();
     params.n_gpu_layers = n_gpu_layers;
     return llama_model_load_from_file(path, params);
 }
 
 // One sequence that may use the whole window. `n_threads` of 0 keeps the library default.
-struct llama_context * shim_new_context(struct llama_model * model, uint32_t n_ctx, uint32_t n_batch, int32_t n_threads) {
+SHIM_API struct llama_context * shim_new_context(struct llama_model * model, uint32_t n_ctx, uint32_t n_batch, int32_t n_threads) {
     struct llama_context_params params = llama_context_default_params();
     params.n_ctx = n_ctx;
     params.n_batch = n_batch;
@@ -71,6 +80,6 @@ struct llama_context * shim_new_context(struct llama_model * model, uint32_t n_c
 }
 
 // Appends `n` tokens to the sequence; logits are computed for the last one.
-int32_t shim_decode(struct llama_context * ctx, llama_token * tokens, int32_t n) {
+SHIM_API int32_t shim_decode(struct llama_context * ctx, llama_token * tokens, int32_t n) {
     return llama_decode(ctx, llama_batch_get_one(tokens, n));
 }

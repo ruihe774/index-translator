@@ -49,7 +49,9 @@ export function preflight(
   cfg: Config,
   probe: (llamaDir: string) => Probe = runProbe,
   env: Env = Bun.env,
+  platform: string = process.platform,
 ): string | undefined {
+  const windows = platform === "win32";
   const found = probe(cfg.llamaDir);
   if ("error" in found) return `The translation engine cannot be loaded. ${found.error}`;
 
@@ -57,12 +59,17 @@ export function preflight(
     // What the libraries said about it, without their ordinary start-up lines.
     const said = (found.log ?? "").split("\n").filter((line) => /fail|error|cannot/i.test(line));
     const log = said.length > 0 ? `\n${said.join("\n")}` : "";
-    return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}. It needs the OpenMP runtime, libgomp.so.1 (libgomp1 on Debian and Ubuntu, libgomp on Fedora, gcc-libs on Arch).${log}`;
+    const runtime = windows
+      ? "It needs the Microsoft Visual C++ runtime (the x64 Redistributable, https://aka.ms/vs/17/release/vc_redist.x64.exe)."
+      : "It needs the OpenMP runtime, libgomp.so.1 (libgomp1 on Debian and Ubuntu, libgomp on Fedora, gcc-libs on Arch).";
+    return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}. ${runtime}${log}`;
   }
   if (cfg.gpuLayers !== 0 && found.gpus.length === 0) {
     return found.vulkanLoader
-      ? `No GPU with a Vulkan driver was found. Install the Vulkan driver for your graphics card (${DRIVERS}); "vulkaninfo --summary" lists what Vulkan sees. ${CPU_HINT}`
-      : `Vulkan is not installed: the system has no libvulkan.so.1. Install the Vulkan loader (libvulkan1 on Debian and Ubuntu, vulkan-loader on Fedora, vulkan-icd-loader on Arch) and the driver for your graphics card (${DRIVERS}). ${CPU_HINT}`;
+      ? `No GPU with a Vulkan driver was found. Install the Vulkan driver for your graphics card (${windows ? "the current driver from AMD, Intel or NVIDIA includes it" : DRIVERS}); "vulkaninfo --summary" lists what Vulkan sees. ${CPU_HINT}`
+      : windows
+        ? `Vulkan is not installed: the system has no vulkan-1.dll. It comes with the graphics driver from AMD, Intel or NVIDIA; install or update it. ${CPU_HINT}`
+        : `Vulkan is not installed: the system has no libvulkan.so.1. Install the Vulkan loader (libvulkan1 on Debian and Ubuntu, vulkan-loader on Fedora, vulkan-icd-loader on Arch) and the driver for your graphics card (${DRIVERS}). ${CPU_HINT}`;
   }
 
   // loadConfig has made sure the default model is a known one.

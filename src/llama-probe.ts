@@ -13,7 +13,7 @@ export type Probe =
       gpus: string[];
       /** False when no CPU backend could be loaded; the engine needs one even with a GPU. */
       cpu: boolean;
-      /** False when the system has no libvulkan.so.1, which every Vulkan program needs. */
+      /** False when the system has no Vulkan loader (libvulkan.so.1, vulkan-1.dll), which every Vulkan program needs. */
       vulkanLoader: boolean;
       /** The last lines the libraries logged, which say why a backend was not loaded. */
       log?: string;
@@ -24,7 +24,9 @@ function probe(dir: string): Probe {
   let vulkanLoader = true;
   try {
     // bun:ffi opens nothing without a symbol to look up; this one is in every version of the loader.
-    dlopen("libvulkan.so.1", { vkCreateInstance: { args: ["ptr", "ptr", "ptr"], returns: "i32" } }).close();
+    dlopen(process.platform === "win32" ? "vulkan-1.dll" : "libvulkan.so.1", {
+      vkCreateInstance: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
+    }).close();
   } catch {
     vulkanLoader = false;
   }
