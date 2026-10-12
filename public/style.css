@@ -1021,8 +1021,8 @@
      Dynamic Island's 59pt) and the bottom (34pt), and the panes are shorter by that much. */
   @media (max-width: 45.99rem) and (display-mode: standalone) {
     :root {
-      --standalone-top: max(env(safe-area-inset-top, 0px), 2.5rem);
-      --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 3.5rem);
+      --standalone-top: max(env(safe-area-inset-top, 0px), 2rem);
+      --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 4rem);
       --pane-height: clamp(
         16rem,
         calc(100svh - 12rem - var(--standalone-top) - var(--standalone-bottom) + 1rem),
