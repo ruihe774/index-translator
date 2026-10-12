@@ -159,3 +159,47 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     speechIdleUnload: int(env, "SPEECH_IDLE_UNLOAD", 300),
   };
 }
+
+const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
+  HOST: "address to listen on (default 127.0.0.1; no authentication, keep it on loopback)",
+  PORT: "port to listen on (default 3000)",
+  ALLOWED_ORIGINS: "browser origins allowed to call the API cross-origin (comma separated)",
+  ALLOWED_HOSTS: "extra Host header names, needed when HOST is 0.0.0.0 or ::",
+  MODELS_DIR: "directory with the GGUF translation models (default models/)",
+  DEFAULT_MODEL: "model loaded at startup (default index-translate-9b)",
+  CTX_SIZE: "context size shared by prompt and output (default 65536)",
+  MAX_INPUT_TOKENS: "largest accepted prompt, in tokens (default 28000)",
+  MAX_QUEUE: "requests allowed to wait (default 8)",
+  GPU_LAYERS: "`all` (default), a layer count, or 0 to run on the processor",
+  LLAMA_THREADS: "CPU threads for decoding (default half the logical CPUs)",
+  LLAMA_DIR: "directory with libllama and its backends (default vendor/llama.cpp)",
+  PUBLIC_DIR: "directory with the web app (default public/)",
+  SPEECH: "0 turns reading aloud off (default on)",
+  AUDIO_DIR: "directory with libaudiocpp (default vendor/audio.cpp)",
+  SPEECH_MODEL_DIR: "directory with the speech model (default MODELS_DIR/IndexTTS2.5-GGUF)",
+  SEPARATION_MODEL_DIR: "directory with the voice separation model (default MODELS_DIR/BS-RoFormer-ep368-GGUF)",
+  VOICES_DIR: "directory with the voice recordings, one .wav each (default voices/)",
+  SPEECH_BACKEND: "speech backend: vulkan (default) or cpu",
+  SPEECH_IDLE_UNLOAD: "seconds without speech before the model is freed; 0 never (default 300)",
+  DEV_RELOAD: "1 reloads open pages when public/ changes (development)",
+  OPEN_BROWSER: "0 does not open the web app at startup (default on)",
+};
+
+/** What `--help` prints. */
+export function helpText(command = "bun src/server.ts"): string {
+  const rows = SETTING_NAMES.map((n) => [`${flagOf(n)} <value>`, SETTING_HELP[n]] as const);
+  const width = Math.max(...rows.map(([f]) => f.length));
+  return [
+    "Index Translator: a local translator that runs on your GPU.",
+    "",
+    `Usage: ${command} [--setting value ...]`,
+    "",
+    "Every setting is a flag (--port 8080 or --port=8080) or an environment variable (PORT=8080);",
+    "the flag wins. Settings:",
+    "",
+    ...rows.map(([f, d]) => `  ${f.padEnd(width)}  ${d}`),
+    "",
+    "  -h, --help  print this text",
+    "",
+  ].join("\n");
+}

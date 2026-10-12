@@ -12,7 +12,7 @@ Dev tools (TypeScript, `@types/bun`, Playwright, doiuse, postcss) come from `nod
 `bun install` before `typecheck`, `lint:css` or `e2e` whenever `node_modules` is missing or stale.
 `bun --install=…` / `-i` do not fetch them for `bun run` scripts, so the plain install step is required.
 
-- Run: `bun src/server.ts` (http://127.0.0.1:3000)
+- Run: `bun src/server.ts` (http://127.0.0.1:3000; `--help` lists every setting)
 - Dev: `bun run dev` (`bun --watch` restarts the process on backend changes, `DEV_RELOAD=1` makes open pages reload on `public/` changes and after a restart; `OPEN_BROWSER=0`; each restart reloads the model)
 - Test: `bun test` (API tests use a mock engine; no GPU needed)
 - Typecheck: `bun run typecheck`

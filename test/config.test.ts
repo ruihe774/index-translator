@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
-import { CONTEXT_MARGIN, loadConfig, parseArgs } from "../src/config";
+import { CONTEXT_MARGIN, helpText, loadConfig, parseArgs, SETTING_NAMES } from "../src/config";
 import { DEFAULT_MODEL_ID } from "../src/models";
 
 const root = resolve(import.meta.dir, "..");
@@ -203,5 +203,18 @@ describe("loadConfig LLAMA_DIR", () => {
 
   test("an empty value falls back to the vendored build", () => {
     expect(loadConfig({ LLAMA_DIR: "" }).llamaDir).toBe(join(root, "vendor", "llama.cpp"));
+  });
+});
+
+describe("--help", () => {
+  test("helpText names every setting's flag", () => {
+    const text = helpText();
+    for (const name of SETTING_NAMES) expect(text).toContain(`--${name.toLowerCase().replaceAll("_", "-")} <value>`);
+  });
+
+  test("the server prints it and exits 0 without starting", async () => {
+    const p = Bun.spawn([process.execPath, "src/server.ts", "--help"], { stdout: "pipe", stderr: "pipe" });
+    expect(await p.exited).toBe(0);
+    expect(await new Response(p.stdout).text()).toContain("Usage:");
   });
 });

@@ -1,11 +1,16 @@
 // Entry point: bun src/server.ts
 
 import { startApp } from "./app";
-import { loadConfig } from "./config";
+import { helpText, loadConfig } from "./config";
 import { openBrowser } from "./open-browser";
 import { preflight } from "./preflight";
 
-const cfg = loadConfig(Bun.env, Bun.argv.slice(2));
+const args = Bun.argv.slice(2);
+if (args.includes("--help") || args.includes("-h")) {
+  console.log(helpText());
+  process.exit(0);
+}
+const cfg = loadConfig(Bun.env, args);
 const problem = preflight(cfg);
 if (problem) {
   console.error(`[server] cannot start. ${problem}`);
