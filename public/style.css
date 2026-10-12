@@ -141,8 +141,16 @@
     padding-block: 1.25rem 1rem;
 
     h1 {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
       font-size: 1.5rem;
       font-weight: 650;
+    }
+
+    .logo {
+      inline-size: 1.75rem;
+      block-size: 1.75rem;
     }
   }
 
