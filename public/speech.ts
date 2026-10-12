@@ -2,7 +2,9 @@
 // pieces in order through Web Audio, with pause, resume and a change of voice or speed on the way.
 //
 // One request is in flight at a time: the piece after the one being played is fetched while it
-// plays, which keeps ahead because synthesis is several times faster than speech. Speed is the
+// plays, which keeps ahead because synthesis is several times faster than speech. Once it has
+// arrived it is scheduled on the audio clock right behind the current one, so the join is
+// sample-accurate (plus the piece's pause) and does not wait for an event. Speed is the
 // model's own duration control, not a faster playback, so a change of speed or voice is heard from
 // the start of the current piece, which is synthesized again.
 
@@ -44,6 +46,8 @@ export class SpeechPlayer {
   /** Pieces whose audio has arrived: going on to one of them is not "loading". */
   private loaded = new Set<number>();
   private source: AudioBufferSourceNode | null = null;
+  /** The piece after the current one, already scheduled to start the moment the current one ends. */
+  private queued: { index: number; source: AudioBufferSourceNode; end: number } | null = null;
   private paused = false;
   private active = false;
   private jumpTimer: ReturnType<typeof setTimeout> | null = null;
@@ -206,6 +210,15 @@ export class SpeechPlayer {
       }
       this.source = null;
     }
+    if (this.queued) {
+      this.queued.source.onended = null;
+      try {
+        this.queued.source.stop();
+      } catch {
+        // it had already ended
+      }
+      this.queued = null;
+    }
   }
 
   private refresh(): void {
@@ -257,21 +270,50 @@ export class SpeechPlayer {
       return;
     }
     if (run !== this.run) return;
-    this.buffers.delete(i - 1);
-    if (i + 1 < this.segments.length) void this.load(i + 1);
+    const at = Math.max(startAt, ctx.currentTime);
+    this.enter(i, this.schedule(i, buffer, at, run), at + buffer.duration, run);
+  }
 
-    const source = ctx.createBufferSource();
+  /** Starts piece `i` on the audio clock at `at`. When it ends, the queued next piece takes over, if there is one. */
+  private schedule(i: number, buffer: AudioBuffer, at: number, run: number): AudioBufferSourceNode {
+    const source = this.ctx!.createBufferSource();
     source.buffer = buffer;
-    source.connect(ctx.destination);
+    source.connect(this.ctx!.destination);
     source.onended = () => {
       if (run !== this.run) return;
       // This piece is over: nothing is playing until the next one is scheduled or has to be fetched.
       if (this.source === source) this.source = null;
-      void this.play(i + 1, this.segments[i]!.pause);
+      const next = this.queued;
+      if (next?.index === i + 1) {
+        this.queued = null;
+        this.enter(next.index, next.source, next.end, run);
+      } else {
+        void this.play(i + 1, this.segments[i]!.pause);
+      }
     };
-    source.start(Math.max(startAt, ctx.currentTime));
+    source.start(at);
+    return source;
+  }
+
+  /** Piece `i`, whose `source` is playing or about to, becomes the current one; the piece after it is lined up. */
+  private enter(i: number, source: AudioBufferSourceNode, end: number, run: number): void {
+    this.index = i;
+    this.buffers.delete(i - 1);
     this.source = source;
     this.hooks.onSegment(this.segments[i]!);
     this.refresh();
+    if (i + 1 >= this.segments.length) return;
+    // Once the next piece has arrived it is scheduled right behind this one on the audio clock, so
+    // the join does not wait for the "ended" event. If this piece has ended before the audio
+    // arrives, its onended has already gone to play() and there is nothing to do here.
+    this.load(i + 1).then(
+      (buffer) => {
+        if (run !== this.run || this.source !== source) return;
+        const at = Math.max(end + this.segments[i]!.pause / 1000, this.ctx!.currentTime);
+        this.queued = { index: i + 1, source: this.schedule(i + 1, buffer, at, run), end: at + buffer.duration };
+      },
+      // A failure is reported when the piece's turn comes, by play().
+      () => {},
+    );
   }
 }

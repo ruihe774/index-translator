@@ -54,7 +54,7 @@ class FakeAudioContext {
     this.calls.push("suspend");
   }
   async decodeAudioData(wav: ArrayBuffer) {
-    return { wav };
+    return { wav, duration: 1 };
   }
   createBufferSource() {
     const s = new FakeSource();
@@ -217,7 +217,7 @@ describe("the play state between pieces", () => {
     await flush();
     expect(t.player.state).toBe("playing");
     expect(t.states.length).toBe(before);
-    expect(t.ctx().sources.length).toBe(2);
+    expect(t.ctx().sources.length).toBe(3); // a1, a2 (now playing) and a3 already lined up behind it
   });
 
   test("the silence between pieces is scheduled on the audio clock", async () => {
@@ -227,7 +227,47 @@ describe("the play state between pieces", () => {
     t.ctx().currentTime = 4;
     t.ctx().sources[0]!.end();
     await flush();
-    expect(t.ctx().sources[1]!.startedAt).toBeCloseTo(4.25, 5);
+    // The next piece was already lined up behind the first (which started at 0 and lasts 1 s).
+    expect(t.ctx().sources[1]!.startedAt).toBeCloseTo(1.25, 5);
+  });
+
+  test("a prefetched piece is scheduled behind the current one before it ends", async () => {
+    const t = setup(true);
+    t.player.start(SEGMENTS, SETTINGS);
+    await flush();
+    const [a1, a2] = t.ctx().sources;
+    expect(a1!.startedAt).toBe(0);
+    expect(a2!.startedAt).toBeCloseTo(1, 5); // no event needed: 0 + 1 s, no pause
+    // It becomes the current piece only once the first has ended.
+    expect(t.segments).toEqual([SEGMENTS[0]]);
+    a1!.end();
+    await flush();
+    expect(t.segments).toEqual([SEGMENTS[0], SEGMENTS[1]]);
+    expect(t.ctx().sources[1]).toBe(a2!); // not created again
+    expect(t.ctx().sources[2]!.startedAt).toBeCloseTo(2, 5);
+  });
+
+  test("audio that arrives after the piece ended is played by the ended handler, once", async () => {
+    const t = setup();
+    t.player.start(SEGMENTS, SETTINGS);
+    await flush();
+    t.requests[0]!.resolve();
+    await flush();
+    t.ctx().sources[0]!.end();
+    t.requests[1]!.resolve();
+    await flush();
+    expect(t.ctx().sources.length).toBe(2);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[1]!);
+  });
+
+  test("a cancel stops the piece that was scheduled ahead", async () => {
+    const t = setup(true);
+    t.player.start(SEGMENTS, SETTINGS);
+    await flush();
+    const ahead = t.ctx().sources[1]!;
+    t.player.stop();
+    expect(ahead.stopped).toBe(true);
+    expect(ahead.onended).toBeNull();
   });
 
   test("the source of a finished piece is not stopped later by a cancel", async () => {
