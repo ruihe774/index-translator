@@ -1014,6 +1014,30 @@
       padding-inline: 0.75rem;
     }
   }
+
+  /* Installed on a phone's home screen (iOS 26): the page is drawn under the status bar, where the
+     system blurs it, and down to the home indicator, and `env(safe-area-inset-*)` is not reliable
+     there (0 on affected versions, WebKit bug 301994). So fixed room is left at the top (the
+     Dynamic Island's 59pt) and the bottom (34pt), and the panes are shorter by that much. */
+  @media (max-width: 45.99rem) and (display-mode: standalone) {
+    :root {
+      --standalone-top: max(env(safe-area-inset-top, 0px), 2.5rem);
+      --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 3.5rem);
+      --pane-height: clamp(
+        16rem,
+        calc(100svh - 12rem - var(--standalone-top) - var(--standalone-bottom) + 1rem),
+        48rem
+      );
+    }
+
+    body {
+      padding-block-start: var(--standalone-top);
+    }
+
+    main {
+      padding-block-end: var(--standalone-bottom);
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
