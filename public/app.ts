@@ -544,6 +544,24 @@ function clearAll() {
 
 let history: HistoryEntry[] = loadHistory();
 
+// Pausing only stops new entries; the kept ones stay and can be restored or deleted.
+const PAUSED_KEY = "history-paused";
+const pauseButton = $("history-pause");
+let historyPaused = stored(PAUSED_KEY) === "1";
+
+function showPaused() {
+  pauseButton.textContent = historyPaused ? "Resume history" : "Pause history";
+  $("history-empty").textContent = historyPaused
+    ? "History is paused: finished translations are not being kept."
+    : "Finished translations appear here. They are kept in this browser only and never sent to the server.";
+}
+pauseButton.addEventListener("click", () => {
+  historyPaused = !historyPaused;
+  store(PAUSED_KEY, historyPaused ? "1" : "0");
+  showPaused();
+});
+showPaused();
+
 function languageName(code: string): string {
   if (code === "auto") return "Detected language";
   return [...toSelect.options].find((o) => o.value === code)?.textContent ?? code;
@@ -575,6 +593,7 @@ function setHistory(list: HistoryEntry[]) {
 }
 
 function addToHistory(entry: HistoryEntry) {
+  if (historyPaused) return;
   setHistory(withEntry(history, entry));
 }
 

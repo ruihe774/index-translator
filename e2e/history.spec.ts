@@ -57,7 +57,32 @@ test("entries can be deleted one by one and all at once", async ({ app, mock }) 
   await expect(app.page.locator("#history-empty")).toBeVisible();
 });
 
-test("the history is not sent to the server", async ({ app, mock, page }) => {
+test("pausing the history keeps what is there and records nothing new, also after a reload", async ({ app, mock }) => {
+  await mock.set({ chunks: [THINK, "一"] });
+  await app.open();
+  await app.text.fill("before");
+  await app.translate.click();
+  await expect(app.output).toHaveText("一");
+  const items = app.page.locator("#history-list li");
+  await expect(items).toHaveCount(1);
+
+  await app.page.getByRole("button", { name: "Pause history" }).click();
+  await expect(app.page.getByRole("button", { name: "Resume history" })).toBeVisible();
+  await app.text.fill("during");
+  await app.translate.click();
+  await expect(app.output).toHaveText("一");
+  await expect(app.translate).toHaveAttribute("aria-disabled", "false");
+  await expect(items).toHaveCount(1);
+
+  await app.page.reload();
+  await expect(app.page.getByRole("button", { name: "Resume history" })).toBeVisible();
+  await app.page.getByRole("button", { name: "Resume history" }).click();
+  await app.text.fill("after");
+  await app.translate.click();
+  await expect(items).toHaveCount(2);
+});
+
+test("the history is not sent to the server",async ({ app, mock, page }) => {
   await mock.set({ chunks: [THINK, "一"] });
   const api: { path: string; body: string }[] = [];
   page.on("request", (r) => {

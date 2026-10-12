@@ -470,6 +470,12 @@
     gap: var(--gap);
   }
 
+  .history-buttons {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--gap);
+  }
+
   .settings-head {
     display: flex;
     flex-wrap: wrap;
