@@ -125,7 +125,18 @@ test("the text box and the option boxes carry their instructions as placeholders
 test("Model is a switch on the same line as Model and options", async ({ app }) => {
   await app.open();
   const group = app.page.getByRole("group", { name: "Model" });
-  await expect(group.getByRole("button")).toHaveText(["Automatic", "Index-Translate-9B", "Index-NativeLong-9B"]);
+  await expect(group.getByRole("button")).toHaveCount(3);
+  // innerText is what is rendered: the long names here, the short ones below 32rem.
+  const names = () => group.getByRole("button").evaluateAll((els) => els.map((el) => (el as HTMLElement).innerText));
+  expect(await names()).toEqual(["Automatic", "Index-Translate-9B", "Index-NativeLong-9B"]);
+  await app.page.setViewportSize({ width: 320, height: 700 });
+  expect(await names()).toEqual(["Auto", "Index-Translate", "Nailong"]);
+  const tops = await group
+    .getByRole("button")
+    .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
+  expect(new Set(tops).size).toBe(1);
+  await expect(group.getByRole("button", { name: "Nailong", exact: true })).toBeVisible();
+  await app.page.setViewportSize({ width: 1280, height: 720 });
   await expect(app.page.locator("#selection")).toHaveCount(0);
 
   const heading = await box(app, "#settings-heading");
@@ -260,6 +271,36 @@ test("the disabled Translate button does not react to hover", async ({ app, mock
   await app.translate.hover();
   await app.page.waitForTimeout(400);
   expect(await bg()).not.toBe(enabled); // an enabled button still reacts
+});
+
+test("nested corners are concentric: outer radius = inner radius + padding + border", async ({ app }) => {
+  await app.open();
+  for (const width of [1280, 360]) {
+    await app.page.setViewportSize({ width, height: 800 });
+    const r = await app.page.evaluate(() => {
+      const px = (v: string) => Number.parseFloat(v);
+      const gap = (outer: Element, inner: Element) => {
+        const o = outer.getBoundingClientRect();
+        const i = inner.getBoundingClientRect();
+        return Math.min(i.left - o.left, i.top - o.top, o.right - i.right);
+      };
+      const rad = (el: Element) => px(getComputedStyle(el).borderTopLeftRadius);
+      const panel = document.querySelector(".panel.source")!;
+      const pane = document.querySelector("#text")!;
+      const settings = document.querySelector(".settings")!;
+      const field = settings.querySelector("fieldset, .view-switch button, select")!;
+      return {
+        panel: [rad(panel), rad(pane), gap(panel, pane)],
+        settings: [rad(settings), rad(field), gap(settings, field)],
+      };
+    });
+    // gap() includes the 1px border of the outer box.
+    const [outer, inner, g] = r.panel;
+    expect(outer, `panel at ${width}px`).toBeCloseTo(inner + g, 0);
+    const [so, si, sg] = r.settings;
+    expect(so, `settings at ${width}px`).toBeGreaterThanOrEqual(si);
+    expect(sg).toBeGreaterThan(0);
+  }
 });
 
 test("gaps are even: panel padding, the rows, the buttons", async ({ app, mock }) => {

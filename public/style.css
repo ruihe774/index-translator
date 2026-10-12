@@ -877,6 +877,110 @@
       transition: background-color 0.15s;
     }
   }
+
+  /* Short names where the Model switch would wrap. Only one span is rendered, so the accessible
+     name is the visible text (WCAG 2.5.3). Nailong is the model's own short name. */
+  .short {
+    display: none;
+  }
+
+  @media (max-width: 32rem) {
+    .long {
+      display: none;
+    }
+
+    .short {
+      display: inline;
+    }
+  }
+
+  /* Phones (one column): compact. Smaller margins and padding, 1rem text, the language select and
+     the Raw/Preview switch share one row, and the panes take the height the chrome leaves, so
+     they show about twice the lines. Targets keep --target (WCAG 2.5.8). */
+  @media (max-width: 45.99rem) {
+    :root {
+      --gap: 0.5rem;
+      --gutter: 0.5rem;
+      --text-size: 1rem;
+      /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
+      --radius: calc(var(--radius-md) + 0.5rem + 1px);
+      --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.5rem));
+      --pane-height: clamp(16rem, calc(100dvh - 11rem), 48rem);
+    }
+
+    .site-header {
+      padding-block: 0.5rem;
+
+      h1 {
+        font-size: 1.25rem;
+      }
+    }
+
+    main {
+      padding-block-end: 1rem;
+
+      > form {
+        gap: 0.75rem;
+      }
+    }
+
+    .panel,
+    .settings {
+      padding: 0.5rem;
+    }
+
+    #text,
+    .output {
+      padding-inline: 0.5rem;
+      line-height: 1.5;
+    }
+
+    .pane-head {
+      flex-wrap: nowrap;
+      align-items: center;
+
+      > .language {
+        flex: 1 1 0;
+        min-inline-size: 0;
+        flex-direction: row;
+        align-items: center;
+      }
+
+      .language label {
+        flex: none;
+        font-size: 0.75rem;
+      }
+
+      .language select {
+        --chevron-gap: 0.5rem;
+        padding-inline-start: 0.5rem;
+      }
+    }
+
+    .view-switch {
+      flex: none;
+
+      > button {
+        padding-inline: 0.5rem;
+      }
+    }
+
+    /* Too narrow for the select and the switch side by side: the switch drops below. */
+    @media (max-width: 22rem) {
+      .pane-head {
+        flex-wrap: wrap;
+
+        > .language {
+          flex-basis: 100%;
+        }
+      }
+    }
+
+    .actions > button {
+      min-inline-size: 5rem;
+      padding-inline: 0.75rem;
+    }
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
