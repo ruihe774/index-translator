@@ -1035,7 +1035,24 @@
     }
 
     main {
-      padding-block-end: var(--standalone-bottom);
+      padding-block-end: 1rem;
+    }
+  }
+
+  /* Installed as an app: the window has a title, so no header; the engine status goes below the page. */
+  @media (display-mode: standalone) {
+    .site-header {
+      order: 1;
+      padding-block: 0 max(1rem, var(--standalone-bottom, 0px));
+
+      h1 {
+        position: absolute;
+        inline-size: 1px;
+        block-size: 1px;
+        overflow: hidden;
+        clip-path: inset(50%);
+        white-space: nowrap;
+      }
     }
   }
 }
