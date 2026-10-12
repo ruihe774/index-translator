@@ -99,6 +99,13 @@
 
   p {
     margin: 0;
+  }
+
+  /* Pretty wrapping and balancing re-break whole paragraphs, so they wait until streaming has
+     finished the block (`.settled`, set in markdown-dom.ts); the link dialog's text is static. */
+  .settled p,
+  p.settled,
+  dialog p {
     text-wrap: pretty;
   }
 
@@ -702,6 +709,10 @@
     h6 {
       margin-block: 1.25rem 0.5rem;
       line-height: 1.3;
+    }
+
+    .settled :is(h3, h4, h5, h6),
+    :is(h3, h4, h5, h6).settled {
       text-wrap: balance;
     }
 

@@ -176,10 +176,15 @@ function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
   };
 }
 
-function lineNodes(parsed: ParsedBlock[]): Node[] {
+/** `settled` marks blocks that will not change again; the stylesheet's costly text layout waits for it. */
+function lineNodes(parsed: ParsedBlock[], settled: boolean): Node[] {
   return parsed.flatMap(({ block, line }) => {
     const nodes = blockNode(block);
-    for (const n of nodes) if (n instanceof HTMLElement) n.dataset.line = String(line);
+    for (const n of nodes) {
+      if (!(n instanceof HTMLElement)) continue;
+      n.dataset.line = String(line);
+      if (settled) n.classList.add("settled");
+    }
     return nodes;
   });
 }
@@ -195,24 +200,24 @@ function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
   let frame = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
-  const render = () => {
+  const render = (final = false) => {
     cancelAnimationFrame(frame);
     clearTimeout(timer);
     frame = 0;
     timer = undefined;
     const { done, tail: open } = stream.takeParsed();
     for (const node of tail) node.parentNode?.removeChild(node);
-    tail = lineNodes(open);
-    target.append(...lineNodes(done), ...tail);
+    tail = lineNodes(open, final);
+    target.append(...lineNodes(done, true), ...tail);
   };
 
   return {
     append(t) {
       stream.push(t);
-      if (reduced) timer ??= setTimeout(render, REDUCED_MOTION_FLUSH_MS);
-      else if (!frame) frame = requestAnimationFrame(render);
+      if (reduced) timer ??= setTimeout(() => render(), REDUCED_MOTION_FLUSH_MS);
+      else if (!frame) frame = requestAnimationFrame(() => render());
     },
-    finish: render,
+    finish: () => render(true),
   };
 }
 
