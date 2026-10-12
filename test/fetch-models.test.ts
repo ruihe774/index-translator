@@ -115,7 +115,7 @@ describe("plan", () => {
   test("the separation model is one pinned file in its own directory", () => {
     const files = plan(["bs-roformer"], dirs);
     expect(files).toHaveLength(1);
-    expect(files[0]!.dest).toBe("/b/bs-roformer-ep368-q8_0.gguf");
+    expect(files[0]!.dest).toBe(join("/b", "bs-roformer-ep368-q8_0.gguf"));
     expect(files[0]!.url).toContain("/audio-cpp/audio.cpp-gguf/resolve/");
     expect(files[0]!.url).toEndWith("/BS-RoFormer-ep368-GGUF/bs-roformer-ep368-q8_0.gguf");
     expect(files[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -125,11 +125,11 @@ describe("plan", () => {
 
   test("the speech model comes with the example voices, which never replace a file of the user's", () => {
     const files = plan(["index-tts-2.5"], dirs);
-    expect(files[0]!.dest).toBe("/s/index-tts2_5-q8_0.gguf");
+    expect(files[0]!.dest).toBe(join("/s", "index-tts2_5-q8_0.gguf"));
     const voices = files.slice(1);
     expect(voices.length).toBeGreaterThan(0);
     for (const voice of voices) {
-      expect(voice.dest).toStartWith("/v/voice_");
+      expect(voice.dest).toStartWith(join("/v", "voice_"));
       expect(voice.keep).toBe(true);
     }
   });

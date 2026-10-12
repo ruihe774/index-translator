@@ -180,7 +180,9 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   await expect(app.output.locator("p").last()).toHaveText("<b>原样</b>");
 
   await app.copy.click();
-  expect(await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText())).toBe(md);
+  // The Windows clipboard turns \n into \r\n.
+  const copied = await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText());
+  expect(copied.replaceAll("\r\n", "\n")).toBe(md);
 });
 
 test("output links ask for confirmation, with other wording for links that do not pair with the source", async ({

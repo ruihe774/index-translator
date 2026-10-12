@@ -7,6 +7,7 @@ import { existsSync } from "node:fs";
 import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { libraryPath } from "../src/audiocpp-ffi";
 import { type App, startApp } from "../src/app";
 import {
   MAX_UPLOADED_VOICES,
@@ -260,7 +261,7 @@ describe("NativeSpeech with a fake worker", () => {
 
   async function setup() {
     const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
-    await writeFile(join(dir, `libaudiocpp.${process.platform === "darwin" ? "dylib" : "so"}`), "");
+    await writeFile(libraryPath(dir), "");
     const worker = fakeWorker();
     const speech = new NativeSpeech(config({ speech: true, audioDir: dir, speechModelDir: dir }), () => worker);
     return { dir, worker, speech };
@@ -363,7 +364,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   /** `separation`: the separation model is installed (a .gguf file in its directory). */
   async function setup(overrides: object = {}, separation = false) {
     const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
-    await writeFile(join(dir, `libaudiocpp.${process.platform === "darwin" ? "dylib" : "so"}`), "");
+    await writeFile(libraryPath(dir), "");
     if (separation) await writeFile(join(dir, "bs-roformer.gguf"), "");
     const workers: any[] = [];
     const speech = new NativeSpeech(

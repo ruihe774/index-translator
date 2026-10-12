@@ -36,10 +36,10 @@ describe("loadConfig defaults", () => {
 
   test("speech settings", () => {
     expect(loadConfig({ SPEECH: "0" }).speech).toBe(false);
-    expect(loadConfig({ MODELS_DIR: "/m" }).speechModelDir).toBe("/m/IndexTTS2.5-GGUF");
-    expect(loadConfig({ MODELS_DIR: "/m", SPEECH_MODEL_DIR: "/s" }).speechModelDir).toBe("/s");
-    expect(loadConfig({ MODELS_DIR: "/m" }).separationModelDir).toBe("/m/BS-RoFormer-ep368-GGUF");
-    expect(loadConfig({ MODELS_DIR: "/m", SEPARATION_MODEL_DIR: "/b" }).separationModelDir).toBe("/b");
+    expect(loadConfig({ MODELS_DIR: "/m" }).speechModelDir).toBe(resolve("/m/IndexTTS2.5-GGUF"));
+    expect(loadConfig({ MODELS_DIR: "/m", SPEECH_MODEL_DIR: "/s" }).speechModelDir).toBe(resolve("/s"));
+    expect(loadConfig({ MODELS_DIR: "/m" }).separationModelDir).toBe(resolve("/m/BS-RoFormer-ep368-GGUF"));
+    expect(loadConfig({ MODELS_DIR: "/m", SEPARATION_MODEL_DIR: "/b" }).separationModelDir).toBe(resolve("/b"));
     expect(loadConfig({ SPEECH_IDLE_UNLOAD: "0" }).speechIdleUnload).toBe(0);
     expect(() => loadConfig({ SPEECH_IDLE_UNLOAD: "soon" })).toThrow("SPEECH_IDLE_UNLOAD");
   });
@@ -182,8 +182,8 @@ describe("loadConfig rejections", () => {
 
 describe("loadConfig PUBLIC_DIR", () => {
   test("a trailing slash is dropped", () => {
-    expect(loadConfig({ PUBLIC_DIR: "/srv/site/" }).publicDir).toBe("/srv/site");
-    expect(loadConfig({ PUBLIC_DIR: "/srv/site///" }).publicDir).toBe("/srv/site");
+    expect(loadConfig({ PUBLIC_DIR: "/srv/site/" }).publicDir).toBe(resolve("/srv/site"));
+    expect(loadConfig({ PUBLIC_DIR: "/srv/site///" }).publicDir).toBe(resolve("/srv/site"));
   });
 
   test("a relative path is made absolute against the working directory", () => {

@@ -1,10 +1,10 @@
 // src/static.ts against a temporary public directory: transpiling, revalidation, headers and paths.
 // The app-level behaviour of the real public/ directory is in api-requests.test.ts ("static files").
 
-import { afterAll, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { afterAll, beforeAll, beforeEach, describe, expect, onTestFinished, spyOn, test } from "bun:test";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join, relative, resolve } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { createStaticServer } from "../src/static";
 
 let dir: string;
@@ -142,7 +142,14 @@ describe("paths", () => {
   });
 
   test("a relative public directory serves the same files, including with ./", async () => {
-    const rel = relative(process.cwd(), dir);
+    // On Windows the temp directory can be on another drive, where no relative path exists.
+    let rel = relative(process.cwd(), dir);
+    if (isAbsolute(rel)) {
+      const local = mkdtempSync(join(process.cwd(), "static-test-"));
+      cpSync(dir, local, { recursive: true });
+      rel = relative(process.cwd(), local);
+      onTestFinished(() => rmSync(local, { recursive: true, force: true }));
+    }
     for (const publicDir of [rel, "./" + rel, rel + "/"]) {
       const res = await get("/style.css", {}, publicDir);
       expect(res.status).toBe(200);
@@ -152,8 +159,10 @@ describe("paths", () => {
     expect((await get("/../package.json", {}, rel)).status).toBe(404);
   });
 
+  // "/" is the root of the current drive on Windows, so the temp directory must be on it.
   test("a public directory of / is not doubled into // and still serves", async () => {
-    const rel = resolve(dir).slice(1);
+    if (process.platform === "win32" && resolve(dir)[0] !== resolve("/")[0]) return;
+    const rel = resolve(dir).replace(/^[A-Za-z]:/, "").replaceAll("\\", "/").slice(1);
     const res = await get("/" + rel + "/style.css", {}, "/");
     expect(res.status).toBe(200);
     await res.text();

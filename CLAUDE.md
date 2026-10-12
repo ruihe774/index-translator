@@ -4,7 +4,7 @@ Local translation app. One Bun process serves the REST/SSE API and the static we
 llama.cpp in-process (libllama through `bun:ffi`, Vulkan) on a worker thread that holds one model
 at a time. Reading aloud (IndexTTS-2.5) runs in the same process too: audio.cpp's C API
 (libaudiocpp, built from source) through `bun:ffi` on a second worker thread, which also runs BS-RoFormer (voice separation) on uploaded voice samples.
-User-facing docs: README.md.
+User-facing docs: README.md. On Windows read `WINDOWS.md` first (tools, how to run e2e, test portability, line endings).
 
 ## Commands
 
