@@ -125,8 +125,10 @@ fail at startup.
 | Variable | Default | Notes |
 |---|---|---|
 | `HOST`, `PORT` | `127.0.0.1`, `3000` | |
-| `ALLOWED_ORIGINS` | empty | Browser origins allowed to call the API cross-origin |
-| `ALLOWED_HOSTS` | empty | Extra `Host` header names, needed when `HOST` is `0.0.0.0` or `::` |
+| `ALLOWED_ORIGINS` | empty | Browser origins allowed to call the API cross-origin: `scheme://host[:port]` or `scheme://*.host[:port]` (subdomains at any depth, not the host itself); default ports are the same as none; a trailing `/` is ignored; no `*` alone, no path (`src/access.ts`) |
+| `ALLOWED_HOSTS` | empty | Extra `Host` header names, needed when `HOST` is `0.0.0.0` or `::`: `name`, `*.name` (subdomains at any depth, not `name` itself), IPs; no port means any port, `name:port` means that port only; no `*` alone, no scheme (`src/access.ts`) |
+
+An entry in either list that could never match (or would match everything) makes startup fail (`loadConfig`).
 | `MODELS_DIR` | `models/` | Must contain the GGUF files named in `src/models.ts` |
 | `DEFAULT_MODEL` | `index-translate-9b` | Loaded at startup, used when a request names none |
 | `CTX_SIZE` | `65536` | Shared by prompt and output; at least 66 |

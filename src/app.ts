@@ -1,6 +1,7 @@
 // HTTP surface: REST + SSE API under /api/v1 and static files for the web app.
 
 import type { Server } from "bun";
+import { type HostRule, hostAllowed, type OriginRule, originAllowed, parseHostRule, parseOriginRule } from "./access";
 import { CONTEXT_MARGIN, type Config } from "./config";
 import { createDevReload, DEV_PREFIX } from "./dev-reload";
 import {
@@ -106,31 +107,30 @@ function optionalStringArray(body: Record<string, unknown>, field: string): stri
 
 const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1"];
 
-/** Lowercase host name from a Host-style value ("name:port", "[::1]:port"); undefined if malformed. */
-function hostnameOf(hostport: string): string | undefined {
-  try {
-    return new URL(`http://${hostport}`).hostname.replace(/^\[(.*)\]$/, "$1");
-  } catch {
-    return undefined;
-  }
+/** What `checkHost` and `checkOrigin` compare against, parsed once; an invalid entry throws here. */
+interface Access {
+  hosts: HostRule[];
+  origins: OriginRule[];
 }
 
-/** Bare host from a config value, which has no port and may be bracketed IPv6. */
-function bareHost(value: string): string {
-  return value.replace(/^\[(.*)\]$/, "$1").toLowerCase();
+function compileAccess(cfg: Config): Access {
+  const exact = (name: string): HostRule => ({ name, wildcard: false, port: undefined });
+  const own = cfg.host.replace(/^\[(.*)\]$/, "$1").toLowerCase();
+  return {
+    hosts: [...LOOPBACK_HOSTS, own].map(exact).concat(cfg.allowedHosts.map(parseHostRule)),
+    origins: cfg.allowedOrigins.map(parseOriginRule),
+  };
 }
 
 /** Anti DNS-rebinding: a rebinding page reaches us under its own host name. */
-function checkHost(req: Request, cfg: Config): void {
-  const host = hostnameOf(req.headers.get("host") ?? "");
-  const allowed = [...LOOPBACK_HOSTS, bareHost(cfg.host), ...cfg.allowedHosts.map(bareHost)];
-  if (!host || !allowed.includes(host)) {
+function checkHost(req: Request, access: Access): void {
+  if (!hostAllowed(access.hosts, req.headers.get("host") ?? "")) {
     throw new ApiError(403, "forbidden_host", "this Host header is not allowed; add the host name to ALLOWED_HOSTS");
   }
 }
 
 /** A request without an Origin header is not from a browser page and is allowed. */
-function checkOrigin(req: Request, cfg: Config): void {
+function checkOrigin(req: Request, access: Access): void {
   const origin = req.headers.get("origin");
   if (origin === null) return;
   const host = (req.headers.get("host") ?? "").toLowerCase();
@@ -140,8 +140,7 @@ function checkOrigin(req: Request, cfg: Config): void {
   } catch {
     // "null" and other non-URL origins are never same-origin
   }
-  const allowed = cfg.allowedOrigins.some((o) => o.replace(/\/+$/, "").toLowerCase() === origin.toLowerCase());
-  if (!sameOrigin && !allowed) {
+  if (!sameOrigin && !originAllowed(access.origins, origin)) {
     throw new ApiError(
       403,
       "forbidden_origin",
@@ -323,6 +322,7 @@ export async function startApp(
   launch: Launcher = launchNative,
   launchSpeech: SpeechLauncher = nativeSpeech,
 ): Promise<App> {
+  const access = compileAccess(cfg);
   const engine = new Engine(cfg, launch);
   const queue = new SlotQueue(cfg.maxQueue);
   const speech = launchSpeech(cfg);
@@ -675,8 +675,8 @@ export async function startApp(
       }
 
       try {
-        checkHost(req, cfg);
-        checkOrigin(req, cfg);
+        checkHost(req, access);
+        checkOrigin(req, access);
         switch (path.slice(API.length)) {
           case "/health": {
             if (req.method !== "GET") return methodNotAllowed("GET");

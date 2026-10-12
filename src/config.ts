@@ -1,4 +1,5 @@
 import { join, resolve } from "node:path";
+import { parseHostRule, parseOriginRule } from "./access";
 import { DEFAULT_MODEL_ID, findModel } from "./models";
 
 const root = resolve(import.meta.dir, "..");
@@ -130,6 +131,11 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
       `MAX_INPUT_TOKENS must be at most ${largestInput} for CTX_SIZE=${ctxSize} (MAX_INPUT_TOKENS + ${CONTEXT_MARGIN} must be less than CTX_SIZE, leaving room for output), got ${maxInputTokens}`,
     );
   }
+  const allowedOrigins = list(env, "ALLOWED_ORIGINS");
+  const allowedHosts = list(env, "ALLOWED_HOSTS");
+  // Fail at startup on an entry that could never match, rather than refuse requests later.
+  allowedOrigins.forEach(parseOriginRule);
+  allowedHosts.forEach(parseHostRule);
   return {
     host: env.HOST ?? "127.0.0.1",
     port: int(env, "PORT", 3000, { max: 65535 }),
@@ -144,8 +150,8 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     ctxSize,
     maxInputTokens,
     maxQueue: int(env, "MAX_QUEUE", 8),
-    allowedOrigins: list(env, "ALLOWED_ORIGINS"),
-    allowedHosts: list(env, "ALLOWED_HOSTS"),
+    allowedOrigins,
+    allowedHosts,
     openBrowser: env.OPEN_BROWSER !== "0",
     devReload: env.DEV_RELOAD === "1",
     speech: env.SPEECH !== "0",
@@ -163,8 +169,10 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
 const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   HOST: "address to listen on (default 127.0.0.1; no authentication, keep it on loopback)",
   PORT: "port to listen on (default 3000)",
-  ALLOWED_ORIGINS: "browser origins allowed to call the API cross-origin (comma separated)",
-  ALLOWED_HOSTS: "extra Host header names, needed when HOST is 0.0.0.0 or ::",
+  ALLOWED_ORIGINS:
+    "browser origins allowed to call the API cross-origin, comma separated: https://app.example.com, https://*.example.com",
+  ALLOWED_HOSTS:
+    "extra Host header names (comma separated: app.example.com, *.example.com, name:port), needed when HOST is 0.0.0.0 or ::",
   MODELS_DIR: "directory with the GGUF translation models (default models/)",
   DEFAULT_MODEL: "model loaded at startup (default index-translate-9b)",
   CTX_SIZE: "context size shared by prompt and output (default 65536)",
