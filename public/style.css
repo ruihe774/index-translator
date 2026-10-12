@@ -1052,16 +1052,14 @@
     }
   }
 
-  /* Installed, landscape: the panes fill the screen height minus the safe insets, with the reserve
-     of the layout in use (12rem narrow, 17rem side by side). */
+  /* Installed, landscape: the panel fills the screen height minus the safe insets. */
   @media (display-mode: standalone) and (orientation: landscape) {
     :root {
-      --standalone-top: env(safe-area-inset-top, 0px);
+      --standalone-top: max(env(safe-area-inset-top, 0px), 0.5rem);
       --standalone-bottom: env(safe-area-inset-bottom, 0px);
-      --pane-height: max(
-        8rem,
-        calc(100svh - 12rem - var(--standalone-top) - var(--standalone-bottom))
-      );
+      /* The panel's own chrome only: padding, the two control rows, the gaps between (8.25rem
+         with the 0.5rem gap of the narrow layout); "Model and options" lies below the fold. */
+      --pane-height: max(4rem, calc(100svh - 8.25rem - var(--standalone-top) - var(--standalone-bottom)));
     }
 
     body {
@@ -1071,10 +1069,7 @@
 
     @media (min-width: 46rem) {
       :root {
-        --pane-height: max(
-          8rem,
-          calc(100svh - 17rem - var(--standalone-top) - var(--standalone-bottom))
-        );
+        --pane-height: max(4rem, calc(100svh - 9.75rem - var(--standalone-top) - var(--standalone-bottom)));
       }
     }
   }
