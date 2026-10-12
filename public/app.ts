@@ -2,6 +2,8 @@
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
+import "./elements/index.js";
+import type { ViewSwitch } from "./elements/view-switch.js";
 import { type ApiErrorBody, describeError } from "./errors.js";
 import { confirmLink } from "./link-dialog.js";
 import { type LinkReference, linkReference } from "./links.js";
@@ -47,7 +49,7 @@ const textInput = $<HTMLTextAreaElement>("text");
 const countEl = $("count");
 const textError = $("text-error");
 const adviceEl = $("advice");
-const modelSwitch = $("model-switch");
+const modelSwitch = $<ViewSwitch>("model-switch");
 const options = $<HTMLFieldSetElement>("options");
 const glossaryInput = $<HTMLTextAreaElement>("glossary");
 const glossaryError = $("glossary-error");
@@ -58,10 +60,10 @@ const translateBtn = $<HTMLButtonElement>("translate");
 const stopBtn = $<HTMLButtonElement>("stop");
 const copyBtn = $<HTMLButtonElement>("copy");
 const clearBtn = $<HTMLButtonElement>("clear");
-const sourceSwitch = $("source-switch");
+const sourceSwitch = $<ViewSwitch>("source-switch");
 const sourceArea = $("source-area");
 const sourceView = $("source-view");
-const outputSwitch = $("output-switch");
+const outputSwitch = $<ViewSwitch>("output-switch");
 const outputArea = $("output-area");
 const engineEl = $("engine");
 const outputEl = $("output");
@@ -137,8 +139,7 @@ let modelChoice: Choice = "auto";
 
 function setModelChoice(choice: Choice) {
   modelChoice = choice;
-  for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button"))
-    b.setAttribute("aria-pressed", String(b.dataset.model === choice));
+  modelSwitch.value = choice;
 }
 
 function hasOptions(): boolean {
@@ -286,10 +287,8 @@ const views = {
   output: { available: false, view: "preview" as View },
 };
 
-function showSwitch(el: HTMLElement, side: keyof typeof views) {
-  const { view } = views[side];
-  for (const b of el.querySelectorAll<HTMLButtonElement>("button"))
-    b.setAttribute("aria-pressed", String(b.dataset.view === view));
+function showSwitch(el: ViewSwitch, side: keyof typeof views) {
+  el.value = views[side].view;
 }
 
 /**
@@ -348,16 +347,12 @@ function applyLinkCheck() {
   }
 }
 
-function wireSwitch(el: HTMLElement, side: keyof typeof views, show: () => void) {
-  for (const b of el.querySelectorAll<HTMLButtonElement>("button")) {
-    b.addEventListener("click", () => {
-      const view = b.dataset.view as View;
-      if (b.getAttribute("aria-disabled") === "true" || views[side].view === view) return;
-      if (side === "source") views.source.available = looksLikeMarkdown(textInput.value);
-      views[side].view = view;
-      show();
-    });
-  }
+function wireSwitch(el: ViewSwitch, side: keyof typeof views, show: () => void) {
+  el.addEventListener("change", () => {
+    if (side === "source") views.source.available = looksLikeMarkdown(textInput.value);
+    views[side].view = el.value as View;
+    show();
+  });
 }
 
 // ---- click to sync scrolling -----------------------------------------------------------------
@@ -939,13 +934,11 @@ fromSelect.addEventListener("change", () => {
   refreshSpeech();
 });
 toSelect.addEventListener("change", refreshSelection);
-for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button")) {
-  b.addEventListener("click", () => {
-    setModelChoice(b.dataset.model as Choice);
-    refreshSelection();
-    store("model", modelChoice);
-  });
-}
+modelSwitch.addEventListener("change", () => {
+  setModelChoice(modelSwitch.value as Choice);
+  refreshSelection();
+  store("model", modelChoice);
+});
 
 copyBtn.addEventListener("click", async () => {
   if (copyBtn.getAttribute("aria-disabled") === "true") return;

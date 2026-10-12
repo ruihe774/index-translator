@@ -5,6 +5,7 @@
 // a translation runs. Every write is skipped when the value is already there, so rendering often
 // costs nothing.
 
+import type { ViewSwitch } from "./elements/view-switch.js";
 import { state } from "./state.js";
 
 export interface RenderTargets {
@@ -12,8 +13,8 @@ export interface RenderTargets {
   stop: HTMLElement;
   clear: HTMLElement;
   copy: HTMLElement;
-  sourceSwitch: HTMLElement;
-  outputSwitch: HTMLElement;
+  sourceSwitch: ViewSwitch;
+  outputSwitch: ViewSwitch;
   /** Runs after the controls are written, for what still depends on this state elsewhere. */
   after: () => void;
 }
@@ -27,8 +28,6 @@ function setHidden(el: HTMLElement, hidden: boolean) {
 }
 
 export function createRender(t: RenderTargets): () => void {
-  const sourceButtons = t.sourceSwitch.getElementsByTagName("button");
-  const outputButtons = t.outputSwitch.getElementsByTagName("button");
   return function render() {
     const running = state.running !== null;
     const hasText = state.source.length > 0;
@@ -36,8 +35,8 @@ export function createRender(t: RenderTargets): () => void {
     setAttr(t.translate, "aria-disabled", String(running || !state.languagesReady));
     setAttr(t.clear, "aria-disabled", String(!hasText && !hasOutput));
     setAttr(t.copy, "aria-disabled", String(!hasOutput || running));
-    for (const b of sourceButtons) setAttr(b, "aria-disabled", String(!hasText));
-    for (const b of outputButtons) setAttr(b, "aria-disabled", String(!hasOutput));
+    t.sourceSwitch.disabled = !hasText;
+    t.outputSwitch.disabled = !hasOutput;
     setHidden(t.stop, !running);
     setHidden(t.clear, running);
     t.after();
