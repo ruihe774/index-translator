@@ -1,6 +1,7 @@
 {
   "name": "index-translator",
   "private": true,
+  "license": "Unlicense",
   "type": "module",
   "scripts": {
     "dev": "OPEN_BROWSER=0 DEV_RELOAD=1 bun --watch src/server.ts",

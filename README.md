@@ -309,3 +309,8 @@ closed); flags work as above.
 | `SPEECH_IDLE_UNLOAD` | `300` | Seconds without listening after which the speech model leaves the GPU; `0` keeps it loaded |
 
 Only one translation runs at a time. Other requests wait in line.
+
+## License
+
+Index Translator is released into the public domain under [The Unlicense](LICENSE). The software
+and models it uses keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
