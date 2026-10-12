@@ -1,5 +1,6 @@
 /models/
 /vendor/
+/public/vendor/
 /node_modules/
 *.log
 .env

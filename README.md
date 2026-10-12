@@ -29,6 +29,8 @@ Compared with widely used online translation tools:
 - **Markdown stays Markdown.** Headings, lists, tables and code blocks in your text are translated
   and shown formatted as they arrive, with a Raw / Preview switch on each side, and Copy gives you
   the Markdown back.
+- **Opens PDFs without uploading them.** Text, Markdown and PDF files are read in your browser; a
+  PDF page becomes Markdown with one click on its thumbnail.
 - **Streaming with Stop.** Text appears as it is generated, and you can stop at any time.
 - **Reads aloud, locally.** Listen to your text or the translation in Chinese, English, Japanese,
   Spanish or Arabic, with pause, speed and a choice of voices. The speech model (IndexTTS-2.5)
@@ -119,7 +121,11 @@ Before the first start, build the engines and get the models once (about 17.7 Gi
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, example voices
+bun scripts/fetch_web_libs.ts   # the libraries that open PDF files in the browser (12 MB), into public/vendor/
 ```
+
+Opening PDF files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
+Markdown files, and says that PDF support is not installed.
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and download only the
 translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.
@@ -135,7 +141,7 @@ development with C++" workload, and the [Vulkan SDK](https://vulkan.lunarg.com/s
 `glslc`); `curl` comes with Windows. Open a new terminal after installing them, so it sees the new
 `PATH`. More in [WINDOWS.md](WINDOWS.md).
 
-`bun scripts/build_appimage.ts` packs what you have built into an AppImage of your own, and on
+`bun scripts/build_appimage.ts` packs what you have built and fetched (the models excepted) into an AppImage of your own, and on
 Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Setup if it is not
 installed), both in `dist/`.
 
@@ -144,7 +150,8 @@ installed), both in `dist/`.
 1. Choose the **From** and **To** languages. Pick **Detect language** if you are not sure of the
    source. Languages include English, Chinese, Japanese, Korean, German, French, Spanish, Russian
    and about 25 more.
-2. Paste or type your text into the box.
+2. Paste or type your text into the box, or click **Open** to take it from a file (see
+   [Open a file](#open-a-file)).
 3. Click **Translate**. The translation appears as it is generated. Click **Stop** to end it early,
    and **Copy translation** to copy the result. **Clear** empties both sides for a new text.
 
@@ -156,6 +163,29 @@ is shown formatted too. Each side has **Raw** and **Preview** buttons to switch 
 Markdown source and the formatted view; **Raw** on your side brings back the text box for editing.
 **Copy translation** still copies the Markdown source. Links open in a new tab; images are shown as
 links and are not loaded.
+
+### Open a file
+
+**Open**, next to the **From** language, takes the text from a file on your computer. The file is
+read by your browser and stays there: nothing is uploaded, and the server only receives the text you
+then send with **Translate**. Opening a file replaces what is in the box and removes the
+translation of the old text; it never starts a translation.
+
+- **Plain text and Markdown** (`.txt`, `.md`, `.markdown`, UTF-8, up to 2 MB) go into the box as
+  they are.
+- **PDF** (`.pdf`, up to 256 MB): the pages appear as small pictures beside the box. Click a page
+  to put its text into the box, as Markdown (headings, lists, tables and emphasis are kept where
+  the PDF allows). Click another page to replace it; **Close** above the pictures puts the PDF
+  away. One page at a time is taken, so a long document is translated page by page.
+
+What to expect from a PDF: the text comes from the PDF's text layer. A scanned page has none, and
+the app says so instead of filling the box (it does no character recognition). Where the PDF does
+not say which characters its fonts stand for, which some Chinese and Japanese PDFs with fonts that
+are not embedded do, the text comes out garbled and the app warns under the box. Pages in two
+columns can come out in a different reading order than on paper, so look the text over before you
+translate. Password-protected PDFs are not opened. Use a current browser: with a 17 MB paper, a
+year-old Chromium (141) ran out of memory and closed the tab, while Chrome 156 and Firefox 157
+opened it. **Open** and the page pictures have not been through the accessibility review yet.
 
 ### Choosing a model
 

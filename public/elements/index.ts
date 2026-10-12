@@ -2,6 +2,7 @@
 // page looks any of them up.
 
 import { MetaLine } from "./meta-line.js";
+import { PdfPages } from "./pdf-pages.js";
 import { SpeechControls } from "./speech-controls.js";
 import { ViewSwitch } from "./view-switch.js";
 import { VoiceSettings } from "./voice-settings.js";
@@ -10,3 +11,4 @@ customElements.define("view-switch", ViewSwitch);
 customElements.define("speech-controls", SpeechControls);
 customElements.define("meta-line", MetaLine);
 customElements.define("voice-settings", VoiceSettings);
+customElements.define("pdf-pages", PdfPages);

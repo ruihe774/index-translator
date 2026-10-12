@@ -695,6 +695,94 @@
     border-radius: var(--radius-md);
   }
 
+  /* The source box and, while a PDF is open, its page thumbnails at the start edge. The strip
+     takes its room from the box, so the two panels keep their size. */
+  .source-field {
+    flex-direction: row;
+    gap: var(--gap);
+
+    > #text,
+    > .output-area {
+      flex: 1 1 0;
+      min-inline-size: 0;
+    }
+  }
+
+  .pdf-pages {
+    display: flex;
+    flex: none;
+    flex-direction: column;
+    gap: 0.5rem;
+    inline-size: 7rem;
+    block-size: var(--pane-height);
+    padding: 0.5rem;
+    background: var(--surface-sunken);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+
+    /* The list scrolls under the Close button, which stays in reach. */
+    ol {
+      display: flex;
+      flex: 1 1 0;
+      flex-direction: column;
+      gap: 0.5rem;
+      min-block-size: 0;
+      margin: 0;
+      padding: 0;
+      overflow-y: auto;
+      list-style: none;
+    }
+
+    li {
+      flex: none;
+    }
+
+    button {
+      inline-size: 100%;
+      padding: 0.25rem;
+      background: var(--surface);
+    }
+
+    .pdf-close {
+      flex: none;
+    }
+
+    /* A page: its picture over its number. */
+    button[data-page] {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 0.125rem;
+      font-size: 0.75rem;
+      font-weight: 400;
+      line-height: 1.2;
+    }
+
+    /* Paper is white in either colour scheme, as the page's own colours assume. */
+    canvas {
+      display: block;
+      inline-size: 100%;
+      block-size: auto;
+      background: #fff;
+      border: 1px solid var(--divider);
+    }
+
+    /* The page whose text is in the box. */
+    button[aria-current="true"] {
+      font-weight: 700;
+      border-color: var(--accent);
+      box-shadow: inset 0 0 0 2px var(--accent);
+    }
+
+    button[aria-busy="true"] canvas {
+      opacity: 0.5;
+    }
+
+    button[aria-disabled="true"] canvas {
+      opacity: 0.6;
+    }
+  }
+
   /* Each side scrolls to the paragraph clicked on the other; hovering shows which one. The text
      cursor stays (a pointer makes selecting text hard; a selection suppresses the sync). */
   .synced {
@@ -1091,6 +1179,15 @@
     .actions > button {
       min-inline-size: 5rem;
       padding-inline: 0.75rem;
+    }
+
+    #open {
+      padding-inline: 0.5rem;
+    }
+
+    .pdf-pages {
+      inline-size: 4.5rem;
+      padding: 0.25rem;
     }
   }
 

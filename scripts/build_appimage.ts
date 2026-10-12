@@ -5,7 +5,8 @@
 // Usage: bun scripts/build_appimage.ts
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
-// since the engines are packed as built. The Bun that is packed is the one running this script.
+// since the engines are packed as built, and bun scripts/fetch_web_libs.ts (the web app's PDF
+// libraries, packed with public/). The Bun that is packed is the one running this script.
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
 // for `fetch`. Layout and start script: packaging/appimage/.
@@ -18,6 +19,7 @@ import { join, resolve } from "node:path";
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { download, output, run } from "./build_tools";
+import { requireWebLibs } from "./fetch_web_libs";
 
 /** The checksums of the two downloaded tools, per architecture (`process.arch` names the key). */
 const ARCHES = {
@@ -67,6 +69,8 @@ for (const [file, script] of [
 ] as const) {
   if (!(await Bun.file(file).exists())) throw new Error(`${file} is missing; run: bun scripts/${script}`);
 }
+// The web app's PDF libraries are packed with public/; an AppImage without them could not open PDFs.
+await requireWebLibs(join(root, "public", "vendor"));
 
 /** The file at `path` as pinned, downloaded unless a copy with the right checksum is already there. */
 async function tool(pin: { url: string; sha256: string }, path: string): Promise<void> {

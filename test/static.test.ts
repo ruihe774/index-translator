@@ -190,6 +190,21 @@ describe("headers", () => {
     }
   });
 
+  // With nosniff a browser runs a module only as JavaScript and compiles a streamed .wasm only
+  // as application/wasm: what the PDF libraries in public/vendor/ are served as.
+  test("library files get the media types a browser insists on", async () => {
+    write("vendor/lib/pdf.min.mjs", "export const a = 1;\n");
+    write("vendor/lib/lib_bg.wasm", "\0asm");
+    write("vendor/lib/VERSION", "1.0.0 abc\n");
+    const module = await get("/vendor/lib/pdf.min.mjs");
+    expect(module.headers.get("content-type")).toStartWith("text/javascript");
+    expect(await module.text()).toBe("export const a = 1;\n");
+    const wasm = await get("/vendor/lib/lib_bg.wasm");
+    expect(wasm.headers.get("content-type")).toBe("application/wasm");
+    await wasm.arrayBuffer();
+    expect((await get("/vendor/lib/VERSION")).status).toBe(200);
+  });
+
   test("HTML carries the content security policy, other files do not", async () => {
     const html = await get("/");
     expect(html.headers.get("content-security-policy")).toBe("default-src 'self'; frame-ancestors 'none'");

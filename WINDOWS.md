@@ -77,7 +77,8 @@ Windows has no AppImage-style single file, so the installer unpacks the reposito
 is the shortcut's target. The launcher's commands run in the install directory, and `cmd` finds
 `bun.exe` there first, so the user needs no Bun on the `PATH`.
 
-- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`) and the launcher's MSVC
+- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`), the web app's PDF
+  libraries fetched (`fetch_web_libs.ts`, packed with `public\`) and the launcher's MSVC
   tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads
   and installs Inno Setup 6.7.3 for the current user (pinned checksum) when `ISCC.exe` is not found.
 - Per-user install by default (`%LOCALAPPDATA%\Programs\Index Translator`, no administrator rights),

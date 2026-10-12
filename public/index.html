@@ -34,6 +34,8 @@
                 <label for="from">From</label>
                 <select id="from" name="from"></select>
               </div>
+              <button type="button" id="open" aria-label="Open a file">Open</button>
+              <input type="file" id="open-file" aria-label="Text, Markdown or PDF file to open" hidden>
               <!-- biome-ignore lint/a11y/useSemanticElements: a custom group keeps the layout; a fieldset needs a legend and resets -->
               <view-switch id="source-switch" class="view-switch" role="group" aria-label="Source view">
                 <button type="button" data-value="raw" aria-pressed="true" aria-disabled="true">Raw</button>
@@ -41,7 +43,11 @@
               </view-switch>
             </div>
 
-            <div class="field">
+            <div class="field source-field">
+              <pdf-pages id="pdf-pages" class="pdf-pages" hidden>
+                <button type="button" class="pdf-close" aria-label="Close the PDF">Close</button>
+                <ol></ol>
+              </pdf-pages>
               <textarea id="text" name="text" required aria-required="true" aria-label="Text to translate" aria-describedby="count text-error" placeholder="Text to translate" dir="auto"></textarea>
               <div id="source-area" class="output-area" hidden>
                 <div id="source-view" class="output" dir="auto"></div>
@@ -58,6 +64,7 @@
                 <button type="submit" id="translate" class="primary">Translate</button>
               </div>
             </div>
+            <p id="file-note" class="hint" role="status" hidden></p>
             <p id="text-error" class="error" hidden></p>
             <p id="advice" class="advice"></p>
           </section>

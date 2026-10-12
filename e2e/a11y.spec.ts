@@ -180,10 +180,11 @@ test("skip link is first in the tab order and the whole form is reachable in rea
       await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""),
     );
   }
-  expect(names.slice(0, 9)).toEqual([
+  expect(names.slice(0, 10)).toEqual([
     "Skip to main content",
     "engine",
     "from",
+    "open",
     "Raw",
     "Preview",
     "text",

@@ -5,6 +5,7 @@
 import { API, ApiFailure, failureMessage } from "./api.js";
 import "./elements/index.js";
 import type { MetaLine } from "./elements/meta-line.js";
+import type { PdfPages } from "./elements/pdf-pages.js";
 import type { SpeechControls } from "./elements/speech-controls.js";
 import type { ViewSwitch } from "./elements/view-switch.js";
 import type { VoiceSettings } from "./elements/voice-settings.js";
@@ -26,6 +27,7 @@ import {
   resultNotes,
   selectionMessage,
 } from "./messages.js";
+import { initOpenUi } from "./open-ui.js";
 import { type Alignment, alignBlocks } from "./paragraphs.js";
 import { createRender } from "./render.js";
 import { buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
@@ -523,11 +525,11 @@ async function translate() {
   }
 }
 
-/** Empties the source and the result and returns the source to the plain textarea. */
-function clearAll() {
-  if (state.running || clearBtn.getAttribute("aria-disabled") === "true") return;
+/** Puts `text` in the plain textarea in place of the source and drops the result: a new start. */
+function loadSource(text: string) {
   speech.stop();
-  textInput.value = "";
+  textInput.value = text;
+  textInput.scrollTop = 0;
   showFieldError(textError, textInput, null);
   views.source = { available: false, view: "raw" };
   showSource();
@@ -535,8 +537,28 @@ function clearAll() {
   placeholderEl.hidden = false;
   refreshSync();
   refreshSelection();
+}
+
+/** Empties the source and the result and returns the source to the plain textarea. */
+function clearAll() {
+  if (state.running || clearBtn.getAttribute("aria-disabled") === "true") return;
+  loadSource("");
+  openUi.deselect();
   textInput.focus();
 }
+
+// ---- opening a file --------------------------------------------------------------------------
+//
+// open-ui.ts: the Open button, and the page thumbnails of a PDF beside the source box. A file's
+// text reaches the box the way Clear empties it; nothing about the file goes to the server.
+
+const openUi = initOpenUi({
+  button: $("open"),
+  input: $<HTMLInputElement>("open-file"),
+  pages: $<PdfPages>("pdf-pages"),
+  note: $("file-note"),
+  load: loadSource,
+});
 
 // ---- history ---------------------------------------------------------------------------------
 //
@@ -602,6 +624,7 @@ function addToHistory(entry: HistoryEntry) {
 function restoreEntry(entry: HistoryEntry) {
   if (state.running) return;
   speech.stop();
+  openUi.deselect();
   textInput.value = entry.source;
   showFieldError(textError, textInput, null);
   const has = (select: HTMLSelectElement, v: string) => [...select.options].some((o) => o.value === v);
@@ -709,6 +732,7 @@ bindRender(
     after: () => {
       speech.refresh();
       historyUi.setBusy(state.running !== null);
+      openUi.setBusy(state.running !== null);
     },
   }),
 );

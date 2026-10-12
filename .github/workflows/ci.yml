@@ -51,6 +51,10 @@ jobs:
       - name: Install Chromium
         run: bunx playwright install --with-deps chromium
 
+      # The PDF tests run the two libraries in the browser; they are pinned by checksum in the script.
+      - name: Fetch the web app's PDF libraries
+        run: bun scripts/fetch_web_libs.ts
+
       - name: Browser tests (end to end, integration, accessibility)
         run: bun run e2e
 
@@ -121,6 +125,9 @@ jobs:
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
         run: bun scripts/build_audiocpp.ts
+
+      - name: Fetch the web app's PDF libraries
+        run: bun scripts/fetch_web_libs.ts
 
       - name: Build the AppImage
         run: bun scripts/build_appimage.ts
@@ -299,6 +306,9 @@ jobs:
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
         run: bun scripts/build_audiocpp.ts
+
+      - name: Fetch the web app's PDF libraries
+        run: bun scripts/fetch_web_libs.ts
 
       - name: Build the installer
         run: bun scripts/build_installer.ts
