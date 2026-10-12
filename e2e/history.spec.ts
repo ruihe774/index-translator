@@ -23,7 +23,7 @@ test("a finished translation is listed, survives a reload and can be restored", 
   await expect(app.text).toHaveValue("");
 
   const requestsBefore = (await mock.state()).requests.length;
-  await app.page.getByRole("button", { name: /^Restore translation/ }).click();
+  await app.page.getByRole("link", { name: /^Restore translation/ }).click();
   await expect(app.text).toHaveValue("Hello, world");
   await expect(app.output).toHaveText("你好，世界");
   await expect(app.meta).toContainText("Restored from the history");
@@ -45,7 +45,7 @@ test("entries can be deleted one by one and all at once", async ({ app, mock }) 
 
   await items
     .first()
-    .getByRole("button", { name: /^Delete/ })
+    .getByRole("link", { name: /^Delete/ })
     .click();
   await expect(items).toHaveCount(1);
   await expect(items.first()).toContainText("first");

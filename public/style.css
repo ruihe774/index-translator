@@ -467,7 +467,23 @@
   .history-actions {
     display: flex;
     flex-wrap: wrap;
-    gap: var(--gap);
+    /* Intentional 2x gap to avoid misclick. */
+    gap: calc(var(--gap) * 2);
+
+    /* Same touch target as a button, the underline (from the link style) marks them as links. */
+    > a {
+      display: inline-flex;
+      align-items: center;
+      min-inline-size: var(--target);
+      font-weight: 300;
+      color: inherit;
+    }
+
+    > a[aria-disabled="true"] {
+      color: var(--muted);
+      text-decoration: none;
+      cursor: default;
+    }
   }
 
   .history-buttons {

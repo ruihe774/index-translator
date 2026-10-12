@@ -577,7 +577,7 @@ const historyUi = initHistoryUi({
   restore: restoreEntry,
   remove: (entry) => {
     setHistory(history.filter((e) => e.id !== entry.id));
-    const next = document.querySelector<HTMLElement>("#history-list button:not([data-restore])");
+    const next = document.querySelector<HTMLElement>("#history-list [data-delete]");
     (next ?? $("history-clear")).focus();
   },
   clearAll: () => {

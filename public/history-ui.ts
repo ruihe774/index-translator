@@ -57,20 +57,27 @@ export function initHistoryUi(d: HistoryUiDeps): HistoryUi {
     const label = `from ${dateTime.format(e.at)}, ${snippet(e.source).slice(0, 40)}`;
     const actions = document.createElement("div");
     actions.className = "history-actions";
-    const restore = document.createElement("button");
-    restore.type = "button";
+    // Links, not buttons: they act on the page without a navigation, so the href is only a fallback
+    // target (the list) and every click is cancelled.
+    const restore = document.createElement("a");
+    restore.href = "#history-list";
     restore.textContent = "Restore";
     restore.setAttribute("aria-label", `Restore translation ${label}`);
     setBusyAttr(restore);
     restore.dataset.restore = "";
-    restore.addEventListener("click", () => {
+    restore.addEventListener("click", (ev) => {
+      ev.preventDefault();
       if (restore.getAttribute("aria-disabled") !== "true") d.restore(e);
     });
-    const del = document.createElement("button");
-    del.type = "button";
+    const del = document.createElement("a");
+    del.href = "#history-list";
     del.textContent = "Delete";
     del.setAttribute("aria-label", `Delete translation ${label} from the history`);
-    del.addEventListener("click", () => d.remove(e));
+    del.dataset.delete = "";
+    del.addEventListener("click", (ev) => {
+      ev.preventDefault();
+      d.remove(e);
+    });
     actions.append(restore, del);
 
     li.append(head, text, actions);
