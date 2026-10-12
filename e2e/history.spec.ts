@@ -82,7 +82,7 @@ test("pausing the history keeps what is there and records nothing new, also afte
   await expect(items).toHaveCount(2);
 });
 
-test("the history is not sent to the server",async ({ app, mock, page }) => {
+test("the history is not sent to the server", async ({ app, mock, page }) => {
   await mock.set({ chunks: [THINK, "一"] });
   const api: { path: string; body: string }[] = [];
   page.on("request", (r) => {
