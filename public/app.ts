@@ -550,7 +550,8 @@ const pauseButton = $("history-pause");
 let historyPaused = stored(PAUSED_KEY) === "1";
 
 function showPaused() {
-  pauseButton.textContent = historyPaused ? "Resume history" : "Pause history";
+  pauseButton.textContent = historyPaused ? "Resume" : "Pause";
+  pauseButton.setAttribute("aria-label", historyPaused ? "Resume history" : "Pause history");
   $("history-empty").textContent = historyPaused
     ? "History is paused: finished translations are not being kept."
     : "Finished translations appear here. They are kept in this browser only and never sent to the server.";
