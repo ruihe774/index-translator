@@ -14,7 +14,6 @@ export class MetaLine extends HTMLElement {
   #resize = new ResizeObserver(() => this.#markScrollable());
 
   connectedCallback() {
-    if (!this.hasAttribute("role")) this.setAttribute("role", "status");
     this.#resize.observe(this);
   }
 

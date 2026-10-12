@@ -14,6 +14,12 @@
     "enabled": true,
     "rules": { "preset": "recommended" }
   },
+  "overrides": [
+    {
+      "includes": ["public/index.html"],
+      "linter": { "rules": { "a11y": { "noInteractiveElementToNoninteractiveRole": "off" } } }
+    }
+  ],
   "javascript": {
     "formatter": { "quoteStyle": "double", "semicolons": "always", "trailingCommas": "all" }
   },

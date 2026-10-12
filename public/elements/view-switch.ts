@@ -1,6 +1,6 @@
 // <view-switch>: a group of buttons of which one is pressed (Raw / Preview, the model choice).
 //
-// A light-DOM element (`role="group"`, named by the page's `aria-label`): it enhances the buttons
+// A light-DOM element (the page gives it `role="group"` and an `aria-label`): it enhances the buttons
 // written in index.html and adds no markup, so the
 // stylesheet, `aria-describedby` references and the tests see ordinary buttons. Each button names
 // its value in `data-value`; the pressed one carries `aria-pressed="true"`. The page is the only
@@ -21,11 +21,6 @@ export class ViewSwitch extends HTMLElement {
       this.value = value;
       this.dispatchEvent(new Event("change"));
     });
-  }
-
-  connectedCallback() {
-    // The group is what this element is; the page only has to name it with `aria-label`.
-    if (!this.hasAttribute("role")) this.setAttribute("role", "group");
   }
 
   private get buttons(): HTMLCollectionOf<HTMLButtonElement> {

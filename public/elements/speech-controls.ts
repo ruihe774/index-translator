@@ -2,7 +2,7 @@
 // Previous, Pause / Resume and Next. One element per panel; both are the same buttons, so they are
 // built here once instead of being written out twice in index.html.
 //
-// A light-DOM element (`role="group"`): the buttons keep the ids `listen-<side>`, `prev-<side>`,
+// A light-DOM element (the page gives it `role="group"`; the label comes from `subject`): the buttons keep the ids `listen-<side>`, `prev-<side>`,
 // `pause-<side>`, `next-<side>`, which the stylesheet's `data-state` rules and the tests use. The
 // page tells it what to show with `show()`; the element writes the attributes and says what was
 // pressed with events: `listen`, `prev`, `pause`, `next`. Nothing here knows about the player.
@@ -67,7 +67,6 @@ export class SpeechControls extends HTMLElement {
     this.#built = true;
     const side = this.getAttribute("side") ?? "";
     const subject = this.subject;
-    this.setAttribute("role", "group");
     this.setAttribute("aria-label", `Read the ${subject} aloud`);
 
     this.#listen = button(
