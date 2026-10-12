@@ -19,11 +19,13 @@ import {
   selectionMessage,
 } from "./messages.js";
 import { type Alignment, alignBlocks } from "./paragraphs.js";
+import { createRender } from "./render.js";
 import { buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
 import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.js";
 import { SpeechPlayer, type SpeechSettings } from "./speech.js";
 import { canSpeak, speechSegments } from "./speech-text.js";
 import { sseEvents } from "./sse.js";
+import { bindRender, setState, state } from "./state.js";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.js";
 import { audioToWav, MicRecorder, uploadVoice } from "./voice-sample.js";
 
@@ -192,9 +194,6 @@ interface Language {
   name: string;
 }
 
-/** False until the selects hold the language options; Translate stays aria-disabled until then. */
-let languagesReady = false;
-
 async function loadLanguages() {
   let languages: Language[] = [];
   try {
@@ -232,8 +231,7 @@ async function loadLanguages() {
     : has(toSelect, fallbackTo)
       ? fallbackTo
       : toSelect.options[0]!.value;
-  languagesReady = true;
-  setTranslateEnabled();
+  setState({ languagesReady: true });
   refreshSelection();
 }
 
@@ -272,14 +270,7 @@ class ApiFailure extends Error {
   }
 }
 
-let running: AbortController | null = null;
-let translation = "";
 let output: OutputView | null = null;
-
-/** Translate is aria-disabled while a translation runs or before the languages are loaded. */
-function setTranslateEnabled() {
-  translateBtn.setAttribute("aria-disabled", String(running !== null || !languagesReady));
-}
 
 // ---- raw and preview views -------------------------------------------------------------------
 //
@@ -301,15 +292,12 @@ function showSwitch(el: HTMLElement, side: keyof typeof views) {
     b.setAttribute("aria-pressed", String(b.dataset.view === view));
 }
 
-/** The switches, Clear and Copy are always shown; they are aria-disabled while they have nothing to act on. */
+/**
+ * Takes the text box into the state, which renders the controls (render.ts). The box is the one
+ * input the state does not own, so everything that changes it or the view around it comes here.
+ */
 function refreshControls() {
-  const hasText = textInput.value.length > 0;
-  const hasOutput = translation.length > 0;
-  for (const b of sourceSwitch.querySelectorAll("button")) b.setAttribute("aria-disabled", String(!hasText));
-  for (const b of outputSwitch.querySelectorAll("button")) b.setAttribute("aria-disabled", String(!hasOutput));
-  clearBtn.setAttribute("aria-disabled", String(!hasText && !hasOutput));
-  copyBtn.setAttribute("aria-disabled", String(!hasOutput || running !== null));
-  refreshSpeech();
+  setState({ source: textInput.value });
 }
 
 function showSource() {
@@ -330,8 +318,8 @@ function showOutput() {
   showSwitch(outputSwitch, "output");
   refreshControls();
   output = createOutput(outputEl, views.output.available && views.output.view === "preview");
-  if (translation) {
-    output.append(translation);
+  if (state.translation) {
+    output.append(state.translation);
     output.finish();
     applyLinkCheck();
     showSpeaking();
@@ -355,7 +343,7 @@ outputEl.addEventListener("auxclick", onOutputLink);
 let linkCheck: { translation: string; ref: LinkReference } | null = null;
 
 function applyLinkCheck() {
-  if (linkCheck && linkCheck.translation === translation && outputEl.classList.contains("markdown")) {
+  if (linkCheck && linkCheck.translation === state.translation && outputEl.classList.contains("markdown")) {
     checkLinks(outputEl, linkCheck.ref);
   }
 }
@@ -378,7 +366,9 @@ function wireSwitch(el: HTMLElement, side: keyof typeof views, show: () => void)
 let synced: { source: string; translation: string; alignment: Alignment } | null = null;
 
 function syncActive(): Alignment | null {
-  return synced && synced.source === textInput.value && synced.translation === translation ? synced.alignment : null;
+  return synced && synced.source === textInput.value && synced.translation === state.translation
+    ? synced.alignment
+    : null;
 }
 
 function refreshSync() {
@@ -426,29 +416,19 @@ for (const type of ["wheel", "touchmove", "pointerdown", "keydown"]) {
 // The output element is stretched to the scroller's height, so its size does not change as text
 // arrives; the content does.
 new MutationObserver(() => {
-  if (running && following) outputArea.scrollTop = outputArea.scrollHeight;
+  if (state.running && following) outputArea.scrollTop = outputArea.scrollHeight;
 }).observe(outputEl, { childList: true, subtree: true, characterData: true });
-
-function setRunning(on: boolean) {
-  setTranslateEnabled();
-  refreshControls();
-  // Stop takes Clear's place while a translation runs; the two are never shown together.
-  stopBtn.hidden = !on;
-  clearBtn.hidden = on;
-  if (on) stopBtn.focus();
-}
 
 /** Markdown is rendered when the source looks written in it; the copied text stays the raw output. */
 function clearResult(markdown: boolean) {
-  translation = "";
   synced = null;
   linkCheck = null;
   views.output = { available: markdown, view: "preview" };
+  setState({ translation: "" });
   showOutput();
   setMeta("");
   notesEl.replaceChildren();
   placeholderEl.hidden = true;
-  refreshControls();
 }
 
 function addNote(text: string) {
@@ -459,7 +439,7 @@ function addNote(text: string) {
 
 /** Output already on screen when a translation ends early is kept, but it must not look finished. */
 function showInterruption(stopped: boolean, message = "") {
-  const { note } = interruption(translation, stopped);
+  const { note } = interruption(state.translation, stopped);
   setMeta([message, note ?? (stopped ? "Stopped." : "")].filter(Boolean).join(" "), !stopped);
 }
 
@@ -475,8 +455,8 @@ function failureMessage(e: unknown): string {
 }
 
 async function translate() {
-  if (running) return;
-  if (!languagesReady) {
+  if (state.running) return;
+  if (!state.languagesReady) {
     fail("The languages are still loading. Try again in a moment.");
     return;
   }
@@ -516,14 +496,14 @@ async function translate() {
 
   stopSpeech();
   const controller = new AbortController();
-  running = controller;
+  setState({ running: controller });
   following = true;
   const markdown = looksLikeMarkdown(text);
   clearResult(markdown);
   views.source = { available: markdown, view: markdown ? "preview" : "raw" };
   showSource();
   outputEl.lang = toSelect.value;
-  setRunning(true);
+  stopBtn.focus();
   setMeta(`Translating with ${modelLabel(sel.model)}…`);
 
   let stopped = false;
@@ -551,9 +531,9 @@ async function translate() {
       } else if (event === "start") {
         setMeta(`Translating with ${modelLabel(data.model)}…`);
       } else if (event === "delta") {
-        const first = translation.length === 0;
-        translation += data.text;
-        if (first) refreshControls();
+        // Only the first token changes what the controls show; the rest just grows the copied text.
+        if (state.translation.length === 0) setState({ translation: data.text });
+        else state.translation += data.text;
         output!.append(data.text);
       } else if (event === "done") {
         done = data;
@@ -563,6 +543,7 @@ async function translate() {
     }
     if (!done) throw new Error("the connection closed before the translation finished");
 
+    const translation = state.translation;
     const notes = resultNotes(done, {
       source: text,
       translation,
@@ -585,12 +566,12 @@ async function translate() {
     output?.finish();
     // After the last render, which rebuilds the open tail and would drop the marks.
     applyLinkCheck();
-    running = null;
     stopBtn.onclick = null;
+    // Taken before the state changes: Stop is hidden then, and a hidden button loses focus.
     const hadFocus = document.activeElement === stopBtn || document.activeElement === document.body;
-    setRunning(false);
+    setState({ running: null });
     if (hadFocus) translateBtn.focus();
-    placeholderEl.hidden = translation.length > 0;
+    placeholderEl.hidden = state.translation.length > 0;
     refreshSync();
     void pollHealth();
   }
@@ -598,7 +579,7 @@ async function translate() {
 
 /** Empties the source and the result and returns the source to the plain textarea. */
 function clearAll() {
-  if (running || clearBtn.getAttribute("aria-disabled") === "true") return;
+  if (state.running || clearBtn.getAttribute("aria-disabled") === "true") return;
   stopSpeech();
   textInput.value = "";
   showFieldError(textError, textInput, null);
@@ -689,7 +670,7 @@ const player = new SpeechPlayer(synthesize, {
 function speechTarget(side: Side): { text: string; lang: string | undefined } {
   return side === "source"
     ? { text: textInput.value, lang: sourceLangOf() }
-    : { text: translation, lang: outputEl.lang || undefined };
+    : { text: state.translation, lang: outputEl.lang || undefined };
 }
 
 /** Why this side cannot be read aloud right now; empty when it can. */
@@ -697,7 +678,7 @@ function speechBlocked(side: Side): string {
   if (speechProblem) return speechProblem;
   const { text, lang } = speechTarget(side);
   if (!text.trim()) return `There is no ${SIDE_NAME[side]} to read aloud yet.`;
-  if (side === "output" && running) return "The translation can be read aloud once it is finished.";
+  if (side === "output" && state.running) return "The translation can be read aloud once it is finished.";
   if (!lang) return "Choose the language under From to have this text read aloud.";
   if (!canSpeak(lang)) return "Reading aloud is available for Chinese, English, Japanese, Spanish and Arabic.";
   return "";
@@ -969,7 +950,7 @@ for (const b of modelSwitch.querySelectorAll<HTMLButtonElement>("button")) {
 copyBtn.addEventListener("click", async () => {
   if (copyBtn.getAttribute("aria-disabled") === "true") return;
   try {
-    await navigator.clipboard.writeText(translation);
+    await navigator.clipboard.writeText(state.translation);
     flashMeta("Translation copied to the clipboard.");
   } catch {
     flashMeta("Copying failed. Select the translation and copy it by hand.");
@@ -979,7 +960,17 @@ copyBtn.addEventListener("click", async () => {
 const savedModel = stored("model");
 if (CHOICES.includes(savedModel as Choice)) setModelChoice(savedModel as Choice);
 
-setTranslateEnabled();
+bindRender(
+  createRender({
+    translate: translateBtn,
+    stop: stopBtn,
+    clear: clearBtn,
+    copy: copyBtn,
+    sourceSwitch,
+    outputSwitch,
+    after: refreshSpeech,
+  }),
+);
 refreshControls();
 void loadLanguages();
 void loadVoices();
