@@ -1,15 +1,26 @@
 // Worker thread that owns libaudiocpp. FFI calls block, so they run here and the server thread
 // stays free to answer requests. Every message is handled to its end before the next one: loads,
-// unloads and utterances run in arrival order, and an utterance cannot be stopped once it started.
+// unloads and utterances run in arrival order. While this thread is inside the library it reads no
+// messages, so an utterance is stopped through memory it shares with the server thread instead.
 
 import { readFileSync } from "node:fs";
-import { SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
+import { AbortedError, SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
 import { readWav, resample, writeWav } from "./wav";
 
 export type SpeechWorkerRequest =
   | { type: "load"; req: number; options: SpeechModelOptions }
   | { type: "unload"; req: number }
-  | { type: "synthesize"; req: number; text: string; lang: string; voicePath: string; speed: number }
+  // `abort` holds one Int32: the server thread makes it non-zero when nobody wants the utterance
+  // any more, and the library gives up at its next step (or the utterance is not started at all).
+  | {
+      type: "synthesize";
+      req: number;
+      text: string;
+      lang: string;
+      voicePath: string;
+      speed: number;
+      abort: SharedArrayBuffer;
+    }
   // Frees the speech model, loads the separation model, takes the vocals out of the WAV recording,
   // and frees the separation model again. The speech model is not loaded afterwards.
   | { type: "separate"; req: number; options: SpeechModelOptions; wav: ArrayBuffer };
@@ -17,6 +28,8 @@ export type SpeechWorkerRequest =
 export type SpeechWorkerReply =
   | { type: "ok"; req: number }
   | { type: "audio"; req: number; wav: ArrayBuffer }
+  /** The utterance was given up because its `abort` was set. */
+  | { type: "aborted"; req: number }
   | { type: "error"; req: number; message: string };
 
 declare var self: Worker;
@@ -41,13 +54,24 @@ function handle(msg: SpeechWorkerRequest): SpeechWorkerReply {
       return { type: "ok", req: msg.req };
     case "synthesize": {
       if (!model) throw new Error("the speech model is not loaded");
+      const abort = new Int32Array(msg.abort);
+      // Given up while it waited behind another message.
+      if (Atomics.load(abort, 0) !== 0) return { type: "aborted", req: msg.req };
       const voice = readWav(readFileSync(msg.voicePath));
-      // The model's duration control: 2 doubles the duration, so it is the inverse of the speed.
-      const pcm = model.synthesize(msg.text, msg.lang, voice, {
-        duration_factor: String(1 / msg.speed),
-        seed: String(SEED),
-      });
-      return { type: "audio", req: msg.req, wav: writeWav(pcm) };
+      try {
+        // The model's duration control: 2 doubles the duration, so it is the inverse of the speed.
+        const pcm = model.synthesize(
+          msg.text,
+          msg.lang,
+          voice,
+          { duration_factor: String(1 / msg.speed), seed: String(SEED) },
+          abort,
+        );
+        return { type: "audio", req: msg.req, wav: writeWav(pcm) };
+      } catch (e) {
+        if (e instanceof AbortedError) return { type: "aborted", req: msg.req };
+        throw e;
+      }
     }
     case "separate": {
       // Only one of the two models is on the GPU at a time.

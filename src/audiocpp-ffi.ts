@@ -27,6 +27,8 @@ function bind(dir: string) {
     audiocpp_abi_version: { args: [], returns: "u32" },
     audiocpp_build_version: { args: [], returns: "ptr" },
     audiocpp_last_error: { args: [], returns: "ptr" },
+    // Ours, not upstream's: scripts/patches/audiocpp-abort.patch.
+    audiocpp_set_abort_flag: { args: ["ptr"], returns: "void" },
     audiocpp_registry_create: { args: ["ptr", "ptr"], returns: "i32" },
     audiocpp_registry_free: { args: ["ptr"], returns: "void" },
     audiocpp_model_load: { args: ["ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
@@ -162,6 +164,13 @@ class Loaded {
   }
 }
 
+/** The utterance was given up because its abort flag was raised. */
+export class AbortedError extends Error {
+  constructor() {
+    super("the utterance was aborted");
+  }
+}
+
 /** One text-to-speech model with one session. Not thread-safe; `free()` must be called to release its memory. */
 export class SpeechModel extends Loaded {
   static load(opts: SpeechModelOptions): SpeechModel {
@@ -170,10 +179,11 @@ export class SpeechModel extends Loaded {
 
   /**
    * One utterance in the voice of the recording `voice`. `options` are the family's request options
-   * (`--request-option` of audiocpp_cli). Blocks until the whole utterance is synthesized; the
-   * library has no way to stop one.
+   * (`--request-option` of audiocpp_cli). Blocks until the whole utterance is synthesized, or until
+   * another thread makes `abort[0]` non-zero: the library looks at it before every step of the
+   * model, gives up, and this throws `AbortedError`. The model can be used again at once.
    */
-  synthesize(text: string, lang: string, voice: Pcm, options: Record<string, string>): Pcm {
+  synthesize(text: string, lang: string, voice: Pcm, options: Record<string, string>, abort?: Int32Array): Pcm {
     const lib = this.lib;
     const out = new BigUint64Array(1);
     const request = lib.audiocpp_request_create();
@@ -189,8 +199,14 @@ export class SpeechModel extends Loaded {
       for (const [key, value] of Object.entries(options)) {
         check(lib, lib.audiocpp_request_set_option(request, cstr(key), cstr(value)), "audiocpp_request_set_option");
       }
-      check(lib, lib.audiocpp_session_run(this.session, request, out), "audiocpp_session_run");
+      if (abort) lib.audiocpp_set_abort_flag(abort);
+      const status = lib.audiocpp_session_run(this.session, request, out);
+      // A run that failed while the flag was up is taken to have failed because of it.
+      if (status !== 0 && abort && Atomics.load(abort, 0) !== 0) throw new AbortedError();
+      check(lib, status, "audiocpp_session_run");
     } finally {
+      // The library must not keep a pointer to memory that may be collected.
+      lib.audiocpp_set_abort_flag(null);
       lib.audiocpp_request_free(request);
     }
 

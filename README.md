@@ -215,7 +215,9 @@ highlighted in the formatted view.
 The first sentence takes about five seconds longer, because the speech model is loaded when you
 first listen. It needs about 5.7 GiB of GPU memory beside the translation model and is unloaded
 again after five minutes without listening. Speech is generated sentence by sentence, about four
-times faster than it is spoken, so long texts start right away.
+times faster than it is spoken, so long texts start right away. While you listen, the sentences
+that follow are generated in the background (up to a minute and a half ahead), and what you have
+heard is kept, so **Previous** and **Next** usually start at once.
 
 Known limits: numbers written in digits are read correctly in Chinese, English, Spanish and
 Japanese, but not reliably in Arabic, and unusual formats (for example `$1,200`) may be read

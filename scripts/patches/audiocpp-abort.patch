@@ -1,0 +1,140 @@
+diff --git a/include/audiocpp.h b/include/audiocpp.h
+index 76cfe6b..7257a52 100644
+--- a/include/audiocpp.h
++++ b/include/audiocpp.h
+@@ -84,6 +84,18 @@ typedef enum audiocpp_status {
+  * borrowed until this thread's next call. */
+ AUDIOCPP_API const char * audiocpp_last_error(void);
+ 
++/* Added by index-translator (scripts/patches/audiocpp-abort.patch); not part of
++ * audio.cpp's C API.
++ *
++ * Names a flag that stops a running task. While `*flag` is non-zero, a run of a
++ * family that checks it (index_tts2: before every decoding step, every
++ * diffusion step and the vocoder) fails with AUDIOCPP_ERR_RUNTIME and the
++ * detail "aborted"; the session stays usable. The flag is read without a lock,
++ * so another thread may set it while this one is inside audiocpp_session_run.
++ * It must stay valid until it is replaced; NULL (the default) means no flag.
++ * One flag per process. */
++AUDIOCPP_API void audiocpp_set_abort_flag(const volatile int32_t * flag);
++
+ /* Human-readable name for a status code. Borrowed, static lifetime. */
+ AUDIOCPP_API const char * audiocpp_status_string(audiocpp_status status);
+ 
+diff --git a/include/engine/framework/runtime/abort.h b/include/engine/framework/runtime/abort.h
+new file mode 100644
+index 0000000..bdf1631
+--- /dev/null
++++ b/include/engine/framework/runtime/abort.h
+@@ -0,0 +1,28 @@
++#ifndef ENGINE_FRAMEWORK_RUNTIME_ABORT_H
++#define ENGINE_FRAMEWORK_RUNTIME_ABORT_H
++
++// Added by index-translator (scripts/patches/audiocpp-abort.patch); not part of audio.cpp.
++//
++// A caller-owned flag that stops a running task: the families that call
++// throw_if_aborted() in their loops throw while the flag is non-zero, which the
++// C API reports as AUDIOCPP_ERR_RUNTIME. The flag is written by another thread
++// than the one that runs the task.
++
++#include <atomic>
++#include <cstdint>
++#include <stdexcept>
++
++namespace engine::runtime {
++
++inline std::atomic<const volatile int32_t *> g_abort_flag{nullptr};
++
++inline void throw_if_aborted() {
++    const volatile int32_t * flag = g_abort_flag.load(std::memory_order_relaxed);
++    if (flag != nullptr && *flag != 0) {
++        throw std::runtime_error("aborted");
++    }
++}
++
++}  // namespace engine::runtime
++
++#endif
+diff --git a/src/capi/audiocpp.cpp b/src/capi/audiocpp.cpp
+index 1582084..3c33187 100644
+--- a/src/capi/audiocpp.cpp
++++ b/src/capi/audiocpp.cpp
+@@ -17,6 +17,7 @@
+ 
+ #include "engine/framework/core/backend.h"
+ #include "engine/framework/core/module.h"
++#include "engine/framework/runtime/abort.h"
+ #include "engine/framework/runtime/model.h"
+ #include "engine/framework/runtime/registry.h"
+ #include "engine/framework/runtime/session.h"
+@@ -255,6 +256,10 @@ const char * audiocpp_build_version(void) {
+ #endif
+ }
+ 
++void audiocpp_set_abort_flag(const volatile int32_t * flag) {
++    engine::runtime::g_abort_flag.store(flag, std::memory_order_relaxed);
++}
++
+ const char * audiocpp_last_error(void) {
+     return g_last_error.c_str();
+ }
+diff --git a/src/models/index_tts2/gpt.cpp b/src/models/index_tts2/gpt.cpp
+index 69fb71c..f045a38 100644
+--- a/src/models/index_tts2/gpt.cpp
++++ b/src/models/index_tts2/gpt.cpp
+@@ -11,6 +11,7 @@
+ #include "engine/framework/modules/primitive_modules.h"
+ #include "engine/framework/modules/structural_modules.h"
+ #include "engine/framework/modules/weight_binding.h"
++#include "engine/framework/runtime/abort.h"
+ #include "engine/framework/sampling/torch_random.h"
+ 
+ #include <algorithm>
+@@ -2430,6 +2431,7 @@ IndexTTS2GptGeneration IndexTTS2GptRuntime::generate_speech(const IndexTTS2GptGe
+     run_parent_slots.reserve(static_cast<size_t>(beam_count));
+     run_next_tokens.reserve(static_cast<size_t>(beam_count));
+     for (int step = 0; step < request.max_mel_tokens && !beams.empty(); ++step) {
++        engine::runtime::throw_if_aborted();
+         const auto sampling_start = Clock::now();
+         candidates.clear();
+         sampler_workspace.sample_scores.clear();
+diff --git a/src/models/index_tts2/s2mel.cpp b/src/models/index_tts2/s2mel.cpp
+index ae0eec1..08edf4e 100644
+--- a/src/models/index_tts2/s2mel.cpp
++++ b/src/models/index_tts2/s2mel.cpp
+@@ -7,6 +7,7 @@
+ #include "engine/framework/modules/primitive_modules.h"
+ #include "engine/framework/modules/structural_modules.h"
+ #include "engine/framework/modules/weight_binding.h"
++#include "engine/framework/runtime/abort.h"
+ #include "engine/framework/sampling/torch_random.h"
+ 
+ #include <ggml-alloc.h>
+@@ -1242,6 +1243,7 @@ IndexTTS2S2MelMel IndexTTS2S2MelRuntime::infer_mel(
+     float t = 0.0F;
+     float dt = 1.0F / static_cast<float>(diffusion_steps);
+     for (int64_t step = 1; step <= diffusion_steps; ++step) {
++        engine::runtime::throw_if_aborted();
+         const auto graph_start = Clock::now();
+         auto x_batched = repeat_or_zero_rows(x, kMelChannels * total_frames, use_cfg, false);
+         auto prompt_batched = repeat_or_zero_rows(prompt_x, kMelChannels * total_frames, use_cfg, true);
+diff --git a/src/models/index_tts2/session.cpp b/src/models/index_tts2/session.cpp
+index 449d990..73014b5 100644
+--- a/src/models/index_tts2/session.cpp
++++ b/src/models/index_tts2/session.cpp
+@@ -2,6 +2,7 @@
+ 
+ #include "engine/framework/debug/profiler.h"
+ #include "engine/framework/io/text.h"
++#include "engine/framework/runtime/abort.h"
+ #include "engine/framework/runtime/options.h"
+ #include "engine/framework/text/chunking.h"
+ 
+@@ -723,6 +724,7 @@ runtime::AudioBuffer IndexTTS2Session::synthesize_segment(
+         s2mel_->release_cfm_graph();
+     }
+ 
++    engine::runtime::throw_if_aborted();
+     const auto vocoder_start = Clock::now();
+     auto audio = vocoder_->synthesize(mel.values, mel.frames);
+     debug::timing_log_scalar("index_tts2.vocoder_ms", engine::debug::elapsed_ms(vocoder_start));

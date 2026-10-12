@@ -100,13 +100,15 @@ test("Pause holds the reading where it is and Resume goes on; Stop ends it", asy
   await expect(listen).toHaveAttribute("data-state", "paused");
   await expect(pause).toHaveAccessibleName("Resume reading");
 
-  // Paused: the audio that was being fetched arrives and the next piece is fetched, but nothing plays on.
+  // Paused: the audio of the rest is made meanwhile, one piece after the other, but nothing plays on.
+  await expect.poll(async () => (await mock.state()).speech.requests.length).toBe(SPOKEN.length);
   await app.page.waitForTimeout(1500);
   await expect(listen).toHaveAttribute("data-state", "paused");
-  expect((await mock.state()).speech.requests.length).toBeLessThanOrEqual(2);
+  await expect(app.meta).toHaveText("");
+  expect((await mock.state()).speech.requests.length).toBe(SPOKEN.length);
 
   await pause.click();
-  await expect.poll(async () => (await mock.state()).speech.requests.length).toBeGreaterThan(2);
+  await expect(listen).toHaveAttribute("data-state", "playing");
   await listen.click();
   await expect(listen).toHaveAttribute("data-state", "idle");
   await expect(pause).toBeHidden();
@@ -119,7 +121,8 @@ test("Previous and Next jump between blocks, say where, and hand focus back when
   app,
   mock,
 }) => {
-  await mock.set({ speech: { delayMs: 400, audioSeconds: 1.5 } });
+  // Slow enough that the block after the one being read is still being made when Next is pressed.
+  await mock.set({ speech: { delayMs: 1000, audioSeconds: 1.5 } });
   await app.open();
   await app.from.selectOption("en");
   await app.text.fill(MARKDOWN);
@@ -139,7 +142,8 @@ test("Previous and Next jump between blocks, say where, and hand focus back when
   await next.focus();
   await app.page.keyboard.press("Enter");
   await expect(app.meta).toHaveText("Block 2 of 3");
-  // The new block is being made: both jumps wait until it plays.
+  // The new block is still being made: both jumps wait until it plays.
+  await expect(listen).toHaveAttribute("data-state", "loading");
   await expect(next).toHaveAttribute("aria-disabled", "true");
   await expect(prev).toHaveAttribute("aria-disabled", "true");
   await expect(listen).toHaveAttribute("data-state", "playing");
@@ -149,12 +153,16 @@ test("Previous and Next jump between blocks, say where, and hand focus back when
   await expect(next).toHaveAttribute("aria-disabled", "true");
   await expect(prev).toHaveAttribute("aria-disabled", "false");
 
+  // Back to a block that was heard: its audio was kept, so it plays at once.
   await prev.focus();
   await app.page.keyboard.press("Enter");
   await expect(app.meta).toHaveText("Block 2 of 3");
+  await expect(listen).toHaveAttribute("data-state", "playing", { timeout: 300 });
 
   await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   await expect(next).toBeHidden();
+  // Every piece was made once: no jump asked for audio again or threw away a request.
+  expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(SPOKEN);
 });
 
 test("Next while paused resumes the reading at the next block", async ({ app, mock }) => {
@@ -314,7 +322,9 @@ test("a 429 in the middle of a reading is explained and the buttons return to Li
 });
 
 test("a speech_error in the middle of a reading is shown the same way", async ({ app, mock }) => {
-  await mock.set({ speech: { audioSeconds: 0.6 } });
+  // The audio is made ahead of the reader, so the failure is that of a later piece: it is shown
+  // when the reading gets there.
+  await mock.set({ speech: { delayMs: 300, audioSeconds: 0.6 } });
   await app.open();
   await app.from.selectOption("en");
   await app.text.fill(MARKDOWN);

@@ -1,11 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import {
-  JUMP_SETTLE_MS,
-  type PlayerState,
-  SpeechPlayer,
-  type SpeechSettings,
-  UPDATE_SETTLE_MS,
-} from "../public/speech";
+import { type PlayerState, SpeechPlayer, type SpeechSettings, UPDATE_SETTLE_MS } from "../public/speech";
 import type { Segment } from "../public/speech-text";
 
 // ---- fakes -----------------------------------------------------------------------------------
@@ -336,33 +330,61 @@ describe("stale work after a cancel", () => {
 });
 
 describe("jumping", () => {
-  test("jump shows the block at once and asks for its audio only after the settle time", async () => {
+  test("a jump to a block whose audio is there plays it at once: no loading, no request", async () => {
     const t = setup(true);
     t.player.start(SEGMENTS, SETTINGS);
     await flush();
-    const asked = t.requests.length;
+    // Everything was made ahead while a1 played.
+    expect(t.requests.map((r) => r.text)).toEqual(["a1", "a2", "b1", "c1"]);
+    const states = t.states.length;
     expect(t.player.jump(1)).toBe(true);
     expect(t.segments.at(-1)).toBe(SEGMENTS[2]!);
     expect(t.player.position()).toEqual({ block: 2, blocks: 3 });
-    expect(t.player.state).toBe("loading");
-    await sleep(JUMP_SETTLE_MS / 2);
-    expect(t.requests.length).toBe(asked);
-    await sleep(JUMP_SETTLE_MS);
-    expect(t.requests.map((r) => r.text)).toContain("b1");
+    await flush();
+    expect(t.player.state).toBe("playing");
+    expect(t.states.length).toBe(states);
+    expect(t.requests.length).toBe(4);
+    // And back: the audio already played was kept.
+    expect(t.player.jump(-1)).toBe(true);
+    await flush();
+    expect(t.player.state).toBe("playing");
+    expect(t.segments.at(-1)).toBe(SEGMENTS[0]!);
+    expect(t.requests.length).toBe(4);
   });
 
-  test("three jumps in a row ask for one piece", async () => {
-    const t = setup(true);
+  test("a jump to a block that is not there shows it, stops the request in flight and asks for it", async () => {
+    const t = setup();
     t.player.start(SEGMENTS, SETTINGS);
     await flush();
-    const asked = t.requests.length;
+    t.requests[0]!.resolve();
+    await flush();
+    const a2 = t.requests[1]!;
+    expect(a2.text).toBe("a2");
+    expect(t.player.jump(1)).toBe(true);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[2]!);
+    expect(t.player.state).toBe("loading");
+    // a2 is not on the way from b1: its inference is of no use any more.
+    expect(a2.signal.aborted).toBe(true);
+    expect(t.requests.at(-1)!.text).toBe("b1");
+    t.requests.at(-1)!.resolve();
+    await flush();
+    expect(t.player.state).toBe("playing");
+    expect(t.segments.at(-1)).toBe(SEGMENTS[2]!);
+  });
+
+  test("jumps in a row leave one request, for the block arrived at", async () => {
+    const t = setup();
+    t.player.start(SEGMENTS, SETTINGS);
+    await flush();
+    t.requests[0]!.resolve();
+    await flush();
     t.player.jump(1);
     t.player.jump(1);
     t.player.jump(-1);
-    await sleep(JUMP_SETTLE_MS + 100);
-    const fresh = t.requests.slice(asked).map((r) => r.text);
-    // The block jumped to, plus the usual fetch of the piece after it; never one per press.
-    expect(fresh).toEqual(["b1", "c1"]);
+    await flush();
+    const live = t.requests.filter((r) => !r.signal.aborted).map((r) => r.text);
+    expect(live).toEqual(["a1", "b1"]);
+    expect(t.errors).toEqual([]);
   });
 
   test("a jump with nowhere to go returns false and changes nothing", async () => {
@@ -383,20 +405,23 @@ describe("jumping", () => {
     t.player.pause();
     expect(t.player.state).toBe("paused");
     t.player.jump(1);
-    expect(t.player.state).not.toBe("paused");
+    await flush();
+    expect(t.player.state).toBe("playing");
     expect(t.ctx().calls.filter((c) => c === "resume").length).toBe(2);
   });
 
-  test("stop during the settle time cancels the pending request", async () => {
-    const t = setup(true);
+  test("stop after a jump stops the request made for it", async () => {
+    const t = setup();
     t.player.start(SEGMENTS, SETTINGS);
     await flush();
-    const asked = t.requests.length;
     t.player.jump(1);
+    const asked = t.requests.length;
     t.player.stop();
-    await sleep(JUMP_SETTLE_MS + 100);
+    await flush();
+    expect(t.requests.every((r) => r.signal.aborted)).toBe(true);
     expect(t.requests.length).toBe(asked);
     expect(t.player.state).toBe("idle");
+    expect(t.errors).toEqual([]);
   });
 });
 
@@ -438,15 +463,18 @@ describe("blockStart, position and canJump", () => {
 
 describe("update (voice or speed)", () => {
   test("changes are debounced: several in a row ask for the piece once, with the last settings", async () => {
-    const t = setup(true);
+    const t = setup();
     t.player.start(SEGMENTS, SETTINGS);
     await flush();
+    t.requests[0]!.resolve();
+    await flush();
     const asked = t.requests.length;
-    const first = t.requests[0]!;
+    const inFlight = t.requests.at(-1)!;
     t.player.update({ speed: 0.75 });
     t.player.update({ speed: 1.25 });
     t.player.update({ speed: 1.5 });
-    expect(first.signal.aborted).toBe(true);
+    // Audio with the old speed is of no use: its request is stopped at once.
+    expect(inFlight.signal.aborted).toBe(true);
     expect(t.player.state).toBe("loading");
     await sleep(UPDATE_SETTLE_MS / 2);
     expect(t.requests.length).toBe(asked);

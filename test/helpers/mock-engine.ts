@@ -183,7 +183,7 @@ export const mockSpeech = {
   /** Every utterance asked for. */
   requests: [] as SpeechRequest[],
   aborted: 0,
-  /** Like the real engine: an utterance that started runs to its end, and `done` waits for it. */
+  /** An engine that does not stop: an utterance that started runs to its end, and `done` waits for it. */
   ignoreAbort: false,
   /** Utterances the engine is working on right now, whoever still waits for them. */
   running: 0,

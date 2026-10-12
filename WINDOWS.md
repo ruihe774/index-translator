@@ -45,6 +45,9 @@ generator is used (`--config Release`). A terminal opened before the installs ne
   (compiled by `cl`; the shim marks its functions `dllexport`). The `.lib` import libraries stay in
   `vendor/llama.cpp` so `--shim` can rebuild the shim. About 100 s on 20 threads.
 - audio.cpp gives `audiocpp.dll` (exports only `audiocpp_*`, checked with `dumpbin /exports`), AVX2 code. About 4 min.
+  The script applies `scripts/patches/audiocpp-abort.patch` to the checkout with `git apply --ignore-whitespace`
+  (line endings of the checkout do not matter); a DLL built before that patch lacks `audiocpp_set_abort_flag`
+  and the server says so when speech is first used. The patched build has not been run on Windows yet.
 - Checked on an RX 9070 (Vulkan) with the real engines: translation (72 tokens/s), speech in zh, en and ja,
   a voice upload separated by BS-RoFormer (2 s), and speech with that uploaded voice.
 - The AppImage script and the CI `appimage` job are Linux-only and were not changed. CI has `test-windows` (typecheck, `bun test`) and `engines-windows` (builds both engines, checks they open and that the server stops with a reason), neither with a GPU or models.

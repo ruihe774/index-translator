@@ -116,7 +116,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts') }}
+          key: audio-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
@@ -217,7 +217,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-windows-2022-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts') }}
+          key: audio-windows-2022-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
@@ -294,7 +294,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-windows-2022-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts') }}
+          key: audio-windows-2022-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}

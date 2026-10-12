@@ -634,8 +634,8 @@ export async function startApp(
   async function speak(input: SpeechRequest, signal: AbortSignal): Promise<Response> {
     const ticket = enterQueue(undefined, speechQueue);
     // Aborted while waiting: leave the line. Once the utterance is handed to the engine the slot is
-    // kept, because the engine cannot stop it; the engine's `done` gives it up, so abandoned
-    // utterances count against the queue instead of piling up behind it.
+    // kept until the engine's `done`: the engine stops an abandoned utterance within one step of
+    // the model, and the next one must not be started beside it.
     let handed = false;
     const onAbort = () => {
       if (!handed) ticket.leave();

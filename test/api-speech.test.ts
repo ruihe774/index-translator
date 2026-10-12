@@ -292,7 +292,7 @@ describe("NativeSpeech with a fake worker", () => {
     }
   });
 
-  test("a posted utterance that is aborted is released only when the worker is done", async () => {
+  test("a posted utterance that is aborted is flagged for the worker and released when it says it stopped", async () => {
     const { dir, worker, speech } = await setup();
     try {
       const gone = new AbortController();
@@ -306,12 +306,63 @@ describe("NativeSpeech with a fake worker", () => {
       worker.reply(worker.posted[0].req, { type: "ok" });
       await tick();
       expect(kinds(worker)).toEqual(["load", "synthesize"]);
+      // The flag the worker thread and the library read while no message can reach them.
+      expect(worker.posted[1].abort).toBeInstanceOf(SharedArrayBuffer);
+      const flag = new Int32Array(worker.posted[1].abort);
+      expect(flag[0]).toBe(0);
       gone.abort();
+      expect(flag[0]).toBe(1);
       expect(await rejected).toBe(gone.signal.reason);
       expect(released).toBe(0);
+      worker.reply(worker.posted[1].req, { type: "aborted" });
+      await tick();
+      expect(released).toBe(1);
+      expect(speech.state).toBe("ready");
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
+  test("an utterance that finished just before the abort reached the engine is released as well", async () => {
+    const { dir, worker, speech } = await setup();
+    try {
+      const gone = new AbortController();
+      let released = 0;
+      const rejected = speech
+        .synthesize(request, gone.signal, () => released++)
+        .then(
+          () => null,
+          (e) => e,
+        );
+      await tick();
+      worker.reply(worker.posted[0].req, { type: "ok" });
+      await tick();
+      gone.abort();
+      expect(await rejected).toBe(gone.signal.reason);
       worker.reply(worker.posted[1].req, { type: "audio", wav: new ArrayBuffer(4) });
       await tick();
       expect(released).toBe(1);
+    } finally {
+      await rm(dir, { recursive: true });
+    }
+  });
+
+  test("every utterance has a flag of its own", async () => {
+    const { dir, worker, speech } = await setup();
+    try {
+      const gone = new AbortController();
+      speech.synthesize(request, gone.signal, () => {}).catch(() => {});
+      await tick();
+      worker.reply(worker.posted[0].req, { type: "ok" });
+      await tick();
+      const kept = speech.synthesize(request, new AbortController().signal, () => {});
+      await tick();
+      gone.abort();
+      expect(new Int32Array(worker.posted[1].abort)[0]).toBe(1);
+      expect(new Int32Array(worker.posted[2].abort)[0]).toBe(0);
+      worker.reply(worker.posted[1].req, { type: "aborted" });
+      worker.reply(worker.posted[2].req, { type: "audio", wav: new ArrayBuffer(4) });
+      expect(await kept).toBeInstanceOf(ArrayBuffer);
     } finally {
       await rm(dir, { recursive: true });
     }

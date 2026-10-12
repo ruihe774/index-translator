@@ -81,10 +81,10 @@ export interface Speech {
   addVoice(name: string, wav: ArrayBuffer): Promise<Voice>;
   /**
    * One utterance as a WAV file. Rejects with SpeechError, or the signal's reason when aborted,
-   * which happens at once even if the engine cannot stop the utterance.
+   * which happens at once; the engine is told to stop and does so within its current step.
    * `done` is called exactly once, when the engine no longer works on the utterance: it finished,
-   * failed, or was never started because the signal aborted first. The caller keeps its queue slot
-   * until then, so abandoned work still counts against the queue.
+   * failed, stopped, or was never started because the signal aborted first. The caller keeps its
+   * queue slot until then, so the next utterance is never started beside one still being stopped.
    */
   synthesize(req: SpeechRequest, signal: AbortSignal, done: () => void): Promise<ArrayBuffer>;
   stop(): Promise<void>;
@@ -334,8 +334,16 @@ export class NativeSpeech implements Speech {
     this.idle.unref();
   }
 
-  /** `posted` is set once the utterance has been handed to the worker, which cannot take it back. */
-  private async run(req: SpeechRequest, signal: AbortSignal, posted: { value: boolean }): Promise<ArrayBuffer> {
+  /**
+   * `posted` is set once the utterance has been handed to the worker. From then on only `abort`
+   * (the flag the worker and the library read) stops it, and the worker's reply says when it has.
+   */
+  private async run(
+    req: SpeechRequest,
+    signal: AbortSignal,
+    posted: { value: boolean },
+    abort: Int32Array,
+  ): Promise<ArrayBuffer> {
     // The model is checked again after every wait: a separation that starts in between frees it.
     do {
       while (this.separating) await this.separating;
@@ -350,7 +358,10 @@ export class NativeSpeech implements Speech {
       lang: req.lang,
       voicePath: this.uploads.get(req.voice)?.path ?? join(this.cfg.voicesDir, `${req.voice}.wav`),
       speed: req.speed,
+      abort: abort.buffer as SharedArrayBuffer,
     });
+    // Nobody receives this: the caller was answered with the signal's reason when it aborted.
+    if (reply.type === "aborted") throw new SpeechError("the utterance was stopped");
     if (reply.type !== "audio") throw new SpeechError(`unexpected ${reply.type} reply to an utterance`);
     return reply.wav;
   }
@@ -374,16 +385,19 @@ export class NativeSpeech implements Speech {
     clearTimeout(this.idle);
     this.pending++;
     const posted = { value: false };
-    const work = this.run(req, signal, posted).finally(() => {
+    // Shared with the worker thread, which is inside the library and reads no messages meanwhile.
+    const abort = new Int32Array(new SharedArrayBuffer(4));
+    const work = this.run(req, signal, posted, abort).finally(() => {
       this.pending--;
       this.unloadWhenIdle();
       release();
     });
-    // The library cannot stop an utterance. An aborted request is answered at once; the worker
-    // finishes a posted utterance and nobody receives it, so `done` waits for the worker. An
-    // utterance not posted yet is never sent, and its `done` need not wait for the model to load.
+    // An aborted request is answered at once. A posted utterance is stopped through the flag, at
+    // the library's next step, and `done` waits for the worker to say so. An utterance not posted
+    // yet is never sent, and its `done` need not wait for the model to load.
     return new Promise((resolve, reject) => {
       const onAbort = () => {
+        Atomics.store(abort, 0, 1);
         if (!posted.value) release();
         reject(signal.reason);
       };

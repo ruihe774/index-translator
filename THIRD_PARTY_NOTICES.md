@@ -15,6 +15,10 @@ names them and says where the full texts are. The AppImage carries this file in
 | cJSON, SentencePiece and the Abseil subset that comes with SentencePiece, in audio.cpp's source tree (`external/`) | Compiled into `libaudiocpp.so` | Each under its own license (MIT, Apache-2.0, Apache-2.0); the files are in audio.cpp's repository at the pinned commit | `external/*/LICENSE` there |
 | [Bun](https://bun.sh) (`usr/bin/bun` in the AppImage) | JavaScript runtime and HTTP server | MIT for Bun itself; the executable also contains statically linked components under their own licenses, among them JavaScriptCore (LGPL-2.0 or later) | <https://bun.com/docs/project/licensing> |
 
+`libaudiocpp.so` is built from audio.cpp's source with one change of ours,
+`scripts/patches/audiocpp-abort.patch` in this app's repository: a function that lets the app stop
+an utterance that is being generated.
+
 The AppImage is packed with [appimagetool](https://github.com/AppImage/appimagetool) and the
 [type2-runtime](https://github.com/AppImage/type2-runtime), whose code is embedded at the start of the
 AppImage file; their notices are in those projects' repositories.

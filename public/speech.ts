@@ -1,30 +1,26 @@
-// Plays a text aloud: fetches the audio of one piece at a time from the speech API and plays the
-// pieces in order through Web Audio, with pause, resume and a change of voice or speed on the way.
+// Plays a text aloud: plays the pieces in order through Web Audio, with pause, resume, jumps between
+// blocks and a change of voice or speed on the way.
 //
-// One request is in flight at a time: the piece after the one being played is fetched while it
-// plays, which keeps ahead because synthesis is several times faster than speech. Once it has
-// arrived it is scheduled on the audio clock right behind the current one, so the join is
-// sample-accurate (plus the piece's pause) and does not wait for an event. Speed is the
-// model's own duration control, not a faster playback, so a change of speed or voice is heard from
-// the start of the current piece, which is synthesized again.
+// Where the audio comes from is not this file's business: the pieces are taken from a SpeechBuffer
+// (speech-buffer.ts), which makes them ahead of the reader and keeps them. The player only tells
+// it where the reader is. Once the piece after the current one is there, it is scheduled on the
+// audio clock right behind the current one, so the join is sample-accurate (plus the piece's
+// pause) and does not wait for an event. Speed is the model's own duration control, not a faster
+// playback, so a change of speed or voice is heard from the start of the current piece, and all
+// audio is made again.
 
+import { blockStarts, SpeechBuffer, type SpeechSettings, type Synthesize } from "./speech-buffer.js";
 import type { Segment } from "./speech-text.js";
 
-/** How long a jump waits for another before the audio of its block is requested. */
-export const JUMP_SETTLE_MS = 300;
-/** The same for a change of voice or speed: moving through the speed list must not ask for every step. */
+export type { SpeechSettings, Synthesize };
+
+/**
+ * How long a change of voice or speed waits for another before audio is requested with it: moving
+ * through the speed list must not start an utterance for every step.
+ */
 export const UPDATE_SETTLE_MS = 300;
 
 export type PlayerState = "idle" | "loading" | "playing" | "paused";
-
-export interface SpeechSettings {
-  lang: string;
-  voice: string;
-  speed: number;
-}
-
-/** The audio file (WAV) of one piece. */
-export type Synthesize = (text: string, settings: SpeechSettings, signal: AbortSignal) => Promise<ArrayBuffer>;
 
 export interface PlayerHooks {
   onState(state: PlayerState): void;
@@ -41,22 +37,21 @@ export class SpeechPlayer {
   private index = 0;
   /** Counts up whenever what should be heard changes; work started for an earlier count is dropped. */
   private run = 0;
-  private abort = new AbortController();
-  private buffers = new Map<number, Promise<AudioBuffer>>();
-  /** Pieces whose audio has arrived: going on to one of them is not "loading". */
-  private loaded = new Set<number>();
+  private buffer: SpeechBuffer;
   private source: AudioBufferSourceNode | null = null;
   /** The piece after the current one, already scheduled to start the moment the current one ends. */
   private queued: { index: number; source: AudioBufferSourceNode; end: number } | null = null;
   private paused = false;
   private active = false;
-  private jumpTimer: ReturnType<typeof setTimeout> | null = null;
+  private updateTimer: ReturnType<typeof setTimeout> | null = null;
   state: PlayerState = "idle";
 
   constructor(
-    private synthesize: Synthesize,
+    synthesize: Synthesize,
     private hooks: PlayerHooks,
-  ) {}
+  ) {
+    this.buffer = new SpeechBuffer(synthesize, (wav) => this.ctx!.decodeAudioData(wav));
+  }
 
   /** Must be called from a click (or key) handler: browsers only let a page start audio then. */
   start(segments: Segment[], settings: SpeechSettings): void {
@@ -76,6 +71,7 @@ export class SpeechPlayer {
     this.segments = segments;
     this.settings = settings;
     this.active = true;
+    this.buffer.open(segments, settings);
     void this.play(0, 0);
   }
 
@@ -114,7 +110,8 @@ export class SpeechPlayer {
     if (!this.active) return;
     this.active = false;
     this.paused = false;
-    this.cancel();
+    this.silence();
+    this.buffer.close();
     this.hooks.onSegment(null);
     this.refresh();
   }
@@ -123,31 +120,30 @@ export class SpeechPlayer {
    * Jumps to the start of the previous (-1) or next (1) block, a block being the run of pieces that
    * share a `line`. "Previous" first returns to the start of the block being read, as media players
    * do. Returns false when there is nowhere to go. A jump while paused resumes the reading.
+   * The audio made so far is kept, and the buffer makes the pieces a jump leads to ahead of time,
+   * so the block usually starts at once; if it is not there, the buffer drops what it was making
+   * for it.
    */
   jump(direction: -1 | 1): boolean {
     if (!this.active) return false;
     const target = this.blockStart(direction);
     if (target === null) return false;
-    this.cancel();
-    // An utterance cannot be stopped on the server, so every request abandoned by a jump still
-    // takes its turn there. Pressing Next three times in a row must ask for one piece, not three:
-    // the new block is shown at once and its audio is requested once the jumping pauses.
+    this.silence();
     // Choosing where to listen next is a request to listen: a jump while paused resumes.
     if (this.paused) {
       this.paused = false;
       void this.ctx?.resume();
     }
-    this.index = target;
     this.hooks.onSegment(this.segments[target]!);
-    this.refresh();
-    this.playAfter(target, JUMP_SETTLE_MS);
+    // Shows "loading" only if the block's audio is not there.
+    void this.play(target, 0);
     return true;
   }
 
   /** The block being read, 1-based, and how many there are; null when nothing is being read. */
   position(): { block: number; blocks: number } | null {
     if (!this.active) return null;
-    const starts = this.starts();
+    const starts = blockStarts(this.segments);
     let block = 0;
     for (let b = 0; b < starts.length; b++) if (starts[b]! <= this.index) block = b;
     return { block: block + 1, blocks: starts.length };
@@ -158,17 +154,8 @@ export class SpeechPlayer {
     return this.active && this.blockStart(direction) !== null;
   }
 
-  /** Index of the first piece of each block. */
-  private starts(): number[] {
-    const starts: number[] = [];
-    this.segments.forEach((s, i) => {
-      if (i === 0 || s.line !== this.segments[i - 1]!.line) starts.push(i);
-    });
-    return starts;
-  }
-
   private blockStart(direction: -1 | 1): number | null {
-    const starts = this.starts();
+    const starts = blockStarts(this.segments);
     const current = (this.position()?.block ?? 1) - 1;
     if (direction === 1) return starts[current + 1] ?? null;
     if (starts[current]! < this.index) return starts[current]!;
@@ -179,28 +166,24 @@ export class SpeechPlayer {
   update(settings: Partial<SpeechSettings>): void {
     this.settings = { ...this.settings, ...settings };
     if (!this.active) return;
-    this.cancel();
+    this.silence();
+    // Nothing made with the old settings is of use, and the request in flight is stopped now. The
+    // first one with the new settings is made once the choosing has paused.
+    this.buffer.open(this.segments, this.settings);
     this.refresh();
-    this.playAfter(this.index, UPDATE_SETTLE_MS);
-  }
-
-  /** Requests the audio of piece `i` once nothing has changed for `ms`. */
-  private playAfter(i: number, ms: number): void {
     const run = this.run;
-    this.jumpTimer = setTimeout(() => {
-      this.jumpTimer = null;
+    const i = this.index;
+    this.updateTimer = setTimeout(() => {
+      this.updateTimer = null;
       if (run === this.run) void this.play(i, 0);
-    }, ms);
+    }, UPDATE_SETTLE_MS);
   }
 
-  private cancel(): void {
+  /** Stops what plays or is scheduled and disowns whatever was under way. The buffer keeps its audio. */
+  private silence(): void {
     this.run++;
-    if (this.jumpTimer) clearTimeout(this.jumpTimer);
-    this.jumpTimer = null;
-    this.abort.abort();
-    this.abort = new AbortController();
-    this.buffers.clear();
-    this.loaded.clear();
+    if (this.updateTimer) clearTimeout(this.updateTimer);
+    this.updateTimer = null;
     if (this.source) {
       this.source.onended = null;
       try {
@@ -228,23 +211,6 @@ export class SpeechPlayer {
     this.hooks.onState(state);
   }
 
-  private load(i: number): Promise<AudioBuffer> {
-    let buffer = this.buffers.get(i);
-    if (!buffer) {
-      const run = this.run;
-      buffer = this.synthesize(this.segments[i]!.text, this.settings, this.abort.signal)
-        .then((wav) => this.ctx!.decodeAudioData(wav))
-        .then((audio) => {
-          if (run === this.run) this.loaded.add(i);
-          return audio;
-        });
-      // Awaited by play(); a prefetch nobody waits for must not become an unhandled rejection.
-      buffer.catch(() => {});
-      this.buffers.set(i, buffer);
-    }
-    return buffer;
-  }
-
   private async play(i: number, delayMs: number): Promise<void> {
     const run = this.run;
     const ctx = this.ctx!;
@@ -255,14 +221,16 @@ export class SpeechPlayer {
     }
     // The silence after the previous piece runs on the audio clock, which a pause stops.
     const startAt = ctx.currentTime + delayMs / 1000;
-    if (!this.loaded.has(i)) {
+    this.buffer.aim(i);
+    // Going on to a piece that is there is not "loading".
+    if (!this.buffer.has(i)) {
       this.source = null;
       this.refresh();
     }
 
     let buffer: AudioBuffer;
     try {
-      buffer = await this.load(i);
+      buffer = await this.buffer.take(i);
     } catch (e) {
       if (run !== this.run) return;
       this.stop();
@@ -281,7 +249,7 @@ export class SpeechPlayer {
     source.connect(this.ctx!.destination);
     source.onended = () => {
       if (run !== this.run) return;
-      // This piece is over: nothing is playing until the next one is scheduled or has to be fetched.
+      // This piece is over: nothing is playing until the next one is scheduled or has to be made.
       if (this.source === source) this.source = null;
       const next = this.queued;
       if (next?.index === i + 1) {
@@ -298,15 +266,15 @@ export class SpeechPlayer {
   /** Piece `i`, whose `source` is playing or about to, becomes the current one; the piece after it is lined up. */
   private enter(i: number, source: AudioBufferSourceNode, end: number, run: number): void {
     this.index = i;
-    this.buffers.delete(i - 1);
     this.source = source;
     this.hooks.onSegment(this.segments[i]!);
     this.refresh();
+    this.buffer.aim(i);
     if (i + 1 >= this.segments.length) return;
-    // Once the next piece has arrived it is scheduled right behind this one on the audio clock, so
+    // Once the next piece is there it is scheduled right behind this one on the audio clock, so
     // the join does not wait for the "ended" event. If this piece has ended before the audio
     // arrives, its onended has already gone to play() and there is nothing to do here.
-    this.load(i + 1).then(
+    this.buffer.take(i + 1).then(
       (buffer) => {
         if (run !== this.run || this.source !== source) return;
         const at = Math.max(end + this.segments[i]!.pause / 1000, this.ctx!.currentTime);

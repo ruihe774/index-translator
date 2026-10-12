@@ -34,6 +34,11 @@ const REPO = "https://github.com/0xShug0/audio.cpp.git";
  * `roformer` holds BS-RoFormer (used) and Mel-Band RoFormer, which share their code.
  */
 const MODELS = ["index_tts2", "roformer"];
+/**
+ * Our one change to audio.cpp: `audiocpp_set_abort_flag`, a flag that stops a running IndexTTS-2
+ * utterance (upstream has no way to). Applied to the checkout before it is built.
+ */
+const PATCH = join(import.meta.dir, "patches", "audiocpp-abort.patch");
 
 const flags = new Set(Bun.argv.slice(2));
 for (const flag of flags) {
@@ -53,6 +58,12 @@ const visualStudio = windows ? await msvc() : undefined;
 
 if (!keep) await rm(work, { recursive: true, force: true });
 await checkout(REPO, COMMIT, source);
+// A tree kept by --keep has the patch already: taking it out again would then work.
+const reverse = Bun.spawn(["git", "apply", "--reverse", "--check", "--ignore-whitespace", PATCH], {
+  cwd: source,
+  stdio: ["ignore", "ignore", "ignore"],
+});
+if ((await reverse.exited) !== 0) await run(["git", "apply", "--ignore-whitespace", PATCH], source);
 
 const started = performance.now();
 try {
