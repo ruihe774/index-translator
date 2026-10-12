@@ -4,7 +4,13 @@
     {
       "name": "web-app",
       "runtimeExecutable": "bun",
-      "runtimeArgs": ["src/server.ts"],
+      "runtimeArgs": ["src/server.ts", "--open-browser", "0"],
+      "port": 3000
+    },
+    {
+      "name": "dev",
+      "runtimeExecutable": "bun",
+      "runtimeArgs": ["run", "dev"],
       "port": 3000
     }
   ]
