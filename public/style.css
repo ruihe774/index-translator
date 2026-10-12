@@ -349,6 +349,13 @@
     &::-webkit-resizer {
       background: none;
     }
+
+    /* iOS Safari cannot resize text areas, so the drawn grip would only
+       mislead. (-webkit-touch-callout is supported by iOS WebKit alone.) */
+    @supports (-webkit-touch-callout: none) {
+      background-image: none;
+      resize: none;
+    }
   }
 
   textarea {
