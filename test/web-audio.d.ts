@@ -16,6 +16,8 @@ interface AudioBufferSourceNode {
 declare class AudioContext {
   readonly currentTime: number;
   readonly destination: unknown;
+  readonly state: string;
+  addEventListener(type: "statechange", listener: () => void): void;
   resume(): Promise<void>;
   suspend(): Promise<void>;
   decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer>;

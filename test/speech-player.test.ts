@@ -34,6 +34,16 @@ class FakeAudioContext {
   destination = {};
   sources: FakeSource[] = [];
   calls: string[] = [];
+  state = "running";
+  listeners: (() => void)[] = [];
+  addEventListener(_type: string, l: () => void) {
+    this.listeners.push(l);
+  }
+  /** The system changes the context's state (iOS: "interrupted"). */
+  setState(state: string) {
+    this.state = state;
+    for (const l of this.listeners) l();
+  }
   constructor() {
     FakeAudioContext.last = this;
   }
@@ -112,6 +122,23 @@ afterEach(() => {
 });
 
 // ---- tests -----------------------------------------------------------------------------------
+
+describe("interruption by the system", () => {
+  test("an interrupted context shows as paused, and Resume resumes it", async () => {
+    const t = setup(true);
+    t.player.start(SEGMENTS, SETTINGS);
+    await flush();
+    expect(t.player.state).toBe("playing");
+    t.ctx().setState("interrupted");
+    expect(t.player.state).toBe("paused");
+    t.ctx().setState("running"); // the system restarts it alone: it stays silent
+    expect(t.player.state).toBe("paused");
+    expect(t.ctx().calls.at(-1)).toBe("suspend");
+    t.player.resume();
+    expect(t.ctx().calls.at(-1)).toBe("resume");
+    expect(t.player.state).toBe("playing");
+  });
+});
 
 describe("starting and the state", () => {
   test("loading until the first audio arrives, then playing; starting resumes the context", async () => {

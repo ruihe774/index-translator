@@ -58,7 +58,16 @@ export class SpeechPlayer {
   start(segments: Segment[], settings: SpeechSettings): void {
     this.stop();
     if (segments.length === 0) return;
-    this.ctx ??= new AudioContext();
+    if (!this.ctx) {
+      this.ctx = new AudioContext();
+      // iOS Safari interrupts the context when the page goes to the background (another app, the
+      // home screen, a call) and does not resume it: the audio is silent but the player would
+      // still say "playing". Show it as paused; Resume then restarts the context from a tap.
+      this.ctx.addEventListener("statechange", () => this.syncWithContext());
+      (globalThis as { document?: EventTarget }).document?.addEventListener("visibilitychange", () =>
+        this.syncWithContext(),
+      );
+    }
     void this.ctx.resume();
     this.segments = segments;
     this.settings = settings;
@@ -79,6 +88,22 @@ export class SpeechPlayer {
     this.paused = false;
     void this.ctx?.resume();
     this.refresh();
+  }
+
+  /** Brings the state in line with a context the system suspended or interrupted behind our back. */
+  private syncWithContext(): void {
+    const ctx = this.ctx;
+    if (!ctx || !this.active) return;
+    // "interrupted" is Safari's state for a context stopped by the system.
+    const running = ctx.state === "running";
+    if (!this.paused && !running) {
+      // Not running while we wanted it to: the reading is paused, and a pending piece waits for Resume.
+      this.paused = true;
+      this.refresh();
+    } else if (this.paused && running) {
+      // The system restarted it by itself (the end of a call): stay paused until the user resumes.
+      void ctx.suspend();
+    }
   }
 
   stop(): void {
