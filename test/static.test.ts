@@ -162,7 +162,10 @@ describe("paths", () => {
   // "/" is the root of the current drive on Windows, so the temp directory must be on it.
   test("a public directory of / is not doubled into // and still serves", async () => {
     if (process.platform === "win32" && resolve(dir)[0] !== resolve("/")[0]) return;
-    const rel = resolve(dir).replace(/^[A-Za-z]:/, "").replaceAll("\\", "/").slice(1);
+    const rel = resolve(dir)
+      .replace(/^[A-Za-z]:/, "")
+      .replaceAll("\\", "/")
+      .slice(1);
     const res = await get("/" + rel + "/style.css", {}, "/");
     expect(res.status).toBe(200);
     await res.text();
