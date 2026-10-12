@@ -84,8 +84,6 @@
   body {
     margin: 0;
     min-block-size: 100svh;
-    /* An installed web app (iOS standalone, `viewport-fit=cover`) draws under the status bar and the home indicator; the insets are 0 in a browser tab. */
-    padding-block-start: env(safe-area-inset-top, 0px);
     display: flex;
     flex-direction: column;
     background: var(--bg);
@@ -158,7 +156,7 @@
 
   main {
     flex: 1;
-    padding-block-end: calc(2rem + env(safe-area-inset-bottom, 0px));
+    padding-block-end: 2rem;
 
     > form {
       display: flex;
@@ -946,7 +944,7 @@
     }
 
     main {
-      padding-block-end: calc(1rem + env(safe-area-inset-bottom, 0px));
+      padding-block-end: 1rem;
 
       > form {
         gap: 0.75rem;
