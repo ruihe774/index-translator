@@ -3,6 +3,7 @@
 // reads the form, calls the API and writes the results to the page.
 
 import "./elements/index.js";
+import type { SpeechControls } from "./elements/speech-controls.js";
 import type { ViewSwitch } from "./elements/view-switch.js";
 import { type ApiErrorBody, describeError } from "./errors.js";
 import { confirmLink } from "./link-dialog.js";
@@ -601,30 +602,9 @@ type Side = "source" | "output";
 const SIDES: Side[] = ["source", "output"];
 const SIDE_NAME: Record<Side, string> = { source: "source text", output: "translation" };
 
-const speechButtons: Record<
-  Side,
-  {
-    listen: HTMLButtonElement;
-    pause: HTMLButtonElement;
-    prev: HTMLButtonElement;
-    next: HTMLButtonElement;
-    why: HTMLElement;
-  }
-> = {
-  source: {
-    listen: $("listen-source"),
-    pause: $("pause-source"),
-    prev: $("prev-source"),
-    next: $("next-source"),
-    why: $("listen-source-why"),
-  },
-  output: {
-    listen: $("listen-output"),
-    pause: $("pause-output"),
-    prev: $("prev-output"),
-    next: $("next-output"),
-    why: $("listen-output-why"),
-  },
+const speechControls: Record<Side, SpeechControls> = {
+  source: $<SpeechControls>("speech-source"),
+  output: $<SpeechControls>("speech-output"),
 };
 
 /** Why nothing can be read aloud at all (not installed, no voices); empty when it can. */
@@ -681,32 +661,14 @@ function speechBlocked(side: Side): string {
 
 function refreshSpeech() {
   for (const side of SIDES) {
-    const { listen, pause, prev, next, why } = speechButtons[side];
     const mine = speaking?.side === side;
-    // The controls that appear while reading go away when it ends: do not leave focus on one.
-    if (!mine && [pause, prev, next].includes(document.activeElement as HTMLButtonElement)) listen.focus();
-    const state = mine ? player.state : "idle";
-    const blocked = mine ? "" : speechBlocked(side);
-    const label = mine ? `Stop reading the ${SIDE_NAME[side]}` : `Listen to the ${SIDE_NAME[side]}`;
-    listen.dataset.state = state;
-    listen.setAttribute("aria-disabled", String(blocked !== ""));
-    listen.setAttribute("aria-label", label);
-    listen.title = blocked || label;
-    // The reason is also the button's description: `title` alone is not reachable by keyboard or touch.
-    why.textContent = blocked;
-    prev.hidden = next.hidden = pause.hidden = !mine;
-    // While the next audio is being made, only Stop works.
-    const waiting = state === "loading";
-    prev.setAttribute("aria-disabled", String(waiting || !(mine && player.canJump(-1))));
-    next.setAttribute("aria-disabled", String(waiting || !(mine && player.canJump(1))));
-    pause.setAttribute("aria-disabled", String(waiting));
-    prev.setAttribute("aria-label", "Previous block");
-    next.setAttribute("aria-label", "Next block");
-    prev.title = "Previous block (from inside a block, its start)";
-    next.title = "Next block";
-    pause.dataset.state = state;
-    pause.title = waiting ? "Preparing the audio…" : state === "paused" ? "Resume reading" : "Pause reading";
-    pause.setAttribute("aria-label", pause.title);
+    speechControls[side].show({
+      reading: mine,
+      state: mine ? player.state : "idle",
+      blocked: mine ? "" : speechBlocked(side),
+      canPrev: mine && player.canJump(-1),
+      canNext: mine && player.canJump(1),
+    });
   }
 }
 
@@ -880,15 +842,11 @@ voiceRecord.addEventListener("click", async () => {
 // ---- wiring ----------------------------------------------------------------------------------
 
 for (const side of SIDES) {
-  speechButtons[side].listen.addEventListener("click", () => toggleSpeech(side));
-  speechButtons[side].prev.addEventListener("click", () => {
-    if (speechButtons[side].prev.getAttribute("aria-disabled") !== "true") jumpSpeech(-1);
-  });
-  speechButtons[side].next.addEventListener("click", () => {
-    if (speechButtons[side].next.getAttribute("aria-disabled") !== "true") jumpSpeech(1);
-  });
-  speechButtons[side].pause.addEventListener("click", () => {
-    if (speechButtons[side].pause.getAttribute("aria-disabled") === "true") return;
+  const controls = speechControls[side];
+  controls.addEventListener("listen", () => toggleSpeech(side));
+  controls.addEventListener("prev", () => jumpSpeech(-1));
+  controls.addEventListener("next", () => jumpSpeech(1));
+  controls.addEventListener("pause", () => {
     if (player.state === "paused") player.resume();
     else player.pause();
   });
