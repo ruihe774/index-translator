@@ -905,7 +905,8 @@
       /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
       --radius: calc(var(--radius-md) + 0.5rem + 1px);
       --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.5rem));
-      --pane-height: clamp(16rem, calc(100svh - 11rem), 48rem);
+      /* 1rem of the 12rem keeps the button row clear of iOS Safari's floating toolbar, which overlays the page and is not part of any safe-area inset; more would push the next panel's controls under it. */
+      --pane-height: clamp(16rem, calc(100svh - 12rem), 48rem);
     }
 
     .site-header {
