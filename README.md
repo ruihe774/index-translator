@@ -172,11 +172,13 @@ then send with **Translate**. Opening a file replaces what is in the box and rem
 translation of the old text; it never starts a translation.
 
 - **Plain text and Markdown** (`.txt`, `.md`, `.markdown`, UTF-8, up to 2 MB) go into the box as
-  they are.
+  they are. A text written in Markdown is shown formatted right away; **Raw** brings back the text
+  box if you want to edit it.
 - **PDF** (`.pdf`, up to 256 MB): the pages appear as small pictures beside the box. Click a page
-  to put its text into the box, as Markdown (headings, lists, tables and emphasis are kept where
-  the PDF allows). Click another page to replace it; **Close** above the pictures puts the PDF
-  away. One page at a time is taken, so a long document is translated page by page.
+  to take its text, as Markdown (headings, lists, tables and emphasis are kept where the PDF
+  allows); it is shown formatted, with **Raw** for editing. Click another page to replace it. One
+  page at a time is taken, so a long document is translated page by page. While a PDF is open,
+  **Open** reads **Close**: close the PDF before you open another file. The text you took stays.
 
 What to expect from a PDF: the text comes from the PDF's text layer. A scanned page has none, and
 the app says so instead of filling the box (it does no character recognition). Where the PDF does

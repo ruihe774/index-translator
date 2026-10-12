@@ -1,11 +1,13 @@
 // The Open button: a text or Markdown file goes into the source box, a PDF is shown as a strip of
 // page thumbnails (elements/pdf-pages.ts) and the page that is clicked goes into the box as
-// Markdown. Nothing is translated by opening. The page (app.ts) supplies how a text is put in the
+// Markdown. While a PDF is open the button reads Close and puts it away. Nothing is translated by
+// opening. The page (app.ts) supplies how a text is put in the
 // box; open-file.ts holds the rules and the wording, pdf.ts the libraries.
 //
 // Everything happens in this browser: no request carries the file or says that one was opened.
 
 import type { PdfPages } from "./elements/pdf-pages.js";
+import { looksLikeMarkdown } from "./markdown.js";
 import { ACCEPT_PDF, ACCEPT_TEXT, decodeText, fileKind, pageNote, refusal } from "./open-file.js";
 import { openPdf, type PdfDocument, PdfError, pdfInstalled } from "./pdf.js";
 
@@ -15,8 +17,12 @@ export interface OpenUiDeps {
   pages: PdfPages;
   /** The line under the source's button row that says what was opened, or why not. */
   note: HTMLElement;
-  /** Puts `text` in the source box in place of what is there and drops the translation of the old text. */
-  load: (text: string) => void;
+  /**
+   * Puts `text` in the source box in place of what is there and drops the translation of the old
+   * text. `preview` shows it rendered instead of in the text box: it was not typed, so it is more
+   * likely read than edited (a Markdown file, a PDF page).
+   */
+  load: (text: string, preview: boolean) => void;
 }
 
 export interface OpenUi {
@@ -42,10 +48,17 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     d.note.classList.toggle("hint", kind === "plain");
   }
 
-  function closePdf() {
+  /**
+   * Shows `next` as the open PDF, or none. While one is open the button closes it instead of
+   * opening another file, so a document is never put away by picking the next one.
+   */
+  function setPdf(next: { name: string; doc: PdfDocument } | null) {
     pdf?.doc.close();
-    pdf = null;
-    d.pages.clear();
+    pdf = next;
+    if (next) d.pages.show(next.doc);
+    else d.pages.clear();
+    d.button.textContent = next ? "Close" : "Open";
+    d.button.setAttribute("aria-label", next ? "Close the PDF" : "Open a file");
   }
 
   async function openText(file: File, mine: number) {
@@ -55,8 +68,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       say(`${file.name} was not opened: it is not text in UTF-8.`, "error");
       return;
     }
-    closePdf();
-    d.load(text);
+    d.load(text, looksLikeMarkdown(text));
     say(`Opened ${file.name}.`);
   }
 
@@ -75,9 +87,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       doc.close();
       return;
     }
-    closePdf();
-    pdf = { name: file.name, doc };
-    d.pages.show(doc);
+    setPdf({ name: file.name, doc });
     const pages = doc.pageCount === 1 ? "1 page" : `${doc.pageCount} pages`;
     say(`${file.name}: ${pages}. Select a page to put its text in the box.`);
   }
@@ -104,7 +114,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       if (mine !== turn || busy) return;
       const note = pageNote(name, page, doc.pageCount, result);
       if (!note.failed) {
-        d.load(result.markdown);
+        d.load(result.markdown, true);
         d.pages.selected = page;
       }
       say(note.text, note.failed ? "error" : note.warning ? "warning" : "plain");
@@ -118,20 +128,21 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   }
 
   d.button.addEventListener("click", () => {
-    if (d.button.getAttribute("aria-disabled") !== "true") d.input.click();
+    if (d.button.getAttribute("aria-disabled") === "true") return;
+    if (!pdf) {
+      d.input.click();
+      return;
+    }
+    turn++;
+    setPdf(null);
+    say("");
   });
   d.input.addEventListener("change", () => {
     const file = d.input.files?.[0];
     d.input.value = ""; // so picking the same file again is a change
-    if (file && !busy) open(file);
+    if (file && !busy && !pdf) open(file);
   });
   d.pages.addEventListener("page", (e) => void takePage((e as CustomEvent<number>).detail));
-  d.pages.addEventListener("close", () => {
-    turn++;
-    closePdf();
-    say("");
-    d.button.focus();
-  });
 
   // Without the libraries the picker offers no PDFs, and one that is picked anyway is refused by openPdf.
   d.input.accept = `${ACCEPT_TEXT},${ACCEPT_PDF}`;

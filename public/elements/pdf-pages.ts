@@ -1,9 +1,9 @@
 // <pdf-pages>: the strip of page thumbnails beside the source box while a PDF is open.
 //
-// A light-DOM element that enhances the markup in index.html (a Close button and an empty list)
-// and fills the list with one button per page. It knows nothing about PDF libraries: the page
-// hands it something that can draw a page into a canvas (`show`), and hears `page` (detail: the
-// 1-based page number) when a thumbnail is clicked and `close` for the Close button.
+// A light-DOM element that enhances the markup in index.html (an empty list) and fills the list
+// with one button per page. It knows nothing about PDF libraries: the page hands it something
+// that can draw a page into a canvas (`show`), and hears `page` (detail: the 1-based page number)
+// when a thumbnail is clicked. Putting the PDF away is the page's business (`clear`).
 //
 // Thumbnails are drawn one at a time and only once they scroll near the strip's visible part, so
 // a long document costs what is looked at. `disabled` is `aria-disabled` on every button (never
@@ -27,11 +27,7 @@ export class PdfPages extends HTMLElement {
     this.addEventListener("click", (e) => {
       const button = (e.target as Element).closest("button");
       if (!button || !this.contains(button) || button.getAttribute("aria-disabled") === "true") return;
-      if (button.dataset.page !== undefined) {
-        this.dispatchEvent(new CustomEvent("page", { detail: Number(button.dataset.page) }));
-      } else {
-        this.dispatchEvent(new Event("close"));
-      }
+      this.dispatchEvent(new CustomEvent("page", { detail: Number(button.dataset.page) }));
     });
   }
 

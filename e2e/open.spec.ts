@@ -19,6 +19,8 @@ function pick(page: Page, name: string, content: string | Buffer, mimeType = "")
 }
 
 const note = (page: Page) => page.locator("#file-note");
+/** The text box by id: it holds the source also while the preview is shown in its place. */
+const box = (page: Page) => page.locator("#text");
 const thumbnail = (page: Page, n: number) => page.locator(`#pdf-pages button[data-page="${n}"]`);
 
 /** Every request to the API while the test ran, to show that a file stays in the browser. */
@@ -45,13 +47,26 @@ test.describe("text and Markdown", () => {
     expect(api.filter((r) => r.method !== "GET")).toEqual([]);
   });
 
-  test("a Markdown file is opened as its source, ready for Preview", async ({ app }) => {
+  test("a Markdown file is opened in Preview, with Raw one click away; plain text opens in the box", async ({
+    app,
+  }) => {
     await app.open();
+    const view = app.page.getByRole("group", { name: "Source view" });
     await pick(app.page, "doc.md", "# Title\n\nA paragraph with *emphasis*.\n");
-    await expect(app.text).toHaveValue("# Title\n\nA paragraph with *emphasis*.\n");
-    await app.page.getByRole("group", { name: "Source view" }).getByRole("button", { name: "Preview" }).click();
+    await expect(box(app.page)).toHaveValue("# Title\n\nA paragraph with *emphasis*.\n");
+    await expect(view.getByRole("button", { name: "Preview" })).toHaveAttribute("aria-pressed", "true");
     await expect(app.page.locator("#source-view").getByRole("heading", { name: "Title" })).toBeVisible();
     await expect(app.page.locator("#source-view em")).toHaveText("emphasis");
+    await expect(app.text).toBeHidden();
+
+    await view.getByRole("button", { name: "Raw" }).click();
+    await expect(app.text).toBeVisible();
+    await expect(app.text).toHaveValue("# Title\n\nA paragraph with *emphasis*.\n");
+
+    await pick(app.page, "notes.txt", "Just a line.\n");
+    await expect(view.getByRole("button", { name: "Raw" })).toHaveAttribute("aria-pressed", "true");
+    await expect(app.text).toBeVisible();
+    await expect(app.text).toHaveValue("Just a line.\n");
   });
 
   test("opening a file replaces the text and drops the translation of the old one", async ({ app, mock }) => {
@@ -136,14 +151,22 @@ test.describe("PDF", () => {
     await app.open();
     await app.page.locator("#open-file").setInputFiles(SAMPLE);
     await thumbnail(app.page, 2).click();
-    await expect(app.text).toHaveValue(/^# Mountains of the South\n\nThe second page is about mountains\./);
+    await expect(box(app.page)).toHaveValue(/^# Mountains of the South\n\nThe second page is about mountains\./);
     await expect(thumbnail(app.page, 2)).toHaveAttribute("aria-current", "true");
     await expect(note(app.page)).toHaveText("sample.pdf, page 2 of 3.");
     await expect(app.output).toHaveText("");
+    // Shown rendered: the text was not typed, so it is more likely read than edited.
+    const preview = app.page.getByRole("group", { name: "Source view" }).getByRole("button", { name: "Preview" });
+    await expect(preview).toHaveAttribute("aria-pressed", "true");
+    await expect(
+      app.page.locator("#source-view").getByRole("heading", { name: "Mountains of the South" }),
+    ).toBeVisible();
+    await expect(app.text).toBeHidden();
 
     await thumbnail(app.page, 1).click();
-    await expect(app.text).toHaveValue(/^# Rivers of the North\n/);
-    await expect(app.text).not.toHaveValue(/Mountains/);
+    await expect(box(app.page)).toHaveValue(/^# Rivers of the North\n/);
+    await expect(box(app.page)).not.toHaveValue(/Mountains/);
+    await expect(app.page.locator("#source-view").getByRole("heading", { name: "Rivers of the North" })).toBeVisible();
     await expect(thumbnail(app.page, 1)).toHaveAttribute("aria-current", "true");
     await expect(thumbnail(app.page, 2)).not.toHaveAttribute("aria-current");
 
@@ -167,14 +190,60 @@ test.describe("PDF", () => {
     await thumbnail(app.page, 3).click();
     await expect(note(app.page)).toContainText("sample.pdf, page 3 of 3: some of the text could not be read");
     await expect(note(app.page)).toHaveClass(/advice/);
-    await expect(app.text).not.toHaveValue("");
+    await expect(box(app.page)).not.toHaveValue("");
   });
 
-  test("Close removes the thumbnails and keeps the text; Clear keeps the thumbnails", async ({ app }) => {
+  test("a clicked thumbnail shows that its page is being read", async ({ app }) => {
+    await app.open();
+    await app.page.locator("#open-file").setInputFiles(SAMPLE);
+    await expect(thumbnail(app.page, 1)).toBeVisible();
+    // The small page is read within milliseconds, so the state is looked at in the click's own task.
+    const during = await thumbnail(app.page, 1).evaluate((button: HTMLElement) => {
+      button.click();
+      return {
+        busy: button.getAttribute("aria-busy"),
+        spinner: getComputedStyle(button, "::after").content,
+        note: document.getElementById("file-note")?.textContent,
+      };
+    });
+    expect(during).toEqual({ busy: "true", spinner: '""', note: "sample.pdf: reading page 1…" });
+    await expect(thumbnail(app.page, 1)).toHaveAttribute("aria-current", "true");
+    await expect(thumbnail(app.page, 1)).not.toHaveAttribute("aria-busy");
+    expect(await thumbnail(app.page, 1).evaluate((b) => getComputedStyle(b, "::after").content)).toBe("none");
+  });
+
+  test("the corners of the strip, a page button and its picture are concentric", async ({ app }) => {
+    await app.open();
+    await app.page.locator("#open-file").setInputFiles(SAMPLE);
+    await expect(thumbnail(app.page, 1)).toBeVisible();
+    const px = (selector: string, property: string) =>
+      app.page
+        .locator(selector)
+        .first()
+        .evaluate((el, p) => Number.parseFloat(getComputedStyle(el).getPropertyValue(p)), property);
+    const strip = await px("#pdf-pages", "border-top-left-radius");
+    const button = await px("#pdf-pages button", "border-top-left-radius");
+    const canvas = await px("#pdf-pages canvas", "border-top-left-radius");
+    // Each radius is the one around it less the padding and the 1px border between them.
+    expect(button).toBeCloseTo(strip - (await px("#pdf-pages", "padding-top")) - 1, 1);
+    expect(canvas).toBeCloseTo(Math.max(4, button - (await px("#pdf-pages button", "padding-top")) - 1), 1);
+    expect(canvas).toBeGreaterThan(0);
+  });
+
+  test("Open becomes Close while a PDF is open; Clear keeps the thumbnails", async ({ app }) => {
     await app.open();
     await app.page.locator("#open-file").setInputFiles(SAMPLE);
     await thumbnail(app.page, 1).click();
-    await expect(app.text).toHaveValue(/Rivers/);
+    await expect(box(app.page)).toHaveValue(/Rivers/);
+
+    // One button: it closes the open PDF, and nothing else can be opened until it has.
+    const close = app.page.getByRole("button", { name: "Close the PDF" });
+    await expect(close).toHaveText("Close");
+    await expect(app.page.getByRole("button", { name: "Open a file" })).toHaveCount(0);
+    await expect(app.page.locator("#pdf-pages button:not([data-page])")).toHaveCount(0);
+    await pick(app.page, "notes.txt", "not opened");
+    await expect(box(app.page)).toHaveValue(/Rivers/);
+    await expect(app.page.locator("#pdf-pages")).toBeVisible();
 
     await app.page.getByRole("button", { name: "Clear", exact: true }).click();
     await expect(app.text).toHaveValue("");
@@ -182,28 +251,29 @@ test.describe("PDF", () => {
     await expect(thumbnail(app.page, 1)).not.toHaveAttribute("aria-current");
 
     await thumbnail(app.page, 2).click();
-    await expect(app.text).toHaveValue(/Mountains/);
-    await app.page.getByRole("button", { name: "Close the PDF" }).click();
+    await expect(box(app.page)).toHaveValue(/Mountains/);
+    await close.click();
     await expect(app.page.locator("#pdf-pages")).toBeHidden();
     await expect(note(app.page)).toBeHidden();
-    await expect(app.text).toHaveValue(/Mountains/);
+    await expect(box(app.page)).toHaveValue(/Mountains/);
+    const open = app.page.getByRole("button", { name: "Open a file" });
+    await expect(open).toHaveText("Open");
+    await expect(open).toBeFocused();
 
-    // A text file closes the PDF too.
+    // And the same file can be opened again.
     await app.page.locator("#open-file").setInputFiles(SAMPLE);
-    await expect(app.page.locator("#pdf-pages")).toBeVisible();
-    await pick(app.page, "notes.txt", "plain");
-    await expect(app.page.locator("#pdf-pages")).toBeHidden();
-    await expect(app.text).toHaveValue("plain");
+    await expect(app.page.locator("#pdf-pages button[data-page]")).toHaveCount(3);
   });
 
-  test("thumbnails wait for a running translation", async ({ app, mock }) => {
+  test("thumbnails and Close wait for a running translation", async ({ app, mock }) => {
     await mock.set({ chunks: [THINK, "一", "二", "三"], delayMs: 300 });
     await app.open();
     await app.page.locator("#open-file").setInputFiles(SAMPLE);
     await thumbnail(app.page, 1).click();
-    await expect(app.text).toHaveValue(/Rivers/);
+    await expect(box(app.page)).toHaveValue(/Rivers/);
     await app.translate.click();
     await expect(thumbnail(app.page, 2)).toHaveAttribute("aria-disabled", "true");
+    await expect(app.page.getByRole("button", { name: "Close the PDF" })).toHaveAttribute("aria-disabled", "true");
     await thumbnail(app.page, 2).click({ force: true });
     await app.stop.click();
     await expect(thumbnail(app.page, 2)).toHaveAttribute("aria-disabled", "false");

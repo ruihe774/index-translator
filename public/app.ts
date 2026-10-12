@@ -525,13 +525,17 @@ async function translate() {
   }
 }
 
-/** Puts `text` in the plain textarea in place of the source and drops the result: a new start. */
-function loadSource(text: string) {
+/**
+ * Puts `text` in place of the source and drops the result: a new start. It is shown in the text
+ * box, or with `preview` rendered as after Translate (Markdown when it looks like it).
+ */
+function loadSource(text: string, preview = false) {
   speech.stop();
   textInput.value = text;
   textInput.scrollTop = 0;
+  sourceArea.scrollTop = 0;
   showFieldError(textError, textInput, null);
-  views.source = { available: false, view: "raw" };
+  views.source = { available: preview && looksLikeMarkdown(text), view: preview && text ? "preview" : "raw" };
   showSource();
   clearResult(false);
   placeholderEl.hidden = false;
