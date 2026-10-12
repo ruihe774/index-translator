@@ -6,6 +6,7 @@ import "./elements/index.js";
 import type { MetaLine } from "./elements/meta-line.js";
 import type { SpeechControls } from "./elements/speech-controls.js";
 import type { ViewSwitch } from "./elements/view-switch.js";
+import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.js";
 import { type ApiErrorBody, describeError } from "./errors.js";
 import { confirmLink } from "./link-dialog.js";
 import { type LinkReference, linkReference } from "./links.js";
@@ -31,7 +32,7 @@ import { canSpeak, speechSegments } from "./speech-text.js";
 import { sseEvents } from "./sse.js";
 import { bindRender, setState, state } from "./state.js";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.js";
-import { audioToWav, MicRecorder, uploadVoice } from "./voice-sample.js";
+import { audioToWav, uploadVoice } from "./voice-sample.js";
 
 const API = "/api/v1";
 const HEALTH_LOADING_POLL_MS = 2000;
@@ -74,12 +75,7 @@ const placeholderEl = $("placeholder");
 const metaEl = $<MetaLine>("meta");
 const notesEl = $("notes");
 const speechSettings = $("speech-settings");
-const voiceSelect = $<HTMLSelectElement>("voice");
-const speedSelect = $<HTMLSelectElement>("speed");
-const voiceFile = $<HTMLInputElement>("voice-file");
-const voiceFileButton = $("voice-file-button");
-const voiceRecord = $("voice-record");
-const cloneStatus = $("clone-status");
+const voiceSettings = $<VoiceSettings>("voice-settings");
 
 // ---- small helpers ---------------------------------------------------------------------------
 
@@ -689,7 +685,7 @@ function toggleSpeech(side: Side) {
   }
   player.stop();
   speaking = { side, line: null };
-  player.start(segments, { lang: lang!, voice: voiceSelect.value, speed: Number(speedSelect.value) });
+  player.start(segments, { lang: lang!, voice: voiceSettings.voice, speed: voiceSettings.speed });
 }
 
 /** Jumps a block back or forward and says where that is, since the shaded block may be out of view. */
@@ -726,12 +722,8 @@ function loadVoices(): Promise<void> {
         if (body.voices.length === 0) {
           speechProblem = "Reading aloud needs a voice: upload or record a sample under Model and options.";
         } else speechProblem = "";
-        const before = voiceSelect.value;
-        const wanted = [before, stored("voice")].find((id) => body.voices.some((v) => v.id === id));
-        voiceSelect.replaceChildren(...body.voices.map((v) => new Option(v.name, v.id)));
-        if (wanted) voiceSelect.value = wanted;
         // The voice being read with is gone: the next piece uses the one now selected.
-        if (voiceSelect.value !== before && voiceSelect.value) player.update({ voice: voiceSelect.value });
+        if (voiceSettings.setVoices(body.voices, stored("voice"))) player.update({ voice: voiceSettings.voice });
         speechSettings.hidden = false;
       }
       voicesStale = false;
@@ -763,56 +755,19 @@ async function recheckVoicesNow(announce: boolean) {
 /** Adds an uploaded voice to the list, selects it and tells the player. */
 async function addSampleVoice(name: string, audio: ArrayBuffer) {
   // The server may first take the voice out of music and noise, which takes a few seconds.
-  cloneStatus.textContent = "Processing the sample…";
+  voiceSettings.status = "Processing the sample…";
   try {
     const voice = await uploadVoice(API, name, await audioToWav(audio));
-    voiceSelect.append(new Option(voice.name, voice.id));
-    voiceSelect.value = voice.id;
+    voiceSettings.addVoice(voice);
     store("voice", voice.id);
     player.update({ voice: voice.id });
     speechProblem = "";
     refreshSpeech();
-    cloneStatus.textContent = `Voice "${voice.name}" added. It is kept until the server stops.`;
+    voiceSettings.status = `Voice "${voice.name}" added. It is kept until the server stops.`;
   } catch (e) {
-    cloneStatus.textContent = e instanceof Error ? e.message : String(e);
+    voiceSettings.status = e instanceof Error ? e.message : String(e);
   }
 }
-
-const recorder = new MicRecorder();
-async function finishRecording() {
-  // Idempotent: the 30 s limit and a click on Stop may both arrive; the first one wins.
-  if (!recorder.recording) return;
-  voiceRecord.textContent = "Record";
-  let audio: ArrayBuffer;
-  try {
-    audio = await recorder.stop();
-  } catch (e) {
-    cloneStatus.textContent = e instanceof Error ? e.message : String(e);
-    return;
-  }
-  await addSampleVoice(`Recording ${new Date().toLocaleTimeString()}`, audio);
-}
-
-voiceFileButton.addEventListener("click", () => voiceFile.click());
-voiceFile.addEventListener("change", async () => {
-  const file = voiceFile.files?.[0];
-  voiceFile.value = "";
-  if (!file) return;
-  await addSampleVoice(file.name.replace(/\.[^.]*$/, ""), await file.arrayBuffer());
-});
-voiceRecord.addEventListener("click", async () => {
-  if (recorder.recording) return finishRecording();
-  if (recorder.starting || recorder.stopping) return; // a permission prompt or a stop is already under way
-  cloneStatus.textContent = "Waiting for the microphone…";
-  try {
-    await recorder.start(() => void finishRecording());
-  } catch (e) {
-    cloneStatus.textContent = e instanceof Error ? e.message : String(e);
-    return;
-  }
-  voiceRecord.textContent = "Stop recording";
-  cloneStatus.textContent = "Recording… speak for 5 to 30 seconds, then stop.";
-});
 
 // ---- wiring ----------------------------------------------------------------------------------
 
@@ -826,18 +781,21 @@ for (const side of SIDES) {
     else player.pause();
   });
 }
-voiceSelect.addEventListener("change", () => {
-  store("voice", voiceSelect.value);
-  player.update({ voice: voiceSelect.value });
+voiceSettings.addEventListener("voicechange", () => {
+  store("voice", voiceSettings.voice);
+  player.update({ voice: voiceSettings.voice });
   if (speechProblem || voicesStale) void recheckVoicesNow(false);
 });
-speedSelect.addEventListener("change", () => {
-  store("speed", speedSelect.value);
-  player.update({ speed: Number(speedSelect.value) });
+voiceSettings.addEventListener("speedchange", () => {
+  store("speed", String(voiceSettings.speed));
+  player.update({ speed: voiceSettings.speed });
   if (speechProblem || voicesStale) void recheckVoicesNow(false);
 });
-const savedSpeed = stored("speed");
-if ([...speedSelect.options].some((o) => o.value === savedSpeed)) speedSelect.value = savedSpeed!;
+voiceSettings.addEventListener("sample", (e) => {
+  const { name, audio } = (e as CustomEvent<SampleDetail>).detail;
+  void addSampleVoice(name, audio);
+});
+voiceSettings.speed = stored("speed");
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
