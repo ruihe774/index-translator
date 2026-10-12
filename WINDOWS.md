@@ -64,3 +64,26 @@ console in the repository directory. It finds the repository by walking up from 
   by the build; the `.obj` is deleted afterwards.
 - Run it by double-clicking. It is not built in CI and has no automated test; check changes by hand
   at more than one display scale (all sizes are 96-dpi units scaled by the window's DPI).
+
+## Building the installer
+
+`bun scripts/build_installer.ts` makes `dist/Index_Translator-Setup-x86_64.exe` with Inno Setup
+(`packaging/windows/installer.iss`; the script stages the files in `vendor/.build/installer/stage`).
+Windows has no AppImage-style single file, so the installer unpacks the repository layout: `bun.exe`,
+`src/`, `public/`, `prompts/`, the engines' DLLs (no `.lib`, no headers) and `launcher.exe`, which
+is the shortcut's target. The launcher's commands run in the install directory, and `cmd` finds
+`bun.exe` there first, so the user needs no Bun on the `PATH`.
+
+- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`) and the launcher's MSVC
+  tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads
+  and installs Inno Setup 6.7.3 for the current user (pinned checksum) when `ISCC.exe` is not found.
+- Per-user install by default (`%LOCALAPPDATA%\Programs\Index Translator`, no administrator rights),
+  so `models\` and `voices\` beside the program stay writable; the "Download models" link fills them.
+  The uninstaller removes only what the installer put there, so models and voices stay.
+- The Visual C++ runtime the engines import (`msvcp140`, `vcruntime140`, `vcruntime140_1`, `vcomp140`)
+  is copied from the build machine's Visual Studio (`VCToolsRedistDir`) next to `bun.exe`, so neither
+  the redistributable installer nor administrator rights are needed (app-local deployment). The
+  Universal CRT comes with Windows 10 and later. Not tested on a machine without the redistributable.
+- CI job `installer-windows` builds it (reusing the engine caches), installs it silently, checks that
+  the installed `bun.exe` loads the engines and stops with the same reasons as `engines-windows`,
+  uninstalls it, and uploads the installer as an artifact. Installing and uninstalling were also run by hand.

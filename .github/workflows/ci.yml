@@ -248,3 +248,86 @@ jobs:
             vendor/audio.cpp/*.dll
           if-no-files-found: error
           retention-days: 7
+
+  # The installer packs the engines built by `engines-windows` (same caches, same keys), Bun and the
+  # launcher. The runner has no GPU or models, so what is checked is that the installer installs
+  # silently, that the installed program opens its engines and stops with a reason, and that it
+  # uninstalls.
+  installer-windows:
+    name: Installer (Windows)
+    needs: engines-windows
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      VULKAN_SDK_VERSION: "1.4.363.0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "vulkan_sdk.exe"
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkan_sdk.exe" -OutFile $installer
+          Start-Process $installer -Wait -ArgumentList "--accept-licenses", "--default-answer", "--confirm-command", "install"
+          $sdk = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          if (-not (Test-Path "$sdk\Bin\glslc.exe")) { throw "the Vulkan SDK was not installed to $sdk" }
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          "$sdk\Bin" >> $env:GITHUB_PATH
+
+      - name: Cache the translation engine
+        id: llama
+        uses: actions/cache@v6
+        with:
+          path: vendor/llama.cpp
+          key: llama-windows-2022-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+
+      - name: Build the translation engine (llama.cpp)
+        if: ${{ steps.llama.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_llama.ts
+
+      - name: Cache the speech engine
+        id: audio
+        uses: actions/cache@v6
+        with:
+          path: vendor/audio.cpp
+          key: audio-windows-2022-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build the speech engine (audio.cpp)
+        if: ${{ steps.audio.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_audiocpp.ts
+
+      - name: Build the installer
+        run: bun scripts/build_installer.ts
+
+      - name: Check that the installed program starts, stops with a reason, and uninstalls
+        shell: bash
+        run: |
+          # Git Bash would turn the installer's /VERYSILENT and /DIR= into paths and start the wizard.
+          export MSYS2_ARG_CONV_EXCL='*'
+          dir="$(cygpath -w "$RUNNER_TEMP")\installed"
+          dist/Index_Translator-Setup-x86_64.exe /VERYSILENT /SUPPRESSMSGBOXES /NORESTART /DIR="$dir"
+          test -f "$dir/launcher.exe"
+          expect() { # <words the output must contain> <command...>
+            local want=$1 out code=0
+            shift
+            out=$("$@" 2>&1) || code=$?
+            printf '%s\n(exit code %s)\n\n' "$out" "$code"
+            [ "$code" -eq 1 ] && grep -qF -- "$want" <<<"$out"
+          }
+          cd "$dir"
+          expect "GPU_LAYERS=0" ./bun.exe --no-env-file src/server.ts --open-browser 0
+          expect "Download the models with:" ./bun.exe --no-env-file src/server.ts --open-browser 0 --gpu-layers 0
+          cd "$RUNNER_TEMP"
+          "$dir/unins000.exe" /VERYSILENT
+          for _ in 1 2 3 4 5 6 7 8 9 10; do [ -e "$dir/bun.exe" ] || break; sleep 1; done
+          [ ! -e "$dir/bun.exe" ]
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Index_Translator-Setup-x86_64.exe
+          path: dist/Index_Translator-Setup-x86_64.exe
+          if-no-files-found: error
