@@ -80,10 +80,12 @@ is the shortcut's target. The launcher's commands run in the install directory, 
 - Per-user install by default (`%LOCALAPPDATA%\Programs\Index Translator`, no administrator rights),
   so `models\` and `voices\` beside the program stay writable; the "Download models" link fills them.
   The uninstaller removes only what the installer put there, so models and voices stay.
-- The Visual C++ runtime the engines import (`msvcp140`, `vcruntime140`, `vcruntime140_1`, `vcomp140`)
-  is copied from the build machine's Visual Studio (`VCToolsRedistDir`) next to `bun.exe`, so neither
-  the redistributable installer nor administrator rights are needed (app-local deployment). The
-  Universal CRT comes with Windows 10 and later. Not tested on a machine without the redistributable.
+- The Visual C++ runtime (the x64 Redistributable the engines import) is not packed. The installer
+  includes `packaging/windows/CodeDependencies.iss` (a copy of DomGries/InnoDependencyInstaller) and
+  calls `Dependency_AddVC14`: when the runtime is missing or older than the version the script names,
+  the installer downloads Microsoft's redistributable (checksum pinned in that file) and runs it,
+  which asks for administrator rights itself. Needs network only on a machine without the runtime.
+  The Universal CRT comes with Windows 10 and later. Not tested without the redistributable.
 - CI job `installer-windows` builds it (reusing the engine caches), installs it silently, checks that
   the installed `bun.exe` loads the engines and stops with the same reasons as `engines-windows`,
   uninstalls it, and uploads the installer as an artifact. Installing and uninstalling were also run by hand.

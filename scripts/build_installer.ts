@@ -15,7 +15,7 @@ import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
-import { download, msvc, output, run } from "./build_tools";
+import { download, output, run } from "./build_tools";
 
 if (process.platform !== "win32" || process.arch !== "x64")
   throw new Error("the installer is built on, and for, x86-64 Windows");
@@ -48,30 +48,6 @@ async function copyEngine(from: string, to: string): Promise<void> {
   for (const name of await readdir(from)) {
     if (name !== "include" && !name.endsWith(".lib") && !name.endsWith(".exp"))
       await cp(join(from, name), join(to, name));
-  }
-}
-
-/** What the engines import from the Visual C++ runtime; the Universal CRT (api-ms-win-crt-*) is part of Windows 10 and later. */
-const RUNTIME_DLLS = ["msvcp140.dll", "vcruntime140.dll", "vcruntime140_1.dll", "vcomp140.dll"];
-
-/**
- * Copies those DLLs from the redistributable files of the Visual Studio that built the engines,
- * beside bun.exe, so the program runs without the redistributable installed (app-local
- * deployment, no administrator rights).
- */
-async function copyRuntime(to: string): Promise<void> {
-  const redist = (await msvc()).env.VCToolsRedistDir;
-  if (!redist) throw new Error("VCToolsRedistDir is not set; Visual Studio's redistributable files are missing");
-  const x64 = join(redist, "x64");
-  const dirs = (await readdir(x64, { withFileTypes: true })).filter((entry) => entry.isDirectory());
-  for (const name of RUNTIME_DLLS) {
-    let found: string | undefined;
-    for (const dir of dirs) {
-      const file = join(x64, dir.name, name);
-      if (await Bun.file(file).exists()) found = file;
-    }
-    if (!found) throw new Error(`${name} is not in ${x64}`);
-    await cp(found, join(to, name));
   }
 }
 
@@ -120,7 +96,6 @@ await copyEngine(llama, join(stage, "vendor", "llama.cpp"));
 await copyEngine(audio, join(stage, "vendor", "audio.cpp"));
 await cp(launcher, join(stage, "launcher.exe"));
 await cp(process.execPath, join(stage, "bun.exe"));
-await copyRuntime(stage);
 
 const commit = (await output(["git", "describe", "--tags", "--always", "--dirty"], root)) || "unknown";
 const version = [
