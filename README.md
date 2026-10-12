@@ -42,8 +42,8 @@ Compared with widely used online translation tools:
 
 ## Start the app
 
-There are two ways to run it: the AppImage, which is one file with everything but the models, or
-the source.
+There are three ways to run it: the AppImage on Linux or the installer on Windows (both bring
+everything but the models), or the source.
 
 Either way you need a GPU with a working Vulkan driver. It was tested on an AMD Radeon RX 9070
 (16 GiB). Without a usable GPU, set `GPU_LAYERS=0` to run on the CPU, which is much slower. If
@@ -75,6 +75,34 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
   the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
   an x86-64 processor with AVX2.
 
+### With the Windows installer
+
+`Index_Translator-Setup-x86_64.exe` is built for every change: on GitHub, open **Actions**, the
+latest **CI** run, and download it under **Artifacts** (GitHub hands it out as a zip file; unpack
+it). It needs 64-bit Windows 10 or 11. Then:
+
+1. Run the installer. It installs for your user only (into `%LOCALAPPDATA%\Programs\Index Translator`
+   unless you choose another folder) and needs no administrator rights. The installer is not
+   signed, so Windows SmartScreen may warn you: choose **More info**, then **Run anyway**.
+2. Start **Index Translator** from the Start menu (or let the installer start it). A small window
+   with four links opens.
+3. Once, click **Download models**: it fetches the models and example voices (about 17.7 GiB) in a
+   console window, shows each model's license and waits for you to type `yes`. An interrupted
+   download continues when you run it again.
+4. Click **Start translator**. The app opens in your browser; the port (3000) can be changed in the
+   window first. The server runs in its console window: stop the app with `Ctrl+C` or by closing
+   that window.
+
+**Third-party notices** shows the licenses of the bundled software (also in
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); **Server settings** lists every option. For options
+the window does not offer, open Command Prompt in the install folder and start the server there,
+for example `bun src\server.ts --port 8080`.
+
+The models are downloaded into the `models` folder and the voices into the `voices` folder inside
+the install folder. Uninstalling (Windows **Settings**, **Apps**) leaves them in place, so delete
+the folder by hand if you want the space back. Downloading needs `curl`, which Windows 10 and later
+include. Reading aloud needs a processor with AVX2.
+
 ### From the source
 
 ```bash
@@ -99,7 +127,15 @@ compiler, `glslc` and the Vulkan headers. On Debian and Ubuntu:
 `sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers`.
 The translation engine then runs on any x86-64 processor, the speech engine on those with AVX2.
 
-`bun scripts/build_appimage.ts` packs what you have built into an AppImage of your own, in `dist/`.
+On Windows the same three commands work in Command Prompt or PowerShell. Instead of the packages
+above you need Git, CMake (on the `PATH`), Visual Studio 2022 or its Build Tools with the "Desktop
+development with C++" workload, and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (for
+`glslc`); `curl` comes with Windows. Open a new terminal after installing them, so it sees the new
+`PATH`. More in [WINDOWS.md](WINDOWS.md).
+
+`bun scripts/build_appimage.ts` packs what you have built into an AppImage of your own, and on
+Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Setup if it is not
+installed), both in `dist/`.
 
 ## Translate text
 
@@ -159,7 +195,8 @@ highlighted in the formatted view.
 - **Voice and speed:** choose them under **Model and options**. Speed goes from 0.5× to 2×. A
   change while listening takes effect from the sentence being read, which starts again.
 - **Voices:** the speech model imitates the speaker of a short recording. Every `.wav` file in the
-  `voices` folder (with the AppImage: `~/.local/share/index-translator/voices`) is a voice; the
+  `voices` folder (AppImage: `~/.local/share/index-translator/voices`; Windows installer: the `voices`
+  folder inside the install folder) is a voice; the
   download puts the example voices of the IndexTTS demo there. To add your own, put a clean
   recording of a few seconds of speech (one speaker, no music) into the folder and reload the
   page. Only use voices of people who agreed to it.
@@ -210,6 +247,9 @@ bun src/server.ts --port 8080
 ./Index_Translator-x86_64.AppImage --port 8080
 ```
 
+In Windows Command Prompt, set a variable with `set PORT=8080` (it lasts until the window is
+closed); flags work as above.
+
 | Variable | Default | What it does |
 |---|---|---|
 | `PORT` | `3000` | Port the app listens on |
@@ -219,8 +259,8 @@ bun src/server.ts --port 8080
 | `LLAMA_THREADS` | half the CPU threads | CPU threads for the engine; matters when running on the CPU |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
-| `MODELS_DIR` | `models/`; AppImage: `~/.local/share/index-translator/models` | Folder with the models; `fetch` downloads into it |
-| `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices` | Folder with the voice recordings (`.wav`) |
+| `MODELS_DIR` | `models/`; AppImage: `~/.local/share/index-translator/models`; Windows installer: `models\` in the install folder | Folder with the models; `fetch` downloads into it |
+| `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices`; Windows installer: `voices\` in the install folder | Folder with the voice recordings (`.wav`) |
 | `SPEECH_IDLE_UNLOAD` | `300` | Seconds without listening after which the speech model leaves the GPU; `0` keeps it loaded |
 
 Only one translation runs at a time. Other requests wait in line.
