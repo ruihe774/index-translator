@@ -290,8 +290,8 @@ test("nested corners are concentric: outer radius = inner radius + padding + bor
       const settings = document.querySelector(".settings")!;
       const field = settings.querySelector("fieldset, .view-switch button, select")!;
       return {
-        panel: [rad(panel), rad(pane), gap(panel, pane)],
-        settings: [rad(settings), rad(field), gap(settings, field)],
+        panel: [rad(panel), rad(pane), gap(panel, pane)] as const,
+        settings: [rad(settings), rad(field), gap(settings, field)] as const,
       };
     });
     // gap() includes the 1px border of the outer box.
