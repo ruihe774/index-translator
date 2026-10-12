@@ -50,8 +50,8 @@ static int find_root(void) {
   }
 }
 
-/* Run `cmd /k <line>` in a new console, in the repository directory. */
-static void run(HWND owner, const WCHAR *line) {
+/* Run `cmd /k <line>` in a new console, in the repository directory. Returns whether it started. */
+static BOOL run(HWND owner, const WCHAR *line) {
   WCHAR cmd[2048];
   swprintf(cmd, 2048, L"cmd.exe /k %s", line);
   STARTUPINFOW si = {sizeof si};
@@ -59,9 +59,10 @@ static void run(HWND owner, const WCHAR *line) {
   if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, root, &si, &pi)) {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
-  } else {
-    MessageBoxW(owner, L"Could not start cmd.exe.", L"Index Translator", MB_ICONERROR);
+    return TRUE;
   }
+  MessageBoxW(owner, L"Could not start cmd.exe.", L"Index Translator", MB_ICONERROR);
+  return FALSE;
 }
 
 static int px(int v, UINT dpi) { return MulDiv(v, dpi, 96); }
@@ -141,17 +142,17 @@ static LRESULT CALLBACK proc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
           GetDlgItemTextW(w, ID_PORT, port, 8);
           if (!port[0]) wcscpy(port, L"3000");
           swprintf(line, 256, L"bun --no-env-file src\\server.ts --port %s", port);
-          run(w, line);
+          if (run(w, line)) DestroyWindow(w); /* the console carries on on its own */
           break;
         }
         case ID_FETCH:
-          run(w, L"bun --no-env-file scripts\\fetch_models.ts");
+          if (run(w, L"bun --no-env-file scripts\\fetch_models.ts")) DestroyWindow(w);
           break;
         case ID_NOTICES:
-          run(w, L"type THIRD_PARTY_NOTICES.md | more");
+          if (run(w, L"type THIRD_PARTY_NOTICES.md | more")) DestroyWindow(w);
           break;
         case ID_HELP:
-          run(w, L"bun --no-env-file src\\server.ts --help");
+          if (run(w, L"bun --no-env-file src\\server.ts --help")) DestroyWindow(w);
           break;
         case ID_QUIT:
           DestroyWindow(w);
