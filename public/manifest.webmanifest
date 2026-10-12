@@ -1,6 +1,6 @@
 {
   "name": "Index Translator",
-  "short_name": "Translator",
+  "short_name": "Index",
   "description": "Local translation app",
   "start_url": "/",
   "scope": "/",
