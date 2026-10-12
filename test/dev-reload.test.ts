@@ -51,7 +51,7 @@ describe("with DEV_RELOAD", () => {
     const reader = res.body!.getReader();
     const decoder = new TextDecoder();
     let seen = decoder.decode((await reader.read()).value);
-    expect(seen).toContain(": connected");
+    expect(seen).toContain("event: hello");
     writeFileSync(join(dir, "app.ts"), "export {};\n");
     const deadline = Date.now() + 3000;
     while (!seen.includes("event: reload") && Date.now() < deadline) {

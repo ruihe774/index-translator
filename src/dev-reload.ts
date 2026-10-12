@@ -14,15 +14,28 @@ const SCRIPT_TAG = `<script src="${CLIENT_PATH}"></script>`;
 const DEBOUNCE_MS = 50;
 const KEEPALIVE_MS = 15_000;
 
-const CLIENT = `const events = new EventSource("${EVENTS_PATH}");
-let dropped = false;
-events.onopen = () => {
-  if (dropped) location.reload();
-};
-events.onerror = () => {
-  dropped = true;
-};
-events.addEventListener("reload", () => location.reload());
+// iOS Safari suspends a page that is not in front and drops its connection without telling the page,
+// so a reload sent meanwhile is lost. Every connection therefore starts with a `hello` carrying a
+// token (server start and number of changes so far); the page reloads when a later hello differs from
+// the first, and reconnects when it comes back to the front or from the back/forward cache.
+const CLIENT = `let seen;
+let events;
+function connect() {
+  if (events) events.close();
+  events = new EventSource("${EVENTS_PATH}");
+  events.addEventListener("hello", (e) => {
+    if (seen !== undefined && seen !== e.data) location.reload();
+    seen = e.data;
+  });
+  events.addEventListener("reload", () => location.reload());
+}
+connect();
+document.addEventListener("visibilitychange", () => {
+  if (document.visibilityState === "visible") connect();
+});
+addEventListener("pageshow", (e) => {
+  if (e.persisted) connect();
+});
 `;
 
 export function createDevReload(publicDir: string) {
@@ -39,8 +52,11 @@ export function createDevReload(publicDir: string) {
     }
   }
 
+  const boot = Date.now();
+  let changes = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const watcher = watch(publicDir, { recursive: true }, () => {
+    changes++;
     clearTimeout(timer);
     timer = setTimeout(() => send("event: reload\ndata: \n\n"), DEBOUNCE_MS);
   });
@@ -62,7 +78,7 @@ export function createDevReload(publicDir: string) {
         start(c) {
           self = c;
           clients.add(c);
-          c.enqueue(encoder.encode(": connected\n\n"));
+          c.enqueue(encoder.encode(`event: hello\ndata: ${boot}:${changes}\n\n`));
         },
         cancel() {
           clients.delete(self);
