@@ -109,6 +109,11 @@
     text-wrap: pretty;
   }
 
+  /* Blocks still streaming keep the lines already laid out when text is added at the end. */
+  p:not(.settled, .settled p, dialog p) {
+    text-wrap: stable;
+  }
+
   a {
     color: var(--accent);
     text-decoration: underline;
