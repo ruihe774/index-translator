@@ -73,6 +73,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   const { controls, voiceSettings, settingsPanel, meta, panes } = deps;
   let voicesCheck: Promise<void> | null = null;
   let voicesCheckedAt = 0;
+  let scrolledTo: string | null = null;
 
   const player = new SpeechPlayer(synthesize, {
     onState(playerState) {
@@ -120,6 +121,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
       el.removeAttribute("aria-current");
     }
     const { speaking } = state;
+    if (!speaking) scrolledTo = null;
     if (!speaking || speaking.line === null) return;
     const { view, area } = panes[speaking.side];
     const block = view.querySelector<HTMLElement>(`:scope > [data-line="${speaking.line}"]`);
@@ -129,7 +131,15 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     if (!scroll) return;
     const pane = area.getBoundingClientRect();
     const box = block.getBoundingClientRect();
-    if (box.top < pane.top || box.bottom > pane.bottom) area.scrollTop += box.top - pane.top - 8;
+    // A later piece of the block already being followed may sit anywhere in it, and a block taller
+    // than the pane would be pulled back to its top each time; only a block that left the pane
+    // entirely is brought back.
+    const key = `${speaking.side}:${speaking.line}`;
+    const sameBlock = scrolledTo === key;
+    scrolledTo = key;
+    const outside = box.top < pane.top || box.bottom > pane.bottom;
+    const hidden = box.bottom <= pane.top || box.top >= pane.bottom;
+    if (sameBlock ? hidden : outside) area.scrollTop += box.top - pane.top - 8;
   }
 
   function toggle(side: Side) {
