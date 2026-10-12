@@ -54,7 +54,7 @@
     --target: 2.75rem;
     --gap: 1rem;
     /* Height of the text box, the source preview and the translation: equal, so the panes line up. */
-    --pane-height: clamp(16rem, 60dvh, 40rem);
+    --pane-height: clamp(16rem, 60svh, 40rem);
     /* Reading size of the text areas. */
     --text-size: 1.25rem;
     --gutter: 1rem;
@@ -83,7 +83,7 @@
 
   body {
     margin: 0;
-    min-block-size: 100dvh;
+    min-block-size: 100svh;
     display: flex;
     flex-direction: column;
     background: var(--bg);
@@ -173,7 +173,7 @@
      The reserve is the header, panel chrome (padding, language row, button row) and the form gap. */
   @media (min-width: 46rem) {
     :root {
-      --pane-height: max(16rem, calc(100dvh - 17rem));
+      --pane-height: max(16rem, calc(100svh - 17rem));
     }
   }
 
@@ -905,7 +905,7 @@
       /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
       --radius: calc(var(--radius-md) + 0.5rem + 1px);
       --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.5rem));
-      --pane-height: clamp(16rem, calc(100dvh - 11rem), 48rem);
+      --pane-height: clamp(16rem, calc(100svh - 11rem), 48rem);
     }
 
     .site-header {
