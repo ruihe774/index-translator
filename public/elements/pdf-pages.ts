@@ -65,9 +65,13 @@ export class PdfPages extends HTMLElement {
       const canvas = document.createElement("canvas");
       canvas.width = 3;
       canvas.height = 4;
+      // The canvas gets a box of its own so the busy spinner sits on the picture, not the button.
+      const picture = document.createElement("span");
+      picture.className = "picture";
+      picture.append(canvas);
       const number = document.createElement("span");
       number.textContent = String(page);
-      button.append(canvas, number);
+      button.append(picture, number);
       const li = document.createElement("li");
       li.append(button);
       items.push(li);

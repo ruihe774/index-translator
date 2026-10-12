@@ -561,6 +561,7 @@ const openUi = initOpenUi({
   input: $<HTMLInputElement>("open-file"),
   pages: $<PdfPages>("pdf-pages"),
   note: $("file-note"),
+  area: $("source-field"),
   load: loadSource,
 });
 

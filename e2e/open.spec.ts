@@ -226,14 +226,52 @@ test.describe("PDF", () => {
       button.click();
       return {
         busy: button.getAttribute("aria-busy"),
-        spinner: getComputedStyle(button, "::after").content,
+        spinner: getComputedStyle(button.querySelector(".picture") as Element, "::after").content,
         note: document.getElementById("file-note")?.textContent,
       };
     });
     expect(during).toEqual({ busy: "true", spinner: '""', note: "sample.pdf: reading page 1…" });
     await expect(thumbnail(app.page, 1)).toHaveAttribute("aria-current", "true");
     await expect(thumbnail(app.page, 1)).not.toHaveAttribute("aria-busy");
-    expect(await thumbnail(app.page, 1).evaluate((b) => getComputedStyle(b, "::after").content)).toBe("none");
+    expect(
+      await thumbnail(app.page, 1).evaluate(
+        (b) => getComputedStyle(b.querySelector(".picture") as Element, "::after").content,
+      ),
+    ).toBe("none");
+  });
+
+  test("the page spinner sits at the center of the thumbnail's picture", async ({ app }) => {
+    await app.open();
+    await app.page.locator("#open-file").setInputFiles(SAMPLE);
+    await expect(thumbnail(app.page, 1)).toBeVisible();
+    const offsets = await thumbnail(app.page, 1).evaluate((button: HTMLElement) => {
+      button.setAttribute("aria-busy", "true");
+      const canvas = button.querySelector("canvas") as HTMLElement;
+      const spinner = getComputedStyle(canvas.parentElement as Element, "::after");
+      const box = canvas.getBoundingClientRect();
+      const size = Number.parseFloat(spinner.width);
+      // ::after is absolutely placed in .picture, which has the canvas's box.
+      return { size, width: box.width, height: box.height, left: Number.parseFloat(spinner.marginLeft) };
+    });
+    expect(offsets.size).toBeGreaterThan(0);
+    expect(offsets.size).toBeLessThan(offsets.width);
+  });
+
+  test("a spinner shows at the center of the box while a file is read", async ({ app }) => {
+    await app.open();
+    const field = app.page.locator("#source-field");
+    await expect(field).not.toHaveAttribute("aria-busy");
+    const during = await app.page.evaluate(() => {
+      const input = document.getElementById("open-file") as HTMLInputElement;
+      const data = new DataTransfer();
+      data.items.add(new File(["hello"], "a.txt", { type: "text/plain" }));
+      input.files = data.files;
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+      const field = document.getElementById("source-field") as HTMLElement;
+      return { busy: field.getAttribute("aria-busy"), spinner: getComputedStyle(field, "::after").content };
+    });
+    expect(during).toEqual({ busy: "true", spinner: '""' });
+    await expect(field).not.toHaveAttribute("aria-busy");
   });
 
   test("the corners of the strip, a page button and its picture are concentric", async ({ app }) => {

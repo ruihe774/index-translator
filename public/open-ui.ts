@@ -17,6 +17,8 @@ export interface OpenUiDeps {
   pages: PdfPages;
   /** The line under the source's button row that says what was opened, or why not. */
   note: HTMLElement;
+  /** The source box's field: gets `aria-busy` (a spinner at its center) while a file is read. */
+  area: HTMLElement;
   /**
    * Puts `text` in the source box in place of what is there and drops the translation of the old
    * text. `preview` shows it rendered instead of in the text box: it was not typed, so it is more
@@ -61,8 +63,15 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     d.button.setAttribute("aria-label", next ? "Close the PDF" : "Open a file");
   }
 
+  /** The spinner over the box; only the newest pick may end it. */
+  function reading(on: boolean, mine = turn) {
+    if (on) d.area.setAttribute("aria-busy", "true");
+    else if (mine === turn) d.area.removeAttribute("aria-busy");
+  }
+
   async function openText(file: File, mine: number) {
     const text = decodeText(new Uint8Array(await file.arrayBuffer()));
+    reading(false, mine);
     if (mine !== turn || busy) return;
     if (text === null) {
       say(`${file.name} was not opened: it is not text in UTF-8.`, "error");
@@ -77,7 +86,9 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     let doc: PdfDocument;
     try {
       doc = await openPdf(new Uint8Array(await file.arrayBuffer()));
+      reading(false, mine);
     } catch (e) {
+      reading(false, mine);
       if (mine !== turn) return;
       if (!(e instanceof PdfError)) console.error(e);
       say(`${file.name} was not opened. ${e instanceof PdfError ? e.message : "It could not be read."}`, "error");
@@ -98,8 +109,10 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     const kind = fileKind(file.name, file.type);
     const problem = refusal(file.name, kind, file.size);
     if (problem !== null) say(problem, "error");
-    else if (kind === "pdf") void openDocument(file, mine);
-    else void openText(file, mine);
+    else {
+      reading(true);
+      void (kind === "pdf" ? openDocument(file, mine) : openText(file, mine));
+    }
   }
 
   async function takePage(page: number) {
@@ -134,6 +147,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       return;
     }
     turn++;
+    reading(false);
     setPdf(null);
     say("");
   });
