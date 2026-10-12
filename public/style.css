@@ -890,6 +890,13 @@
     text-spacing-trim: trim-start;
   }
 
+  /* No `text-wrap: pretty` (set above for `.settled p`, so this must match it in specificity):
+     it shortens lines to avoid a short last line, while ideographic text is set to fill the full
+     line width. */
+  :is(.settled p, p.settled, dialog p):is(:lang(ja), :lang(zh)) {
+    text-wrap: wrap;
+  }
+
   :lang(ja) {
     font-family: var(--font-ja);
   }
