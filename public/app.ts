@@ -2,12 +2,13 @@
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
+import { API, ApiFailure, failureMessage } from "./api.js";
 import "./elements/index.js";
 import type { MetaLine } from "./elements/meta-line.js";
 import type { SpeechControls } from "./elements/speech-controls.js";
 import type { ViewSwitch } from "./elements/view-switch.js";
-import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.js";
-import { type ApiErrorBody, describeError } from "./errors.js";
+import type { VoiceSettings } from "./elements/voice-settings.js";
+import type { ApiErrorBody } from "./errors.js";
 import { confirmLink } from "./link-dialog.js";
 import { type LinkReference, linkReference } from "./links.js";
 import { looksLikeMarkdown } from "./markdown.js";
@@ -27,14 +28,12 @@ import { type Alignment, alignBlocks } from "./paragraphs.js";
 import { createRender } from "./render.js";
 import { buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
 import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.js";
-import { SpeechPlayer, type SpeechSettings } from "./speech.js";
-import { canSpeak, speechSegments } from "./speech-text.js";
+import { initSpeechUi, type SpeechUi } from "./speech-ui.js";
 import { sseEvents } from "./sse.js";
-import { bindRender, setState, state } from "./state.js";
+import { bindRender, type Side, setState, state } from "./state.js";
+import { store, stored } from "./storage.js";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.js";
-import { audioToWav, uploadVoice } from "./voice-sample.js";
 
-const API = "/api/v1";
 const HEALTH_LOADING_POLL_MS = 2000;
 let healthTimer: ReturnType<typeof setTimeout> | undefined;
 const number = new Intl.NumberFormat();
@@ -74,26 +73,8 @@ const placeholderEl = $("placeholder");
 /** The one line under the translation: progress, the result's numbers, a stop or an error. */
 const metaEl = $<MetaLine>("meta");
 const notesEl = $("notes");
-const speechSettings = $("speech-settings");
-const voiceSettings = $<VoiceSettings>("voice-settings");
 
 // ---- small helpers ---------------------------------------------------------------------------
-
-function stored(key: string): string | null {
-  try {
-    return localStorage.getItem(key);
-  } catch {
-    return null;
-  }
-}
-
-function store(key: string, value: string) {
-  try {
-    localStorage.setItem(key, value);
-  } catch {
-    // storage is only a convenience
-  }
-}
 
 function setText(el: HTMLElement, text: string) {
   if (el.textContent !== text) el.textContent = text;
@@ -234,15 +215,6 @@ async function pollHealth() {
 
 // ---- translating -----------------------------------------------------------------------------
 
-class ApiFailure extends Error {
-  constructor(
-    public body: ApiErrorBody,
-    public status: number,
-  ) {
-    super(body.message ?? `HTTP ${status}`);
-  }
-}
-
 let output: OutputView | null = null;
 
 // ---- raw and preview views -------------------------------------------------------------------
@@ -281,7 +253,7 @@ function showSource() {
   textInput.hidden = preview;
   refreshControls();
   refreshSync();
-  showSpeaking();
+  speech.showSpeaking();
 }
 
 /** Rebuilds the output in the chosen view; text still streaming is appended to the new view. */
@@ -293,7 +265,7 @@ function showOutput() {
     output.append(state.translation);
     output.finish();
     applyLinkCheck();
-    showSpeaking();
+    speech.showSpeaking();
   }
 }
 
@@ -414,13 +386,6 @@ function fail(message: string) {
   metaEl.show(message, true);
 }
 
-/** A failed request as a sentence for the user. */
-function failureMessage(e: unknown): string {
-  if (e instanceof ApiFailure) return describeError(e.body, e.status);
-  if (e instanceof TypeError) return "The server cannot be reached.";
-  return e instanceof Error ? e.message : String(e);
-}
-
 async function translate() {
   if (state.running) return;
   if (!state.languagesReady) {
@@ -461,7 +426,7 @@ async function translate() {
   store("from", fromSelect.value);
   store("to", toSelect.value);
 
-  stopSpeech();
+  speech.stop();
   const controller = new AbortController();
   setState({ running: controller });
   following = true;
@@ -547,7 +512,7 @@ async function translate() {
 /** Empties the source and the result and returns the source to the plain textarea. */
 function clearAll() {
   if (state.running || clearBtn.getAttribute("aria-disabled") === "true") return;
-  stopSpeech();
+  speech.stop();
   textInput.value = "";
   showFieldError(textError, textInput, null);
   views.source = { available: false, view: "raw" };
@@ -565,237 +530,29 @@ function advancedOpen() {
 
 // ---- reading aloud ---------------------------------------------------------------------------
 //
-// Each side has a Listen button; one side is read at a time. What is spoken comes from
-// `speechSegments`: the parsed Markdown when the text is shown rendered, never its raw markers.
-// The block being read is shaded in the rendered view. Voice and speed are shared by both sides.
+// speech-ui.ts: the Listen buttons, the voice list and what a reading does to the page. This file
+// tells it what each side holds and how it is shown.
 
-type Side = "source" | "output";
-const SIDES: Side[] = ["source", "output"];
-const SIDE_NAME: Record<Side, string> = { source: "source text", output: "translation" };
-
-const speechControls: Record<Side, SpeechControls> = {
-  source: $<SpeechControls>("speech-source"),
-  output: $<SpeechControls>("speech-output"),
-};
-
-/** Why nothing can be read aloud at all (not installed, no voices); empty when it can. */
-let speechProblem = "Checking whether reading aloud is available…";
-/** The side being read and the first line of the block being spoken. */
-let speaking: { side: Side; line: number | null } | null = null;
-
-async function synthesize(text: string, settings: SpeechSettings, signal: AbortSignal): Promise<ArrayBuffer> {
-  const res = await fetch(`${API}/speech`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify({ text, lang: settings.lang, voice: settings.voice || undefined, speed: settings.speed }),
-    signal,
-  });
-  if (!res.ok) {
-    const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-    throw new ApiFailure(payload?.error ?? {}, res.status);
-  }
-  return res.arrayBuffer();
-}
-
-const player = new SpeechPlayer(synthesize, {
-  onState(state) {
-    if (state === "idle") speaking = null;
-    refreshSpeech();
+const speech: SpeechUi = initSpeechUi({
+  controls: {
+    source: $<SpeechControls>("speech-source"),
+    output: $<SpeechControls>("speech-output"),
   },
-  onSegment(segment) {
-    if (speaking) speaking.line = segment?.line ?? null;
-    showSpeaking(true);
-    refreshSpeech();
+  voiceSettings: $<VoiceSettings>("voice-settings"),
+  settingsPanel: $("speech-settings"),
+  meta: metaEl,
+  panes: {
+    source: { view: sourceView, area: sourceArea },
+    output: { view: outputEl, area: outputArea },
   },
-  onError(e) {
-    metaEl.flash(failureMessage(e));
-    voicesStale = true;
-  },
+  target: (side: Side) =>
+    side === "source"
+      ? { text: textInput.value, lang: sourceLangOf() }
+      : { text: state.translation, lang: outputEl.lang || undefined },
+  isMarkdown: (side: Side) => (side === "source" ? looksLikeMarkdown(textInput.value) : views.output.available),
 });
-
-function speechTarget(side: Side): { text: string; lang: string | undefined } {
-  return side === "source"
-    ? { text: textInput.value, lang: sourceLangOf() }
-    : { text: state.translation, lang: outputEl.lang || undefined };
-}
-
-/** Why this side cannot be read aloud right now; empty when it can. */
-function speechBlocked(side: Side): string {
-  if (speechProblem) return speechProblem;
-  const { text, lang } = speechTarget(side);
-  if (!text.trim()) return `There is no ${SIDE_NAME[side]} to read aloud yet.`;
-  if (side === "output" && state.running) return "The translation can be read aloud once it is finished.";
-  if (!lang) return "Choose the language under From to have this text read aloud.";
-  if (!canSpeak(lang)) return "Reading aloud is available for Chinese, English, Japanese, Spanish and Arabic.";
-  return "";
-}
-
-function refreshSpeech() {
-  for (const side of SIDES) {
-    const mine = speaking?.side === side;
-    speechControls[side].show({
-      reading: mine,
-      state: mine ? player.state : "idle",
-      blocked: mine ? "" : speechBlocked(side),
-      canPrev: mine && player.canJump(-1),
-      canNext: mine && player.canJump(1),
-    });
-  }
-}
-
-/** Shades the block being read in the rendered view, and scrolls its pane to it when asked. */
-function showSpeaking(scroll = false) {
-  for (const el of document.querySelectorAll(".speaking")) {
-    el.classList.remove("speaking");
-    el.removeAttribute("aria-current");
-  }
-  if (!speaking || speaking.line === null) return;
-  const [view, area] = speaking.side === "source" ? [sourceView, sourceArea] : [outputEl, outputArea];
-  const block = view.querySelector<HTMLElement>(`:scope > [data-line="${speaking.line}"]`);
-  if (!block) return;
-  block.classList.add("speaking");
-  block.setAttribute("aria-current", "true");
-  if (!scroll) return;
-  const pane = area.getBoundingClientRect();
-  const box = block.getBoundingClientRect();
-  if (box.top < pane.top || box.bottom > pane.bottom) area.scrollTop += box.top - pane.top - 8;
-}
-
-function toggleSpeech(side: Side) {
-  if (speaking?.side === side) {
-    player.stop();
-    return;
-  }
-  const blocked = speechBlocked(side);
-  if (blocked) {
-    metaEl.flash(blocked);
-    // Reading aloud may have become available since the page loaded.
-    if (speechProblem) void recheckVoicesNow(true);
-    return;
-  }
-  // After a failure the voice list may be out of date; the reading goes on with what is selected.
-  if (voicesStale) void loadVoices();
-  const { text, lang } = speechTarget(side);
-  // Read as it is shown: rendered Markdown when the text looks like Markdown, else line by line.
-  const markdown = side === "source" ? looksLikeMarkdown(text) : views.output.available;
-  const segments = speechSegments(text, markdown, lang!);
-  if (segments.length === 0) {
-    metaEl.flash("There is nothing to read aloud in this text.");
-    return;
-  }
-  player.stop();
-  speaking = { side, line: null };
-  player.start(segments, { lang: lang!, voice: voiceSettings.voice, speed: voiceSettings.speed });
-}
-
-/** Jumps a block back or forward and says where that is, since the shaded block may be out of view. */
-function jumpSpeech(direction: -1 | 1) {
-  if (!player.jump(direction)) return;
-  const at = player.position();
-  if (at) metaEl.flash(`Block ${at.block} of ${at.blocks}`);
-  refreshSpeech();
-}
-
-function stopSpeech(side?: Side) {
-  if (speaking && (side === undefined || speaking.side === side)) player.stop();
-}
-
-/** A reading failed: the voice list or the engine may have changed, so look again at the next chance. */
-let voicesStale = false;
-let voicesCheck: Promise<void> | null = null;
-let voicesCheckedAt = 0;
-/** Events (focus, visibility) can come in bursts; a passive re-check is at most this often. */
-const VOICES_RECHECK_MS = 3000;
-
-/**
- * Asks the server for the voices and brings the Listen buttons and the voice list in line with the
- * answer, every time: speech may have been installed, or a voice added or lost, since the last look.
- */
-function loadVoices(): Promise<void> {
-  voicesCheck ??= (async () => {
-    try {
-      const res = await fetch(`${API}/voices`);
-      const body = (await res.json()) as { status: string; error?: string; voices: { id: string; name: string }[] };
-      if (body.status === "unavailable") {
-        speechProblem = `Reading aloud is not available: ${body.error ?? "it is not installed"}.`;
-      } else {
-        if (body.voices.length === 0) {
-          speechProblem = "Reading aloud needs a voice: upload or record a sample under Model and options.";
-        } else speechProblem = "";
-        // The voice being read with is gone: the next piece uses the one now selected.
-        if (voiceSettings.setVoices(body.voices, stored("voice"))) player.update({ voice: voiceSettings.voice });
-        speechSettings.hidden = false;
-      }
-      voicesStale = false;
-    } catch {
-      speechProblem = "Reading aloud is not available: the server cannot be reached.";
-    }
-    voicesCheckedAt = Date.now();
-    refreshSpeech();
-  })().finally(() => {
-    voicesCheck = null;
-  });
-  return voicesCheck;
-}
-
-/** On focus or visibility: look again only when reading aloud is not working, and not in a burst. */
-function recheckVoices() {
-  if (!speechProblem && !voicesStale) return;
-  if (Date.now() - voicesCheckedAt < VOICES_RECHECK_MS) return;
-  void loadVoices();
-}
-
-/** The person tried to use reading aloud while it was blocked or after it failed: look again now. */
-async function recheckVoicesNow(announce: boolean) {
-  const had = speechProblem;
-  await loadVoices();
-  if (announce && had && !speechProblem) metaEl.flash("Reading aloud is available now. Press Listen to start.");
-}
-
-/** Adds an uploaded voice to the list, selects it and tells the player. */
-async function addSampleVoice(name: string, audio: ArrayBuffer) {
-  // The server may first take the voice out of music and noise, which takes a few seconds.
-  voiceSettings.status = "Processing the sample…";
-  try {
-    const voice = await uploadVoice(API, name, await audioToWav(audio));
-    voiceSettings.addVoice(voice);
-    store("voice", voice.id);
-    player.update({ voice: voice.id });
-    speechProblem = "";
-    refreshSpeech();
-    voiceSettings.status = `Voice "${voice.name}" added. It is kept until the server stops.`;
-  } catch (e) {
-    voiceSettings.status = e instanceof Error ? e.message : String(e);
-  }
-}
 
 // ---- wiring ----------------------------------------------------------------------------------
-
-for (const side of SIDES) {
-  const controls = speechControls[side];
-  controls.addEventListener("listen", () => toggleSpeech(side));
-  controls.addEventListener("prev", () => jumpSpeech(-1));
-  controls.addEventListener("next", () => jumpSpeech(1));
-  controls.addEventListener("pause", () => {
-    if (player.state === "paused") player.resume();
-    else player.pause();
-  });
-}
-voiceSettings.addEventListener("voicechange", () => {
-  store("voice", voiceSettings.voice);
-  player.update({ voice: voiceSettings.voice });
-  if (speechProblem || voicesStale) void recheckVoicesNow(false);
-});
-voiceSettings.addEventListener("speedchange", () => {
-  store("speed", String(voiceSettings.speed));
-  player.update({ speed: voiceSettings.speed });
-  if (speechProblem || voicesStale) void recheckVoicesNow(false);
-});
-voiceSettings.addEventListener("sample", (e) => {
-  const { name, audio } = (e as CustomEvent<SampleDetail>).detail;
-  void addSampleVoice(name, audio);
-});
-voiceSettings.speed = stored("speed");
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
@@ -804,7 +561,7 @@ form.addEventListener("submit", (e) => {
 
 textInput.addEventListener("input", () => {
   if (!textError.hidden && textInput.value.trim()) showFieldError(textError, textInput, null);
-  stopSpeech("source");
+  speech.stop("source");
   refreshControls();
   refreshSync();
   refreshSoon();
@@ -820,9 +577,9 @@ wireSwitch(outputSwitch, "output", () => {
 clearBtn.addEventListener("click", clearAll);
 for (const el of [glossaryInput, hardInput, softInput, genreInput]) el.addEventListener("input", refreshSoon);
 fromSelect.addEventListener("change", () => {
-  stopSpeech("source");
+  speech.stop("source");
   refreshSelection();
-  refreshSpeech();
+  speech.refresh();
 });
 toSelect.addEventListener("change", refreshSelection);
 modelSwitch.addEventListener("change", () => {
@@ -852,15 +609,15 @@ bindRender(
     copy: copyBtn,
     sourceSwitch,
     outputSwitch,
-    after: refreshSpeech,
+    after: speech.refresh,
   }),
 );
 refreshControls();
 void loadLanguages();
-void loadVoices();
+void speech.loadVoices();
 void pollHealth();
 document.addEventListener("visibilitychange", () => {
   void pollHealth();
-  if (document.visibilityState === "visible") recheckVoices();
+  if (document.visibilityState === "visible") speech.recheck();
 });
-window.addEventListener("focus", recheckVoices);
+window.addEventListener("focus", speech.recheck);

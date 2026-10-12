@@ -1,9 +1,12 @@
 // The page's state that decides what the controls look like. `render()` (render.ts) is the one
 // place that turns it into attributes, so a change here needs no list of things to refresh.
 //
-// Not kept here: text still streaming into the output view, the speech player's own state and
-// anything else that is rebuilt incrementally on purpose; those are written to the DOM as they
-// happen and only report into this object.
+// Not kept here: text still streaming into the output view, the speech player's own state (the
+// player is asked) and anything else that is rebuilt incrementally on purpose; those are written to
+// the DOM as they happen and only report into this object.
+
+/** The two texts that can be read aloud. */
+export type Side = "source" | "output";
 
 export interface State {
   /** The translation under way; `null` when none runs. Aborting it stops the request. */
@@ -14,6 +17,12 @@ export interface State {
   languagesReady: boolean;
   /** The source text as in the text box. */
   source: string;
+  /** Why nothing can be read aloud at all (not installed, no voices); empty when it can. */
+  speechProblem: string;
+  /** The side being read and the first line of the block being spoken; `null` when none is. */
+  speaking: { side: Side; line: number | null } | null;
+  /** A reading failed: the voice list or the engine may have changed, so look again at the next chance. */
+  voicesStale: boolean;
 }
 
 export const state: State = {
@@ -21,6 +30,9 @@ export const state: State = {
   translation: "",
   languagesReady: false,
   source: "",
+  speechProblem: "Checking whether reading aloud is available…",
+  speaking: null,
+  voicesStale: false,
 };
 
 let renderer: (() => void) | undefined;
