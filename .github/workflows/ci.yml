@@ -150,3 +150,101 @@ jobs:
           name: Index_Translator-${{ matrix.arch }}.AppImage
           path: dist/Index_Translator-${{ matrix.arch }}.AppImage
           if-no-files-found: error
+
+  # The same checks as `test`, on Windows: paths, native library names, line endings. Both engines
+  # are mocked, so there is no GPU or model. The browser tests are not run here.
+  test-windows:
+    name: Tests (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install the development tools
+        run: bun install --frozen-lockfile
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Unit and API integration tests
+        run: bun test
+
+  engines-windows:
+    name: Engines (Windows)
+    runs-on: windows-2022
+    timeout-minutes: 90
+    env:
+      # The Vulkan SDK supplies glslc, the headers and vulkan-1.lib; the runner has no administrator
+      # prompt, so its installer runs silently. LunarG's URL for a version is a fixed file.
+      VULKAN_SDK_VERSION: "1.4.363.0"
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      # Visual Studio 2022 with the C++ tools, Git and CMake are on the runner image.
+      - name: Install the Vulkan SDK
+        shell: pwsh
+        run: |
+          $installer = Join-Path $env:RUNNER_TEMP "vulkan_sdk.exe"
+          Invoke-WebRequest "https://sdk.lunarg.com/sdk/download/$env:VULKAN_SDK_VERSION/windows/vulkan_sdk.exe" -OutFile $installer
+          Start-Process $installer -Wait -ArgumentList "--accept-licenses", "--default-answer", "--confirm-command", "install"
+          $sdk = "C:\VulkanSDK\$env:VULKAN_SDK_VERSION"
+          if (-not (Test-Path "$sdk\Bin\glslc.exe")) { throw "the Vulkan SDK was not installed to $sdk" }
+          "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
+          "$sdk\Bin" >> $env:GITHUB_PATH
+
+      # Each engine is built from a pinned commit, so it changes only when its build script does.
+      - name: Cache the translation engine
+        id: llama
+        uses: actions/cache@v6
+        with:
+          path: vendor/llama.cpp
+          key: llama-windows-2022-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+
+      - name: Build the translation engine (llama.cpp)
+        if: ${{ steps.llama.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_llama.ts
+
+      - name: Cache the speech engine
+        id: audio
+        uses: actions/cache@v6
+        with:
+          path: vendor/audio.cpp
+          key: audio-windows-2022-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build the speech engine (audio.cpp)
+        if: ${{ steps.audio.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_audiocpp.ts
+
+      # The runner has neither a GPU nor the models, so what can be checked is that the engines
+      # open, that the program says why it cannot run and stops, and that with the CPU it gets as
+      # far as the missing model.
+      - name: Check that the engines open and the server stops with a reason
+        shell: bash
+        run: |
+          bun -e "import { libraryVersion } from './src/audiocpp-ffi'; console.log(libraryVersion('vendor/audio.cpp'))"
+          expect() { # <words the output must contain> <command...>
+            local want=$1 out code=0
+            shift
+            out=$("$@" 2>&1) || code=$?
+            printf '%s\n(exit code %s)\n\n' "$out" "$code"
+            [ "$code" -eq 1 ] && grep -qF -- "$want" <<<"$out"
+          }
+          expect "GPU_LAYERS=0" bun src/server.ts --open-browser 0
+          expect "Download the models with:" bun src/server.ts --open-browser 0 --gpu-layers 0
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: engines-windows-x86_64
+          path: |
+            vendor/llama.cpp/*.dll
+            vendor/audio.cpp/*.dll
+          if-no-files-found: error
+          retention-days: 7
