@@ -257,6 +257,7 @@
      scrollbar properties that would style them are not supported in every browser in
      `.browserslistrc`. */
   #meta {
+    display: block;
     flex: 1 1 0;
     min-inline-size: 0;
     block-size: var(--target);

@@ -3,6 +3,7 @@
 // reads the form, calls the API and writes the results to the page.
 
 import "./elements/index.js";
+import type { MetaLine } from "./elements/meta-line.js";
 import type { SpeechControls } from "./elements/speech-controls.js";
 import type { ViewSwitch } from "./elements/view-switch.js";
 import { type ApiErrorBody, describeError } from "./errors.js";
@@ -69,7 +70,8 @@ const outputArea = $("output-area");
 const engineEl = $("engine");
 const outputEl = $("output");
 const placeholderEl = $("placeholder");
-const metaEl = $("meta");
+/** The one line under the translation: progress, the result's numbers, a stop or an error. */
+const metaEl = $<MetaLine>("meta");
 const notesEl = $("notes");
 const speechSettings = $("speech-settings");
 const voiceSelect = $<HTMLSelectElement>("voice");
@@ -99,33 +101,6 @@ function store(key: string, value: string) {
 
 function setText(el: HTMLElement, text: string) {
   if (el.textContent !== text) el.textContent = text;
-}
-
-let metaTimer: ReturnType<typeof setTimeout> | undefined;
-let metaShown: { text: string; error: boolean } = { text: "", error: false };
-
-/** The one line under the translation: progress, the result's numbers, a stop or an error. */
-function setMeta(text: string, error = false) {
-  clearTimeout(metaTimer);
-  metaShown = { text, error };
-  metaEl.classList.toggle("error", error);
-  metaEl.setAttribute("role", error ? "alert" : "status");
-  setText(metaEl, text);
-  markScrollable();
-}
-
-/** The line scrolls sideways when it is longer than its room; then keyboard users must be able to reach it. */
-function markScrollable() {
-  if (metaEl.scrollWidth > metaEl.clientWidth) metaEl.tabIndex = 0;
-  else metaEl.removeAttribute("tabindex");
-}
-new ResizeObserver(markScrollable).observe(metaEl);
-
-/** A short message that gives the line back to what it showed before. */
-function flashMeta(text: string) {
-  const before = metaShown;
-  setMeta(text);
-  metaTimer = setTimeout(() => setMeta(before.text, before.error), 3000);
 }
 
 function showFieldError(error: HTMLElement, input: HTMLElement, message: string | null) {
@@ -422,7 +397,7 @@ function clearResult(markdown: boolean) {
   views.output = { available: markdown, view: "preview" };
   setState({ translation: "" });
   showOutput();
-  setMeta("");
+  metaEl.show("");
   notesEl.replaceChildren();
   placeholderEl.hidden = true;
 }
@@ -436,11 +411,11 @@ function addNote(text: string) {
 /** Output already on screen when a translation ends early is kept, but it must not look finished. */
 function showInterruption(stopped: boolean, message = "") {
   const { note } = interruption(state.translation, stopped);
-  setMeta([message, note ?? (stopped ? "Stopped." : "")].filter(Boolean).join(" "), !stopped);
+  metaEl.show([message, note ?? (stopped ? "Stopped." : "")].filter(Boolean).join(" "), !stopped);
 }
 
 function fail(message: string) {
-  setMeta(message, true);
+  metaEl.show(message, true);
 }
 
 /** A failed request as a sentence for the user. */
@@ -500,7 +475,7 @@ async function translate() {
   showSource();
   outputEl.lang = toSelect.value;
   stopBtn.focus();
-  setMeta(`Translating with ${modelLabel(sel.model)}…`);
+  metaEl.show(`Translating with ${modelLabel(sel.model)}…`);
 
   let stopped = false;
   stopBtn.onclick = () => {
@@ -523,9 +498,9 @@ async function translate() {
     let done: Done | null = null;
     for await (const { event, data } of sseEvents(res.body)) {
       if (event === "queued") {
-        setMeta(`Waiting in the queue, position ${data.position}…`);
+        metaEl.show(`Waiting in the queue, position ${data.position}…`);
       } else if (event === "start") {
-        setMeta(`Translating with ${modelLabel(data.model)}…`);
+        metaEl.show(`Translating with ${modelLabel(data.model)}…`);
       } else if (event === "delta") {
         // Only the first token changes what the controls show; the rest just grows the copied text.
         if (state.translation.length === 0) setState({ translation: data.text });
@@ -550,7 +525,7 @@ async function translate() {
     for (const n of notes) addNote(n);
     const alignment = done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
     if (alignment) synced = { source: text, translation, alignment };
-    setMeta(metaLine(sel.model, done));
+    metaEl.show(metaLine(sel.model, done));
     if (markdown) linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
   } catch (e) {
     if (stopped) {
@@ -637,7 +612,7 @@ const player = new SpeechPlayer(synthesize, {
     refreshSpeech();
   },
   onError(e) {
-    flashMeta(failureMessage(e));
+    metaEl.flash(failureMessage(e));
     voicesStale = true;
   },
 });
@@ -697,7 +672,7 @@ function toggleSpeech(side: Side) {
   }
   const blocked = speechBlocked(side);
   if (blocked) {
-    flashMeta(blocked);
+    metaEl.flash(blocked);
     // Reading aloud may have become available since the page loaded.
     if (speechProblem) void recheckVoicesNow(true);
     return;
@@ -709,7 +684,7 @@ function toggleSpeech(side: Side) {
   const markdown = side === "source" ? looksLikeMarkdown(text) : views.output.available;
   const segments = speechSegments(text, markdown, lang!);
   if (segments.length === 0) {
-    flashMeta("There is nothing to read aloud in this text.");
+    metaEl.flash("There is nothing to read aloud in this text.");
     return;
   }
   player.stop();
@@ -721,7 +696,7 @@ function toggleSpeech(side: Side) {
 function jumpSpeech(direction: -1 | 1) {
   if (!player.jump(direction)) return;
   const at = player.position();
-  if (at) flashMeta(`Block ${at.block} of ${at.blocks}`);
+  if (at) metaEl.flash(`Block ${at.block} of ${at.blocks}`);
   refreshSpeech();
 }
 
@@ -782,7 +757,7 @@ function recheckVoices() {
 async function recheckVoicesNow(announce: boolean) {
   const had = speechProblem;
   await loadVoices();
-  if (announce && had && !speechProblem) flashMeta("Reading aloud is available now. Press Listen to start.");
+  if (announce && had && !speechProblem) metaEl.flash("Reading aloud is available now. Press Listen to start.");
 }
 
 /** Adds an uploaded voice to the list, selects it and tells the player. */
@@ -902,9 +877,9 @@ copyBtn.addEventListener("click", async () => {
   if (copyBtn.getAttribute("aria-disabled") === "true") return;
   try {
     await navigator.clipboard.writeText(state.translation);
-    flashMeta("Translation copied to the clipboard.");
+    metaEl.flash("Translation copied to the clipboard.");
   } catch {
-    flashMeta("Copying failed. Select the translation and copy it by hand.");
+    metaEl.flash("Copying failed. Select the translation and copy it by hand.");
   }
 });
 
