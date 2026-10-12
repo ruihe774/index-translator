@@ -47,6 +47,30 @@ test.describe("text and Markdown", () => {
     expect(api.filter((r) => r.method !== "GET")).toEqual([]);
   });
 
+  test("a file dropped anywhere on the page is opened like a picked one", async ({ app }) => {
+    await app.open();
+    const dt = await app.page.evaluateHandle(() => {
+      const t = new DataTransfer();
+      t.items.add(new File(["Dropped text\n"], "drop.txt", { type: "text/plain" }));
+      return t;
+    });
+    // The footer-most element: nowhere near the text box.
+    const target = app.page.locator("header").first();
+    await target.dispatchEvent("dragover", { dataTransfer: dt });
+    await expect(app.page.locator("html")).toHaveClass(/dropping/);
+    // Leaving the window (no related target) clears the outline, and so does a drag that goes quiet.
+    await target.dispatchEvent("dragleave", { dataTransfer: dt, relatedTarget: null });
+    await expect(app.page.locator("html")).not.toHaveClass(/dropping/);
+    await target.dispatchEvent("dragover", { dataTransfer: dt });
+    await expect(app.page.locator("html")).toHaveClass(/dropping/);
+    await expect(app.page.locator("html")).not.toHaveClass(/dropping/, { timeout: 2000 });
+    await target.dispatchEvent("dragover", { dataTransfer: dt });
+    await target.dispatchEvent("drop", { dataTransfer: dt });
+    await expect(app.page.locator("html")).not.toHaveClass(/dropping/);
+    await expect(app.text).toHaveValue("Dropped text\n");
+    await expect(note(app.page)).toHaveText("Opened drop.txt.");
+  });
+
   test("a Markdown file is opened in Preview, with Raw one click away; plain text opens in the box", async ({
     app,
   }) => {

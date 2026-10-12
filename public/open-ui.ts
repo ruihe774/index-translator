@@ -137,10 +137,46 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     setPdf(null);
     say("");
   });
+  /** What picking a file and dropping one on the page share. */
+  function pick(file: File | undefined) {
+    if (file && !busy && !pdf) open(file);
+  }
   d.input.addEventListener("change", () => {
     const file = d.input.files?.[0];
     d.input.value = ""; // so picking the same file again is a change
-    if (file && !busy && !pdf) open(file);
+    pick(file);
+  });
+
+  // Drop anywhere on the page. Only drags that carry files count (not selected text), and the
+  // browser's own reaction (navigating to the file) is always prevented for them.
+  const carriesFiles = (e: DragEvent) => e.dataTransfer?.types.includes("Files") ?? false;
+  // dragenter/dragleave fire for every element passed over and are not reliably paired, so they are
+  // not counted. The mark is on while dragover keeps arriving (the browser repeats it while the drag
+  // is over the page, even without movement) and ends when the drag leaves the window
+  // (`relatedTarget` null), drops, ends, or the events stop.
+  const DRAG_IDLE_MS = 500;
+  let idle = 0;
+  const mark = (on: boolean) => {
+    clearTimeout(idle);
+    document.documentElement.classList.toggle("dropping", on);
+    if (on) idle = window.setTimeout(() => mark(false), DRAG_IDLE_MS);
+  };
+  window.addEventListener("dragover", (e) => {
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    const blocked = busy || pdf !== null;
+    if (e.dataTransfer) e.dataTransfer.dropEffect = blocked ? "none" : "copy";
+    mark(!blocked);
+  });
+  window.addEventListener("dragleave", (e) => {
+    if (e.relatedTarget === null) mark(false);
+  });
+  window.addEventListener("dragend", () => mark(false));
+  window.addEventListener("drop", (e) => {
+    mark(false);
+    if (!carriesFiles(e)) return;
+    e.preventDefault();
+    pick(e.dataTransfer?.files[0]);
   });
   d.pages.addEventListener("page", (e) => void takePage((e as CustomEvent<number>).detail));
 

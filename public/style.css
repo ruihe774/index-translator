@@ -1288,6 +1288,18 @@
   }
 }
 
+@layer components {
+  /* A file is being dragged over the page: open-ui.ts takes it through the Open path. */
+  html.dropping::after {
+    content: "";
+    position: fixed;
+    inset: 0.5rem;
+    border: 3px dashed var(--accent);
+    pointer-events: none;
+    z-index: 1000;
+  }
+}
+
 @layer utilities {
   .sr-only {
     position: absolute;
