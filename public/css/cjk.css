@@ -1,0 +1,26 @@
+/* Japanese (jlreq) and Chinese (clreq) text, chosen by `lang`: the source box, the source preview
+   and the translation carry the language of their text. Only what the two documents require and
+   CSS can do: kinsoku (closing punctuation never starts a line, opening never ends one),
+   opening brackets flush at a line start (Chrome only so far), and the gap between Han and
+   Latin text. Recommendations (justification, indents, emphasis marks) are left out. */
+:lang(ja),
+:lang(zh) {
+  line-break: strict;
+  text-autospace: normal; /* Chrome's initial value is no-autospace */
+  text-spacing-trim: trim-start;
+}
+
+/* No `text-wrap: pretty` (set in base.css for `.settled p`, so this must match it in specificity):
+   it shortens lines to avoid a short last line, while ideographic text is set to fill the full
+   line width. */
+:is(.settled p, p.settled, dialog p):is(:lang(ja), :lang(zh)) {
+  text-wrap: wrap;
+}
+
+:lang(ja) {
+  font-family: var(--font-ja);
+}
+
+:lang(zh) {
+  font-family: var(--font-zh);
+}

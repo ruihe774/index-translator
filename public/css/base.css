@@ -1,0 +1,103 @@
+:root {
+  color-scheme: light dark;
+
+  --bg: light-dark(#f3f5fa, #101217);
+  --surface: light-dark(#ffffff, #1a1d25);
+  --surface-sunken: light-dark(#eceff6, #14161c);
+  --text: light-dark(#1b1f2a, #ebedf3);
+  --muted: light-dark(#4a5163, #b3b9c7);
+  --border: light-dark(#767c8c, #8b92a3);
+  --divider: light-dark(#d3d8e3, #2c303b);
+  --accent: light-dark(#1a56db, #8ab4f8);
+  --on-accent: light-dark(#ffffff, #0a1a33);
+  --focus: light-dark(#1a56db, #8ab4f8);
+  --error: light-dark(#b3261e, #ff8a80);
+  --warn-bg: light-dark(#fff4d6, #3a2e0a);
+  --warn-text: light-dark(#4a3500, #ffe9a8);
+  --warn-border: light-dark(#8a6100, #c9a227);
+
+  /* Concentric corners: an outer radius is the inner radius plus the gap
+     (padding + border) between the two edges. Siblings in the same container
+     share one radius, and no corner is ever square (--radius-min floor). */
+  --radius-min: 0.25rem;
+  --radius-sm: 0.5rem;
+  --radius-md: calc(var(--radius-sm) + 0.5rem + 1px);
+  --radius: calc(var(--radius-md) + 1rem + 1px);
+  --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.75rem));
+  --target: 2.75rem;
+  --gap: 1rem;
+  /* Height of the text box, the source preview and the translation: equal, so the panes line up. */
+  --pane-height: clamp(16rem, 60svh, 40rem);
+  /* Reading size of the text areas. */
+  --text-size: 1.25rem;
+  --gutter: 1rem;
+  --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
+  /* Per language, so Han characters get Japanese or Chinese glyph forms, not the first CJK font's. */
+  --font-ja:
+    "Han Punctuation JP", system-ui, "Segoe UI", "Noto Sans", "Hiragino Sans", "Yu Gothic UI", "Meiryo",
+    "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
+  --font-zh:
+    "Han Punctuation SC", system-ui, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
+    "Noto Sans SC", sans-serif;
+  --shadow:
+    0 1px 2px light-dark(rgb(20 30 60 / 0.08), rgb(0 0 0 / 0.4)),
+    0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
+}
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-padding-block: 1rem;
+}
+
+body {
+  margin: 0;
+  min-block-size: 100svh;
+  display: flex;
+  flex-direction: column;
+  background: var(--bg);
+  color: var(--text);
+  font: 1rem / 1.5 var(--font);
+}
+
+h1,
+h2 {
+  margin: 0;
+  text-wrap: balance;
+}
+
+p {
+  margin: 0;
+}
+
+/* Pretty wrapping and balancing re-break whole paragraphs, so they wait until streaming has
+   finished the block (`.settled`, set in markdown-dom.ts); the link dialog's text is static. */
+.settled p,
+p.settled,
+dialog p {
+  text-wrap: pretty;
+}
+
+/* Blocks still streaming keep the lines already laid out when text is added at the end. */
+p:not(.settled, .settled p, dialog p) {
+  text-wrap: stable;
+}
+
+a {
+  color: var(--accent);
+  text-decoration: underline;
+  text-underline-offset: 0.2em;
+}
+
+:focus-visible {
+  outline: 3px solid var(--focus);
+  outline-offset: 2px;
+}
+
+[hidden] {
+  display: none !important;
+}

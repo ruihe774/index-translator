@@ -1,0 +1,59 @@
+/* Installed on a phone's home screen (iOS 26): the page is drawn under the status bar, where the
+   system blurs it, and down to the home indicator, and `env(safe-area-inset-*)` is not reliable
+   there (0 on affected versions, WebKit bug 301994). So fixed room is left at the top (the
+   Dynamic Island's 59pt) and the bottom (34pt), and the panes are shorter by that much. Portrait
+   only; in landscape the real insets are used (next block). */
+@media (max-width: 45.99rem) and (display-mode: standalone) and (orientation: portrait) {
+  :root {
+    --standalone-top: max(env(safe-area-inset-top, 0px), 2rem);
+    --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 4rem);
+    --pane-height: clamp(16rem, calc(100svh - 12rem - var(--standalone-top) - var(--standalone-bottom) + 1rem), 48rem);
+  }
+
+  body {
+    padding-block-start: var(--standalone-top);
+  }
+
+  main {
+    padding-block-end: 1rem;
+  }
+}
+
+/* Installed, landscape: the panel fills the screen height minus the safe insets. */
+@media (display-mode: standalone) and (orientation: landscape) {
+  :root {
+    --standalone-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+    --standalone-bottom: env(safe-area-inset-bottom, 0px);
+    /* The panel's own chrome only: padding, the two control rows, the gaps between (8.25rem
+       with the 0.5rem gap of the narrow layout); "Model and options" lies below the fold. */
+    --pane-height: max(4rem, calc(100svh - 8.25rem - var(--standalone-top) - var(--standalone-bottom)));
+  }
+
+  body {
+    padding-block-start: var(--standalone-top);
+    padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
+  }
+
+  @media (min-width: 46rem) {
+    :root {
+      --pane-height: max(4rem, calc(100svh - 9.75rem - var(--standalone-top) - var(--standalone-bottom)));
+    }
+  }
+}
+
+/* Installed as an app: the window has a title, so no header; the engine status goes below the page. */
+@media (display-mode: standalone) {
+  .site-header {
+    order: 1;
+    padding-block: 0 max(1rem, var(--standalone-bottom, 0px));
+
+    h1 {
+      position: absolute;
+      inline-size: 1px;
+      block-size: 1px;
+      overflow: hidden;
+      clip-path: inset(50%);
+      white-space: nowrap;
+    }
+  }
+}

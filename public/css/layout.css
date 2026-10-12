@@ -1,0 +1,104 @@
+.site-header,
+main {
+  inline-size: min(100% - 2 * var(--gutter), 120rem);
+  margin-inline: auto;
+}
+
+.site-header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.25rem 1.5rem;
+  padding-block: 1.25rem 1rem;
+
+  h1 {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 1.5rem;
+    font-weight: 650;
+  }
+
+  .logo {
+    inline-size: 1.75rem;
+    block-size: 1.75rem;
+  }
+}
+
+main {
+  flex: 1;
+  padding-block-end: 2rem;
+
+  > form {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+  }
+}
+
+/* Two columns once each can be at least 22rem wide; one column below that. */
+.workspace {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+  gap: var(--gap);
+}
+
+.panel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  min-inline-size: 0;
+  padding: var(--gap);
+  background: var(--surface);
+  border: 1px solid var(--divider);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+/* Side by side: the panes fill the screen height, so "Model and options" lies below the fold.
+   The reserve is the header, panel chrome (padding, language row, button row) and the form gap. */
+@media (min-width: 46rem) {
+  :root {
+    --pane-height: max(16rem, calc(100svh - 17rem));
+  }
+}
+
+.panel-foot {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--gap);
+  min-block-size: var(--target);
+}
+
+/* Listen and Pause sit at the start of each button row; the letter count stays next to them. */
+.speech {
+  display: flex;
+  gap: var(--gap);
+}
+
+#count {
+  margin-inline-end: auto;
+}
+
+.speech-settings {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+
+  > .field {
+    flex: 0 1 18rem;
+  }
+
+  .clone-row {
+    display: flex;
+    gap: var(--gap);
+  }
+
+  #clone-status {
+    margin: 0;
+    min-height: 1lh;
+  }
+}

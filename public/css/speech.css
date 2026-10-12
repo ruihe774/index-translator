@@ -1,0 +1,57 @@
+/* Listen / Stop and Pause / Resume: square, one glyph each; `data-state` picks the glyph. */
+button.icon {
+  display: inline-grid;
+  place-items: center;
+  inline-size: var(--target);
+  padding: 0;
+
+  svg {
+    inline-size: 1.5rem;
+    block-size: 1.5rem;
+    fill: currentcolor;
+  }
+
+  &[data-state="idle"] .when-active,
+  &:not([data-state="idle"]) .when-idle,
+  &[data-state="paused"] .when-playing,
+  &:not([data-state="paused"]) .when-paused,
+  &[data-state="loading"] .when-playing,
+  &[data-state="loading"] .when-paused,
+  &:not([data-state="loading"]) .when-loading {
+    display: none;
+  }
+
+  .when-loading {
+    fill: none;
+  }
+
+  /* Waiting for the first audio: the speech model may still be loading. The state is also in the
+     button's name ("Stop reading…"); without the animation (reduced motion) the glyph is static. */
+  @media (prefers-reduced-motion: no-preference) {
+    &[data-state="loading"] .when-loading {
+      animation: speech-spin 0.8s linear infinite;
+    }
+  }
+}
+
+@keyframes speech-spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* The block being read aloud. */
+.output .speaking {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+  border-radius: var(--radius-min);
+  /* A bar at the start edge, so the block is not marked by shade alone (1.4.1). */
+  box-shadow: inset 0.25rem 0 0 var(--accent);
+  /* The bar sits in padding that the negative margin takes back out of the layout (the pane
+     has at least 0.75rem of side padding), so the text neither moves nor touches the bar. */
+  padding-inline: 0.75rem 0.5rem;
+  margin-inline: -0.75rem -0.5rem;
+
+  @media (forced-colors: active) {
+    outline: 2px solid Highlight;
+  }
+}

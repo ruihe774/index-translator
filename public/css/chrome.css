@@ -1,0 +1,48 @@
+.engine {
+  color: var(--muted);
+}
+
+.engine a {
+  color: inherit;
+  font-weight: 300;
+}
+
+.hint {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+/* The status line scrolls sideways instead of wrapping. Its box is as tall as a button, so a
+   classic scrollbar (when the platform draws one) lands in the empty space under the centred
+   text and the row never changes height. Overlay scrollbars are up to the platform; the
+   scrollbar properties that would style them are not supported in every browser in
+   `.browserslistrc`. */
+#meta {
+  display: block;
+  flex: 1 1 0;
+  min-inline-size: 0;
+  block-size: var(--target);
+  line-height: var(--target);
+  white-space: nowrap;
+  overflow: auto hidden;
+}
+
+.error {
+  color: var(--error);
+  font-weight: 600;
+}
+
+.skip-link {
+  position: absolute;
+  inset-inline-start: 0.5rem;
+  inset-block-start: -4rem;
+  z-index: 10;
+  padding: 0.75rem 1rem;
+  background: var(--surface);
+  border: 2px solid var(--focus);
+  border-radius: var(--radius-md);
+
+  &:focus {
+    inset-block-start: 0.5rem;
+  }
+}

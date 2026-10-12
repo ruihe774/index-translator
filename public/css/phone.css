@@ -1,0 +1,108 @@
+/* Phones (one column): compact. Smaller margins and padding, 1rem text, the language select and
+   the Raw/Preview switch share one row, and the panes take the height the chrome leaves, so
+   they show about twice the lines. Targets keep --target (WCAG 2.5.8). */
+@media (max-width: 45.99rem) {
+  :root {
+    --gap: 0.5rem;
+    --gutter: 0.5rem;
+    --text-size: 1rem;
+    /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
+    --radius: calc(var(--radius-md) + 0.5rem + 1px);
+    --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.5rem));
+    /* 1rem of the 12rem keeps the button row clear of iOS Safari's floating toolbar, which overlays the page and is not part of any safe-area inset; more would push the next panel's controls under it. */
+    --pane-height: clamp(16rem, calc(100svh - 12rem), 48rem);
+  }
+
+  .site-header {
+    padding-block: 0.5rem;
+
+    h1 {
+      font-size: 1.25rem;
+    }
+  }
+
+  main {
+    padding-block-end: 1rem;
+
+    > form {
+      gap: 0.75rem;
+    }
+  }
+
+  .history {
+    margin-block-start: 0.75rem;
+  }
+
+  .panel,
+  .settings,
+  .history {
+    padding: 0.5rem;
+  }
+
+  #text,
+  .output {
+    padding-inline: 0.5rem;
+    line-height: 1.5;
+  }
+
+  .pane-head {
+    flex-wrap: nowrap;
+    align-items: center;
+
+    > .language {
+      flex: 1 1 0;
+      min-inline-size: 0;
+      flex-direction: row;
+      align-items: center;
+    }
+
+    .language label {
+      flex: none;
+      font-size: 0.75rem;
+    }
+
+    .language select {
+      --chevron-gap: 0.5rem;
+      padding-inline-start: 0.5rem;
+    }
+  }
+
+  .view-switch {
+    flex: none;
+
+    > button {
+      padding-inline: 0.5rem;
+    }
+  }
+
+  /* The Model switch has three buttons and must stay on one row in fonts wider than the
+     design font (the CI runner's fallback is one). */
+  #model-switch > button {
+    padding-inline: 0.25rem;
+  }
+
+  /* Too narrow for the select and the switch side by side: the switch drops below. */
+  @media (max-width: 22rem) {
+    .pane-head {
+      flex-wrap: wrap;
+
+      > .language {
+        flex-basis: 100%;
+      }
+    }
+  }
+
+  .actions > button {
+    min-inline-size: 5rem;
+    padding-inline: 0.75rem;
+  }
+
+  #open {
+    padding-inline: 0.5rem;
+  }
+
+  .pdf-pages {
+    --strip-pad: 0.25rem;
+    inline-size: 4.5rem;
+  }
+}

@@ -1,0 +1,130 @@
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+}
+
+label,
+legend,
+summary {
+  font-weight: 600;
+}
+
+.language label {
+  color: var(--muted);
+  font-size: 0.875rem;
+}
+
+input[type="text"],
+select,
+textarea {
+  inline-size: 100%;
+  min-block-size: var(--target);
+  padding: 0.5rem 0.75rem;
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  font: inherit;
+}
+
+/* Own chevron so its gap to the top, bottom and end edges is equal
+   ((target - 0.5rem) / 2 each), instead of the browser's fixed offset. */
+select {
+  --chevron: 0.5rem;
+  --chevron-gap: calc((var(--target) - var(--chevron)) / 2);
+  appearance: none;
+  padding-inline-end: calc(var(--chevron-gap) * 2 + var(--chevron));
+  background-image:
+    linear-gradient(45deg, transparent 50%, var(--text) 50%), linear-gradient(315deg, transparent 50%, var(--text) 50%);
+  background-size: calc(var(--chevron) / 2) var(--chevron);
+  background-position:
+    right calc(var(--chevron-gap) + var(--chevron) / 2) center,
+    right var(--chevron-gap) center;
+  background-repeat: no-repeat;
+  font-weight: 600;
+}
+
+textarea::placeholder {
+  color: var(--muted);
+  opacity: 1;
+}
+
+/* The native grip sits in the square corner and pokes out past the rounded
+   border; hide it and draw one over it instead. The native hit area stays in
+   the corner (about 15px square), so the drawn grip must lie inside it to
+   respond to the mouse. Only the option boxes resize. */
+.options textarea {
+  background-image: linear-gradient(
+    135deg,
+    transparent 50%,
+    var(--muted) 50%,
+    var(--muted) 56%,
+    transparent 56%,
+    transparent 72%,
+    var(--muted) 72%,
+    var(--muted) 78%,
+    transparent 78%
+  );
+  background-size: 0.625rem 0.625rem;
+  background-position: right 0.25rem bottom 0.25rem;
+  background-repeat: no-repeat;
+  resize: vertical;
+
+  &::-webkit-resizer {
+    background: none;
+  }
+
+  /* iOS Safari cannot resize text areas, so the drawn grip would only
+     mislead. (-webkit-touch-callout is supported by iOS WebKit alone.) */
+  @supports (-webkit-touch-callout: none) {
+    background-image: none;
+    resize: none;
+  }
+}
+
+textarea {
+  resize: none;
+  min-block-size: 4.5rem;
+  line-height: 1.6;
+}
+
+/* Text areas: larger type and roomier side padding on wide screens. */
+#text,
+.output {
+  font-size: var(--text-size);
+  padding-inline: 0.75rem;
+}
+
+@media (min-width: 46rem) {
+  #text,
+  .output {
+    padding-inline: 1.5rem;
+  }
+}
+
+/* Source text box, source preview and translation: one size and position. */
+#text,
+.output-area {
+  block-size: var(--pane-height);
+}
+
+fieldset :is(input[type="text"], select, textarea) {
+  border-radius: var(--radius-sm);
+}
+
+fieldset {
+  margin: 0;
+  padding: 0.5rem 0.75rem 0.75rem;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+  min-inline-size: 0;
+
+  &:disabled {
+    color: var(--muted);
+
+    label {
+      color: var(--muted);
+    }
+  }
+}

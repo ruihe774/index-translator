@@ -1,0 +1,59 @@
+.pane-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: var(--gap);
+
+  > .language {
+    flex: 1 1 12rem;
+  }
+}
+
+.view-switch {
+  display: flex;
+  flex-wrap: wrap;
+  max-inline-size: 100%;
+
+  > button {
+    padding-inline: 0.875rem;
+
+    &:not(:first-child) {
+      margin-inline-start: -1px;
+      border-start-start-radius: var(--radius-min);
+      border-end-start-radius: var(--radius-min);
+    }
+
+    &:not(:last-child) {
+      border-start-end-radius: var(--radius-min);
+      border-end-end-radius: var(--radius-min);
+    }
+
+    &[aria-pressed="true"] {
+      color: var(--on-accent);
+      background: var(--accent);
+      border-color: var(--accent);
+    }
+
+    &[aria-disabled="true"] {
+      color: var(--muted);
+      background: var(--surface-sunken);
+      border: 1px dashed var(--border);
+    }
+  }
+}
+
+/* Short names where the Model switch would wrap. Only one span is rendered, so the accessible
+   name is the visible text (WCAG 2.5.3). Nailong is the model's own short name. */
+.short {
+  display: none;
+}
+
+@media (max-width: 32rem) {
+  .long {
+    display: none;
+  }
+
+  .short {
+    display: inline;
+  }
+}

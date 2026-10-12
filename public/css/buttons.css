@@ -1,0 +1,50 @@
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+
+  /* Clear, Stop and Translate share one width, so swapping Clear for Stop moves nothing. */
+  > button {
+    min-inline-size: 6.5rem;
+  }
+}
+
+button {
+  min-block-size: var(--target);
+  min-inline-size: var(--target);
+  padding: 0.5rem 1.25rem;
+  font: inherit;
+  font-weight: 600;
+  color: var(--text);
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+
+  &:hover:not([aria-disabled="true"]) {
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface-sunken));
+  }
+
+  &.primary {
+    color: var(--on-accent);
+    background: var(--accent);
+    border-color: var(--accent);
+
+    &:hover:not([aria-disabled="true"]) {
+      background: color-mix(in srgb, var(--accent) 88%, var(--text));
+    }
+  }
+
+  &[aria-disabled="true"] {
+    color: var(--muted);
+    background: var(--surface-sunken);
+    border: 1px dashed var(--border);
+    cursor: default;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  button {
+    transition: background-color 0.15s;
+  }
+}

@@ -1,0 +1,58 @@
+/* The form above has its own 1.5rem gap; the history sits outside it. */
+.history {
+  margin-block-start: 1.5rem;
+}
+
+.history-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--gap);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--divider);
+  border-radius: var(--radius-md);
+
+  p {
+    margin: 0;
+  }
+}
+
+.history-text {
+  overflow-wrap: anywhere;
+}
+
+.history-actions {
+  display: flex;
+  flex-wrap: wrap;
+  /* Intentional 2x gap to avoid misclick. */
+  gap: calc(var(--gap) * 2);
+
+  /* Same touch target as a button, the underline (from the link style) marks them as links. */
+  > a {
+    display: inline-flex;
+    align-items: center;
+    min-inline-size: var(--target);
+    font-weight: 300;
+    color: inherit;
+  }
+
+  > a[aria-disabled="true"] {
+    color: var(--muted);
+    text-decoration: none;
+    cursor: default;
+  }
+}
+
+.history-buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+}
