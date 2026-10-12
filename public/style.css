@@ -984,6 +984,12 @@
       }
     }
 
+    /* The Model switch has three buttons and must stay on one row in fonts wider than the
+       design font (the CI runner's fallback is one). */
+    #model-switch > button {
+      padding-inline: 0.25rem;
+    }
+
     /* Too narrow for the select and the switch side by side: the switch drops below. */
     @media (max-width: 22rem) {
       .pane-head {

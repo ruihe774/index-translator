@@ -131,6 +131,10 @@ test("Model is a switch on the same line as Model and options", async ({ app }) 
   expect(await names()).toEqual(["Automatic", "Index-Translate-9B", "Index-NativeLong-9B"]);
   await app.page.setViewportSize({ width: 320, height: 700 });
   expect(await names()).toEqual(["Auto", "Index-Translate", "Nailong"]);
+  // A wider font than the design font, as on the CI runner: the switch must still fit.
+  await app.page.evaluate(() => {
+    for (const e of document.querySelectorAll<HTMLElement>("*")) e.style.fontFamily = "DejaVu Sans";
+  });
   const tops = await group
     .getByRole("button")
     .evaluateAll((els) => els.map((el) => Math.round(el.getBoundingClientRect().top)));
