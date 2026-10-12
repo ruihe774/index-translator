@@ -87,11 +87,13 @@ it). It needs 64-bit Windows 10 or 11. Then:
 2. Start **Index Translator** from the Start menu (or let the installer start it). A small window
    with four links opens.
 3. Once, click **Download models**: it fetches the models and example voices (about 17.7 GiB) in a
-   console window, shows each model's license and waits for you to type `yes`. An interrupted
-   download continues when you run it again.
+   console window, shows each model's license and waits for you to type `yes`. **Do not close the
+   console window until it says it is done**: closing it stops the download (running it again
+   continues where it stopped).
 4. Click **Start translator**. The app opens in your browser; the port (3000) can be changed in the
-   window first. The server runs in its console window: stop the app with `Ctrl+C` or by closing
-   that window.
+   window first. **Do not close the console window that opens: the app runs in it, and closing it
+   stops the app** (the page in your browser then stops working). Leave it open, or minimize it,
+   for as long as you use the translator. To stop the app, press `Ctrl+C` in that window or close it.
 
 **Third-party notices** shows the licenses of the bundled software (also in
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)); **Server settings** lists every option. For options
