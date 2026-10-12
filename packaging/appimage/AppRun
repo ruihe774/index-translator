@@ -21,6 +21,10 @@ case "${1:-}" in
     # A .env file in the directory the user happens to be in is not this program's.
     exec "$bun" --no-env-file "$app/scripts/fetch_models.ts" "$@"
     ;;
+  notices | licenses)
+    cat "$app/THIRD_PARTY_NOTICES.md"
+    exit 0
+    ;;
   -V | --version | version)
     cat "$app/VERSION"
     exit 0
@@ -32,6 +36,7 @@ Index Translator: a local text translator that runs on your GPU.
 Usage:
   $self [--setting value ...]   start the translator and open it in the browser
   $self fetch [--model id ...]  download the models and the example voices (about 17.7 GiB)
+  $self notices                 print the third-party notices (licenses of what is bundled)
   $self --version
 
 fetch downloads everything unless --model names what to get: index-translate-9b,
@@ -52,4 +57,10 @@ EOF
     ;;
 esac
 
+cat >&2 <<EOF
+Index Translator bundles third-party software: llama.cpp and ggml (MIT), audio.cpp (Apache-2.0,
+with cJSON, SentencePiece and Abseil) and Bun (MIT, with JavaScriptCore under the LGPL and other
+components). Models are not bundled; \`fetch\` shows their licenses before it downloads them.
+Full notices: $self notices
+EOF
 exec "$bun" --no-env-file "$app/src/server.ts" "$@"

@@ -1,10 +1,21 @@
 // scripts/fetch_models.ts against a local server that stands in for Hugging Face, with the real curl.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
+import assert from "node:assert";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { type Download, FetchError, fetchFile, fetchModels, MODEL_IDS, parseArgs, plan } from "../scripts/fetch_models";
+import {
+  acceptNotices,
+  type Download,
+  FetchError,
+  fetchFile,
+  fetchModels,
+  MODEL_IDS,
+  NOTICES,
+  parseArgs,
+  plan,
+} from "../scripts/fetch_models";
 import { MODELS } from "../src/models";
 
 const curl = Bun.which("curl");
@@ -204,6 +215,81 @@ describe.skipIf(!curl)("fetchFile", () => {
     const log: string[] = [];
     const attempt = fetchFile(file(), "http://127.0.0.1:9", curl!, (line) => log.push(line));
     await expect(attempt).rejects.toThrow(/failed \(curl exit code 7\); check the network connection/);
+  });
+});
+
+describe("notices", () => {
+  const dirs = () => ({
+    models: join(dir, "m"),
+    speechModel: join(dir, "s"),
+    separationModel: join(dir, "b"),
+    voices: join(dir, "v"),
+  });
+
+  test("every model has a notice, and THIRD_PARTY_NOTICES.md covers it", () => {
+    const doc = readFileSync(join(import.meta.dir, "..", "THIRD_PARTY_NOTICES.md"), "utf8");
+    for (const id of MODEL_IDS) {
+      expect(NOTICES[id]).toBeTruthy();
+      expect(doc).toContain(`\`${id}\``);
+    }
+    expect(NOTICES["index-tts-2.5"]).toContain("bilibili Model Use License");
+  });
+
+  test('the notices of what is missing are printed, then only "yes" lets the download go on', async () => {
+    for (const answer of ["yes", " YES \n"]) {
+      const log: string[] = [];
+      const questions: string[] = [];
+      await acceptNotices(
+        ["index-translate-9b", "bs-roformer"],
+        dirs(),
+        (l) => log.push(l),
+        async (q) => (questions.push(q), answer),
+      );
+      expect(log.join("\n")).toContain(NOTICES["index-translate-9b"]!);
+      expect(log.join("\n")).toContain(NOTICES["bs-roformer"]!);
+      expect(log.join("\n")).not.toContain(NOTICES["index-tts-2.5"]!);
+      expect(questions).toHaveLength(1);
+    }
+  });
+
+  test("anything but yes, and an empty answer, stops with nothing downloaded", async () => {
+    for (const answer of ["", "y", "no", "yes please"]) {
+      const attempt = acceptNotices(
+        ["index-tts-2.5"],
+        dirs(),
+        () => {},
+        async () => answer,
+      );
+      await expect(attempt).rejects.toThrow("not accepted");
+    }
+  });
+
+  test("a model whose files are all there asks nothing", async () => {
+    const d = dirs();
+    mkdirSync(d.separationModel, { recursive: true });
+    const [f] = plan(["bs-roformer"], d);
+    writeFileSync(f!.dest, "x");
+    const log: string[] = [];
+    await acceptNotices(
+      ["bs-roformer"],
+      d,
+      (l) => log.push(l),
+      async () => assert.fail("asked"),
+    );
+    expect(log).toEqual([]);
+  });
+
+  test("fetchModels asks before it writes anything", async () => {
+    if (!curl) return;
+    const models = join(dir, "models");
+    const attempt = fetchModels(
+      ["--model", "index-translate-9b", "--models-dir", models],
+      Bun.env,
+      () => {},
+      async () => "no",
+    );
+    await expect(attempt).rejects.toThrow("not accepted");
+    expect(existsSync(models)).toBe(false);
   });
 });
 

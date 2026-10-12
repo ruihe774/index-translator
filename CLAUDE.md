@@ -279,5 +279,11 @@ Hence the 11,000-letter switch point.
   on the GPU-less runner that the AppImage stops with the Vulkan message, that with
   `--gpu-layers 0` the packed engine loads and it stops at the missing model, and that `fetch`
   refuses an unknown model. `BUN_VERSION` there is the Bun that ships. Nothing in CI runs a model.
+- Third-party notices: `THIRD_PARTY_NOTICES.md` (packed into the AppImage, printed by its `notices`
+  subcommand; `AppRun` also prints a short bundled-software notice to stderr at server start).
+  `fetch` (`acceptNotices` in `scripts/fetch_models.ts`) prints `NOTICES[id]` for each model that has
+  a file missing and needs "yes" on stdin before it downloads; there is deliberately no bypass flag
+  (`echo yes |` works). A new pin, library or model means checking its license and updating the
+  markdown, `NOTICES` and the short text in `AppRun`; a test keeps the markdown and `NOTICES` in step.
 - Update `docs/openapi.yaml` and the tests in `test/api-contract.test.ts` / `test/openapi.test.ts` when the API changes.
 - Update README.md for user-visible behaviour only; keep developer detail here.

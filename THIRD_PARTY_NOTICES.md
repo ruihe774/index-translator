@@ -1,0 +1,84 @@
+# Third-party notices
+
+Index Translator is built on the software and models below. They keep their own licenses; this file
+names them and says where the full texts are. The AppImage carries this file in
+`usr/share/index-translator/` and prints it with `Index_Translator-x86_64.AppImage notices`.
+
+## Software in the AppImage and in a source build
+
+| Component | Used for | License | Full text |
+|---|---|---|---|
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) (libllama, the Vulkan and CPU backends), pinned in `scripts/build_llama.ts` | Running the translation models | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
+| [ggml](https://github.com/ggml-org/ggml), part of llama.cpp | Tensor library under llama.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
+| [audio.cpp](https://github.com/0xShug0/audio.cpp) (`libaudiocpp.so`), pinned in `scripts/build_audiocpp.ts` | Reading aloud (IndexTTS-2.5) and voice separation (BS-RoFormer) | Apache-2.0, Copyright 2026 ShugoAI LLC | `vendor/audio.cpp/LICENSE` |
+| ggml, audio.cpp's fork, linked statically into `libaudiocpp.so` | Tensor library under audio.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/audio.cpp/LICENSE.ggml` |
+| cJSON, SentencePiece and the Abseil subset that comes with SentencePiece, in audio.cpp's source tree (`external/`) | Compiled into `libaudiocpp.so` | Each under its own license (MIT, Apache-2.0, Apache-2.0); the files are in audio.cpp's repository at the pinned commit | `external/*/LICENSE` there |
+| [Bun](https://bun.sh) (`usr/bin/bun` in the AppImage) | JavaScript runtime and HTTP server | MIT for Bun itself; the executable also contains statically linked components under their own licenses, among them JavaScriptCore (LGPL-2.0 or later) | <https://bun.com/docs/project/licensing> |
+
+The AppImage is packed with [appimagetool](https://github.com/AppImage/appimagetool) and the
+[type2-runtime](https://github.com/AppImage/type2-runtime), whose code is embedded at the start of the
+AppImage file; their notices are in those projects' repositories.
+
+Not included in the AppImage and taken from the system: the C and C++ runtime libraries, `libgomp`,
+the Vulkan loader and the GPU driver, `curl` (used by `fetch`).
+
+The web app (`public/`) has no third-party code and loads no fonts or scripts from the network.
+`prompts/` holds the four NativeLong prompt templates of
+[bilibili/Index-Translate](https://github.com/bilibili/Index-Translate) (Apache-2.0).
+
+## Models and voices that `fetch` downloads
+
+They are not in the AppImage and not in this repository. `fetch` prints the notice of each one it is
+about to download and asks for `yes` first (the same text as here, in short).
+
+### Index-Translate-9B and Index-NativeLong-9B (`index-translate-9b`, `index-nailong-9b`)
+
+- Authors: IndexTeam (bilibili). Files: `Index-Translate-9B-GGUF`, `Index-Nailong-9B-GGUF` on Hugging Face.
+- License: Apache-2.0 (as stated on both model cards).
+- <https://huggingface.co/IndexTeam/Index-Translate-9B-GGUF>, <https://huggingface.co/IndexTeam/Index-Nailong-9B-GGUF>
+
+### IndexTTS-2.5 (`index-tts-2.5`)
+
+- Authors: bilibili (IndexTeam). The file is audio.cpp's GGUF conversion (`audio-cpp/audio.cpp-gguf`,
+  `IndexTTS2.5-GGUF`, Q8_0), a Derivative Work in the license's terms.
+- License: **bilibili Model Use License Agreement**, not an Apache or MIT license. It is a limited,
+  royalty-free license with these conditions, among others (the full text governs; the Chinese
+  version prevails over the English one):
+  - Anyone whose (or whose affiliates') products had more than 100 million monthly active users, or
+    whose annual revenue exceeded RMB 1 billion, needs a separate license from bilibili.
+  - The model and anything derived from it must not be used to improve another AI model, except
+    IndexTTS-2 itself, its derivatives, or non-commercial AI models.
+  - No use that violates the law where the output or the model is generated or used (false
+    information, discriminatory content, privacy violations), and no use in high-risk scenarios such
+    as medical diagnosis, autonomous driving, military applications, critical-infrastructure control,
+    large-scale biometric surveillance or automated decision-making.
+  - Whoever distributes the model must keep the copyright notices and a copy of the license, and
+    bind recipients to it. A distributed derivative must say that its modifications are not endorsed
+    by bilibili.
+  - The model and its output are provided as is; you answer for what you make with them (including
+    other people's rights in a voice you imitate). bilibili can revoke the license on breach.
+  - Chinese law governs; disputes go to the Shanghai Arbitration Commission.
+- Full text: <https://huggingface.co/IndexTeam/IndexTTS-2.5/blob/main/LICENSE>
+- <https://huggingface.co/audio-cpp/audio.cpp-gguf/tree/main/IndexTTS2.5-GGUF>
+
+### Example voices (downloaded with `index-tts-2.5`)
+
+- Eleven speaker recordings (`voice_01.wav` …) from the IndexTTS-2 demo space,
+  <https://huggingface.co/spaces/IndexTeam/IndexTTS-2-Demo>, whose card states Apache-2.0. Who the
+  speakers are and what they agreed to is not stated there. A voice is imitated by the speech model,
+  so use only voices you have the right to use; your own uploads are your responsibility.
+
+### BS-RoFormer ep368 (`bs-roformer`)
+
+- Voice separation model, audio.cpp's GGUF conversion (`audio-cpp/audio.cpp-gguf`,
+  `BS-RoFormer-ep368-GGUF`, Q8_0).
+- License: Apache-2.0 according to audio.cpp's list of model licenses; the source of the checkpoint
+  is undocumented there.
+- <https://huggingface.co/audio-cpp/audio.cpp-gguf/tree/main/BS-RoFormer-ep368-GGUF>,
+  <https://github.com/0xShug0/audio.cpp/blob/main/docs/model_licenses.md>
+
+## Keeping this file true
+
+Changing a pin in `scripts/build_llama.ts`, `scripts/build_audiocpp.ts`, `scripts/build_appimage.ts` or
+`scripts/fetch_models.ts`, or adding a model, a library or a download, means checking its license and
+updating this file and `NOTICES` in `scripts/fetch_models.ts`.

@@ -97,6 +97,7 @@ for (const name of await readdir(join(root, "src"))) {
 await cp(join(root, "public"), join(app, "public"), { recursive: true });
 await cp(join(root, "prompts"), join(app, "prompts"), { recursive: true });
 await cp(join(root, "docs", "openapi.yaml"), join(app, "docs", "openapi.yaml"));
+await cp(join(root, "THIRD_PARTY_NOTICES.md"), join(app, "THIRD_PARTY_NOTICES.md"));
 await cp(join(root, "scripts", "fetch_models.ts"), join(app, "scripts", "fetch_models.ts"));
 await Bun.write(join(app, "package.json"), `${JSON.stringify({ name: "index-translator", type: "module" })}\n`);
 await copyEngine(llama, join(app, "vendor", "llama.cpp"));

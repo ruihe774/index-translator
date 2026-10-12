@@ -67,7 +67,10 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
 
 - `fetch` puts the models into `~/.local/share/index-translator` and needs `curl`. An interrupted
   download continues when you run it again. To leave out reading aloud (3.7 GiB):
-  `fetch --model index-translate-9b --model index-nailong-9b`.
+  `fetch --model index-translate-9b --model index-nailong-9b`. Before it downloads, `fetch` shows each
+  model's license and waits for you to type `yes`; the speech model is under bilibili's own license
+  with usage conditions, not Apache or MIT. `notices` prints the licenses of the software in the
+  AppImage; they are also in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
 - It runs on x86-64 or aarch64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later). Besides
   the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
   an x86-64 processor with AVX2.

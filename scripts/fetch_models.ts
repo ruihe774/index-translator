@@ -11,6 +11,10 @@
 // variables or as flags. Files are downloaded with curl, so an interrupted download continues
 // where it stopped when this is run again, and curl's proxy settings apply. HF_ENDPOINT names
 // another host than https://huggingface.co (a mirror).
+//
+// Before anything is downloaded it prints the license notice of each model that is missing and waits
+// for "yes" on standard input (a pipe works: `echo yes | ...`); anything else stops it. Models that
+// are all there already ask nothing. The full notices are in THIRD_PARTY_NOTICES.md.
 
 import { existsSync } from "node:fs";
 import { mkdir, rename, rm } from "node:fs/promises";
@@ -78,6 +82,39 @@ const VOICES: Record<string, string> = {
   "voice_09.wav": "8702467b9b3c83a16bead578e131c4388b3ef82aeff861bd336e622a9ae8a511",
   "voice_11.wav": "82730e38498413d4371a76e841cd91fa2f74843b79ad3b606d45ad8a7b7a736c",
   "voice_12.wav": "d67bd4f51773677d5902409813b9bb4c1d59b8243c74fc104553b80b49edd22b",
+};
+
+/** What the user is shown before a model is downloaded; THIRD_PARTY_NOTICES.md has the full account. */
+export const NOTICES: Record<string, string> = {
+  "index-translate-9b": [
+    "Index-Translate-9B (IndexTeam / bilibili), GGUF Q6_K",
+    "  License: Apache-2.0",
+    "  https://huggingface.co/IndexTeam/Index-Translate-9B-GGUF",
+  ].join("\n"),
+  "index-nailong-9b": [
+    "Index-NativeLong-9B (IndexTeam / bilibili), GGUF Q6_K",
+    "  License: Apache-2.0",
+    "  https://huggingface.co/IndexTeam/Index-Nailong-9B-GGUF",
+  ].join("\n"),
+  [SPEECH]: [
+    "IndexTTS-2.5 (bilibili), GGUF Q8_0 converted by audio.cpp, and the example voices",
+    "  License: bilibili Model Use License Agreement (NOT Apache or MIT). Among its terms:",
+    "   - a separate license from bilibili is needed above 100 million monthly active users or",
+    "     RMB 1 billion annual revenue (yours or your affiliates')",
+    "   - not to be used to improve other AI models, except non-commercial ones",
+    "   - no use that breaks the law, and no high-risk use (medical diagnosis, autonomous driving,",
+    "     military, critical infrastructure, large-scale biometric surveillance, automated decisions)",
+    "   - you answer for what you make with it, including other people's rights in an imitated voice",
+    "   - bilibili may revoke the license on breach; Chinese law applies",
+    "  Full text: https://huggingface.co/IndexTeam/IndexTTS-2.5/blob/main/LICENSE",
+    "  Example voices: speaker prompts of https://huggingface.co/spaces/IndexTeam/IndexTTS-2-Demo",
+    "  (Apache-2.0 on its card; the speakers' own rights are not stated). Use only voices you may use.",
+  ].join("\n"),
+  [SEPARATION]: [
+    "BS-RoFormer ep368, GGUF Q8_0 converted by audio.cpp",
+    "  License: Apache-2.0 per audio.cpp's model license list (checkpoint source undocumented there)",
+    "  https://github.com/0xShug0/audio.cpp/blob/main/docs/model_licenses.md",
+  ].join("\n"),
 };
 
 export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH, SEPARATION];
@@ -202,11 +239,37 @@ export async function fetchFile(
   );
 }
 
+/** Standard input's next line after `question`; empty at the end of input. */
+async function readLine(question: string): Promise<string> {
+  process.stdout.write(question);
+  for await (const line of console) return line;
+  return "";
+}
+
+/**
+ * Prints the notice of every model in `ids` that still has a file to download and asks for "yes".
+ * Throws FetchError unless the answer is "yes"; asks nothing when there is nothing to download.
+ */
+export async function acceptNotices(
+  ids: readonly string[],
+  dirs: Parameters<typeof plan>[1],
+  log: (line: string) => void,
+  ask: (question: string) => Promise<string>,
+): Promise<void> {
+  const needed = ids.filter((id) => plan([id], dirs).some((f) => !existsSync(f.dest)));
+  if (needed.length === 0) return;
+  log("Third-party notices for what is about to be downloaded (see also THIRD_PARTY_NOTICES.md):\n");
+  for (const id of needed) log(`${NOTICES[id]}\n`);
+  const answer = (await ask('Type "yes" to accept these terms and download: ')).trim().toLowerCase();
+  if (answer !== "yes") throw new FetchError("the terms were not accepted; nothing was downloaded");
+}
+
 /** Downloads what `argv` asks for. Throws FetchError with the reason when something is not as pinned. */
 export async function fetchModels(
   argv: readonly string[],
   env: Record<string, string | undefined> = Bun.env,
   log: (line: string) => void = console.log,
+  ask: (question: string) => Promise<string> = readLine,
 ): Promise<void> {
   const { ids, rest } = parseArgs(argv);
   let cfg: ReturnType<typeof loadConfig>;
@@ -222,12 +285,14 @@ export async function fetchModels(
     );
   }
   const endpoint = (env.HF_ENDPOINT || "https://huggingface.co").replace(/\/+$/, "");
-  const files = plan(ids, {
+  const dirs = {
     models: cfg.modelsDir,
     speechModel: cfg.speechModelDir,
     separationModel: cfg.separationModelDir,
     voices: cfg.voicesDir,
-  });
+  };
+  await acceptNotices(ids, dirs, log, ask);
+  const files = plan(ids, dirs);
   for (const file of files) await fetchFile(file, endpoint, curl, log);
 }
 
