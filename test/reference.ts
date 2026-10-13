@@ -109,12 +109,10 @@ export function refEncode(samples: Int16Array, channels: number, sampleRate: num
   dv.setUint32(4, n);
   let p = 8;
   const lms: Lms[] = [];
-  const prevSf: number[] = [];
-  for (let c = 0; c < channels; c++) {
-    lms.push({ h: new Int32Array(4), w: Int32Array.from([0, 0, -(1 << 13), 1 << 14]) });
-    prevSf.push(0);
-  }
+  for (let c = 0; c < channels; c++) lms.push({ h: new Int32Array(4), w: Int32Array.from([0, 0, -(1 << 13), 1 << 14]) });
   for (let fs = 0; fs < n; fs += 5120) {
+    // qoa.h starts every frame's scalefactor search from 0
+    const prevSf = new Array<number>(channels).fill(0);
     const flen = Math.min(5120, n - fs);
     const slices = Math.ceil(flen / 20);
     const fsize = 8 + 16 * channels + slices * channels * 8;

@@ -22,7 +22,8 @@
 ;;   0x0100  DEQ     i32[16][8] dequantization table
 ;;   0x0300  SCR     scratch for spilling vectors (lane extraction), 0xc0 bytes
 ;;   0x0400  ELMS    encoder LMS state, 31 channels x { i32 h[4]; i32 w[4] }
-;;   0x0800  EPSF    encoder previous scalefactor per channel, i32[32]
+;;   0x0800  EPSF    encoder previous scalefactor per channel, i32[32]; reset
+;;                     at the start of every frame, as in qoa.h
 ;;   0x0880  GOFS    u8[4] candidate group offsets
 ;;   0x0900  BEST    best candidate state: h[4] w[4] qa qhi
 ;;   0x0C00  DLMS    decoder LMS state, 31 channels x { i32 h[4]; i32 w[4] }
@@ -37,9 +38,9 @@
   (global $f_samplerate (export "frame_samplerate") (mut i32) (i32.const 0))
   (global $f_samples    (export "frame_samples")    (mut i32) (i32.const 0))
   (global $heap_base    (export "heap_base")        i32 (i32.const 0x10000))
-  ;; ELMS + EPSF: snapshot / restore to run several encoders on one instance
+  ;; ELMS: snapshot / restore to run several encoders on one instance
   (global (export "encoder_state")      i32 (i32.const 0x0400))
-  (global (export "encoder_state_size") i32 (i32.const 0x0480))
+  (global (export "encoder_state_size") i32 (i32.const 0x0400))
 
   ;; search order of the four groups of four candidate scalefactors, relative
   ;; to the previous slice's scalefactor: {-1..2}, {-5..-2}, {3..6}, {7..10}
@@ -108,8 +109,7 @@
       (v128.store (local.get $p) (v128.const i32x4 0 0 0 0))
       (v128.store offset=16 (local.get $p) (v128.const i32x4 0 0 -8192 16384))
       (br_if $l (i32.lt_u (local.tee $p (i32.add (local.get $p) (i32.const 32)))
-                          (i32.add (i32.const 0x400) (i32.shl (local.get $ch) (i32.const 5))))))
-    (memory.fill (i32.const 0x800) (i32.const 0) (i32.const 128)))
+                          (i32.add (i32.const 0x400) (i32.shl (local.get $ch) (i32.const 5)))))))
 
   ;; Encode one slice of `len` (1..20) samples of one channel.
   ;; All 16 scalefactors are evaluated, four at a time: lane k of every vector
@@ -323,6 +323,8 @@
         (i64.or (i64.shl (i64.extend_i32_u (local.get $ch)) (i64.const 56))
                 (i64.shl (i64.extend_i32_u (i32.and (local.get $sr) (i32.const 0xffffff))) (i64.const 32)))
         (i64.extend_i32_u (i32.or (i32.shl (local.get $flen) (i32.const 16)) (local.get $fsize)))))
+    ;; like qoa.h, start each frame's scalefactor search from 0
+    (memory.fill (i32.const 0x800) (i32.const 0) (i32.shl (local.get $ch) (i32.const 2)))
     ;; LMS state per channel; weights are saturated to int16 (and the encoder's
     ;; own copy too) so that the decoder starts from exactly the same state
     (local.set $p (i32.add (local.get $dst) (i32.const 8)))
