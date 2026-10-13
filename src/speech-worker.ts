@@ -5,7 +5,7 @@
 
 import { readFileSync } from "node:fs";
 import { AbortedError, SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
-import { readWav, resample, writeWav } from "./wav";
+import { normalizeLoudness, readWav, resample, writeWav } from "./wav";
 
 export type SpeechWorkerRequest =
   | { type: "load"; req: number; options: SpeechModelOptions }
@@ -81,7 +81,7 @@ function handle(msg: SpeechWorkerRequest): SpeechWorkerReply {
       const mixture = resample(readWav(new Uint8Array(msg.wav)), SEPARATOR_RATE, 2);
       const separator = VoiceSeparator.load(msg.options);
       try {
-        return { type: "audio", req: msg.req, wav: writeWav(separator.vocals(mixture)) };
+        return { type: "audio", req: msg.req, wav: writeWav(normalizeLoudness(separator.vocals(mixture))) };
       } finally {
         separator.free();
       }

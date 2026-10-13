@@ -1,7 +1,32 @@
 // Decoding voice recordings and writing synthesized speech (src/wav.ts).
 
 import { describe, expect, test } from "bun:test";
-import { type Pcm, readWav, resample, writeWav } from "../src/wav";
+import { normalizeLoudness, type Pcm, readWav, resample, writeWav } from "../src/wav";
+
+describe("normalizeLoudness", () => {
+  const tone = (amp: number, silence = 0): Pcm => {
+    const samples = new Float32Array(8000 + silence);
+    for (let i = 0; i < 8000; i++) samples[i] = amp * Math.sin(i * 0.1);
+    return { samples, sampleRate: 8000, channels: 1 };
+  };
+  const rms = (p: Pcm) => Math.sqrt(p.samples.reduce((s, x) => s + x * x, 0) / p.samples.length);
+
+  test("brings quiet and loud voices to the same level", () => {
+    expect(rms(normalizeLoudness(tone(0.05)))).toBeCloseTo(0.1, 1);
+    expect(rms(normalizeLoudness(tone(0.14)))).toBeCloseTo(0.1, 1);
+  });
+
+  test("pauses do not count and the peak stays below full scale", () => {
+    const out = normalizeLoudness(tone(0.05, 8000));
+    expect(Math.max(...out.samples.map(Math.abs))).toBeLessThanOrEqual(0.98 + 1e-6);
+    expect(rms({ ...out, samples: out.samples.slice(0, 8000) })).toBeCloseTo(0.1, 1);
+  });
+
+  test("silence is left alone", () => {
+    const silent: Pcm = { samples: new Float32Array(100), sampleRate: 8000, channels: 1 };
+    expect(normalizeLoudness(silent)).toBe(silent);
+  });
+});
 
 interface Format {
   format: number;

@@ -115,7 +115,9 @@ third-party code is in `public/vendor/` (see "Opening files and PDF" below).
   waits for it and re-checks `loaded` after every wait, so it is never posted to a worker without
   its model; utterances already posted run before the separation (arrival order). The model takes
   only 44.1 kHz, mono or stereo, so the worker resamples first; the stored voice is the separated
-  vocals (16-bit, 44.1 kHz). A failure is `SeparationError` (`502 speech_error`, the sample is
+  vocals (16-bit, 44.1 kHz), loudness-normalized (`normalizeLoudness` in `src/wav.ts`: RMS of the
+  samples above -40 dBFS brought to -20 dBFS, peak capped at 0.98; the model does not normalize,
+  and the clone's loudness follows the sample's). A failure is `SeparationError` (`502 speech_error`, the sample is
   not kept), not a fallback to the unseparated sample. Not run on `VOICES_DIR` files.
 - Speech has its own single-slot queue (`MAX_QUEUE` waiting) and never holds the translation
   queue: a translation and a synthesis may run on the GPU at the same time.

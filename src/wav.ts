@@ -126,6 +126,34 @@ export function resample(pcm: Pcm, sampleRate: number, channels = pcm.channels):
   return { samples: out, sampleRate, channels: kept };
 }
 
+/** RMS the voice is brought to, over its non-silent samples (-20 dBFS). */
+const TARGET_RMS = 0.1;
+/** Samples below this (-40 dBFS) are pauses and noise floor, not counted in the loudness. */
+const SILENCE_GATE = 0.01;
+const PEAK_LIMIT = 0.98;
+
+/**
+ * Simple loudness normalization: scales the samples so that the RMS of those above the silence
+ * gate is TARGET_RMS, but never so far that the peak passes PEAK_LIMIT. Not a standard (no
+ * K-weighting, no integration windows); a recording with no sound above the gate is unchanged.
+ */
+export function normalizeLoudness(pcm: Pcm): Pcm {
+  let sum = 0;
+  let count = 0;
+  let peak = 0;
+  for (const x of pcm.samples) {
+    const a = Math.abs(x);
+    if (a > peak) peak = a;
+    if (a > SILENCE_GATE) {
+      sum += x * x;
+      count++;
+    }
+  }
+  if (count === 0) return pcm;
+  const gain = Math.min(TARGET_RMS / Math.sqrt(sum / count), PEAK_LIMIT / peak);
+  return { ...pcm, samples: pcm.samples.map((x) => x * gain) };
+}
+
 /** A WAV file with 16-bit PCM samples. */
 export function writeWav(pcm: Pcm): ArrayBuffer {
   const bytes = pcm.samples.length * 2;
