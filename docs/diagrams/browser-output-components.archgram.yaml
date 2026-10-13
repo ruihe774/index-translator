@@ -1,0 +1,31 @@
+archgram: 1
+title: Index Translator browser components, output
+description: >-
+  The page shows the output as Markdown when the source looks like Markdown, and builds the DOM
+  from the parser's blocks with no innerHTML. The link check marks the output's links against the
+  source and the paragraph check compares the blocks. Clicking a link opens the confirmation
+  dialog, and clicking a paragraph syncs the two sides through the same paragraph alignment.
+direction: right
+legend: true
+nodes:
+  - { id: app, kind: browser, label: "public/app.ts", note: "wires the page" }
+  - { id: markdown, kind: service, label: "public/markdown.ts", note: pure parser }
+  - { id: markdown-dom, kind: service, label: "public/markdown-dom.ts", note: "builds DOM, no innerHTML" }
+  - { id: links, kind: check, label: "public/links.ts", note: link check }
+  - { id: link-dialog, kind: service, label: "public/link-dialog.ts", note: confirms a link }
+  - { id: paragraphs, kind: check, label: "public/paragraphs.ts", note: counts paragraphs }
+  - { id: sync-scroll, kind: service, label: "public/sync-scroll.ts", note: click to sync }
+edges:
+  - { from: app, to: markdown, label: "looks like Markdown" }
+  - { from: app, to: markdown-dom, label: render output }
+  - { from: markdown-dom, to: markdown }
+  - { from: markdown-dom, to: links }
+  - { from: links, to: markdown }
+  - { from: links, to: paragraphs }
+  - { from: app, to: link-dialog, label: "confirm link" }
+  - { from: link-dialog, to: links }
+  - { from: app, to: paragraphs }
+  - { from: app, to: sync-scroll }
+  - { from: sync-scroll, to: paragraphs }
+flows:
+  - { name: output, steps: [app, markdown-dom, links, paragraphs] }

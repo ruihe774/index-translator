@@ -1,0 +1,21 @@
+{
+  "version": "2025.10",
+  "modifiers": {
+    "theme": {
+      "contexts": {
+        "light": [{ "color": { "$type": "color",
+          "canvas": { "$value": "#f3f5fa" }, "card": { "$value": "#ffffff" },
+          "badge": { "$value": "#eceff6" }, "border": { "$value": "#767c8c" },
+          "text": { "$value": "#1b1f2a" }, "muted": { "$value": "#4a5163" },
+          "danger": { "$value": "#b3261e" } } }],
+        "dark": [{ "color": { "$type": "color",
+          "canvas": { "$value": "#101217" }, "card": { "$value": "#1a1d25" },
+          "badge": { "$value": "#14161c" }, "border": { "$value": "#8b92a3" },
+          "text": { "$value": "#ebedf3" }, "muted": { "$value": "#b3b9c7" },
+          "danger": { "$value": "#ff8a80" } } }]
+      },
+      "default": "light"
+    }
+  },
+  "resolutionOrder": [{ "$ref": "#/modifiers/theme" }]
+}

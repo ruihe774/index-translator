@@ -1,0 +1,31 @@
+archgram: 1
+title: Index Translator browser components, reading aloud
+description: >-
+  The page's main module hands the reading controls to the speech UI module. It splits the text
+  into utterances, asks the server for each one, and gives the audio to the player. The player
+  keeps the requests ahead of playback in its buffer. The QOA module decodes compressed audio in a
+  worker and falls back to WAV when the codec is not there.
+direction: right
+legend: true
+frames:
+  - { id: playback, label: Playback }
+nodes:
+  - { id: server, kind: service, label: Server API, note: "/speech, see server diagrams", variant: external }
+  - { id: speech-ui, kind: service, label: "public/speech-ui.ts", note: "wires the reading controls" }
+  - { id: speech-text, kind: service, label: "public/speech-text.ts", note: "utterances from text" }
+  - { id: speech, kind: service, label: "public/speech.ts", note: "player, plays the audio", frame: playback }
+  - { id: speech-buffer, kind: service, label: "public/speech-buffer.ts", note: buffers ahead, frame: playback }
+  - { id: speech-audio, kind: file, label: "public/speech-audio.ts", note: "PCM types, channels", frame: playback }
+  - { id: qoa, kind: service, label: "public/qoa.ts", note: "decodes QOA, falls back", frame: playback }
+  - { id: qoa-worker, kind: service, label: "public/qoa-worker.ts", note: worker, frame: playback }
+edges:
+  - { from: speech-ui, to: server, label: "POST /speech" }
+  - { from: speech-ui, to: speech, label: "new player" }
+  - { from: speech, to: speech-buffer }
+  - { from: speech, to: speech-audio }
+  - { from: speech-ui, to: speech-text, label: "split text" }
+  - { from: speech-ui, to: qoa, label: "QOA decoder" }
+  - { from: qoa, to: qoa-worker }
+flows:
+  - { name: a sentence, steps: [speech-ui, server] }
+  - { name: playback, steps: [speech-ui, speech, speech-buffer] }

@@ -1,0 +1,37 @@
+archgram: 1
+title: Index Translator browser components, files and history
+description: >-
+  The page's main module saves finished translations in the history and lists them through the
+  history panel. History is kept in local storage only. The Open control reads a text or PDF file
+  in the browser. A PDF goes to a worker that reads its text page by page, and the messages module
+  tells the user what was loaded. Nothing in these files goes to the server.
+direction: right
+legend: true
+frames:
+  - { id: saved, label: History }
+  - { id: files, label: Files }
+nodes:
+  - { id: app, kind: browser, label: "public/app.ts", note: "wires the page" }
+  - { id: history, kind: service, label: "public/history.ts", note: "keeps the last 50", frame: saved }
+  - { id: history-ui, kind: service, label: "public/history-ui.ts", note: history panel, frame: saved }
+  - { id: storage, kind: storage, label: "public/storage.ts", note: "local storage, try and catch" }
+  - { id: messages, kind: service, label: "public/messages.ts", note: status line texts }
+  - { id: paragraphs, kind: check, label: "public/paragraphs.ts", note: counts paragraphs }
+  - { id: open-ui, kind: service, label: "public/open-ui.ts", note: "Open and Close", frame: files }
+  - { id: open-file, kind: service, label: "public/open-file.ts", note: "reads text, file kinds", frame: files }
+  - { id: pdf, kind: service, label: "public/pdf.ts", note: loads libraries, frame: files }
+  - { id: pdf-worker, kind: service, label: "public/pdf-worker.ts", note: text per page, frame: files }
+edges:
+  - { from: app, to: history, label: "save translation" }
+  - { from: app, to: history-ui }
+  - { from: history, to: storage }
+  - { from: history-ui, to: messages, label: "model label" }
+  - { from: app, to: messages }
+  - { from: messages, to: paragraphs }
+  - { from: app, to: open-ui, label: "open a file" }
+  - { from: open-ui, to: open-file }
+  - { from: open-ui, to: pdf, label: "open a PDF" }
+  - { from: pdf, to: pdf-worker }
+flows:
+  - { name: save history, steps: [app, history, storage] }
+  - { name: open a PDF, steps: [app, open-ui, pdf, pdf-worker] }

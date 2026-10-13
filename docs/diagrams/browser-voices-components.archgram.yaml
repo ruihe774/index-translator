@@ -1,0 +1,23 @@
+archgram: 1
+title: Index Translator browser components, voices
+description: >-
+  The speech UI module offers the voices the server lists and keeps the chosen one in local
+  storage. A voice sample is recorded by the microphone module, encoded as WAV, and uploaded to
+  the server, which separates the voice and keeps it. Local storage holds only the chosen voice.
+direction: right
+legend: true
+frames:
+  - { id: voices, label: Voices }
+nodes:
+  - { id: server, kind: service, label: Server API, note: "/voices, see server diagrams", variant: external }
+  - { id: speech-ui, kind: service, label: "public/speech-ui.ts", note: "lists and picks voices" }
+  - { id: voice-sample, kind: service, label: "public/voice-sample.ts", note: uploads a sample, frame: voices }
+  - { id: mic-recorder, kind: service, label: "public/mic-recorder.ts", note: records a sample, frame: voices }
+  - { id: storage, kind: storage, label: "public/storage.ts", note: "local storage, try and catch" }
+edges:
+  - { from: speech-ui, to: storage, label: "chosen voice" }
+  - { from: speech-ui, to: voice-sample, label: "voice upload" }
+  - { from: voice-sample, to: mic-recorder, label: "encode WAV" }
+  - { from: voice-sample, to: server, label: "POST /voices" }
+flows:
+  - { name: a voice upload, steps: [speech-ui, voice-sample, server] }

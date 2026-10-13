@@ -1,0 +1,44 @@
+archgram: 1
+title: Index Translator server components, engines
+description: >-
+  The app builds the chat or document prompt and asks the translation engine for a generation. The
+  engine owns a worker thread, which loads the model through the bindings file and calls libllama.
+  The chat prompt is written by the bindings, not by the templates. The speech engine owns its own
+  worker thread, which calls libaudiocpp through its bindings and reads WAV samples through wav.ts.
+  The two engines share nothing but the process.
+direction: down
+legend: true
+frames:
+  - { id: translation, label: Translation }
+  - { id: reading, label: Reading aloud }
+nodes:
+  - { id: app, kind: service, label: "src/app.ts", note: "caller, see HTTP diagram" }
+  - { id: prompt, kind: service, label: "src/prompt.ts", note: chat and document prompts, frame: translation }
+  - { id: prompts, kind: file, label: "prompts/*.txt", note: NativeLong templates, frame: translation }
+  - { id: llama, kind: service, label: "src/llama.ts", note: owns the worker, frame: translation }
+  - { id: llama-worker, kind: service, label: "src/llama-worker.ts", note: worker thread, frame: translation }
+  - { id: llama-ffi, kind: service, label: "src/llama-ffi.ts", note: bindings, frame: translation }
+  - { id: shim, kind: generated, label: "src/llama-shim.c", note: builds the shim, frame: translation }
+  - { id: libllama, kind: service, label: libllama, note: llama.cpp on Vulkan, variant: external }
+  - { id: speech, kind: service, label: "src/speech.ts", note: one utterance at a time, frame: reading }
+  - { id: speech-worker, kind: service, label: "src/speech-worker.ts", note: worker thread, frame: reading }
+  - { id: audiocpp-ffi, kind: service, label: "src/audiocpp-ffi.ts", note: bindings, frame: reading }
+  - { id: wav, kind: service, label: "src/wav.ts", note: "WAV, resample, loudness", frame: reading }
+  - { id: libaudiocpp, kind: service, label: libaudiocpp, note: audio.cpp, variant: external }
+edges:
+  - { from: app, to: prompt, label: build prompt }
+  - { from: app, to: llama, label: generate }
+  - { from: app, to: speech, label: synthesize }
+  - { from: prompt, to: prompts, label: templates }
+  - { from: llama, to: llama-worker, label: "load, decode" }
+  - { from: llama-worker, to: llama-ffi, label: calls }
+  - { from: llama-ffi, to: libllama, label: dlopen }
+  - { from: shim, to: llama-ffi, label: loads }
+  - { from: speech, to: speech-worker, label: "start, post" }
+  - { from: speech, to: wav, label: read WAV }
+  - { from: speech-worker, to: audiocpp-ffi, label: calls }
+  - { from: speech-worker, to: wav, label: "resample, loudness" }
+  - { from: audiocpp-ffi, to: libaudiocpp, label: dlopen }
+flows:
+  - { name: a translation, steps: [app, llama, llama-worker, llama-ffi, libllama] }
+  - { name: reading aloud, steps: [app, speech, speech-worker, audiocpp-ffi, libaudiocpp] }

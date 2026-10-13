@@ -1,0 +1,35 @@
+archgram: 1
+title: Index Translator architecture
+description: >-
+  The web app runs in the browser. It picks the model by the text's length and keeps the history
+  and any opened PDF there. Its requests go to one Bun process. A translation waits in its own line
+  for the llama worker thread, which loads the chat model. Reading aloud waits in a second line for
+  the speech worker thread, which loads the speech model, and the voice separator when a sample is
+  uploaded. The two lines and the two worker threads never wait for each other.
+direction: down
+legend: true
+frames:
+  - { id: client, label: In the browser }
+  - { id: server, label: One Bun process }
+nodes:
+  - { id: browser, kind: browser, label: Web app, note: "picks model, keeps history", frame: client }
+  - { id: api, kind: service, label: HTTP API, note: "/api/v1 and the web app", frame: server }
+  - { id: tline, kind: queue, label: Translation line, note: one at a time, frame: server }
+  - { id: sline, kind: queue, label: Speech line, note: one at a time, frame: server }
+  - { id: llama, kind: service, label: llama worker, note: libllama on Vulkan, frame: server }
+  - { id: speech, kind: service, label: speech worker, note: libaudiocpp, frame: server }
+  - { id: chat, kind: model, label: Chat model, note: "GGUF, Q6_K" }
+  - { id: tts, kind: model, label: Speech model, note: IndexTTS-2.5 }
+  - { id: sep, kind: model, label: Voice separator, note: BS-RoFormer }
+edges:
+  - { from: browser, to: api, label: "translate, speech" }
+  - { from: api, to: tline, label: translate }
+  - { from: api, to: sline, label: speech }
+  - { from: tline, to: llama }
+  - { from: sline, to: speech }
+  - { from: chat, to: llama, label: loads }
+  - { from: tts, to: speech, label: loads }
+  - { from: sep, to: speech, label: "loads on upload", style: dashed }
+flows:
+  - { name: a translation, steps: [browser, api, tline, llama] }
+  - { name: reading aloud, steps: [browser, api, sline, speech] }
