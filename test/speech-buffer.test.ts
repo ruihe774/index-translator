@@ -18,10 +18,10 @@ function setup(lines: number[], seconds = 10) {
   const requests: Request[] = [];
   const synthesize = (text: string, _settings: unknown, signal: AbortSignal) =>
     new Promise<ArrayBuffer>((resolve, reject) => {
-      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       requests.push({ text, signal, resolve: () => resolve(new ArrayBuffer(4)), reject });
     });
-  const buffer = new SpeechBuffer(synthesize, async () => ({ duration: seconds }) as AudioBuffer);
+  const buffer = new SpeechBuffer(synthesize, () => Promise.resolve({ duration: seconds } as AudioBuffer));
   buffer.open(segments, { lang: "en", voice: "v", speed: 1 });
   const flush = async () => {
     for (let i = 0; i < 5; i++) await Bun.sleep(0);
@@ -157,7 +157,7 @@ describe("stale requests", () => {
     expect(t.live().map(t.index)).toEqual([3]);
   });
 
-  test("the request for the piece the reader waits for is never aborted by aiming at it again", async () => {
+  test("the request for the piece the reader waits for is never aborted by aiming at it again", () => {
     const t = setup(blocks(10));
     t.buffer.aim(2);
     t.buffer.aim(2);

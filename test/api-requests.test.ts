@@ -312,7 +312,7 @@ describe("request body size", () => {
       headers: { "content-type": "application/json" },
       body: chunkedBody(text),
       duplex: "half",
-    } as RequestInit);
+    });
   }
 
   test("a small chunked body is parsed normally", async () => {
@@ -425,10 +425,10 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
   });
 
   test("tokenize reports fits at exactly the input limit and not one token over", async () => {
-    const at = (await json(await post("/api/v1/tokenize", { text: textFor(400), target_lang: "en" }))) as any;
+    const at = await json(await post("/api/v1/tokenize", { text: textFor(400), target_lang: "en" }));
     expect(at).toMatchObject({ prompt_tokens: 400, fits: true, max_output_tokens: 536 });
 
-    const over = (await json(await post("/api/v1/tokenize", { text: textFor(401), target_lang: "en" }))) as any;
+    const over = await json(await post("/api/v1/tokenize", { text: textFor(401), target_lang: "en" }));
     expect(over).toMatchObject({ prompt_tokens: 401, fits: false, max_output_tokens: 535 });
   });
 

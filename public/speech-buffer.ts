@@ -48,7 +48,7 @@ export class SpeechBuffer {
   private settings: SpeechSettings = { lang: "", voice: "", speed: 1 };
   private cursor = 0;
   private audio = new Map<number, AudioBuffer>();
-  private failed = new Map<number, unknown>();
+  private failed = new Map<number, Error>();
   private waiters = new Map<number, Waiter[]>();
   private flight: { index: number; abort: AbortController } | null = null;
   /** Seconds of audio held. */
@@ -99,7 +99,8 @@ export class SpeechBuffer {
   take(i: number): Promise<AudioBuffer> {
     const audio = this.audio.get(i);
     if (audio) return Promise.resolve(audio);
-    if (this.failed.has(i)) return Promise.reject(this.failed.get(i));
+    const failure = this.failed.get(i);
+    if (failure) return Promise.reject(failure);
     return new Promise((resolve, reject) => {
       const waiting = this.waiters.get(i) ?? [];
       waiting.push({ resolve, reject });
@@ -180,7 +181,7 @@ export class SpeechBuffer {
           if (this.flight !== flight) return;
           this.flight = null;
           // Reported when the reader gets there, by `take`.
-          this.failed.set(i, error);
+          this.failed.set(i, error instanceof Error ? error : new Error(String(error)));
           const waiting = this.waiters.get(i) ?? [];
           this.waiters.delete(i);
           for (const w of waiting) w.reject(error);

@@ -27,7 +27,7 @@ export function encodeWav(samples: Float32Array, rate: number): ArrayBuffer {
     const v = Math.max(-1, Math.min(1, samples[i]!));
     view.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
   }
-  return view.buffer as ArrayBuffer;
+  return view.buffer;
 }
 
 /** The parts of MediaStream, MediaRecorder and navigator.mediaDevices that are used. */

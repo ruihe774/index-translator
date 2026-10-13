@@ -838,7 +838,7 @@ describe("POST /voices", () => {
       headers: { "content-type": "audio/wav" },
       body: stream,
       duplex: "half",
-    } as RequestInit);
+    });
     expect(chunked.status).toBe(413);
   });
 
@@ -892,7 +892,7 @@ describe("validateSample", () => {
   const stereo = (seconds: number, rate: number) => {
     const wav = new Uint8Array(silentWav(seconds, rate));
     new DataView(wav.buffer).setUint16(22, 2, true);
-    return wav.buffer as ArrayBuffer;
+    return wav.buffer;
   };
 
   test("the duration counts frames, not samples", () => {

@@ -4,9 +4,20 @@ root = "test"
 
 [lint]
 ignorePatterns = ["vendor/", "models/", "dist/", "playwright-report/", "test-results/"]
+maxWarnings = 0
 
 [lint.rules]
-"@typescript-eslint/no-explicit-any" = "warn"
+# Off on purpose: the app and its tests handle untyped JSON from the wire (HTTP responses, SSE events,
+# the mock engine). test/api-contract.test.ts checks those bodies against docs/openapi.yaml instead.
+"@typescript-eslint/no-explicit-any" = "off"
+"@typescript-eslint/no-unsafe-member-access" = "off"
+"@typescript-eslint/no-unsafe-assignment" = "off"
+"@typescript-eslint/no-unsafe-call" = "off"
+"@typescript-eslint/no-unsafe-return" = "off"
+"@typescript-eslint/no-unsafe-argument" = "off"
+# Off: Bun types `expect(...).rejects.toX()` as void, but the tests await it as documented, and the
+# rule would have them drop the await.
+"@typescript-eslint/await-thenable" = "off"
 "no-empty" = ["error", { allowEmptyCatch = true }]
 "@typescript-eslint/no-unused-vars" = ["error", { argsIgnorePattern = "^_", varsIgnorePattern = "^_", caughtErrorsIgnorePattern = "^_" }]
 "@typescript-eslint/ban-ts-comment" = ["error", { "ts-expect-error" = false }]

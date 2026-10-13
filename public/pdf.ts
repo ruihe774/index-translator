@@ -110,7 +110,7 @@ function startExtractor(): Extractor {
       const id = next++;
       return new Promise<Reply>((resolve, reject) => {
         waiting.set(id, { resolve, reject });
-        worker.postMessage({ id, ...request } as WorkerRequest, transfer);
+        worker.postMessage({ id, ...request } satisfies WorkerRequest, transfer);
       });
     },
     end() {

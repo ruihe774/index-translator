@@ -15,7 +15,7 @@ There is no `bunx` (Bun's install gives only `bun.exe`); use `npx` (comes with N
   (add `--reporter=line` for compact output). `bun run e2e` starts Playwright under Bun, which
   prints nothing and exits 0 without running the tests here; do not trust its result.
 - Chromium comes from Playwright's download (`npx playwright install chromium`) or `CHROMIUM_PATH`.
-- `bun run lint:ts` (`bun lint --type-aware --type-check`) reports errors that are not related to the test suite; they were not triaged on Windows.
+- `bun run lint:ts` (`bun lint --type-aware --type-check`) reports zero problems on Linux (`maxWarnings = 0` in `bunfig.toml`); it has not been run on Windows since that change.
 
 ## Writing tests that pass on Windows
 

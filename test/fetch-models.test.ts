@@ -254,7 +254,10 @@ describe("notices", () => {
         ["index-translate-9b", "bs-roformer"],
         dirs(),
         (l) => log.push(l),
-        async (q) => (questions.push(q), answer),
+        (q) => {
+          questions.push(q);
+          return Promise.resolve(answer);
+        },
       );
       expect(log.join("\n")).toContain(NOTICES["index-translate-9b"]!);
       expect(log.join("\n")).toContain(NOTICES["bs-roformer"]!);
@@ -269,7 +272,7 @@ describe("notices", () => {
         ["index-tts-2.5"],
         dirs(),
         () => {},
-        async () => answer,
+        () => Promise.resolve(answer),
       );
       await expect(attempt).rejects.toThrow("not accepted");
     }
@@ -285,9 +288,7 @@ describe("notices", () => {
       ["bs-roformer"],
       d,
       (l) => log.push(l),
-      async () => {
-        throw new Error("asked");
-      },
+      () => Promise.reject(new Error("asked")),
     );
     expect(log).toEqual([]);
   });
@@ -299,7 +300,7 @@ describe("notices", () => {
       ["--model", "index-translate-9b", "--models-dir", models],
       Bun.env,
       () => {},
-      async () => "no",
+      () => Promise.resolve("no"),
     );
     await expect(attempt).rejects.toThrow("not accepted");
     expect(existsSync(models)).toBe(false);

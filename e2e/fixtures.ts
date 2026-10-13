@@ -48,11 +48,9 @@ export const DOCUMENT = "index-nailong-9b";
 
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
   // Worker n talks to the n-th server of `e2e/playwright.config.ts` (ports step by 2).
-  // eslint-disable-next-line no-empty-pattern -- Playwright reads the fixture's dependencies from this parameter
   baseURL: async ({}, use, testInfo) => {
     await use(`http://127.0.0.1:${PORT + 2 * testInfo.parallelIndex}`);
   },
-  // eslint-disable-next-line no-empty-pattern -- as above
   mock: async ({}, use, testInfo) => {
     const CONTROL = `http://127.0.0.1:${CONTROL_PORT + 2 * testInfo.parallelIndex}/mock`;
     const call = (method: string, body?: unknown, path = ""): Promise<any> =>

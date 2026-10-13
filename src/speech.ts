@@ -380,7 +380,7 @@ export class NativeSpeech implements Speech {
     }
     if (signal.aborted) {
       release();
-      return Promise.reject(signal.reason);
+      return Promise.reject(signal.reason as Error);
     }
     clearTimeout(this.idle);
     this.pending++;
@@ -399,7 +399,7 @@ export class NativeSpeech implements Speech {
       const onAbort = () => {
         Atomics.store(abort, 0, 1);
         if (!posted.value) release();
-        reject(signal.reason);
+        reject(signal.reason as Error);
       };
       signal.addEventListener("abort", onAbort, { once: true });
       work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));

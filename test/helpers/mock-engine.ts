@@ -123,6 +123,7 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
     stopped: false,
     stop: () => end(undefined),
     kill: (reason = "the engine thread exited") => end(reason),
+    // eslint-disable-next-line @typescript-eslint/require-await -- a refusal rejects, as the real engine does, rather than throwing
     async countTokens(content, image) {
       if (model.stopped) throw new EngineError("the model is not loaded");
       if (image && mock.imageFailWith) throw new ImageInputError(mock.imageFailWith);
@@ -237,7 +238,8 @@ export const speechLauncher: SpeechLauncher = () => ({
   get error() {
     return mockSpeech.state === "unavailable" ? "the speech engine is not installed" : undefined;
   },
-  voices: async () => mockSpeech.voices,
+  voices: () => Promise.resolve(mockSpeech.voices),
+  // eslint-disable-next-line @typescript-eslint/require-await -- a bad sample rejects, as the real engine does, rather than throwing
   async addVoice(name, wav) {
     validateSample(wav);
     if (mockSpeech.separationFailWith) throw new SeparationError(mockSpeech.separationFailWith);
@@ -275,7 +277,7 @@ export const speechLauncher: SpeechLauncher = () => ({
     })();
     if (!mockSpeech.ignoreAbort) return work;
     return new Promise((resolve, reject) => {
-      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       work.then(resolve, reject);
     });
   },

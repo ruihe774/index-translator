@@ -104,7 +104,7 @@ describe("Engine lifecycle", () => {
     const engine = newEngine();
     await engine.load(MODELS[0]!);
     expect(engine.state).toBe("ready");
-    expect(engine.loaded).toBe(MODELS[0]!);
+    expect(engine.loaded).toBe(MODELS[0]);
     expect(engine.error).toBeUndefined();
     expect(fake.launches).toEqual([MODELS[0]!.id]);
   });
@@ -116,7 +116,7 @@ describe("Engine lifecycle", () => {
     const loading = engine.load(MODELS[0]!);
     await until(() => fake.launches.length === 1, "the launch to start");
     expect(engine.state).toBe("loading");
-    expect(engine.loaded).toBe(MODELS[0]!);
+    expect(engine.loaded).toBe(MODELS[0]);
     hold.open();
     await loading;
     expect(engine.state).toBe("ready");
@@ -143,7 +143,7 @@ describe("Engine lifecycle", () => {
     expect(fake.launches).toEqual([MODELS[0]!.id, MODELS[1]!.id]);
     expect(stopped()).toBe(1);
     expect(engine.state).toBe("ready");
-    expect(engine.loaded).toBe(MODELS[1]!);
+    expect(engine.loaded).toBe(MODELS[1]);
   });
 
   test("a launcher EngineError fails the load and a retry recovers", async () => {
@@ -186,7 +186,7 @@ describe("Engine lifecycle", () => {
     expect(err).toBeInstanceOf(EngineError);
     expect(err.message).toBe("the model load was superseded by a newer one");
     expect(engine.state).toBe("ready");
-    expect(engine.loaded).toBe(MODELS[1]!);
+    expect(engine.loaded).toBe(MODELS[1]);
     // Launch order is [first, second]; models are pushed as they finish loading: [second, first].
     expect(fake.models.map((m) => m.stopped)).toEqual([false, true]);
   });

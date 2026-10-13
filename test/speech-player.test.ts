@@ -41,14 +41,16 @@ class FakeAudioContext {
   constructor() {
     FakeAudioContext.last = this;
   }
-  async resume() {
+  resume() {
     this.calls.push("resume");
+    return Promise.resolve();
   }
-  async suspend() {
+  suspend() {
     this.calls.push("suspend");
+    return Promise.resolve();
   }
-  async decodeAudioData(wav: ArrayBuffer) {
-    return { wav, duration: 1 };
+  decodeAudioData(wav: ArrayBuffer) {
+    return Promise.resolve({ wav, duration: 1 });
   }
   createBuffer(channels: number, length: number, sampleRate: number) {
     const data: Float32Array[] = [];
@@ -87,10 +89,10 @@ function makeSynth(auto = false) {
         text,
         settings,
         signal,
-        resolve: () => resolve(new TextEncoder().encode(text).buffer as ArrayBuffer),
+        resolve: () => resolve(new TextEncoder().encode(text).buffer),
         reject,
       };
-      signal.addEventListener("abort", () => reject(signal.reason), { once: true });
+      signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       requests.push(req);
       if (auto) req.resolve();
     });
@@ -132,11 +134,12 @@ afterEach(() => {
 
 describe("audio that arrives decoded (QOA)", () => {
   test("is put into a buffer of its own, one array per channel, and played like a decoded WAV", async () => {
-    const synthesize = async () => ({
-      sampleRate: 22050,
-      channels: 2,
-      samples: Int16Array.of(0x4000, -0x8000, 0, 0x7fff),
-    });
+    const synthesize = () =>
+      Promise.resolve({
+        sampleRate: 22050,
+        channels: 2,
+        samples: Int16Array.of(0x4000, -0x8000, 0, 0x7fff),
+      });
     const player = new SpeechPlayer(synthesize, {
       onState() {},
       onSegment() {},
@@ -238,7 +241,7 @@ describe("the play state between pieces", () => {
     t.requests[1]!.resolve();
     await flush();
     expect(t.player.state).toBe("playing");
-    expect(t.segments.at(-1)).toBe(SEGMENTS[1]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[1]);
   });
 
   test("a piece that was fetched ahead goes on without a visible loading state", async () => {
@@ -276,7 +279,7 @@ describe("the play state between pieces", () => {
     a1!.end();
     await flush();
     expect(t.segments).toEqual([SEGMENTS[0], SEGMENTS[1]]);
-    expect(t.ctx().sources[1]).toBe(a2!); // not created again
+    expect(t.ctx().sources[1]).toBe(a2); // not created again
     expect(t.ctx().sources[2]!.startedAt).toBeCloseTo(2, 5);
   });
 
@@ -290,7 +293,7 @@ describe("the play state between pieces", () => {
     t.requests[1]!.resolve();
     await flush();
     expect(t.ctx().sources.length).toBe(2);
-    expect(t.segments.at(-1)).toBe(SEGMENTS[1]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[1]);
   });
 
   test("a cancel stops the piece that was scheduled ahead", async () => {
@@ -377,7 +380,7 @@ describe("jumping", () => {
     expect(t.requests.map((r) => r.text)).toEqual(["a1", "a2", "b1", "c1"]);
     const states = t.states.length;
     expect(t.player.jump(1)).toBe(true);
-    expect(t.segments.at(-1)).toBe(SEGMENTS[2]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[2]);
     expect(t.player.position()).toEqual({ block: 2, blocks: 3 });
     await flush();
     expect(t.player.state).toBe("playing");
@@ -387,7 +390,7 @@ describe("jumping", () => {
     expect(t.player.jump(-1)).toBe(true);
     await flush();
     expect(t.player.state).toBe("playing");
-    expect(t.segments.at(-1)).toBe(SEGMENTS[0]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[0]);
     expect(t.requests.length).toBe(4);
   });
 
@@ -400,7 +403,7 @@ describe("jumping", () => {
     const a2 = t.requests[1]!;
     expect(a2.text).toBe("a2");
     expect(t.player.jump(1)).toBe(true);
-    expect(t.segments.at(-1)).toBe(SEGMENTS[2]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[2]);
     expect(t.player.state).toBe("loading");
     // a2 is not on the way from b1: its inference is of no use any more.
     expect(a2.signal.aborted).toBe(true);
@@ -408,7 +411,7 @@ describe("jumping", () => {
     t.requests.at(-1)!.resolve();
     await flush();
     expect(t.player.state).toBe("playing");
-    expect(t.segments.at(-1)).toBe(SEGMENTS[2]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[2]);
   });
 
   test("jumps in a row leave one request, for the block arrived at", async () => {
@@ -474,7 +477,7 @@ describe("blockStart, position and canJump", () => {
     expect(t.player.position()).toEqual({ block: 1, blocks: 3 });
     expect(t.player.canJump(-1)).toBe(true); // back to a1
     t.player.jump(-1);
-    expect(t.segments.at(-1)).toBe(SEGMENTS[0]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[0]);
     expect(t.player.canJump(-1)).toBe(false); // at the start of the first block
     expect(t.player.canJump(1)).toBe(true);
   });
@@ -484,9 +487,9 @@ describe("blockStart, position and canJump", () => {
     t.player.start(SEGMENTS, SETTINGS);
     await flush();
     t.player.jump(1);
-    expect(t.segments.at(-1)).toBe(SEGMENTS[2]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[2]);
     t.player.jump(1);
-    expect(t.segments.at(-1)).toBe(SEGMENTS[3]!);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[3]);
     expect(t.player.position()).toEqual({ block: 3, blocks: 3 });
     expect(t.player.canJump(1)).toBe(false);
     expect(t.player.jump(1)).toBe(false);
@@ -632,9 +635,7 @@ describe("errors", () => {
     const t = setup();
     t.player.start(SEGMENTS, SETTINGS);
     await flush();
-    t.ctx().decodeAudioData = async () => {
-      throw new Error("bad audio");
-    };
+    t.ctx().decodeAudioData = () => Promise.reject(new Error("bad audio"));
     t.requests[0]!.resolve();
     await flush();
     expect((t.errors[0] as Error).message).toBe("bad audio");

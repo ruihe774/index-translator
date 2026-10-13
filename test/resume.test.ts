@@ -40,18 +40,20 @@ async function run(connect: (last: number, signal: AbortSignal) => Promise<Respo
 
 describe("resumableEvents", () => {
   test("a stream that ends with done is passed through", async () => {
-    const r = await run(async () => response([frame(1, "start", {}), frame(2, "done", {})]));
+    const r = await run(() => Promise.resolve(response([frame(1, "start", {}), frame(2, "done", {})])));
     expect(r.events).toEqual(["start:1", "done:2"]);
     expect(r.notes).toEqual([]);
   });
 
   test("a cut connection is resumed after the last event seen, without repeats", async () => {
     const asked: number[] = [];
-    const r = await run(async (last) => {
+    const r = await run((last) => {
       asked.push(last);
-      return last === 0
-        ? response([frame(1, "start", {}), frame(2, "delta", { text: "a" })])
-        : response([frame(3, "delta", { text: "b" }), frame(4, "done", {})]);
+      return Promise.resolve(
+        last === 0
+          ? response([frame(1, "start", {}), frame(2, "delta", { text: "a" })])
+          : response([frame(3, "delta", { text: "b" }), frame(4, "done", {})]),
+      );
     });
     expect(asked).toEqual([0, 2]);
     expect(r.events).toEqual(["start:1", "delta:2", "delta:3", "done:4"]);
@@ -60,10 +62,10 @@ describe("resumableEvents", () => {
 
   test("a failed reconnect is retried, then given up", async () => {
     let calls = 0;
-    const events = run(async (last) => {
+    const events = run((last) => {
       calls++;
-      if (last === 0) return response([frame(1, "start", {})]);
-      throw new TypeError("offline");
+      if (last === 0) return Promise.resolve(response([frame(1, "start", {})]));
+      return Promise.reject(new TypeError("offline"));
     });
     await expect(events).rejects.toThrow("could not be restored");
     expect(calls).toBe(3);
@@ -73,13 +75,13 @@ describe("resumableEvents", () => {
     const wakes = new Set<() => void>();
     const asked: number[] = [];
     const r = await run(
-      async (last, signal) => {
+      (last, signal) => {
         asked.push(last);
         if (last === 0) {
           queueMicrotask(() => setTimeout(() => wakes.forEach((w) => w()), 10));
-          return response([frame(1, "start", {})], { hang: signal });
+          return Promise.resolve(response([frame(1, "start", {})], { hang: signal }));
         }
-        return response([frame(2, "done", {})]);
+        return Promise.resolve(response([frame(2, "done", {})]));
       },
       {
         wake: (cb: () => void) => {
@@ -93,7 +95,7 @@ describe("resumableEvents", () => {
   });
 
   test("a server that cannot resume ends the stream with the failure", async () => {
-    const events = run(async () => response([frame(1, "start", {})], { id: false }));
+    const events = run(() => Promise.resolve(response([frame(1, "start", {})], { id: false })));
     await expect(events).rejects.toThrow("ended early");
   });
 });

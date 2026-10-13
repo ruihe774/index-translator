@@ -275,7 +275,7 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
   }
 
   const input: TranslateRequest = {
-    text: (body.text as string | null | undefined) ?? "",
+    text: body.text ?? "",
     image,
     model,
     targetLang,
@@ -394,6 +394,7 @@ export interface App {
   stop(): Promise<void>;
 }
 
+// eslint-disable-next-line @typescript-eslint/require-await -- a bad config rejects here, where callers await it, instead of throwing
 export async function startApp(
   cfg: Config,
   launch: Launcher = launchNative,
