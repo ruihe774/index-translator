@@ -6,10 +6,9 @@
   "scripts": {
     "dev": "OPEN_BROWSER=0 DEV_RELOAD=1 bun --watch src/server.ts",
     "test": "bun test",
-    "typecheck": "bun check -p tsconfig.json && bun check -p public/tsconfig.json && bun check -p e2e/tsconfig.json",
-    "e2e": "playwright test",
+    "e2e": "playwright test -c e2e/playwright.config.ts",
     "lint:css": "bun scripts/lint_css.ts",
-    "lint:ts": "bun lint",
+    "lint:ts": "bun lint --type-aware --type-check",
     "format:write": "bun format",
     "format:check": "bun format --check"
   },

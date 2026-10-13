@@ -532,7 +532,7 @@ test.describe("reading aloud that becomes available later", () => {
 });
 
 // Recording a voice sample. Chromium runs with a fake microphone (a tone) and accepts its
-// permission prompt (flags in playwright.config.ts).
+// permission prompt (flags in e2e/playwright.config.ts).
 test.describe("recording a voice sample", () => {
   test("Record, Stop and the new voice is selected", async ({ app }) => {
     await app.open();

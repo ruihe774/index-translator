@@ -10,12 +10,12 @@ There is no `bunx` (Bun's install gives only `bun.exe`); use `npx` (comes with N
 ## Running the checks
 
 - Unit and integration: `bun test` (all pass; the speech and llama engines are mocked, no GPU or `.dll` needed).
-- Typecheck: `bun run typecheck`.
-- e2e: run Playwright with Node, not Bun: `node node_modules/@playwright/test/cli.js test`
+- Typecheck: part of `bun run lint:ts`.
+- e2e: run Playwright with Node, not Bun: `node node_modules/@playwright/test/cli.js test -c e2e/playwright.config.ts`
   (add `--reporter=line` for compact output). `bun run e2e` starts Playwright under Bun, which
   prints nothing and exits 0 without running the tests here; do not trust its result.
 - Chromium comes from Playwright's download (`npx playwright install chromium`) or `CHROMIUM_PATH`.
-- `bun run lint:ts` (`bun lint`) reports errors that are not related to the test suite; they were not triaged on Windows.
+- `bun run lint:ts` (`bun lint --type-aware --type-check`) reports errors that are not related to the test suite; they were not triaged on Windows.
 
 ## Writing tests that pass on Windows
 
@@ -50,7 +50,7 @@ generator is used (`--config Release`). A terminal opened before the installs ne
   and the server says so when speech is first used. The patched build has not been run on Windows yet.
 - Checked on an RX 9070 (Vulkan) with the real engines: translation (72 tokens/s), speech in zh, en and ja,
   a voice upload separated by BS-RoFormer (2 s), and speech with that uploaded voice.
-- The AppImage script and the CI `appimage` job are Linux-only and were not changed. CI has `test-windows` (typecheck, `bun test`) and `engines-windows` (builds both engines, checks they open and that the server stops with a reason), neither with a GPU or models.
+- The AppImage script and the CI `appimage` job are Linux-only and were not changed. CI has `test-windows` (lint and typecheck, `bun test`) and `engines-windows` (builds both engines, checks they open and that the server stops with a reason), neither with a GPU or models.
 
 ## Building the launcher
 

@@ -7,7 +7,7 @@
   through a control port (`/mock`).
 - `speech.spec.ts`: reading aloud against the mock speech engine, which answers each utterance
   with a tenth of a second of silence and records what it was asked to say (`speech` in `/mock`).
-  The Record tests use Chromium's fake microphone: `playwright.config.ts` passes
+  The Record tests use Chromium's fake microphone: `e2e/playwright.config.ts` passes
   `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream` (a tone, prompt accepted);
   the denial test stubs `getUserMedia`.
 - `open.spec.ts`: the Open button. Text and Markdown files are given as buffers; the PDF tests open

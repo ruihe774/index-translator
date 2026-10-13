@@ -4,7 +4,7 @@
       "Bash(bun install)",
       "Bash(bun test)",
       "Bash(bun test *)",
-      "Bash(bun run typecheck)",
+      "Bash(bun run lint:ts)",
       "Bash(bun lint)",
       "Bash(bun lint *)",
       "Bash(bun run format:check)",

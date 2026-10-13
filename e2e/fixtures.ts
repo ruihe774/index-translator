@@ -44,7 +44,7 @@ export const CHAT = "index-translate-9b";
 export const DOCUMENT = "index-nailong-9b";
 
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
-  // Worker n talks to the n-th server of `playwright.config.ts` (ports step by 2).
+  // Worker n talks to the n-th server of `e2e/playwright.config.ts` (ports step by 2).
   // eslint-disable-next-line no-empty-pattern -- Playwright reads the fixture's dependencies from this parameter
   baseURL: async ({}, use, testInfo) => {
     await use(`http://127.0.0.1:${PORT + 2 * testInfo.parallelIndex}`);

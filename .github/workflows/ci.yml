@@ -14,8 +14,8 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Runs the checks, and is the Bun that gets packed into the AppImage. Needs `bun lint` and `bun check`,
-  # which only canary has. Canary builds are published only under the moving `canary` release (a
+  # Runs the checks, and is the Bun that gets packed into the AppImage. Needs `bun lint --type-check`
+  # (the type checker of `bun check`), which only canary has. Canary builds are published only under the moving `canary` release (a
   # versioned canary tag 404s), so this cannot be pinned.
   BUN_VERSION: canary
 
@@ -34,11 +34,8 @@ jobs:
       - name: Install the development tools
         run: bun install --frozen-lockfile
 
-      - name: Lint and format
+      - name: Lint, typecheck and format
         run: bun run lint:ts && bun run format:check
-
-      - name: Typecheck
-        run: bun run typecheck
 
       - name: CSS browser support
         run: bun run lint:css
@@ -177,8 +174,8 @@ jobs:
       - name: Install the development tools
         run: bun install --frozen-lockfile
 
-      - name: Typecheck
-        run: bun run typecheck
+      - name: Lint and typecheck
+        run: bun run lint:ts
 
       - name: Unit and API integration tests
         run: bun test

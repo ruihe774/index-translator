@@ -1,5 +1,9 @@
 import { availableParallelism } from "node:os";
+import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
+
+// Paths are relative to this file (e2e/), which is where Playwright resolves them; the repository root is `..`.
+const at = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 
 // One mock server (app port + control port) per worker, so tests keep their private mock state while
 // files run side by side. `E2E_WORKERS=1` gives the old serial run.
@@ -11,14 +15,15 @@ const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
 const executablePath = process.env.CHROMIUM_PATH || undefined;
 
 export default defineConfig({
-  testDir: "e2e",
+  testDir: ".",
+  outputDir: at("../test-results"),
   // Each worker has its own server and mock engine (`parallelIndex`, see `e2e/fixtures.ts`), so the tests
   // of one worker run one at a time; tests are spread over the workers.
   fullyParallel: true,
   workers: WORKERS,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
+  reporter: process.env.CI ? [["list"], ["html", { open: "never", outputFolder: at("../playwright-report") }]] : "list",
   use: {
     trace: "retain-on-failure",
     // The page keeps language choices in localStorage; each test gets a fresh context.
@@ -39,6 +44,7 @@ export default defineConfig({
   ],
   webServer: Array.from({ length: WORKERS }, (_, i) => ({
     command: "bun e2e/mock-server.ts",
+    cwd: at(".."),
     url: `http://127.0.0.1:${PORT + 2 * i}/api/v1/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
