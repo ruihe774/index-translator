@@ -13,7 +13,9 @@ TypeScript wrapper ([`src/qoa.ts`](src/qoa.ts)).
   wrap-around in its quantizer for extreme residuals. The one deliberate difference is
   described under [Notes](#notes).
 - **Fast.** Uses SIMD128 and relaxed SIMD, with a plain-SIMD fallback build for engines
-  that lack relaxed SIMD.
+  that lack relaxed SIMD. Also uses the sign-extension, non-trapping float-to-int, bulk
+  memory and branch hinting features. Engines that don't implement branch hints ignore
+  them.
 
 ## Usage
 
@@ -64,6 +66,17 @@ scalar code: full slices are completely unrolled, with the history roles rotatin
 between locals so no values are moved. A vector dot product puts the multiply plus a
 horizontal reduction on the critical path, and was measurably slower. So was decoding
 two channels in one loop, because the doubled state no longer fits in registers.
+Clamping to int16 is a branch on `x != i32.extend16_s(x)`, hinted as unlikely, instead
+of two `select`s. A well-predicted branch keeps the clamp off the dependency chain,
+which makes decoding about 10% faster on V8. The cost is on audio whose output clips
+in more than about 5% of its samples: there, mispredictions make decoding up to about
+20% slower.
+
+**Branch hints.** Every non-obvious branch carries a `metadata.code.branch_hint` that
+states what is expected: an early abandon or clip is unlikely, a full 20-sample slice
+is likely, and malformed input is unlikely. The build checks that each hint lands on an
+`if` or `br_if`. One hint is deliberately missing: hinting `len == 20` in
+`$decode_slice` as likely made JavaScriptCore decode about 25% slower.
 
 ## Performance
 
@@ -71,12 +84,12 @@ two channels in one loop, because the doubled state no longer fits in registers.
 
 | | encode | decode |
 | --- | ---: | ---: |
-| this, Node 22 (V8) | 232 ms (259× realtime) | 28 ms (2146× realtime) |
-| this, Bun 1.4 (JSC) | 257 ms | 33 ms |
-| `qoa.h`, native, `gcc -O3 -march=native` | 409 ms | 22 ms |
-| `qoa.h`, native, `clang -O3 -march=native` | 653 ms | 82 ms |
+| this, Node 22 (V8) | 210 ms (286× realtime) | 25.4 ms (2362× realtime) |
+| this, Bun 1.4 (JSC) | 220 ms | 27.5 ms |
+| `qoa.h`, native, `gcc -O3 -march=native` | 368 ms | 21.2 ms |
+| `qoa.h`, native, `clang -O3 -march=native` | 567 ms | 73 ms |
 
-The encoder is about 1.8× faster than native `qoa.h`. The decoder is within about 1.3×
+The encoder is about 1.75× faster than native `qoa.h`. The decoder is within about 1.2×
 of native gcc, and its time includes copying data in and out of wasm memory.
 
 ## Development

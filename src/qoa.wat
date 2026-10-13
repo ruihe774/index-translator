@@ -1,7 +1,12 @@
 ;; QOA (Quite OK Audio) encoder / decoder, hand-written WebAssembly text.
 ;;
 ;; Features used: SIMD128 (incl. i64x2), relaxed SIMD (i8x16.relaxed_swizzle),
-;; bulk memory (memory.fill).
+;; bulk memory (memory.fill), sign extension (i32.extend16_s), non-trapping
+;; float-to-int conversion, and branch hints. A branch hint has to sit right
+;; before the `if` / `br_if` it describes, which therefore takes its condition
+;; from the stack instead of as a folded operand:
+;;   (cond) (@metadata.code.branch_hint "\00") (if (then ...))  ;; unlikely
+;;   (cond) (@metadata.code.branch_hint "\01") (br_if $l)       ;; likely
 ;;
 ;; Encoder: produces exactly the same bitstream as the reference qoa.h
 ;; encoder. For every slice all 16 scalefactors are tried; instead of trying
@@ -55,7 +60,7 @@
     (loop $l
       ;; sf = round((i+1)^2.75) = round(x^2 * x^(1/2) * x^(1/4))
       (local.set $x (f64.convert_i32_u (i32.add (local.get $i) (i32.const 1))))
-      (local.set $sf (i32.trunc_f64_u (f64.nearest
+      (local.set $sf (i32.trunc_sat_f64_u (f64.nearest
         (f64.mul (f64.mul (local.get $x) (local.get $x))
                  (f64.mul (f64.sqrt (local.get $x))
                           (f64.sqrt (f64.sqrt (local.get $x))))))))
@@ -219,9 +224,10 @@
             (i64x2.add (i64x2.extmul_high_i32x4_s (local.get $err) (local.get $err))
                        (i64x2.extend_high_i32x4_u (local.get $pen)))))
           ;; every candidate of this group is already worse than the best one
-          (br_if $next_group (i64x2.all_true
+          (i64x2.all_true
             (v128.and (i64x2.gt_s (local.get $rlo) (local.get $bestv))
-                      (i64x2.gt_s (local.get $rhi) (local.get $bestv)))))
+                      (i64x2.gt_s (local.get $rhi) (local.get $bestv))))
+          (@metadata.code.branch_hint "\00") (br_if $next_group)
           ;; LMS update
           (local.set $delta (i32x4.shr_s (local.get $deq) (i32.const 4)))
           (local.set $m0 (i32x4.shr_s (local.get $h0) (i32.const 31)))
@@ -244,10 +250,12 @@
           (local.set $qa (v128.or (i32x4.shl (local.get $qa) (i32.const 3))
                                   (v128.or (local.get $mag) (i32x4.shr_u (local.get $n) (i32.const 31)))))
           (local.set $p (i32.add (local.get $p) (local.get $stride)))
-          (if (i32.eq (local.tee $i (i32.add (local.get $i) (i32.const 1))) (i32.const 10))
-            (then (local.set $qhi (local.get $qa))
-                  (local.set $qa (v128.const i32x4 0 0 0 0))))
-          (br_if $samples (i32.lt_u (local.get $i) (local.get $len))))
+          (i32.eq (local.tee $i (i32.add (local.get $i) (i32.const 1))) (i32.const 10))
+          (@metadata.code.branch_hint "\00")
+          (if (then (local.set $qhi (local.get $qa))
+                    (local.set $qa (v128.const i32x4 0 0 0 0))))
+          (i32.lt_u (local.get $i) (local.get $len))
+          (@metadata.code.branch_hint "\01") (br_if $samples))
 
         ;; the group ran to completion: spill and pick its best lane. Ties go
         ;; to the candidate the reference encoder tries first, i.e. the one
@@ -295,7 +303,9 @@
     (v128.store offset=0 (local.get $lms) (v128.load (i32.const 0x900)))
     (v128.store offset=16 (local.get $lms) (v128.load (i32.const 0x910)))
     (i32.store (local.get $psf) (local.get $bestsf))
-    (if (i32.gt_u (local.get $len) (i32.const 10))
+    (i32.gt_u (local.get $len) (i32.const 10))
+    (@metadata.code.branch_hint "\01")
+    (if
       (then
         (local.set $hi (i64.extend_i32_u (i32.load (i32.const 0x924))))
         (local.set $lo (i64.shl (i64.extend_i32_u (i32.load (i32.const 0x920)))
@@ -342,7 +352,8 @@
     (local.set $stride (i32.shl (local.get $ch) (i32.const 1)))
     (loop $ls
       (local.set $len (i32.sub (local.get $flen) (local.get $s)))
-      (if (i32.gt_u (local.get $len) (i32.const 20)) (then (local.set $len (i32.const 20))))
+      (i32.gt_u (local.get $len) (i32.const 20))
+      (@metadata.code.branch_hint "\01") (if (then (local.set $len (i32.const 20))))
       (local.set $sp (i32.add (local.get $src) (i32.mul (local.get $s) (local.get $stride))))
       (local.set $c (i32.const 0))
       (loop $lc2
@@ -367,6 +378,10 @@
   ;; newest history sample, and a scalar imul is much shorter than a vector
   ;; multiply plus horizontal reduction. h3 * w3 is added last so that only it
   ;; sits on the critical path; the weight update is off the chain.
+  ;; Clipping to int16 is a branch hinted as unlikely rather than two selects:
+  ;; the selects would add two compare+select steps to the chain, while the
+  ;; well-predicted branch (x != extend16_s(x)) is off it. Audio that clips in
+  ;; more than ~5% of its samples decodes slower this way.
   ;; (Interleaving two channels in one loop was tried and is slower: the
   ;; doubled state no longer fits in registers.)
   (func $decode_slice (param $lms i32) (param $p i32) (param $out i32) (param $stride i32) (param $len i32)
@@ -386,6 +401,8 @@
     (local.set $row (i32.add (i32.const 0x100)
       (i32.shl (i32.wrap_i64 (i64.shr_u (local.get $sl) (i64.const 60))) (i32.const 5))))
     (local.set $sl (i64.shl (local.get $sl) (i64.const 4)))
+    ;; Full slices are the norm, but hinting this as likely makes JSC decode
+    ;; about 25% slower, so it is left unhinted.
     (if (i32.eq (local.get $len) (i32.const 20))
       (then
         ;; full slice: completely unrolled, history roles rotate between the
@@ -401,8 +418,8 @@
                      (i32.mul (local.get $h3) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -426,8 +443,8 @@
                      (i32.mul (local.get $h0) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -451,8 +468,8 @@
                      (i32.mul (local.get $h1) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -476,8 +493,8 @@
                      (i32.mul (local.get $h2) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -501,8 +518,8 @@
                      (i32.mul (local.get $h3) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -526,8 +543,8 @@
                      (i32.mul (local.get $h0) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -551,8 +568,8 @@
                      (i32.mul (local.get $h1) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -576,8 +593,8 @@
                      (i32.mul (local.get $h2) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -601,8 +618,8 @@
                      (i32.mul (local.get $h3) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -626,8 +643,8 @@
                      (i32.mul (local.get $h0) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -651,8 +668,8 @@
                      (i32.mul (local.get $h1) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -676,8 +693,8 @@
                      (i32.mul (local.get $h2) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -701,8 +718,8 @@
                      (i32.mul (local.get $h3) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -726,8 +743,8 @@
                      (i32.mul (local.get $h0) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -751,8 +768,8 @@
                      (i32.mul (local.get $h1) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -776,8 +793,8 @@
                      (i32.mul (local.get $h2) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -801,8 +818,8 @@
                      (i32.mul (local.get $h3) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -826,8 +843,8 @@
                      (i32.mul (local.get $h0) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -851,8 +868,8 @@
                      (i32.mul (local.get $h1) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -876,8 +893,8 @@
                      (i32.mul (local.get $h2) (local.get $w3)))
             (i32.const 13))
           (local.get $r)))
-        (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-        (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+        (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+        (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
         (i32.store16 (local.get $out) (local.get $x))
         (local.set $out (i32.add (local.get $out) (local.get $stride)))
         (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
@@ -907,8 +924,8 @@
                        (i32.mul (local.get $h3) (local.get $w3)))
               (i32.const 13))
             (local.get $r)))
-          (local.set $x (select (local.get $x) (i32.const 32767) (i32.lt_s (local.get $x) (i32.const 32767))))
-          (local.set $x (select (local.get $x) (i32.const -32768) (i32.gt_s (local.get $x) (i32.const -32768))))
+          (i32.ne (local.get $x) (i32.extend16_s (local.get $x)))
+          (@metadata.code.branch_hint "\00") (if (then (local.set $x (i32.xor (i32.shr_s (local.get $x) (i32.const 31)) (i32.const 32767)))))
           (i32.store16 (local.get $out) (local.get $x))
           (local.set $r (i32.shr_s (local.get $r) (i32.const 4)))
           (local.set $m (i32.shr_s (local.get $h0) (i32.const 31)))
@@ -947,7 +964,8 @@
     (local $slices i32) (local $c i32) (local $p i32) (local $v v128) (local $lms i32)
     (local $s i32) (local $len i32) (local $stride i32)
     (local $out i32)
-    (if (i32.lt_u (local.get $avail) (i32.const 8)) (then (return (i32.const -1))))
+    (i32.lt_u (local.get $avail) (i32.const 8))
+    (@metadata.code.branch_hint "\00") (if (then (return (i32.const -1))))
     (local.set $hdr (call $load_be64 (local.get $src)))
     (local.set $ch (i32.wrap_i64 (i64.shr_u (local.get $hdr) (i64.const 56))))
     (local.set $sr (i32.and (i32.wrap_i64 (i64.shr_u (local.get $hdr) (i64.const 32))) (i32.const 0xffffff)))
@@ -956,16 +974,17 @@
     (global.set $f_channels (local.get $ch))
     (global.set $f_samplerate (local.get $sr))
     (global.set $f_samples (local.get $fs))
-    (if (i32.or (i32.or (i32.eqz (local.get $ch)) (i32.gt_u (local.get $ch) (i32.const 31)))
-                (i32.or (i32.eqz (local.get $sr))
-                        (i32.or (i32.eqz (local.get $fs)) (i32.gt_u (local.get $fs) (i32.const 5120)))))
-      (then (return (i32.const -2))))
+    (i32.or (i32.or (i32.eqz (local.get $ch)) (i32.gt_u (local.get $ch) (i32.const 31)))
+            (i32.or (i32.eqz (local.get $sr))
+                    (i32.or (i32.eqz (local.get $fs)) (i32.gt_u (local.get $fs) (i32.const 5120)))))
+    (@metadata.code.branch_hint "\00") (if (then (return (i32.const -2))))
     (local.set $slices (i32.div_u (i32.add (local.get $fs) (i32.const 19)) (i32.const 20)))
-    (if (i32.ne (local.get $fsize)
-                (i32.add (i32.add (i32.const 8) (i32.shl (local.get $ch) (i32.const 4)))
-                         (i32.shl (i32.mul (local.get $slices) (local.get $ch)) (i32.const 3))))
-      (then (return (i32.const -3))))
-    (if (i32.gt_u (local.get $fsize) (local.get $avail)) (then (return (i32.const -4))))
+    (i32.ne (local.get $fsize)
+            (i32.add (i32.add (i32.const 8) (i32.shl (local.get $ch) (i32.const 4)))
+                     (i32.shl (i32.mul (local.get $slices) (local.get $ch)) (i32.const 3))))
+    (@metadata.code.branch_hint "\00") (if (then (return (i32.const -3))))
+    (i32.gt_u (local.get $fsize) (local.get $avail))
+    (@metadata.code.branch_hint "\00") (if (then (return (i32.const -4))))
 
     ;; LMS state: int16 big endian history[4], weights[4] -> i32x4 h, w
     (local.set $p (i32.add (local.get $src) (i32.const 8)))
@@ -982,7 +1001,8 @@
     (local.set $stride (i32.shl (local.get $ch) (i32.const 1)))
     (loop $ls
       (local.set $len (i32.sub (local.get $fs) (local.get $s)))
-      (if (i32.gt_u (local.get $len) (i32.const 20)) (then (local.set $len (i32.const 20))))
+      (i32.gt_u (local.get $len) (i32.const 20))
+      (@metadata.code.branch_hint "\01") (if (then (local.set $len (i32.const 20))))
       (local.set $out (i32.add (local.get $dst) (i32.shl (i32.mul (local.get $s) (local.get $ch)) (i32.const 1))))
       (local.set $lms (i32.const 0xc00))
       (local.set $c (i32.const 0))
