@@ -3,9 +3,10 @@ title: Index Translator server components, engines
 description: >-
   The app builds the chat or document prompt and asks the translation engine for a generation. The
   engine owns a worker thread, which loads the model through the bindings file and calls libllama.
-  The chat prompt is written by the bindings, not by the templates. The speech engine owns its own
-  worker thread, which calls libaudiocpp through its bindings and reads WAV samples through wav.ts.
-  The two engines share nothing but the process.
+  The chat prompt is written by the bindings, not by the templates. An image is encoded by libmtmd on
+  that same thread. The speech engine owns its own worker thread, which calls libaudiocpp through its
+  bindings, runs the voice separator on uploaded samples, and reads WAV samples through wav.ts. The
+  two engines share nothing but the process.
 direction: down
 legend: true
 frames:
@@ -20,8 +21,9 @@ nodes:
   - { id: llama-ffi, kind: service, label: "src/llama-ffi.ts", note: bindings, frame: translation }
   - { id: shim, kind: generated, label: "src/llama-shim.c", note: builds the shim, frame: translation }
   - { id: libllama, kind: service, label: libllama, note: llama.cpp on Vulkan, variant: external }
+  - { id: libmtmd, kind: service, label: libmtmd, note: "image encoder", variant: external }
   - { id: speech, kind: service, label: "src/speech.ts", note: one utterance at a time, frame: reading }
-  - { id: speech-worker, kind: service, label: "src/speech-worker.ts", note: worker thread, frame: reading }
+  - { id: speech-worker, kind: service, label: "src/speech-worker.ts", note: "worker, speech and separator", frame: reading }
   - { id: audiocpp-ffi, kind: service, label: "src/audiocpp-ffi.ts", note: bindings, frame: reading }
   - { id: wav, kind: service, label: "src/wav.ts", note: "WAV, resample, loudness", frame: reading }
   - { id: libaudiocpp, kind: service, label: libaudiocpp, note: audio.cpp, variant: external }
@@ -33,6 +35,7 @@ edges:
   - { from: llama, to: llama-worker, label: "load, decode" }
   - { from: llama-worker, to: llama-ffi, label: calls }
   - { from: llama-ffi, to: libllama, label: dlopen }
+  - { from: llama-ffi, to: libmtmd, label: "dlopen, images" }
   - { from: shim, to: llama-ffi, label: loads }
   - { from: speech, to: speech-worker, label: "start, post" }
   - { from: speech, to: wav, label: read WAV }

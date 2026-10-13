@@ -4,7 +4,9 @@ description: >-
   The entry point loads the configuration and runs the preflight check before it starts the app.
   Preflight probes the llama library in a child process and checks the default model's file. The
   app checks each request's origin and host, serves the web app, puts translations and speech into
-  their own lines, and hands the work to the engines. The engines are drawn in the next diagram.
+  their own lines, and hands the work to the engines. An image is prepared before it takes a place in
+  the line, so a bad one never waits. A translation the reader has left keeps running for a while and
+  can be read again. The engines are drawn in the next diagram.
 direction: right
 legend: true
 frames:
@@ -13,15 +15,16 @@ frames:
 nodes:
   - { id: client, kind: browser, label: Web app, note: "public/, in the browser" }
   - { id: server, kind: script, label: "src/server.ts", note: "entry: preflight, then start", frame: startup }
-  - { id: config, kind: file, label: "src/config.ts", note: settings from env and flags, frame: startup }
-  - { id: preflight, kind: check, label: "src/preflight.ts", note: refuses a machine it cannot run, frame: startup }
+  - { id: config, kind: file, label: "src/config.ts", note: env and flags, frame: startup }
+  - { id: preflight, kind: check, label: "src/preflight.ts", note: refuses an unusable machine, frame: startup }
   - { id: probe, kind: script, label: "src/llama-probe.ts", note: child process, frame: startup }
   - { id: models, kind: file, label: "src/models.ts", note: the two model specs, frame: startup }
-  - { id: app, kind: service, label: "src/app.ts", note: "routes, SSE, translation", frame: http }
+  - { id: app, kind: service, label: "src/app.ts", note: "routes, SSE, resumable jobs", frame: http }
+  - { id: image, kind: service, label: "src/image.ts", note: "PNG for the engine", frame: http }
   - { id: access, kind: check, label: "src/access.ts", note: origin and host rules, frame: http }
   - { id: static, kind: service, label: "src/static.ts", note: serves public/, frame: http }
   - { id: qoa, kind: service, label: "src/qoa-stream.ts", note: QOA audio stream, frame: http }
-  - { id: queue, kind: queue, label: "src/queue.ts", note: "one line each, 429 when full", frame: http }
+  - { id: queue, kind: queue, label: "src/queue.ts", note: "429 when full", frame: http }
   - { id: llama, kind: service, label: "src/llama.ts", note: "translation engine, next diagram" }
   - { id: speech, kind: service, label: "src/speech.ts", note: "speech engine, next diagram" }
 edges:
@@ -35,6 +38,7 @@ edges:
   - { from: config, to: access, label: "origin, host rules" }
   - { from: app, to: access, label: "origin, host check" }
   - { from: app, to: static, label: web app files }
+  - { from: app, to: image, label: prepare image }
   - { from: app, to: queue, label: takes a place }
   - { from: app, to: models, label: find model }
   - { from: app, to: qoa, label: QOA stream }

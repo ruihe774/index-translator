@@ -2,10 +2,11 @@ archgram: 1
 title: Index Translator browser components, files and history
 description: >-
   The page's main module saves finished translations in the history and lists them through the
-  history panel. History is kept in local storage only. The Open control reads a text or PDF file
-  in the browser. A PDF goes to a worker that reads its text page by page, and the messages module
-  tells the user what was loaded. Nothing in these files goes to the server.
-direction: right
+  history panel. History is kept in local storage only. The Open control reads a text, PDF or image
+  file in the browser. A PDF goes to a worker that reads its text page by page, and the messages
+  module tells the user what was loaded. Text and PDF never go to the server; an opened image goes
+  only when it is translated.
+direction: down
 legend: true
 frames:
   - { id: saved, label: History }
@@ -18,7 +19,7 @@ nodes:
   - { id: messages, kind: service, label: "public/messages.ts", note: status line texts }
   - { id: paragraphs, kind: check, label: "public/paragraphs.ts", note: counts paragraphs }
   - { id: open-ui, kind: service, label: "public/open-ui.ts", note: "Open and Close", frame: files }
-  - { id: open-file, kind: service, label: "public/open-file.ts", note: "reads text, file kinds", frame: files }
+  - { id: open-file, kind: service, label: "public/open-file.ts", note: "reads text and image, file kinds", frame: files }
   - { id: pdf, kind: service, label: "public/pdf.ts", note: loads libraries, frame: files }
   - { id: pdf-worker, kind: service, label: "public/pdf-worker.ts", note: text per page, frame: files }
 edges:

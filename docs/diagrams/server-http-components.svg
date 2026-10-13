@@ -1,10 +1,10 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1254 834.4" width="1254" height="834.4" role="img" aria-labelledby="title desc">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1265 914.4" width="1265" height="914.4" role="img" aria-labelledby="title desc">
   <title id="title">Index Translator server components, startup and HTTP</title>
-  <desc id="desc">The entry point loads the configuration and runs the preflight check before it starts the app. Preflight probes the llama library in a child process and checks the default model's file. The app checks each request's origin and host, serves the web app, puts translations and speech into their own lines, and hands the work to the engines. The engines are drawn in the next diagram. a request: Web app → src/app.ts → src/llama.ts.</desc>
+  <desc id="desc">The entry point loads the configuration and runs the preflight check before it starts the app. Preflight probes the llama library in a child process and checks the default model's file. The app checks each request's origin and host, serves the web app, puts translations and speech into their own lines, and hands the work to the engines. An image is prepared before it takes a place in the line, so a bad one never waits. A translation the reader has left keeps running for a while and can be read again. The engines are drawn in the next diagram. a request: Web app → src/app.ts → src/llama.ts.</desc>
   <style>
     :root { --badge: #eceff6; --canvas: #f3f5fa; --card: #ffffff; --card-edge: #767c8c; --connector: #767c8c; --frame: #767c8c; --icon-ai: #1b1f2a; --icon-build: #1b1f2a; --icon-client: #1b1f2a; --icon-core: #1b1f2a; --signal-core: #ffffff; --signal-pass: #45a378; --signal-refusal: #b3261e; --text: #1b1f2a; --text-muted: #4a5163; }
     @media (prefers-color-scheme: dark) { :root { --badge: #14161c; --canvas: #101217; --card: #1a1d25; --card-edge: #8b92a3; --connector: #8b92a3; --frame: #8b92a3; --icon-ai: #ebedf3; --icon-build: #ebedf3; --icon-client: #ebedf3; --icon-core: #ebedf3; --signal-core: #1a1d25; --signal-pass: #34d399; --signal-refusal: #ff8a80; --text: #ebedf3; --text-muted: #b3b9c7; } }
-    @font-face { font-family: "archgram-geist"; font-weight: 400; src: url(data:font/ttf;base64,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APoAAADJACwB4AAoAmsAPAJnAB4CUQAoASkAXAKcABQCWwBcAuMALQKKAFwC3QAtAoAANwIoAAwCJwAsAlMAUAIiACwCUwAsAjEALAGLADwCUgAsAkUAUAD0AE4CTgBQAQsAUANtAFACRQBQAj0ALAJTAFABewBQAggALAGIADcCPwBQAhgAFgMzABYCSQAvAhkAFgIZADMAyQAsAPQAUAAAACwAAAAAAAAAVAAAAFQAAAB4AAAAmAAAAPwAAAE0AAABtAAAAcwAAAIAAAACLAAAAogAAALEAAADRAAAA9AAAAP0AAAEdAAABNQAAAUwAAAFkAAABfgAAAY4AAAGvAAABvwAAAcUAAAHSAAAB3AAAAfUAAAIGAAACHAAAAjQAAAI/AAACXwAAAm4AAAJ+AAACiAAAApcAAAKkAAACtQAAAsEAAALHAAACzQAAAtQAAEAAAAqAHIAEABbAAUAAgAqAFcAjQAAAI0ODAAEAAEAAAAJAHIAAwABBAkAAACeAAAAAwABBAkAAQAKAJ4AAwABBAkAAgAOAKgAAwABBAkAAwAwALYAAwABBAkABAAaAOYAAwABBAkABQBWAQAAAwABBAkABgAaAVYAAwABBAkADQEiAXAAAwABBAkADgA2ApIAQwBvAHAAeQByAGkAZwBoAHQAIAAyADAAMgA0ACAAVABoAGUAIABHAGUAaQBzAHQAIABQAHIAbwBqAGUAYwB0ACAAQQB1AHQAaABvAHIAcwAgACgAaAB0AHQAcABzADoALwAvAGcAaQB0AGgAdQBiAC4AYwBvAG0ALwB2AGUAcgBjAGUAbAAvAGcAZQBpAHMAdAAtAGYAbwBuAHQAKQBHAGUAaQBzAHQAUgBlAGcAdQBsAGEAcgAxAC4AOAAwADAAOwBWAFIAQwBMADsARwBlAGkAcwB0AC0AUgBlAGcAdQBsAGEAcgBHAGUAaQBzAHQAIABSAGUAZwB1AGwAYQByAFYAZQByAHMAaQBvAG4AIAAxAC4AOAAwADAAOwAgAHQAdABmAGEAdQB0AG8AaABpAG4AdAAgACgAdgAxAC4AOAAuADQALgAxADYALQBlAGIANgA0ACkARwBlAGkAcwB0AC0AUgBlAGcAdQBsAGEAcgBUAGgAaQBzACAARgBvAG4AdAAgAFMAbwBmAHQAdwBhAHIAZQAgAGkAcwAgAGwAaQBjAGUAbgBzAGUAZAAgAHUAbgBkAGUAcgAgAHQAaABlACAAUwBJAEwAIABPAHAAZQBuACAARgBvAG4AdAAgAEwAaQBjAGUAbgBzAGUALAAgAFYAZQByAHMAaQBvAG4AIAAxAC4AMQAuACAAVABoAGkAcwAgAGwAaQBjAGUAbgBzAGUAIABpAHMAIABhAHYAYQBpAGwAYQBiAGwAZQAgAHcAaQB0AGgAIABhACAARgBBAFEAIABhAHQAOgAgAGgAdAB0AHAAcwA6AC8ALwBvAHAAZQBuAGYAbwBuAHQAbABpAGMAZQBuAHMAZQAuAG8AcgBnAGgAdAB0AHAAcwA6AC8ALwBvAHAAZQBuAGYAbwBuAHQAbABpAGMAZQBuAHMAZQAuAG8AcgBnAAAAAwAAAAAAAP+cADIAAAAAAAAAAAAAAAAAAAAAAAAAAA==) format("truetype"); }
+    @font-face { font-family: "archgram-geist"; font-weight: 400; src: url(data:font/ttf;base64,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AHIAYwBlAGwALwBnAGUAaQBzAHQALQBmAG8AbgB0ACkARwBlAGkAcwB0AFIAZQBnAHUAbABhAHIAMQAuADgAMAAwADsAVgBSAEMATAA7AEcAZQBpAHMAdAAtAFIAZQBnAHUAbABhAHIARwBlAGkAcwB0ACAAUgBlAGcAdQBsAGEAcgBWAGUAcgBzAGkAbwBuACAAMQAuADgAMAAwADsAIAB0AHQAZgBhAHUAdABvAGgAaQBuAHQAIAAoAHYAMQAuADgALgA0AC4AMQA2AC0AZQBiADYANAApAEcAZQBpAHMAdAAtAFIAZQBnAHUAbABhAHIAVABoAGkAcwAgAEYAbwBuAHQAIABTAG8AZgB0AHcAYQByAGUAIABpAHMAIABsAGkAYwBlAG4AcwBlAGQAIAB1AG4AZABlAHIAIAB0AGgAZQAgAFMASQBMACAATwBwAGUAbgAgAEYAbwBuAHQAIABMAGkAYwBlAG4AcwBlACwAIABWAGUAcgBzAGkAbwBuACAAMQAuADEALgAgAFQAaABpAHMAIABsAGkAYwBlAG4AcwBlACAAaQBzACAAYQB2AGEAaQBsAGEAYgBsAGUAIAB3AGkAdABoACAAYQAgAEYAQQBRACAAYQB0ADoAIABoAHQAdABwAHMAOgAvAC8AbwBwAGUAbgBmAG8AbgB0AGwAaQBjAGUAbgBzAGUALgBvAHIAZwBoAHQAdABwAHMAOgAvAC8AbwBwAGUAbgBmAG8AbgB0AGwAaQBjAGUAbgBzAGUALgBvAHIAZwAAAAMAAAAAAAD/nAAyAAAAAAAAAAAAAAAAAAAAAAAAAAA=) format("truetype"); }
     @font-face { font-family: "archgram-geist"; font-weight: 500; src: url(data:font/ttf;base64,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AC8AZwBpAHQAaAB1AGIALgBjAG8AbQAvAHYAZQByAGMAZQBsAC8AZwBlAGkAcwB0AC0AZgBvAG4AdAApAEcAZQBpAHMAdAAgAE0AZQBkAGkAdQBtAFIAZQBnAHUAbABhAHIAMQAuADgAMAAwADsAVgBSAEMATAA7AEcAZQBpAHMAdAAtAE0AZQBkAGkAdQBtAEcAZQBpAHMAdAAgAE0AZQBkAGkAdQBtAFYAZQByAHMAaQBvAG4AIAAxAC4AOAAwADAAOwAgAHQAdABmAGEAdQB0AG8AaABpAG4AdAAgACgAdgAxAC4AOAAuADQALgAxADYALQBlAGIANgA0ACkARwBlAGkAcwB0AC0ATQBlAGQAaQB1AG0AVABoAGkAcwAgAEYAbwBuAHQAIABTAG8AZgB0AHcAYQByAGUAIABpAHMAIABsAGkAYwBlAG4AcwBlAGQAIAB1AG4AZABlAHIAIAB0AGgAZQAgAFMASQBMACAATwBwAGUAbgAgAEYAbwBuAHQAIABMAGkAYwBlAG4AcwBlACwAIABWAGUAcgBzAGkAbwBuACAAMQAuADEALgAgAFQAaABpAHMAIABsAGkAYwBlAG4AcwBlACAAaQBzACAAYQB2AGEAaQBsAGEAYgBsAGUAIAB3AGkAdABoACAAYQAgAEYAQQBRACAAYQB0ADoAIABoAHQAdABwAHMAOgAvAC8AbwBwAGUAbgBmAG8AbgB0AGwAaQBjAGUAbgBzAGUALgBvAHIAZwBoAHQAdABwAHMAOgAvAC8AbwBwAGUAbgBmAG8AbgB0AGwAaQBjAGUAbgBzAGUALgBvAHIAZwAAAAMAAAAAAAD/nAAyAAAAAAAAAAAAAAAAAAAAAAAAAAA=) format("truetype"); }
     text { font-family: "archgram-geist", system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; font-kerning: none; }
     .title { font-size: 14px; font-weight: 500; fill: var(--text); }
@@ -52,171 +52,181 @@
     .credit-mark { fill: var(--connector); }
     .credit-glyph { fill: none; stroke: var(--canvas); stroke-width: 5.5; stroke-linecap: round; stroke-linejoin: round; }
   </style>
-  <rect class="canvas" width="1254" height="834.4" rx="16"/>
+  <rect class="canvas" width="1265" height="914.4" rx="16"/>
   <defs><marker id="arrow" viewBox="0 0 7 12" refX="7" refY="6" markerWidth="7" markerHeight="12" markerUnits="userSpaceOnUse" orient="auto-start-reverse" overflow="visible"><path class="arrowhead" d="M0 0L7 6L0 12"/></marker></defs>
-  <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1254" height="834.4"><feGaussianBlur stdDeviation="2.5"/></filter><filter id="halo-glow" filterUnits="userSpaceOnUse" x="-15.5" y="-15.5" width="31" height="31"><feGaussianBlur stdDeviation="2.5"/></filter><filter id="glow-dark" filterUnits="userSpaceOnUse" x="0" y="0" width="1254" height="834.4"><feGaussianBlur stdDeviation="2"/></filter><filter id="halo-glow-dark" filterUnits="userSpaceOnUse" x="-14" y="-14" width="28" height="28"><feGaussianBlur stdDeviation="2"/></filter></defs>
+  <defs><filter id="glow" filterUnits="userSpaceOnUse" x="0" y="0" width="1265" height="914.4"><feGaussianBlur stdDeviation="2.5"/></filter><filter id="halo-glow" filterUnits="userSpaceOnUse" x="-15.5" y="-15.5" width="31" height="31"><feGaussianBlur stdDeviation="2.5"/></filter><filter id="glow-dark" filterUnits="userSpaceOnUse" x="0" y="0" width="1265" height="914.4"><feGaussianBlur stdDeviation="2"/></filter><filter id="halo-glow-dark" filterUnits="userSpaceOnUse" x="-14" y="-14" width="28" height="28"><feGaussianBlur stdDeviation="2"/></filter></defs>
   <g class="frames">
-    <rect class="frame" x="24.5" y="568.5" width="1206" height="200" rx="14"/>
-    <rect class="frame" x="476.5" y="184.5" width="754" height="360" rx="14"/>
+    <rect class="frame" x="24.5" y="648.5" width="1217" height="200" rx="14"/>
+    <rect class="frame" x="476.5" y="184.5" width="765" height="440" rx="14"/>
   </g>
   <g class="edges">
-    <path id="edge-0" class="edge" d="M267 334 L495 334" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="279.2" y="326.8" width="151.6" height="14.4" rx="5"/>
-    <text class="sub" x="355" y="338.26" text-anchor="middle">POST /translate, /speech</text>
-    <path class="edge" d="M267 638 L495 638" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="327.18" y="630.8" width="55.65" height="14.4" rx="5"/>
-    <text class="sub" x="355" y="642.26" text-anchor="middle">settings</text>
-    <path class="edge" d="M267 656 L427 656 A16 16 0 0 1 443 672 L443 702 A16 16 0 0 0 459 718 L495 718" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="338.42" y="648.8" width="33.16" height="14.4" rx="5"/>
-    <text class="sub" x="355" y="660.26" text-anchor="middle">first</text>
-    <path class="edge" d="M267 620 L427 620 A16 16 0 0 0 443 604 L443 350 A16 16 0 0 1 459 334 L495 334" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="325.45" y="612.8" width="59.1" height="14.4" rx="5"/>
-    <text class="sub" x="355" y="624.26" text-anchor="middle">startApp</text>
-    <path class="edge" d="M750 728 L866 728 C882 728 882 718 898 718 L948 718" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="789.48" y="720.8" width="53.03" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="732.26" text-anchor="middle">spawns</text>
-    <path class="edge" d="M750 708 L878 708 A16 16 0 0 0 894 692 L894 654 A16 16 0 0 1 910 638 L948 638" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="783.46" y="700.8" width="65.08" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="712.26" text-anchor="middle">model file</text>
-    <path class="edge" d="M750 648 L878 648 C894 648 894 638 910 638 L948 638" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="772.25" y="640.8" width="87.51" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="652.26" text-anchor="middle">default model</text>
-    <path class="edge" d="M750 628 L866 628 A16 16 0 0 0 882 612 L882 510 A16 16 0 0 1 898 494 L948 494" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="764.9" y="620.8" width="102.21" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="632.26" text-anchor="middle">origin, host rules</text>
-    <path class="edge" d="M750 346 L866 346 A16 16 0 0 1 882 362 L882 478 A16 16 0 0 0 898 494 L948 494" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="761.76" y="338.8" width="108.47" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="350.26" text-anchor="middle">origin, host check</text>
-    <path class="edge" d="M750 328 L890 328 A16 16 0 0 0 906 312 L906 270 A16 16 0 0 1 922 254 L948 254" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="773.78" y="320.8" width="84.44" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="332.26" text-anchor="middle">web app files</text>
-    <path class="edge" d="M750 334 L948 334" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="773.89" y="326.8" width="84.22" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="338.26" text-anchor="middle">takes a place</text>
-    <path class="edge" d="M750 352 L878 352 A16 16 0 0 1 894 368 L894 622 A16 16 0 0 0 910 638 L948 638" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="781.37" y="344.8" width="69.26" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="356.26" text-anchor="middle">find model</text>
-    <path class="edge" d="M750 340 L902 340 A16 16 0 0 1 918 356 L918 399 A15 15 0 0 0 933 414 L948 414" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="776.98" y="332.8" width="78.04" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="344.26" text-anchor="middle">QOA stream</text>
-    <path id="edge-13" class="edge" d="M750 316 L866 316 A16 16 0 0 0 882 300 L882 68 A16 16 0 0 1 898 52 L948 52" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="785.92" y="308.8" width="60.16" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="320.26" text-anchor="middle">generate</text>
-    <path class="edge" d="M750 322 L878 322 A16 16 0 0 0 894 306 L894 148 A16 16 0 0 1 910 132 L948 132" marker-end="url(#arrow)"/>
-    <rect class="label-patch" x="780.8" y="314.8" width="70.41" height="14.4" rx="5"/>
-    <text class="sub" x="816" y="326.26" text-anchor="middle">synthesize</text>
+    <path id="edge-0" class="edge" d="M267 374 L495 374" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="279.2" y="366.8" width="151.6" height="14.4" rx="5"/>
+    <text class="sub" x="355" y="378.26" text-anchor="middle">POST /translate, /speech</text>
+    <path class="edge" d="M267 718 L495 718" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="327.18" y="710.8" width="55.65" height="14.4" rx="5"/>
+    <text class="sub" x="355" y="722.26" text-anchor="middle">settings</text>
+    <path class="edge" d="M267 736 L427 736 A16 16 0 0 1 443 752 L443 782 A16 16 0 0 0 459 798 L495 798" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="338.42" y="728.8" width="33.16" height="14.4" rx="5"/>
+    <text class="sub" x="355" y="740.26" text-anchor="middle">first</text>
+    <path class="edge" d="M267 700 L427 700 A16 16 0 0 0 443 684 L443 390 A16 16 0 0 1 459 374 L495 374" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="325.45" y="692.8" width="59.1" height="14.4" rx="5"/>
+    <text class="sub" x="355" y="704.26" text-anchor="middle">startApp</text>
+    <path class="edge" d="M737 808 L853 808 C869 808 869 798 885 798 L959 798" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="776.48" y="800.8" width="53.03" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="812.26" text-anchor="middle">spawns</text>
+    <path class="edge" d="M737 788 L865 788 A16 16 0 0 0 881 772 L881 734 A16 16 0 0 1 897 718 L959 718" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="770.46" y="780.8" width="65.08" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="792.26" text-anchor="middle">model file</text>
+    <path class="edge" d="M737 728 L865 728 C881 728 881 718 897 718 L959 718" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="759.25" y="720.8" width="87.51" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="732.26" text-anchor="middle">default model</text>
+    <path class="edge" d="M737 708 L853 708 A16 16 0 0 0 869 692 L869 590 A16 16 0 0 1 885 574 L959 574" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="751.9" y="700.8" width="102.21" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="712.26" text-anchor="middle">origin, host rules</text>
+    <path class="edge" d="M737 387 L853 387 A16 16 0 0 1 869 403 L869 558 A16 16 0 0 0 885 574 L959 574" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="748.76" y="379.8" width="108.47" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="391.26" text-anchor="middle">origin, host check</text>
+    <path class="edge" d="M737 366 L877 366 A16 16 0 0 0 893 350 L893 270 A16 16 0 0 1 909 254 L959 254" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="760.78" y="358.8" width="84.44" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="370.26" text-anchor="middle">web app files</text>
+    <path class="edge" d="M737 371 L889 371 A16 16 0 0 0 905 355 L905 350 A16 16 0 0 1 921 334 L959 334" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="757.81" y="363.8" width="90.38" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="375.26" text-anchor="middle">prepare image</text>
+    <path class="edge" d="M737 377 L913 377 A16 16 0 0 1 929 393 L929 399 A15 15 0 0 0 944 414 L959 414" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="760.89" y="369.8" width="84.22" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="381.26" text-anchor="middle">takes a place</text>
+    <path class="edge" d="M737 392 L865 392 A16 16 0 0 1 881 408 L881 702 A16 16 0 0 0 897 718 L959 718" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="768.37" y="384.8" width="69.26" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="396.26" text-anchor="middle">find model</text>
+    <path class="edge" d="M737 382 L901 382 A16 16 0 0 1 917 398 L917 478 A16 16 0 0 0 933 494 L959 494" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="763.98" y="374.8" width="78.04" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="386.26" text-anchor="middle">QOA stream</text>
+    <path id="edge-14" class="edge" d="M737 356 L853 356 A16 16 0 0 0 869 340 L869 68 A16 16 0 0 1 885 52 L959 52" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="772.92" y="348.8" width="60.16" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="360.26" text-anchor="middle">generate</text>
+    <path class="edge" d="M737 361 L865 361 A16 16 0 0 0 881 345 L881 148 A16 16 0 0 1 897 132 L959 132" marker-end="url(#arrow)"/>
+    <rect class="label-patch" x="767.8" y="353.8" width="70.41" height="14.4" rx="5"/>
+    <text class="sub" x="803" y="365.26" text-anchor="middle">synthesize</text>
   </g>
-  <defs><filter id="label-gap-soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1254" height="834.4"><feGaussianBlur stdDeviation="2.5"/></filter><mask id="label-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="1254" height="834.4"><rect x="0" y="0" width="1254" height="834.4" fill="#fff"/><rect x="279.2" y="326.8" width="151.6" height="14.4" fill="#000" filter="url(#label-gap-soft)"/><rect x="785.92" y="308.8" width="60.16" height="14.4" fill="#000" filter="url(#label-gap-soft)"/></mask></defs>
-  <rect class="label-patch" x="41" y="582.9" width="66.77" height="13.2"/>
-  <text class="frame-label" x="46.5" y="593.41">STARTUP</text>
+  <defs><filter id="label-gap-soft" filterUnits="userSpaceOnUse" x="0" y="0" width="1265" height="914.4"><feGaussianBlur stdDeviation="2.5"/></filter><mask id="label-gap" maskUnits="userSpaceOnUse" x="0" y="0" width="1265" height="914.4"><rect x="0" y="0" width="1265" height="914.4" fill="#fff"/><rect x="279.2" y="366.8" width="151.6" height="14.4" fill="#000" filter="url(#label-gap-soft)"/><rect x="772.92" y="348.8" width="60.16" height="14.4" fill="#000" filter="url(#label-gap-soft)"/></mask></defs>
+  <rect class="label-patch" x="41" y="662.9" width="66.77" height="13.2"/>
+  <text class="frame-label" x="46.5" y="673.41">STARTUP</text>
   <rect class="label-patch" x="493" y="198.9" width="42.12" height="13.2"/>
   <text class="frame-label" x="498.5" y="209.41">HTTP</text>
   <g data-node="client">
-    <rect class="card" x="46.5" y="306.5" width="221" height="56" rx="10"/>
-    <rect class="badge" x="56.5" y="316.5" width="36" height="36" rx="8"/>
-    <g class="icon client" transform="translate(62.5 322.5)" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18"/><circle cx="6" cy="6.3" r=".6"/><circle cx="8.2" cy="6.3" r=".6"/></g>
-    <text class="title" x="102.5" y="332.27">Web app</text>
-    <text class="sub" x="102.5" y="347.16">public/, in the browser</text>
+    <rect class="card" x="46.5" y="346.5" width="221" height="56" rx="10"/>
+    <rect class="badge" x="56.5" y="356.5" width="36" height="36" rx="8"/>
+    <g class="icon client" transform="translate(62.5 362.5)" stroke-width="1.7"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M3 8.5h18"/><circle cx="6" cy="6.3" r=".6"/><circle cx="8.2" cy="6.3" r=".6"/></g>
+    <text class="title" x="102.5" y="372.27">Web app</text>
+    <text class="sub" x="102.5" y="387.16">public/, in the browser</text>
   </g>
   <g data-node="server">
-    <rect class="card" x="46.5" y="610.5" width="221" height="56" rx="10"/>
-    <rect class="badge" x="56.5" y="620.5" width="36" height="36" rx="8"/>
-    <g class="icon build" transform="translate(62.5 626.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10l3 2-3 2M12.5 15H17"/></g>
-    <text class="title" x="102.5" y="636.27">src/server.ts</text>
-    <text class="sub" x="102.5" y="651.16">entry: preflight, then start</text>
+    <rect class="card" x="46.5" y="690.5" width="221" height="56" rx="10"/>
+    <rect class="badge" x="56.5" y="700.5" width="36" height="36" rx="8"/>
+    <g class="icon build" transform="translate(62.5 706.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10l3 2-3 2M12.5 15H17"/></g>
+    <text class="title" x="102.5" y="716.27">src/server.ts</text>
+    <text class="sub" x="102.5" y="731.16">entry: preflight, then start</text>
   </g>
   <g data-node="config">
-    <rect class="card" x="498.5" y="610.5" width="252" height="56" rx="10"/>
-    <rect class="badge" x="508.5" y="620.5" width="36" height="36" rx="8"/>
-    <g class="icon build" transform="translate(514.5 626.5)" stroke-width="1.7"><path d="M6.5 3h7.5l4.5 4.5V21h-12z"/><path d="M14 3v4.5h4.5"/></g>
-    <text class="title" x="554.5" y="636.27">src/config.ts</text>
-    <text class="sub" x="554.5" y="651.16">settings from env and flags</text>
+    <rect class="card" x="498.5" y="690.5" width="239" height="56" rx="10"/>
+    <rect class="badge" x="508.5" y="700.5" width="36" height="36" rx="8"/>
+    <g class="icon build" transform="translate(514.5 706.5)" stroke-width="1.7"><path d="M6.5 3h7.5l4.5 4.5V21h-12z"/><path d="M14 3v4.5h4.5"/></g>
+    <text class="title" x="554.5" y="716.27">src/config.ts</text>
+    <text class="sub" x="554.5" y="731.16">env and flags</text>
   </g>
   <g data-node="preflight">
-    <rect class="card" x="498.5" y="690.5" width="252" height="56" rx="10"/>
-    <rect class="badge" x="508.5" y="700.5" width="36" height="36" rx="8"/>
-    <g class="icon build" transform="translate(514.5 706.5)" stroke-width="1.7"><path d="M12 3l7 3v5.2c0 4.3-2.9 7.9-7 9.8-4.1-1.9-7-5.5-7-9.8V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></g>
-    <text class="title" x="554.5" y="716.27">src/preflight.ts</text>
-    <text class="sub" x="554.5" y="731.16">refuses a machine it cannot run</text>
+    <rect class="card" x="498.5" y="770.5" width="239" height="56" rx="10"/>
+    <rect class="badge" x="508.5" y="780.5" width="36" height="36" rx="8"/>
+    <g class="icon build" transform="translate(514.5 786.5)" stroke-width="1.7"><path d="M12 3l7 3v5.2c0 4.3-2.9 7.9-7 9.8-4.1-1.9-7-5.5-7-9.8V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></g>
+    <text class="title" x="554.5" y="796.27">src/preflight.ts</text>
+    <text class="sub" x="554.5" y="811.16">refuses an unusable machine</text>
   </g>
   <g data-node="probe">
-    <rect class="card" x="951.5" y="690.5" width="257" height="56" rx="10"/>
-    <rect class="badge" x="961.5" y="700.5" width="36" height="36" rx="8"/>
-    <g class="icon build" transform="translate(967.5 706.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10l3 2-3 2M12.5 15H17"/></g>
-    <text class="title" x="1007.5" y="716.27">src/llama-probe.ts</text>
-    <text class="sub" x="1007.5" y="731.16">child process</text>
+    <rect class="card" x="962.5" y="770.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="780.5" width="36" height="36" rx="8"/>
+    <g class="icon build" transform="translate(978.5 786.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M7 10l3 2-3 2M12.5 15H17"/></g>
+    <text class="title" x="1018.5" y="796.27">src/llama-probe.ts</text>
+    <text class="sub" x="1018.5" y="811.16">child process</text>
   </g>
   <g data-node="models">
-    <rect class="card" x="951.5" y="610.5" width="257" height="56" rx="10"/>
-    <rect class="badge" x="961.5" y="620.5" width="36" height="36" rx="8"/>
-    <g class="icon build" transform="translate(967.5 626.5)" stroke-width="1.7"><path d="M6.5 3h7.5l4.5 4.5V21h-12z"/><path d="M14 3v4.5h4.5"/></g>
-    <text class="title" x="1007.5" y="636.27">src/models.ts</text>
-    <text class="sub" x="1007.5" y="651.16">the two model specs</text>
+    <rect class="card" x="962.5" y="690.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="700.5" width="36" height="36" rx="8"/>
+    <g class="icon build" transform="translate(978.5 706.5)" stroke-width="1.7"><path d="M6.5 3h7.5l4.5 4.5V21h-12z"/><path d="M14 3v4.5h4.5"/></g>
+    <text class="title" x="1018.5" y="716.27">src/models.ts</text>
+    <text class="sub" x="1018.5" y="731.16">the two model specs</text>
   </g>
   <g data-node="app">
-    <rect class="card" x="498.5" y="306.5" width="252" height="56" rx="10"/>
-    <rect class="badge" x="508.5" y="316.5" width="36" height="36" rx="8"/>
-    <g class="icon core" transform="translate(514.5 322.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
-    <text class="title" x="554.5" y="332.27">src/app.ts</text>
-    <text class="sub" x="554.5" y="347.16">routes, SSE, translation</text>
+    <rect class="card" x="498.5" y="346.5" width="239" height="56" rx="10"/>
+    <rect class="badge" x="508.5" y="356.5" width="36" height="36" rx="8"/>
+    <g class="icon core" transform="translate(514.5 362.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
+    <text class="title" x="554.5" y="372.27">src/app.ts</text>
+    <text class="sub" x="554.5" y="387.16">routes, SSE, resumable jobs</text>
+  </g>
+  <g data-node="image">
+    <rect class="card" x="962.5" y="306.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="316.5" width="36" height="36" rx="8"/>
+    <g class="icon core" transform="translate(978.5 322.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
+    <text class="title" x="1018.5" y="332.27">src/image.ts</text>
+    <text class="sub" x="1018.5" y="347.16">PNG for the engine</text>
   </g>
   <g data-node="access">
-    <rect class="card" x="951.5" y="466.5" width="257" height="56" rx="10"/>
-    <rect class="badge" x="961.5" y="476.5" width="36" height="36" rx="8"/>
-    <g class="icon build" transform="translate(967.5 482.5)" stroke-width="1.7"><path d="M12 3l7 3v5.2c0 4.3-2.9 7.9-7 9.8-4.1-1.9-7-5.5-7-9.8V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></g>
-    <text class="title" x="1007.5" y="492.27">src/access.ts</text>
-    <text class="sub" x="1007.5" y="507.16">origin and host rules</text>
+    <rect class="card" x="962.5" y="546.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="556.5" width="36" height="36" rx="8"/>
+    <g class="icon build" transform="translate(978.5 562.5)" stroke-width="1.7"><path d="M12 3l7 3v5.2c0 4.3-2.9 7.9-7 9.8-4.1-1.9-7-5.5-7-9.8V6z"/><path d="M9 12l2.2 2.2L15.5 10"/></g>
+    <text class="title" x="1018.5" y="572.27">src/access.ts</text>
+    <text class="sub" x="1018.5" y="587.16">origin and host rules</text>
   </g>
   <g data-node="static">
-    <rect class="card" x="951.5" y="226.5" width="257" height="56" rx="10"/>
-    <rect class="badge" x="961.5" y="236.5" width="36" height="36" rx="8"/>
-    <g class="icon core" transform="translate(967.5 242.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
-    <text class="title" x="1007.5" y="252.27">src/static.ts</text>
-    <text class="sub" x="1007.5" y="267.16">serves public/</text>
+    <rect class="card" x="962.5" y="226.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="236.5" width="36" height="36" rx="8"/>
+    <g class="icon core" transform="translate(978.5 242.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
+    <text class="title" x="1018.5" y="252.27">src/static.ts</text>
+    <text class="sub" x="1018.5" y="267.16">serves public/</text>
   </g>
   <g data-node="qoa">
-    <rect class="card" x="951.5" y="386.5" width="257" height="56" rx="10"/>
-    <rect class="badge" x="961.5" y="396.5" width="36" height="36" rx="8"/>
-    <g class="icon core" transform="translate(967.5 402.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
-    <text class="title" x="1007.5" y="412.27">src/qoa-stream.ts</text>
-    <text class="sub" x="1007.5" y="427.16">QOA audio stream</text>
+    <rect class="card" x="962.5" y="466.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="476.5" width="36" height="36" rx="8"/>
+    <g class="icon core" transform="translate(978.5 482.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
+    <text class="title" x="1018.5" y="492.27">src/qoa-stream.ts</text>
+    <text class="sub" x="1018.5" y="507.16">QOA audio stream</text>
   </g>
   <g data-node="queue">
-    <rect class="card" x="951.5" y="306.5" width="257" height="56" rx="10"/>
-    <rect class="badge" x="961.5" y="316.5" width="36" height="36" rx="8"/>
-    <g class="icon core" transform="translate(967.5 322.5)" stroke-width="1.7"><rect x="2.5" y="8" width="19" height="8" rx="4"/><path d="M9 8v8M15 8v8"/></g>
-    <text class="title" x="1007.5" y="332.27">src/queue.ts</text>
-    <text class="sub" x="1007.5" y="347.16">one line each, 429 when full</text>
+    <rect class="card" x="962.5" y="386.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="396.5" width="36" height="36" rx="8"/>
+    <g class="icon core" transform="translate(978.5 402.5)" stroke-width="1.7"><rect x="2.5" y="8" width="19" height="8" rx="4"/><path d="M9 8v8M15 8v8"/></g>
+    <text class="title" x="1018.5" y="412.27">src/queue.ts</text>
+    <text class="sub" x="1018.5" y="427.16">429 when full</text>
   </g>
   <g data-node="llama">
-    <rect class="card" x="951.5" y="24.5" width="257" height="56" rx="10"/>
-    <rect class="badge" x="961.5" y="34.5" width="36" height="36" rx="8"/>
-    <g class="icon core" transform="translate(967.5 40.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
-    <text class="title" x="1007.5" y="50.27">src/llama.ts</text>
-    <text class="sub" x="1007.5" y="65.16">translation engine, next diagram</text>
+    <rect class="card" x="962.5" y="24.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="34.5" width="36" height="36" rx="8"/>
+    <g class="icon core" transform="translate(978.5 40.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
+    <text class="title" x="1018.5" y="50.27">src/llama.ts</text>
+    <text class="sub" x="1018.5" y="65.16">translation engine, next diagram</text>
   </g>
   <g data-node="speech">
-    <rect class="card" x="951.5" y="104.5" width="257" height="56" rx="10"/>
-    <rect class="badge" x="961.5" y="114.5" width="36" height="36" rx="8"/>
-    <g class="icon core" transform="translate(967.5 120.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
-    <text class="title" x="1007.5" y="130.27">src/speech.ts</text>
-    <text class="sub" x="1007.5" y="145.16">speech engine, next diagram</text>
+    <rect class="card" x="962.5" y="104.5" width="257" height="56" rx="10"/>
+    <rect class="badge" x="972.5" y="114.5" width="36" height="36" rx="8"/>
+    <g class="icon core" transform="translate(978.5 120.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
+    <text class="title" x="1018.5" y="130.27">src/speech.ts</text>
+    <text class="sub" x="1018.5" y="145.16">speech engine, next diagram</text>
   </g>
   <g class="borders">
-    <g opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0;0.0283;0.311;0.3392;1"/><path class="border pass" d="M46.5 335L46.5 316.5A10 10 0 0 1 56.5 306.5L257.5 306.5A10 10 0 0 1 267.5 316.5L267.5 334" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.0283;0.0989;1"/></path><path class="border pass" d="M46.5 335L46.5 352.5A10 10 0 0 0 56.5 362.5L257.5 362.5A10 10 0 0 0 267.5 352.5L267.5 334" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.0283;0.0989;1"/></path><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0283;0.0283;0.0989;0.1272;1"/><circle r="1.4"/><animateMotion path="M46.5 335L46.5 316.5A10 10 0 0 1 56.5 306.5L257.5 306.5A10 10 0 0 1 267.5 316.5L267.5 334" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.0283;0.0989;1" calcMode="linear"/></g><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0283;0.0283;0.0989;0.1272;1"/><circle r="1.4"/><animateMotion path="M46.5 335L46.5 352.5A10 10 0 0 0 56.5 362.5L257.5 362.5A10 10 0 0 0 267.5 352.5L267.5 334" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.0283;0.0989;1" calcMode="linear"/></g></g>
-    <g opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.2827;0.311;0.7173;0.7456;1"/><path class="border pass" d="M498.5 334L498.5 316.5A10 10 0 0 1 508.5 306.5L740.5 306.5A10 10 0 0 1 750.5 316.5L750.5 335" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.311;0.4346;1"/></path><path class="border pass" d="M498.5 334L498.5 352.5A10 10 0 0 0 508.5 362.5L740.5 362.5A10 10 0 0 0 750.5 352.5L750.5 335" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.311;0.4346;1"/></path><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.311;0.311;0.4346;0.4629;1"/><circle r="1.4"/><animateMotion path="M498.5 334L498.5 316.5A10 10 0 0 1 508.5 306.5L740.5 306.5A10 10 0 0 1 750.5 316.5L750.5 335" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.311;0.4346;1" calcMode="linear"/></g><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.311;0.311;0.4346;0.4629;1"/><circle r="1.4"/><animateMotion path="M498.5 334L498.5 352.5A10 10 0 0 0 508.5 362.5L740.5 362.5A10 10 0 0 0 750.5 352.5L750.5 335" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.311;0.4346;1" calcMode="linear"/></g></g>
-    <g opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.689;0.7173;0.841;0.8693;1"/><path class="border pass" d="M951.5 52L951.5 34.5A10 10 0 0 1 961.5 24.5L1198.5 24.5A10 10 0 0 1 1208.5 34.5L1208.5 53" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.7173;0.841;1"/></path><path class="border pass" d="M951.5 52L951.5 70.5A10 10 0 0 0 961.5 80.5L1198.5 80.5A10 10 0 0 0 1208.5 70.5L1208.5 53" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.7173;0.841;1"/></path><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7173;0.7173;0.841;0.8693;1"/><circle r="1.4"/><animateMotion path="M951.5 52L951.5 34.5A10 10 0 0 1 961.5 24.5L1198.5 24.5A10 10 0 0 1 1208.5 34.5L1208.5 53" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.7173;0.841;1" calcMode="linear"/></g><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7173;0.7173;0.841;0.8693;1"/><circle r="1.4"/><animateMotion path="M951.5 52L951.5 70.5A10 10 0 0 0 961.5 80.5L1198.5 80.5A10 10 0 0 0 1208.5 70.5L1208.5 53" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.7173;0.841;1" calcMode="linear"/></g></g>
+    <g opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0;0.0283;0.311;0.3392;1"/><path class="border pass" d="M46.5 375L46.5 356.5A10 10 0 0 1 56.5 346.5L257.5 346.5A10 10 0 0 1 267.5 356.5L267.5 374" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.0283;0.0989;1"/></path><path class="border pass" d="M46.5 375L46.5 392.5A10 10 0 0 0 56.5 402.5L257.5 402.5A10 10 0 0 0 267.5 392.5L267.5 374" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.0283;0.0989;1"/></path><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0283;0.0283;0.0989;0.1272;1"/><circle r="1.4"/><animateMotion path="M46.5 375L46.5 356.5A10 10 0 0 1 56.5 346.5L257.5 346.5A10 10 0 0 1 267.5 356.5L267.5 374" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.0283;0.0989;1" calcMode="linear"/></g><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0283;0.0283;0.0989;0.1272;1"/><circle r="1.4"/><animateMotion path="M46.5 375L46.5 392.5A10 10 0 0 0 56.5 402.5L257.5 402.5A10 10 0 0 0 267.5 392.5L267.5 374" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.0283;0.0989;1" calcMode="linear"/></g></g>
+    <g opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.2827;0.311;0.7173;0.7456;1"/><path class="border pass" d="M498.5 374L498.5 356.5A10 10 0 0 1 508.5 346.5L727.5 346.5A10 10 0 0 1 737.5 356.5L737.5 375" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.311;0.4346;1"/></path><path class="border pass" d="M498.5 374L498.5 392.5A10 10 0 0 0 508.5 402.5L727.5 402.5A10 10 0 0 0 737.5 392.5L737.5 375" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.311;0.4346;1"/></path><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.311;0.311;0.4346;0.4629;1"/><circle r="1.4"/><animateMotion path="M498.5 374L498.5 356.5A10 10 0 0 1 508.5 346.5L727.5 346.5A10 10 0 0 1 737.5 356.5L737.5 375" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.311;0.4346;1" calcMode="linear"/></g><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.311;0.311;0.4346;0.4629;1"/><circle r="1.4"/><animateMotion path="M498.5 374L498.5 392.5A10 10 0 0 0 508.5 402.5L727.5 402.5A10 10 0 0 0 737.5 392.5L737.5 375" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.311;0.4346;1" calcMode="linear"/></g></g>
+    <g opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.689;0.7173;0.841;0.8693;1"/><path class="border pass" d="M962.5 52L962.5 34.5A10 10 0 0 1 972.5 24.5L1209.5 24.5A10 10 0 0 1 1219.5 34.5L1219.5 53" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.7173;0.841;1"/></path><path class="border pass" d="M962.5 52L962.5 70.5A10 10 0 0 0 972.5 80.5L1209.5 80.5A10 10 0 0 0 1219.5 70.5L1219.5 53" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.7173;0.841;1"/></path><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7173;0.7173;0.841;0.8693;1"/><circle r="1.4"/><animateMotion path="M962.5 52L962.5 34.5A10 10 0 0 1 972.5 24.5L1209.5 24.5A10 10 0 0 1 1219.5 34.5L1219.5 53" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.7173;0.841;1" calcMode="linear"/></g><g class="border-head pass" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7173;0.7173;0.841;0.8693;1"/><circle r="1.4"/><animateMotion path="M962.5 52L962.5 70.5A10 10 0 0 0 972.5 80.5L1209.5 80.5A10 10 0 0 0 1219.5 70.5L1219.5 53" dur="5660ms" repeatCount="indefinite" keyPoints="0;0;1;1" keyTimes="0;0.7173;0.841;1" calcMode="linear"/></g></g>
   </g>
   <g class="signals">
-    <g class="signal client" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0989;0.1272;0.3816;0.4099;1"/><g mask="url(#label-gap)"><path class="fill glowing" d="M267 334 L495 334" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.0989;0.311;1" calcMode="spline" keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"/></path><path class="fill" d="M267 334 L495 334" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.0989;0.311;1" calcMode="spline" keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"/></path></g><text class="sub lit-text" x="355" y="338.26" text-anchor="middle">POST /translate, /speech</text></g>
-    <g class="signal client" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.311;0.3392;0.3816;0.4099;1"/><path class="chevron" d="M488 340L495 334L488 328"/></g>
-    <g class="signal core" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.3816;0.4099;0.788;0.8163;1"/><g mask="url(#label-gap)"><path class="fill glowing" d="M750 316 L866 316 A16 16 0 0 0 882 300 L882 68 A16 16 0 0 1 898 52 L948 52" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.3816;0.7173;1" calcMode="spline" keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"/></path><path class="fill" d="M750 316 L866 316 A16 16 0 0 0 882 300 L882 68 A16 16 0 0 1 898 52 L948 52" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.3816;0.7173;1" calcMode="spline" keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"/></path></g><text class="sub lit-text" x="816" y="320.26" text-anchor="middle">generate</text></g>
-    <g class="signal core" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7173;0.7456;0.788;0.8163;1"/><path class="chevron" d="M941 58L948 52L941 46"/></g>
+    <g class="signal client" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.0989;0.1272;0.3816;0.4099;1"/><g mask="url(#label-gap)"><path class="fill glowing" d="M267 374 L495 374" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.0989;0.311;1" calcMode="spline" keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"/></path><path class="fill" d="M267 374 L495 374" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.0989;0.311;1" calcMode="spline" keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"/></path></g><text class="sub lit-text" x="355" y="378.26" text-anchor="middle">POST /translate, /speech</text></g>
+    <g class="signal client" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.311;0.3392;0.3816;0.4099;1"/><path class="chevron" d="M488 380L495 374L488 368"/></g>
+    <g class="signal core" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.3816;0.4099;0.788;0.8163;1"/><g mask="url(#label-gap)"><path class="fill glowing" d="M737 356 L853 356 A16 16 0 0 0 869 340 L869 68 A16 16 0 0 1 885 52 L959 52" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.3816;0.7173;1" calcMode="spline" keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"/></path><path class="fill" d="M737 356 L853 356 A16 16 0 0 0 869 340 L869 68 A16 16 0 0 1 885 52 L959 52" pathLength="1000" stroke-dasharray="1000 1000"><animate attributeName="stroke-dashoffset" dur="5660ms" repeatCount="indefinite" values="1000;1000;0;0" keyTimes="0;0.3816;0.7173;1" calcMode="spline" keySplines="0 0 1 1;0.45 0 0.55 1;0 0 1 1"/></path></g><text class="sub lit-text" x="803" y="360.26" text-anchor="middle">generate</text></g>
+    <g class="signal core" opacity="0"><animate attributeName="opacity" dur="5660ms" repeatCount="indefinite" values="0;0;1;1;0;0" keyTimes="0;0.7173;0.7456;0.788;0.8163;1"/><path class="chevron" d="M952 58L959 52L952 46"/></g>
   </g>
   <g class="credit-line">
-    <text class="credit" x="1145.42" y="807.96">by</text>
-    <path class="credit-mark" transform="translate(1162 797.7) scale(0.19)" d="M15 0H49A15 15 0 0 1 64 15V49A15 15 0 0 1 49 64H15A15 15 0 0 1 0 49V15A15 15 0 0 1 15 0Z"/>
-    <path class="credit-glyph" transform="translate(1162 797.7) scale(0.19)" d="M16 19.5H31A9 9 0 0 1 40 28.5V43.5M32 36.5L40 44.5L48 36.5"/>
-    <text class="credit" x="1177" y="807.96">archgram</text>
+    <text class="credit" x="1156.42" y="887.96">by</text>
+    <path class="credit-mark" transform="translate(1173 877.7) scale(0.19)" d="M15 0H49A15 15 0 0 1 64 15V49A15 15 0 0 1 49 64H15A15 15 0 0 1 0 49V15A15 15 0 0 1 15 0Z"/>
+    <path class="credit-glyph" transform="translate(1173 877.7) scale(0.19)" d="M16 19.5H31A9 9 0 0 1 40 28.5V43.5M32 36.5L40 44.5L48 36.5"/>
+    <text class="credit" x="1188" y="887.96">archgram</text>
   </g>
 </svg>

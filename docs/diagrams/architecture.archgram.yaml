@@ -3,7 +3,8 @@ title: Index Translator architecture
 description: >-
   The web app runs in the browser. It picks the model by the text's length and keeps the history
   and any opened PDF there. Its requests go to one Bun process. A translation waits in its own line
-  for the llama worker thread, which loads the chat model. Reading aloud waits in a second line for
+  for the llama worker thread, which loads the chat model; the same thread translates the text in an
+  image. Reading aloud waits in a second line for
   the speech worker thread, which loads the speech model, and the voice separator when a sample is
   uploaded. The two lines and the two worker threads never wait for each other.
 direction: down
@@ -18,7 +19,7 @@ nodes:
   - { id: sline, kind: queue, label: Speech line, note: one at a time, frame: server }
   - { id: llama, kind: service, label: llama worker, note: libllama on Vulkan, frame: server }
   - { id: speech, kind: service, label: speech worker, note: libaudiocpp, frame: server }
-  - { id: chat, kind: model, label: Chat model, note: "GGUF, Q6_K" }
+  - { id: chat, kind: model, label: Chat model, note: "GGUF, Q6_K, text and images" }
   - { id: tts, kind: model, label: Speech model, note: IndexTTS-2.5 }
   - { id: sep, kind: model, label: Voice separator, note: BS-RoFormer }
 edges:

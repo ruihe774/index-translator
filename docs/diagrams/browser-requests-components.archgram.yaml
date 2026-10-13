@@ -2,9 +2,10 @@ archgram: 1
 title: Index Translator browser components, requests
 description: >-
   The page's main module builds the translation request. The request module builds the body from
-  the form and the glossary module parses the glossary. The model selector picks the model by the
-  text's length. The main module posts the request to the server, reads its event stream, and the
-  state and render modules update the page. Server errors are described by the API module.
+  the form, or the image's when the source is an image, and the glossary module parses the glossary.
+  The model selector picks the model by the text's length. The main module posts the request to the
+  server and reads its event stream through the resume module, which reconnects after a cut. The state
+  and render modules update the page. Server errors are described by the API module.
 direction: right
 legend: true
 frames:
@@ -15,21 +16,23 @@ nodes:
   - { id: app, kind: browser, label: "public/app.ts", note: "wires the page, sends the request" }
   - { id: api, kind: service, label: "public/api.ts", note: "API base, failure text", frame: requesting }
   - { id: errors, kind: check, label: "public/errors.ts", note: server error codes, frame: requesting }
-  - { id: request, kind: service, label: "public/request.ts", note: builds the body, frame: requesting }
+  - { id: request, kind: service, label: "public/request.ts", note: "builds the body, text or image", frame: requesting }
+  - { id: resume, kind: service, label: "public/resume.ts", note: "reconnects after a cut", frame: requesting }
   - { id: glossary, kind: service, label: "public/glossary.ts", note: parses the glossary, frame: requesting }
   - { id: select, kind: service, label: "public/select-model.ts", note: "picks the model by length", frame: requesting }
   - { id: sse, kind: service, label: "public/sse.ts", note: reads the event stream, frame: requesting }
   - { id: state, kind: file, label: "public/state.ts", note: one state object, frame: pagestate }
   - { id: render, kind: service, label: "public/render.ts", note: one synchronous render, frame: pagestate }
 edges:
-  - { from: app, to: server, label: "POST /translate" }
+  - { from: app, to: server, label: "POST /translate, GET events" }
   - { from: app, to: api }
   - { from: api, to: errors }
   - { from: app, to: request, label: build body }
   - { from: request, to: glossary }
   - { from: request, to: select }
   - { from: app, to: select, label: "select model" }
-  - { from: app, to: sse, label: "read stream" }
+  - { from: app, to: resume, label: "read stream" }
+  - { from: resume, to: sse, label: "reads events" }
   - { from: app, to: state }
   - { from: app, to: render }
   - { from: render, to: state }
