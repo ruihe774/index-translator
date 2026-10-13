@@ -94,7 +94,8 @@ for (const [name, status, error, message] of [
 test("a dropped connection before the done event is reported", async ({ app }) => {
   await stubTranslate(app, 200, sse([["delta", { text: "part" }]]));
   await run(app);
-  await expect(app.meta).toContainText("the connection closed before the translation finished");
+  // The stub sends no x-translation-id, so the stream cannot be resumed and the cut is reported as a lost connection.
+  await expect(app.meta).toContainText("The server cannot be reached.");
   await expect(app.output).toHaveText("part");
   await expect(app.meta).toContainText("error interrupted it");
 });
