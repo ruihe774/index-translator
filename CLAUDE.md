@@ -16,7 +16,7 @@ Run `bun install` before `lint:ts`, `lint:css` or `e2e` when `node_modules` is m
 - Run: `bun src/server.ts` (`--help` lists every setting). Dev: `bun run dev` (`bun --watch`, `DEV_RELOAD=1` reloads pages, `OPEN_BROWSER=0`)
 - Test: `bun test` (mock engine, no GPU). E2E/a11y: `bun run e2e` (Playwright, mock engine; `e2e/README.md`; `bunx playwright install chromium` or `CHROMIUM_PATH`)
 - Lint and typecheck: `bun run lint:ts` (`bun lint --type-aware --type-check`: builtin linter and builtin type checker, no `tsc`; each file is checked with its nearest `tsconfig.json`, so `e2e/` and `public/` have their own). Config under `[lint]` in `bunfig.toml`. Errors and warnings stay at zero (`maxWarnings = 0`); the untyped-JSON rules (`no-explicit-any`, `no-unsafe-*`) and `await-thenable` are off, with the reasons in `bunfig.toml`. Suppress with `// eslint-disable-next-line <rule> -- <why>` (a `: <why>` suffix suppresses nothing)
-- Format: `bun run format:write` / `format:check` (`.prettierrc`, 120 columns; Markdown and `public/index.html` are hand-formatted)
+- Format: `bun run format:write`; `lint:ts` also checks formatting (`[fmt]` in `bunfig.toml`, 120 columns; Markdown and `public/index.html` are hand-formatted)
 - CSS support: `bun run lint:css`. Markdown conformance: `bun scripts/commonmark.ts`. Long documents: `MODEL=index-nailong-9b bun scripts/longtext.ts http://127.0.0.1:3000`
 - There is deliberately no `check`, `lint` or `format` script in `package.json`: each would shadow the builtin. The Playwright config is `e2e/playwright.config.ts` (`bun run e2e` passes it with `-c`).
 

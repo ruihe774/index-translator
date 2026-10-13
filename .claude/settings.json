@@ -7,7 +7,6 @@
       "Bash(bun run lint:ts)",
       "Bash(bun lint)",
       "Bash(bun lint *)",
-      "Bash(bun run format:check)",
       "Bash(bun run format:write)",
       "Bash(bun run lint:css)",
       "Bash(bun run e2e)",

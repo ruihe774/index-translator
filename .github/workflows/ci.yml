@@ -34,8 +34,8 @@ jobs:
       - name: Install the development tools
         run: bun install --frozen-lockfile
 
-      - name: Lint, typecheck and format
-        run: bun run lint:ts && bun run format:check
+      - name: Lint and typecheck
+        run: bun run lint:ts
 
       - name: CSS browser support
         run: bun run lint:css
