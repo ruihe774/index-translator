@@ -157,16 +157,18 @@ SHIM_API mtmd_bitmap * shim_mtmd_bitmap(const unsigned char * data, size_t size)
     return bitmap;
 }
 
-// `before`, the image, `after` as the chunks to evaluate in that order: text tokens, the image
-// between the model's own image tokens, text tokens. Special tokens written out in the text are
-// parsed as such. NULL on failure; freed with mtmd_input_chunks_free.
-SHIM_API mtmd_input_chunks * shim_mtmd_tokenize(const mtmd_context * ctx, const char * before, size_t before_size, const mtmd_bitmap * bitmap, const char * after, size_t after_size) {
-    const struct mtmd_input_text head = { before, before_size, true, true };
-    const struct mtmd_input_text tail = { after, after_size, false, true };
-    const struct mtmd_input_part parts[] = { { &head, NULL }, { NULL, bitmap }, { &tail, NULL } };
-    const struct mtmd_input_part * const list[] = { &parts[0], &parts[1], &parts[2] };
+// `head`, `body`, the image, `tail` as the chunks to evaluate in that order: text tokens, the image
+// between the model's own image tokens, text tokens. Special tokens are parsed in `head` and `tail`
+// (the template) but not in `body` (the user's text, where they are only text). NULL on failure;
+// freed with mtmd_input_chunks_free.
+SHIM_API mtmd_input_chunks * shim_mtmd_tokenize(const mtmd_context * ctx, const char * head, size_t head_size, const char * body, size_t body_size, const mtmd_bitmap * bitmap, const char * tail, size_t tail_size) {
+    const struct mtmd_input_text head_text = { head, head_size, true, true };
+    const struct mtmd_input_text body_text = { body, body_size, false, false };
+    const struct mtmd_input_text tail_text = { tail, tail_size, false, true };
+    const struct mtmd_input_part parts[] = { { &head_text, NULL }, { &body_text, NULL }, { NULL, bitmap }, { &tail_text, NULL } };
+    const struct mtmd_input_part * const list[] = { &parts[0], &parts[1], &parts[2], &parts[3] };
     mtmd_input_chunks * chunks = mtmd_input_chunks_init();
-    if (mtmd_tokenize_from_parts(ctx, chunks, list, 3, true) != 0) {
+    if (mtmd_tokenize_from_parts(ctx, chunks, list, 4, true) != 0) {
         mtmd_input_chunks_free(chunks);
         return NULL;
     }

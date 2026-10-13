@@ -52,7 +52,7 @@ function bind(dir: string) {
     shim_decode_at: { args: ["ptr", "ptr", "i32", "i32"], returns: "i32" },
     shim_mtmd_load: { args: ["ptr", "ptr", "bool", "i32"], returns: "ptr" },
     shim_mtmd_bitmap: { args: ["ptr", "usize"], returns: "ptr" },
-    shim_mtmd_tokenize: { args: ["ptr", "ptr", "usize", "ptr", "ptr", "usize"], returns: "ptr" },
+    shim_mtmd_tokenize: { args: ["ptr", "ptr", "usize", "ptr", "usize", "ptr", "ptr", "usize"], returns: "ptr" },
     shim_mtmd_eval_chunk: { args: ["ptr", "ptr", "ptr", "i32", "i32", "ptr"], returns: "i32" },
   }).symbols;
   // libmtmd (tools/mtmd/mtmd.h, mtmd-helper.h): the calls that need no struct. The shim links it.
@@ -109,13 +109,31 @@ export function devices(dir: string): Device[] {
 }
 
 /**
+ * The prompt for one user message in three pieces: what the template writes before the content, the
+ * trimmed content, and what it writes after. Only the first and the last are tokenized with special
+ * tokens parsed; the content is the user's text, in which `<|im_start|>` and the like are just text.
+ */
+export function chatPromptParts(
+  content: string,
+  emptyThink: boolean,
+  image = false,
+): [head: string, body: string, tail: string] {
+  // With an image after it the content keeps its trailing whitespace, as the template leaves it.
+  const trimmed = content.replace(image ? /^[ \t\n\r]+/ : /^[ \t\n\r]+|[ \t\n\r]+$/g, "");
+  return [
+    "<|im_start|>user\n",
+    trimmed,
+    `<|im_end|>\n<|im_start|>assistant\n${emptyThink ? "<think>\n\n</think>\n\n" : ""}`,
+  ];
+}
+
+/**
  * The prompt for one user message, as the models' ChatML Jinja template renders it with
  * `enable_thinking=false`: the content is trimmed, and a template that knows about thinking gets
  * an empty think block so the answer starts right away.
  */
 export function chatPrompt(content: string, emptyThink: boolean): string {
-  const trimmed = content.replace(/^[ \t\n\r]+|[ \t\n\r]+$/g, "");
-  return `<|im_start|>user\n${trimmed}<|im_end|>\n<|im_start|>assistant\n${emptyThink ? "<think>\n\n</think>\n\n" : ""}`;
+  return chatPromptParts(content, emptyThink).join("");
 }
 
 /**
@@ -124,10 +142,8 @@ export function chatPrompt(content: string, emptyThink: boolean): string {
  * embeddings, `<|vision_end|>`, which libmtmd puts between the two.
  */
 export function imageChatPrompt(content: string, emptyThink: boolean): [before: string, after: string] {
-  const whole = chatPrompt(`${content}\0`, emptyThink);
-  // The last one: nothing after the content holds a NUL, the content might.
-  const at = whole.lastIndexOf("\0");
-  return [whole.slice(0, at), whole.slice(at + 1)];
+  const [head, body, tail] = chatPromptParts(content, emptyThink, true);
+  return [head + body, tail];
 }
 
 export interface ModelOptions {
@@ -224,14 +240,21 @@ export class Model {
     return new Model(lib, model, ctx, opts.gpuLayers !== 0, opts.threads, opts.mmproj);
   }
 
-  /** Tokens of the whole prompt for a user message with this content. Special tokens written out in the content are parsed as such. */
+  /** Tokens of the whole prompt for a user message with this content. Special tokens written out in the content are plain text. */
   tokenize(content: string): Int32Array {
-    const text = new TextEncoder().encode(chatPrompt(content, this.emptyThink));
-    // A token covers at least one byte; the slack is for special tokens the vocabulary may add.
-    const tokens = new Int32Array(text.length + 8);
-    const n = this.lib.llama_tokenize(this.vocab, text, text.length, tokens, tokens.length, true, true);
-    if (n < 0) throw new Error("llama_tokenize failed");
-    return tokens.subarray(0, n);
+    const encoder = new TextEncoder();
+    const out: number[] = [];
+    // Only the template's pieces (head, tail) parse special tokens; the vocabulary's BOS, if any, goes first.
+    for (const [i, piece] of chatPromptParts(content, this.emptyThink).entries()) {
+      const text = encoder.encode(piece);
+      if (text.length === 0) continue;
+      // A token covers at least one byte; the slack is for special tokens the vocabulary may add.
+      const tokens = new Int32Array(text.length + 8);
+      const n = this.lib.llama_tokenize(this.vocab, text, text.length, tokens, tokens.length, i === 0, i !== 1);
+      if (n < 0) throw new Error("llama_tokenize failed");
+      for (let k = 0; k < n; k++) out.push(tokens[k]!);
+    }
+    return Int32Array.from(out);
   }
 
   /**
@@ -249,11 +272,19 @@ export class Model {
     }
     const bitmap = this.lib.shim_mtmd_bitmap(file, file.length);
     if (!bitmap) throw new ImageError("the image could not be decoded");
-    const [before, after] = imageChatPrompt(content, this.emptyThink).map((s) => new TextEncoder().encode(s)) as [
-      Uint8Array,
-      Uint8Array,
-    ];
-    const chunks = this.lib.shim_mtmd_tokenize(this.vision, before, before.length, bitmap, after, after.length);
+    const [head, body, tail] = chatPromptParts(content, this.emptyThink, true).map((s) =>
+      new TextEncoder().encode(s),
+    ) as [Uint8Array, Uint8Array, Uint8Array];
+    const chunks = this.lib.shim_mtmd_tokenize(
+      this.vision,
+      head,
+      head.length,
+      body,
+      body.length,
+      bitmap,
+      tail,
+      tail.length,
+    );
     // The chunks hold the preprocessed image; the decoded one is not needed again.
     this.lib.mtmd_bitmap_free(bitmap);
     if (!chunks) throw new ImageError("the image could not be prepared for the model");
