@@ -4,7 +4,8 @@
 
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 
-import { type App, startApp } from "../src/app";
+import { startApp } from "../src/app";
+import type { App } from "../src/app";
 import type { Config } from "../src/config";
 import { buildDocumentPrompt } from "../src/prompt";
 import { CHAT, config, DOCUMENT, launcher, mock, postTo, readSse, TEMPLATE, waitReady } from "./helpers/mock-engine";
@@ -26,7 +27,7 @@ const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(bas
 
 describe("metadata endpoints", () => {
   test("health reports engine state, the loaded model, limits and queue", async () => {
-    const res = await fetch(base + "/api/v1/health");
+    const res = await fetch(`${base}/api/v1/health`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       status: "ready",
@@ -39,7 +40,7 @@ describe("metadata endpoints", () => {
   });
 
   test("models lists both checkpoints with their document directions", async () => {
-    const body = (await (await fetch(base + "/api/v1/models")).json()) as any;
+    const body = (await (await fetch(`${base}/api/v1/models`)).json()) as any;
     expect(body.default).toBe(CHAT);
     expect(body.loaded).toBe(CHAT);
     expect(body.models.map((m: any) => m.id)).toEqual([CHAT, DOCUMENT]);
@@ -53,23 +54,23 @@ describe("metadata endpoints", () => {
   });
 
   test("languages lists codes and names", async () => {
-    const { languages } = (await (await fetch(base + "/api/v1/languages")).json()) as any;
+    const { languages } = (await (await fetch(`${base}/api/v1/languages`)).json()) as any;
     expect(languages).toContainEqual({ code: "zh", name: "Chinese" });
     expect(languages.length).toBeGreaterThan(30);
   });
 
   test("the OpenAPI document is served", async () => {
-    const res = await fetch(base + "/api/v1/openapi.yaml");
+    const res = await fetch(`${base}/api/v1/openapi.yaml`);
     expect(res.status).toBe(200);
     expect(await res.text()).toStartWith("openapi: 3.1");
   });
 
   test("unknown endpoints and wrong methods use the error envelope", async () => {
-    const missing = await fetch(base + "/api/v1/nope");
+    const missing = await fetch(`${base}/api/v1/nope`);
     expect(missing.status).toBe(404);
     expect(((await missing.json()) as any).error.code).toBe("not_found");
 
-    const wrong = await fetch(base + "/api/v1/translate");
+    const wrong = await fetch(`${base}/api/v1/translate`);
     expect(wrong.status).toBe(405);
     expect(wrong.headers.get("allow")).toBe("POST");
     expect(((await wrong.json()) as any).error.code).toBe("method_not_allowed");
@@ -116,7 +117,7 @@ describe("POST /tokenize", () => {
     expect(body.prompt_tokens).toBe(buildDocumentPrompt("en-zh", "The fox.").length + TEMPLATE.length);
     expect(mock.launches.length).toBe(before);
 
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = (await (await fetch(`${base}/api/v1/health`)).json()) as any;
     expect(health.model).toBe(CHAT);
   });
 
@@ -143,13 +144,13 @@ describe("POST /tokenize", () => {
     const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
     await Bun.sleep(30);
 
-    const before = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const before = (await (await fetch(`${base}/api/v1/health`)).json()) as any;
     expect(before.queue).toEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     const res = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" });
     expect(res.status).toBe(200);
 
-    const after = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const after = (await (await fetch(`${base}/api/v1/health`)).json()) as any;
     expect(after.queue).toEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     await Promise.all([first.then(readSse), second.then(readSse)]);
@@ -322,7 +323,7 @@ describe("model selection", () => {
     expect(((await res.json()) as any).model).toBe(DOCUMENT);
     expect(mock.launches.slice(before)).toEqual([DOCUMENT]);
 
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = (await (await fetch(`${base}/api/v1/health`)).json()) as any;
     expect(health.model).toBe(DOCUMENT);
 
     // A request already on the loaded model does not reload it.
@@ -411,7 +412,7 @@ describe("queueing and cancellation", () => {
     const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
     await Bun.sleep(30);
 
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = (await (await fetch(`${base}/api/v1/health`)).json()) as any;
     expect(health.queue).toEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     const third = await post("/api/v1/translate", { text: "three", target_lang: "en" });
@@ -440,23 +441,27 @@ describe("queueing and cancellation", () => {
     await reader.read();
     ac.abort();
 
-    for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) await Bun.sleep(20);
+    for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) {
+      await Bun.sleep(20);
+    }
     mock.delayMs = 0;
     expect(mock.aborted).toBe(abortedBefore + 1);
 
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = (await (await fetch(`${base}/api/v1/health`)).json()) as any;
     expect(health.queue.running).toBe(false);
     const next = await post("/api/v1/translate", { text: "next", target_lang: "en" });
     expect(next.status).toBe(200);
   });
 
   async function queueState(): Promise<{ running: boolean; waiting: number }> {
-    const { running, waiting } = ((await (await fetch(base + "/api/v1/health")).json()) as any).queue;
+    const { running, waiting } = ((await (await fetch(`${base}/api/v1/health`)).json()) as any).queue;
     return { running, waiting };
   }
 
   async function waitForWaiting(count: number): Promise<void> {
-    for (let i = 0; i < 100 && (await queueState()).waiting !== count; i++) await Bun.sleep(20);
+    for (let i = 0; i < 100 && (await queueState()).waiting !== count; i++) {
+      await Bun.sleep(20);
+    }
   }
 
   // /tokenize never queues (see the tokenize tests), so only translate can be cancelled while waiting.
@@ -501,7 +506,9 @@ describe("queueing and cancellation", () => {
       ac.abort();
       await expect(pending).rejects.toThrow();
 
-      for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) await Bun.sleep(20);
+      for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) {
+        await Bun.sleep(20);
+      }
       await waitForWaiting(0);
       await Bun.sleep(50);
       expect(mock.aborted).toBe(abortedBefore + 1);
@@ -537,7 +544,9 @@ describe("queueing and cancellation", () => {
       // The stream's headers arrive at once, so the queued request is open but never answered.
       await post("/api/v1/translate", { text: "two", target_lang: "en", stream: true }, { signal: ac.signal });
       // Bun starts the response stream when it first writes it, so the interval can appear a moment late.
-      for (let i = 0; i < 100 && live.size !== before + 1; i++) await Bun.sleep(10);
+      for (let i = 0; i < 100 && live.size !== before + 1; i++) {
+        await Bun.sleep(10);
+      }
       expect((await queueState()).waiting).toBe(1);
       expect(live.size).toBe(before + 1);
 
@@ -563,12 +572,12 @@ describe("engine availability", () => {
     mock.ready = false;
     const loading = await startApp(config(), launcher);
     try {
-      const origin = loading.server.url.origin;
-      const health = await fetch(origin + "/api/v1/health");
+      const { origin } = loading.server.url;
+      const health = await fetch(`${origin}/api/v1/health`);
       expect(health.status).toBe(503);
       expect(((await health.json()) as any).status).toBe("loading");
 
-      const pending = fetch(origin + "/api/v1/translate", {
+      const pending = fetch(`${origin}/api/v1/translate`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: "Hi", target_lang: "zh" }),
@@ -588,12 +597,14 @@ describe("engine availability", () => {
     mock.ready = false;
     const loading = await startApp(config(), launcher);
     try {
-      const origin = loading.server.url.origin;
-      for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) await Bun.sleep(10);
+      const { origin } = loading.server.url;
+      for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) {
+        await Bun.sleep(10);
+      }
       expect(loading.engine.state).toBe("loading");
 
       const tokenize = () =>
-        fetch(origin + "/api/v1/tokenize", {
+        fetch(`${origin}/api/v1/tokenize`, {
           method: "POST",
           headers: { "content-type": "application/json" },
           body: JSON.stringify({ text: "Hi", target_lang: "zh" }),
@@ -618,9 +629,11 @@ describe("engine availability", () => {
     mock.failLaunch = "model file is corrupt";
     const broken = await startApp(config(), launcher);
     try {
-      for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) await Bun.sleep(10);
+      for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) {
+        await Bun.sleep(10);
+      }
       expect(broken.engine.state).toBe("error");
-      const res = await fetch(broken.server.url.origin + "/api/v1/tokenize", {
+      const res = await fetch(`${broken.server.url.origin}/api/v1/tokenize`, {
         method: "POST",
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: "Hi", target_lang: "zh" }),
@@ -656,7 +669,7 @@ describe("browser request checks", () => {
       expect(((await res.json()) as any).error.code).toBe("unsupported_media_type");
     }
     // A simple cross-site form POST carries no content-type at all.
-    const bare = await fetch(base + "/api/v1/translate", {
+    const bare = await fetch(`${base}/api/v1/translate`, {
       method: "POST",
       body: translateBody,
       headers: { "content-type": "" },
@@ -687,12 +700,12 @@ describe("browser request checks", () => {
     expect(res.status).toBe(403);
     expect(((await res.json()) as any).error.code).toBe("forbidden_origin");
 
-    const health = await fetch(base + "/api/v1/health", { headers: { origin: "null" } });
+    const health = await fetch(`${base}/api/v1/health`, { headers: { origin: "null" } });
     expect(health.status).toBe(403);
   });
 
   test("a same-origin page is served, and so is a request without an Origin", async () => {
-    const port = app.server.url.port;
+    const { port } = app.server.url;
     const same = await post(
       "/api/v1/tokenize",
       { text: "Hi", target_lang: "zh" },
@@ -703,7 +716,7 @@ describe("browser request checks", () => {
     expect(same.status).toBe(200);
     await same.text();
 
-    const none = await fetch(base + "/api/v1/health");
+    const none = await fetch(`${base}/api/v1/health`);
     expect(none.status).toBe(200);
     await none.text();
   });
@@ -711,7 +724,7 @@ describe("browser request checks", () => {
   test("ALLOWED_ORIGINS admits the listed origins only", async () => {
     await withApp({ allowedOrigins: ["https://app.example.com/", "http://localhost:5173"] }, async (extra) => {
       const tokenize = (origin: string) =>
-        fetch(extra.server.url.origin + "/api/v1/tokenize", {
+        fetch(`${extra.server.url.origin}/api/v1/tokenize`, {
           method: "POST",
           headers: { "content-type": "application/json", origin },
           body: translateBody,
@@ -732,12 +745,12 @@ describe("browser request checks", () => {
   });
 
   test("a Host header that is not loopback or configured is refused with 403", async () => {
-    const evil = await fetch(base + "/api/v1/health", { headers: { host: "rebind.example:3000" } });
+    const evil = await fetch(`${base}/api/v1/health`, { headers: { host: "rebind.example:3000" } });
     expect(evil.status).toBe(403);
     expect(((await evil.json()) as any).error.code).toBe("forbidden_host");
 
     for (const host of ["localhost:3000", "[::1]:3000", "127.0.0.1"]) {
-      const ok = await fetch(base + "/api/v1/health", { headers: { host } });
+      const ok = await fetch(`${base}/api/v1/health`, { headers: { host } });
       expect(ok.status).toBe(200);
       await ok.text();
     }
@@ -746,11 +759,11 @@ describe("browser request checks", () => {
   test("ALLOWED_HOSTS admits a proxy host name", async () => {
     await withApp({ allowedHosts: ["Translate.Example.com"] }, async (extra) => {
       const base2 = extra.server.url.origin;
-      const proxied = await fetch(base2 + "/api/v1/health", { headers: { host: "translate.example.com:8443" } });
+      const proxied = await fetch(`${base2}/api/v1/health`, { headers: { host: "translate.example.com:8443" } });
       expect(proxied.status).toBe(200);
       await proxied.text();
 
-      const other = await fetch(base2 + "/api/v1/health", { headers: { host: "other.example.com" } });
+      const other = await fetch(`${base2}/api/v1/health`, { headers: { host: "other.example.com" } });
       expect(other.status).toBe(403);
       await other.text();
     });
@@ -775,7 +788,7 @@ describe("browser request checks", () => {
   });
 
   test("static files are not subject to the checks", async () => {
-    const res = await fetch(base + "/", { headers: { host: "rebind.example", origin: "https://evil.example" } });
+    const res = await fetch(`${base}/`, { headers: { host: "rebind.example", origin: "https://evil.example" } });
     expect(res.status).toBe(200);
     await res.text();
   });
@@ -783,20 +796,20 @@ describe("browser request checks", () => {
 
 describe("static files", () => {
   test("serves the site root and refuses to leave the public directory", async () => {
-    const index = await fetch(base + "/");
+    const index = await fetch(`${base}/`);
     expect(index.status).toBe(200);
     expect(index.headers.get("content-type")).toStartWith("text/html");
 
-    expect((await fetch(base + "/missing.html")).status).toBe(404);
-    expect((await fetch(base + "/%2e%2e/package.json")).status).toBe(404);
-    expect((await fetch(base + "/..%2fREADME.md")).status).toBe(404);
+    expect((await fetch(`${base}/missing.html`)).status).toBe(404);
+    expect((await fetch(`${base}/%2e%2e/package.json`)).status).toBe(404);
+    expect((await fetch(`${base}/..%2fREADME.md`)).status).toBe(404);
   });
 });
 
 describe("output budget", () => {
   // The mock counts one token per prompt character, so a source text of n characters has a known prompt size.
   async function tokenCount(origin: string, text: string): Promise<number> {
-    const res = await fetch(origin + "/api/v1/tokenize", {
+    const res = await fetch(`${origin}/api/v1/tokenize`, {
       method: "POST",
       body: JSON.stringify({ text, target_lang: "en" }),
       headers: { "content-type": "application/json" },
@@ -810,7 +823,7 @@ describe("output budget", () => {
   }
 
   function translate(origin: string, body: unknown): Promise<Response> {
-    return fetch(origin + "/api/v1/translate", {
+    return fetch(`${origin}/api/v1/translate`, {
       method: "POST",
       body: JSON.stringify(body),
       headers: { "content-type": "application/json" },
@@ -819,17 +832,17 @@ describe("output budget", () => {
 
   describe("ctxSize 300, maxInputTokens 200", () => {
     // A prompt of 200 tokens leaves 300 - 200 - 64 = 36 for the translation.
-    let app: App;
+    let capped: App;
     let origin: string;
 
     beforeAll(async () => {
-      app = await startApp(config({ ctxSize: 300, maxInputTokens: 200 }), launcher);
-      origin = app.server.url.origin;
-      await waitReady(app);
+      capped = await startApp(config({ ctxSize: 300, maxInputTokens: 200 }), launcher);
+      ({ origin } = capped.server.url);
+      await waitReady(capped);
     });
 
     afterAll(async () => {
-      await app.stop();
+      await capped.stop();
     });
 
     test("a prompt at the input limit gets the remaining context as its budget", async () => {
@@ -866,10 +879,10 @@ describe("output budget", () => {
 
   test("a prompt that leaves no room after the margin is refused, not sent with a non-positive budget", async () => {
     // loadConfig would reject this pair (290 + 64 >= 300); startApp takes the config as given.
-    const app = await startApp(config({ ctxSize: 300, maxInputTokens: 290 }), launcher);
+    const refused = await startApp(config({ ctxSize: 300, maxInputTokens: 290 }), launcher);
     try {
-      const origin = app.server.url.origin;
-      await waitReady(app);
+      const { origin } = refused.server.url;
+      await waitReady(refused);
 
       // 230 tokens leaves 300 - 230 - 64 = 6 for the translation: still accepted.
       const fits = await textWithPromptTokens(origin, 230);

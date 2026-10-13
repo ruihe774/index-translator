@@ -3,8 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { hostAllowed, originAllowed, parseHostRule, parseOriginRule } from "../src/access";
 import { loadConfig } from "../src/config";
 
-const hosts = (...entries: string[]) => entries.map(parseHostRule);
-const origins = (...entries: string[]) => entries.map(parseOriginRule);
+const hosts = (...entries: string[]) => entries.map((entry) => parseHostRule(entry));
+const origins = (...entries: string[]) => entries.map((entry) => parseOriginRule(entry));
 
 describe("ALLOWED_HOSTS patterns", () => {
   test("a name matches any port, in any case", () => {

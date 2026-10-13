@@ -7,9 +7,9 @@ import {
   DOCUMENT_DIRECTIONS as CLIENT_DIRECTIONS,
   DOCUMENT_MODEL,
   LONG_THRESHOLD_LETTERS,
-  type SelectionInput,
   selectModel,
 } from "../public/select-model";
+import type { SelectionInput } from "../public/select-model";
 import { DOCUMENT_DIRECTIONS } from "../src/prompt";
 
 const pick = (over: Partial<SelectionInput>) =>
@@ -42,13 +42,13 @@ describe("selectModel", () => {
   });
 
   test("spaces and punctuation do not push a text over the threshold", () => {
-    const text = ("a".repeat(10) + ", ").repeat(LONG_THRESHOLD_LETTERS / 10);
+    const text = `${"a".repeat(10)}, `.repeat(LONG_THRESHOLD_LETTERS / 10);
     expect(text.length).toBeGreaterThan(LONG_THRESHOLD_LETTERS);
     expect(pick({ text }).model).toBe(CHAT_MODEL);
   });
 
   test("surrounding whitespace is ignored", () => {
-    expect(pick({ text: "  " + "a".repeat(LONG_THRESHOLD_LETTERS) + "\n\n\n" }).model).toBe(CHAT_MODEL);
+    expect(pick({ text: `  ${"a".repeat(LONG_THRESHOLD_LETTERS)}\n\n\n` }).model).toBe(CHAT_MODEL);
   });
 
   test("long text in an unsupported direction stays on the chat model with a warning", () => {
@@ -199,8 +199,8 @@ describe("detectSource", () => {
 
   test("ASCII at 98 percent: 97 of 100 letters is not English, 98 of 100 can be", () => {
     const common = "the ".repeat(32);
-    expect(detectSource(common + "a" + "é".repeat(3))).toBeUndefined();
-    expect(detectSource(common + "ab" + "é".repeat(2))).toBe("en");
+    expect(detectSource(`${common}a${"é".repeat(3)}`)).toBeUndefined();
+    expect(detectSource(`${common}ab${"é".repeat(2)}`)).toBe("en");
   });
 
   test("common English words at 10 percent: 10 of 100 words is not English, 11 of 100 is", () => {

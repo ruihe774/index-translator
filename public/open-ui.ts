@@ -11,7 +11,8 @@
 import type { PdfPages } from "./elements/pdf-pages.ts";
 import { looksLikeMarkdown } from "./markdown.ts";
 import { ACCEPT_IMAGE, ACCEPT_PDF, ACCEPT_TEXT, decodeText, fileKind, pageNote, refusal } from "./open-file.ts";
-import { openPdf, type PdfDocument, PdfError, pdfInstalled } from "./pdf.ts";
+import { openPdf, PdfError, pdfInstalled } from "./pdf.ts";
+import type { PdfDocument } from "./pdf.ts";
 
 export interface OpenUiDeps {
   button: HTMLElement;
@@ -64,22 +65,30 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   function setPdf(next: { name: string; doc: PdfDocument } | null) {
     pdf?.doc.close();
     pdf = next;
-    if (next) d.pages.show(next.doc);
-    else d.pages.clear();
+    if (next) {
+      d.pages.show(next.doc);
+    } else {
+      d.pages.clear();
+    }
     d.button.textContent = next ? "Close" : "Open";
     d.button.setAttribute("aria-label", next ? "Close the PDF" : "Open a file");
   }
 
   /** The spinner over the box; only the newest pick may end it. */
   function reading(on: boolean, mine = turn) {
-    if (on) d.area.setAttribute("aria-busy", "true");
-    else if (mine === turn) d.area.removeAttribute("aria-busy");
+    if (on) {
+      d.area.setAttribute("aria-busy", "true");
+    } else if (mine === turn) {
+      d.area.removeAttribute("aria-busy");
+    }
   }
 
   async function openText(file: File, mine: number) {
     const text = decodeText(new Uint8Array(await file.arrayBuffer()));
     reading(false, mine);
-    if (mine !== turn || busy) return;
+    if (mine !== turn || busy) {
+      return;
+    }
     if (text === null) {
       say(`${file.name} was not opened: it is not text in UTF-8.`, "error");
       return;
@@ -94,7 +103,9 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       picture = await createImageBitmap(file);
     } catch {
       reading(false, mine);
-      if (mine === turn) say(`${file.name} was not opened: it could not be read as an image.`, "error");
+      if (mine === turn) {
+        say(`${file.name} was not opened: it could not be read as an image.`, "error");
+      }
       return;
     }
     reading(false, mine);
@@ -112,11 +123,18 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     try {
       doc = await openPdf(new Uint8Array(await file.arrayBuffer()));
       reading(false, mine);
-    } catch (e) {
+    } catch (error) {
       reading(false, mine);
-      if (mine !== turn) return;
-      if (!(e instanceof PdfError)) console.error(e);
-      say(`${file.name} was not opened. ${e instanceof PdfError ? e.message : "It could not be read."}`, "error");
+      if (mine !== turn) {
+        return;
+      }
+      if (!(error instanceof PdfError)) {
+        console.error(error);
+      }
+      say(
+        `${file.name} was not opened. ${error instanceof PdfError ? error.message : "It could not be read."}`,
+        "error",
+      );
       return;
     }
     if (mine !== turn) {
@@ -133,19 +151,22 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     d.pages.busy = null;
     const kind = fileKind(file.name, file.type);
     const problem = refusal(file.name, kind, file.size);
-    if (problem !== null) say(problem, "error");
-    else {
+    if (problem === null) {
       reading(true);
       void (kind === "pdf"
         ? openDocument(file, mine)
         : kind === "image"
           ? openImage(file, mine)
           : openText(file, mine));
+    } else {
+      say(problem, "error");
     }
   }
 
   async function takePage(page: number) {
-    if (!pdf || busy) return;
+    if (!pdf || busy) {
+      return;
+    }
     const mine = ++turn;
     const { name, doc } = pdf;
     d.pages.busy = page;
@@ -153,24 +174,34 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     try {
       const result = await doc.extract(page);
       // A translation that started meanwhile keeps its source.
-      if (mine !== turn || busy) return;
+      if (mine !== turn || busy) {
+        return;
+      }
       const note = pageNote(name, page, doc.pageCount, result);
       if (!note.failed) {
         d.load(result.markdown, true);
         d.pages.selected = page;
       }
       say(note.text, note.failed ? "error" : note.warning ? "warning" : "plain");
-    } catch (e) {
-      if (mine !== turn) return;
-      if (!(e instanceof PdfError)) console.error(e);
-      say(`${name}, page ${page} was not read. ${e instanceof PdfError ? e.message : ""}`.trim(), "error");
+    } catch (error) {
+      if (mine !== turn) {
+        return;
+      }
+      if (!(error instanceof PdfError)) {
+        console.error(error);
+      }
+      say(`${name}, page ${page} was not read. ${error instanceof PdfError ? error.message : ""}`.trim(), "error");
     } finally {
-      if (mine === turn) d.pages.busy = null;
+      if (mine === turn) {
+        d.pages.busy = null;
+      }
     }
   }
 
   d.button.addEventListener("click", () => {
-    if (d.button.getAttribute("aria-disabled") === "true") return;
+    if (d.button.getAttribute("aria-disabled") === "true") {
+      return;
+    }
     if (!pdf) {
       d.input.click();
       return;
@@ -182,7 +213,9 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   });
   /** What picking a file and dropping one on the page share. */
   function pick(file: File | undefined) {
-    if (file && !busy && !pdf) open(file);
+    if (file && !busy && !pdf) {
+      open(file);
+    }
   }
   d.input.addEventListener("change", () => {
     const file = d.input.files?.[0];
@@ -202,22 +235,32 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   const mark = (on: boolean) => {
     clearTimeout(idle);
     document.documentElement.classList.toggle("dropping", on);
-    if (on) idle = window.setTimeout(() => mark(false), DRAG_IDLE_MS);
+    if (on) {
+      idle = window.setTimeout(() => mark(false), DRAG_IDLE_MS);
+    }
   };
   window.addEventListener("dragover", (e) => {
-    if (!carriesFiles(e)) return;
+    if (!carriesFiles(e)) {
+      return;
+    }
     e.preventDefault();
     const blocked = busy || pdf !== null;
-    if (e.dataTransfer) e.dataTransfer.dropEffect = blocked ? "none" : "copy";
+    if (e.dataTransfer) {
+      e.dataTransfer.dropEffect = blocked ? "none" : "copy";
+    }
     mark(!blocked);
   });
   window.addEventListener("dragleave", (e) => {
-    if (e.relatedTarget === null) mark(false);
+    if (e.relatedTarget === null) {
+      mark(false);
+    }
   });
   window.addEventListener("dragend", () => mark(false));
   window.addEventListener("drop", (e) => {
     mark(false);
-    if (!carriesFiles(e)) return;
+    if (!carriesFiles(e)) {
+      return;
+    }
     e.preventDefault();
     pick(e.dataTransfer?.files[0]);
   });
@@ -226,9 +269,12 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   // Without the libraries the picker offers no PDFs, and one that is picked anyway is refused by openPdf.
   d.input.accept = `${ACCEPT_TEXT},${ACCEPT_PDF},${ACCEPT_IMAGE}`;
   void pdfInstalled().then((installed) => {
-    if (installed) return;
+    if (installed) {
+      return undefined;
+    }
     d.input.accept = `${ACCEPT_TEXT},${ACCEPT_IMAGE}`;
     d.button.title = NOT_INSTALLED;
+    return undefined;
   });
 
   return {

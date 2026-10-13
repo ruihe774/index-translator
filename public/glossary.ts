@@ -23,14 +23,22 @@ export function parseGlossary(value: string): GlossaryResult {
   const all = value.split("\n");
   for (let i = 0; i < all.length; i++) {
     const line = all[i]!.trim();
-    if (!line) continue;
+    if (!line) {
+      continue;
+    }
     const number = i + 1;
     const eq = line.indexOf("=");
-    if (eq < 0) return { glossary, error: { line: number, kind: "format" } };
+    if (eq === -1) {
+      return { glossary, error: { line: number, kind: "format" } };
+    }
     const source = line.slice(0, eq).trim();
     const target = line.slice(eq + 1).trim();
-    if (!source || !target) return { glossary, error: { line: number, kind: "format" } };
-    if (Object.hasOwn(glossary, source)) return { glossary, error: { line: number, kind: "duplicate", term: source } };
+    if (!source || !target) {
+      return { glossary, error: { line: number, kind: "format" } };
+    }
+    if (Object.hasOwn(glossary, source)) {
+      return { glossary, error: { line: number, kind: "duplicate", term: source } };
+    }
     glossary[source] = target;
   }
   return { glossary };

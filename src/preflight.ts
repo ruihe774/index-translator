@@ -54,7 +54,9 @@ export function preflight(
 ): string | undefined {
   const windows = platform === "win32";
   const found = probe(cfg.llamaDir);
-  if ("error" in found) return `The translation engine cannot be loaded. ${found.error}`;
+  if ("error" in found) {
+    return `The translation engine cannot be loaded. ${found.error}`;
+  }
 
   if (!found.cpu) {
     // What the libraries said about it, without their ordinary start-up lines.

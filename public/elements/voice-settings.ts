@@ -31,11 +31,16 @@ export class VoiceSettings extends HTMLElement {
   #built = false;
 
   connectedCallback() {
-    if (this.#built) return;
+    if (this.#built) {
+      return;
+    }
     this.#built = true;
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- each call names the element it expects
     const find = <T extends HTMLElement>(selector: string) => {
       const el = this.querySelector<T>(selector);
-      if (!el) throw new Error(`<voice-settings> needs ${selector}`);
+      if (!el) {
+        throw new Error(`<voice-settings> needs ${selector}`);
+      }
       return el;
     };
     this.#voice = find("#voice");
@@ -54,7 +59,9 @@ export class VoiceSettings extends HTMLElement {
   async #loadFile(): Promise<void> {
     const file = this.#file.files?.[0];
     this.#file.value = "";
-    if (!file) return;
+    if (!file) {
+      return;
+    }
     this.#sample(file.name.replace(/\.[^.]*$/, ""), await file.arrayBuffer());
   }
 
@@ -64,16 +71,20 @@ export class VoiceSettings extends HTMLElement {
   }
 
   /** Reading speed, 1 for normal. */
+  // eslint-disable-next-line @typescript-eslint/related-getter-setter-pairs -- the setter takes the stored option value, the getter the number
   get speed(): number {
     return Number(this.#speed.value);
   }
 
   /** Selects a speed from the list, as stored; anything not offered is ignored. */
   set speed(speed: string | null) {
-    if ([...this.#speed.options].some((o) => o.value === speed)) this.#speed.value = speed as string;
+    if ([...this.#speed.options].some((o) => o.value === speed)) {
+      this.#speed.value = speed as string;
+    }
   }
 
   /** Text under the clone row: progress, the result, or why it failed. */
+  // eslint-disable-next-line accessor-pairs -- write-only: the text is shown, never read back
   set status(text: string) {
     this.#status.textContent = text;
   }
@@ -86,7 +97,9 @@ export class VoiceSettings extends HTMLElement {
     const before = this.#voice.value;
     const wanted = [before, remembered].find((id) => voices.some((v) => v.id === id));
     this.#voice.replaceChildren(...voices.map((v) => new Option(v.name, v.id)));
-    if (wanted) this.#voice.value = wanted;
+    if (wanted) {
+      this.#voice.value = wanted;
+    }
     return this.#voice.value !== before && this.#voice.value !== "";
   }
 
@@ -102,13 +115,18 @@ export class VoiceSettings extends HTMLElement {
 
   async #toggleRecording() {
     const recorder = this.#recorder;
-    if (recorder.recording) return this.#finishRecording();
-    if (recorder.starting || recorder.stopping) return; // a permission prompt or a stop is already under way
+    if (recorder.recording) {
+      await this.#finishRecording();
+      return;
+    }
+    if (recorder.starting || recorder.stopping) {
+      return;
+    } // a permission prompt or a stop is already under way
     this.status = "Waiting for the microphone…";
     try {
       await recorder.start(() => void this.#finishRecording());
-    } catch (e) {
-      this.status = message(e);
+    } catch (error) {
+      this.status = message(error);
       return;
     }
     this.#record.textContent = "Stop recording";
@@ -117,13 +135,15 @@ export class VoiceSettings extends HTMLElement {
 
   async #finishRecording() {
     // Idempotent: the 30 s limit and a click on Stop may both arrive; the first one wins.
-    if (!this.#recorder.recording) return;
+    if (!this.#recorder.recording) {
+      return;
+    }
     this.#record.textContent = "Record";
     let audio: ArrayBuffer;
     try {
       audio = await this.#recorder.stop();
-    } catch (e) {
-      this.status = message(e);
+    } catch (error) {
+      this.status = message(error);
       return;
     }
     this.#sample(`Recording ${new Date().toLocaleTimeString()}`, audio);

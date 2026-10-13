@@ -1,13 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import {
-  buildImageRequest,
-  buildRequest,
-  type FormValues,
-  glossaryMessage,
-  hasOptions,
-  lines,
-} from "../public/request";
+import { buildImageRequest, buildRequest, glossaryMessage, hasOptions, lines } from "../public/request";
+import type { FormValues } from "../public/request";
 import { CHAT_MODEL, DOCUMENT_MODEL } from "../public/select-model";
 
 const form = (over: Partial<FormValues> = {}): FormValues => ({
@@ -20,7 +14,9 @@ const form = (over: Partial<FormValues> = {}): FormValues => ({
   ...over,
 });
 const bodyOf = (r: ReturnType<typeof buildRequest>) => {
-  if (!("body" in r)) throw new Error("expected a body");
+  if (!("body" in r)) {
+    throw new Error("expected a body");
+  }
   return r.body;
 };
 
@@ -94,6 +90,7 @@ describe("buildRequest", () => {
         form({ glossary: "cat = 猫\n dog=犬", hard: "keep names\n", soft: " formal \n\nshort", genre: " novel " }),
       ),
     );
+    // eslint-disable-next-line unicorn/prefer-structured-clone -- the JSON round trip is what the wire carries
     expect(JSON.parse(JSON.stringify(body))).toEqual({
       model: CHAT_MODEL,
       text: "hello",
@@ -141,7 +138,9 @@ describe("buildRequest", () => {
   });
   test("__proto__ stays a glossary term in the serialized body", () => {
     const body = bodyOf(buildRequest(CHAT_MODEL, undefined, form({ glossary: "__proto__ = x" })));
+    // eslint-disable-next-line unicorn/prefer-structured-clone -- the JSON round trip is what the wire carries
     expect(JSON.parse(JSON.stringify(body)).glossary).toEqual(JSON.parse('{"__proto__":"x"}'));
+    // eslint-disable-next-line unicorn/prefer-structured-clone -- the JSON round trip is what the wire carries
     expect(Object.keys(JSON.parse(JSON.stringify(body)).glossary)).toEqual(["__proto__"]);
   });
 });

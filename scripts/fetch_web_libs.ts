@@ -45,11 +45,19 @@ export const LIBRARIES: Library[] = [
     // cmaps/ and standard_fonts/ are what a PDF may leave out and name instead; wasm/ holds the
     // JPEG 2000, JBIG2 and colour decoders (not the scripting sandbox, which thumbnails never run).
     place: (path) => {
-      if (path === "LICENSE") return path;
+      if (path === "LICENSE") {
+        return path;
+      }
       const build = /^legacy\/build\/(pdf(?:\.worker)?\.min\.mjs)$/.exec(path);
-      if (build) return build[1];
-      if (/^(cmaps|standard_fonts|iccs)\/[^/]+$/.test(path)) return path;
-      if (/^wasm\/[^/]+$/.test(path) && !path.startsWith("wasm/quickjs")) return path;
+      if (build) {
+        return build[1];
+      }
+      if (/^(cmaps|standard_fonts|iccs)\/[^/]+$/.test(path)) {
+        return path;
+      }
+      if (/^wasm\/[^/]+$/.test(path) && !path.startsWith("wasm/quickjs")) {
+        return path;
+      }
       return undefined;
     },
     expect: [
@@ -132,15 +140,21 @@ export function untar(tgz: Uint8Array): Map<string, Uint8Array> {
   const files = new Map<string, Uint8Array>();
   for (let at = 0; at + 512 <= tar.length;) {
     const name = field(at, 100);
-    if (name === "") break; // the end marker: empty blocks
+    if (name === "") {
+      break;
+    } // the end marker: empty blocks
     const size = Number.parseInt(field(at + 124, 12).trim(), 8);
     const type = field(at + 156, 1);
     const prefix = field(at + 345, 155);
     const path = prefix ? `${prefix}/${name}` : name;
-    if (Number.isNaN(size)) throw new Error(`unreadable size for ${path}`);
+    if (Number.isNaN(size)) {
+      throw new TypeError(`unreadable size for ${path}`);
+    }
     if (type === "0" || type === "") {
       const inside = path.slice(path.indexOf("/") + 1);
-      if (inside.split("/").some((part) => part === ".." || part === "")) throw new Error(`refusing path ${path}`);
+      if (inside.split("/").some((part) => part === ".." || part === "")) {
+        throw new Error(`refusing path ${path}`);
+      }
       files.set(inside, tar.subarray(at + 512, at + 512 + size));
     } else if (type !== "5") {
       throw new Error(`unexpected entry type "${type}" for ${path}`);
@@ -190,7 +204,9 @@ async function fetchLibrary(lib: Library, vendor: string): Promise<void> {
   const written = new Set<string>();
   for (const [path, data] of files) {
     const to = lib.place(path);
-    if (to === undefined) continue;
+    if (to === undefined) {
+      continue;
+    }
     await mkdir(dirname(join(dir, to)), { recursive: true });
     await Bun.write(join(dir, to), data);
     written.add(to);
@@ -198,7 +214,9 @@ async function fetchLibrary(lib: Library, vendor: string): Promise<void> {
     bytes += data.length;
   }
   const missing = lib.expect.filter((path) => !written.has(path));
-  if (missing.length > 0) throw new Error(`${lib.url} has no ${missing.join(", ")}`);
+  if (missing.length > 0) {
+    throw new Error(`${lib.url} has no ${missing.join(", ")}`);
+  }
   await Bun.write(join(dir, STAMP), stamp);
   console.log(`ok ${lib.dir} ${lib.version} (${count} files, ${(bytes / 2 ** 20).toFixed(1)} MiB)`);
 }
@@ -213,8 +231,14 @@ export async function requireWebLibs(vendor: string): Promise<void> {
 }
 
 if (import.meta.main) {
-  if (Bun.argv.length > 2) throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
+  if (Bun.argv.length > 2) {
+    throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
+  }
   const vendor = resolve(import.meta.dir, "..", "public", "vendor");
-  for (const lib of LIBRARIES) await fetchLibrary(lib, vendor);
-  for (const lib of FILE_LIBRARIES) await fetchFileLibrary(lib, vendor);
+  for (const lib of LIBRARIES) {
+    await fetchLibrary(lib, vendor);
+  }
+  for (const lib of FILE_LIBRARIES) {
+    await fetchFileLibrary(lib, vendor);
+  }
 }

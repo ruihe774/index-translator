@@ -38,6 +38,112 @@ style = "warn"
 ]
 "@typescript-eslint/ban-ts-comment" = ["error", { "ts-expect-error" = false }]
 
+# Off: house style. Key order, declaration style and identifier length follow what reads best in each
+# place, and short names such as `i`, `a` and `c` are idiomatic here.
+"one-var" = "off"
+"sort-keys" = "off"
+"id-length" = "off"
+"func-style" = "off"
+"capitalized-comments" = "off"
+"no-inline-comments" = "off"
+"no-ternary" = "off"
+"no-continue" = "off"
+"no-await-in-loop" = "off"
+"prefer-named-capture-group" = "off"
+"@typescript-eslint/init-declarations" = "off"
+"@typescript-eslint/method-signature-style" = "off"
+"@typescript-eslint/parameter-properties" = "off"
+"@typescript-eslint/prefer-readonly" = "off"
+"@typescript-eslint/max-params" = "off"
+"@typescript-eslint/no-confusing-void-expression" = "off"
+"@typescript-eslint/strict-void-return" = "off"
+"@typescript-eslint/strict-boolean-expressions" = "off"
+"@typescript-eslint/prefer-readonly-parameter-types" = "off"
+"@typescript-eslint/no-magic-numbers" = "off"
+"unicorn/consistent-function-scoping" = "off"
+"unicorn/no-null" = "off"
+"unicorn/no-await-expression-member" = "off"
+"unicorn/max-nested-calls" = "off"
+"require-unicode-regexp" = "off"
+
+# Off: size limits. Long test specs and UI modules are one unit each; splitting them only to satisfy a count
+# would scatter one flow across files.
+"max-statements" = "off"
+"max-lines-per-function" = "off"
+"max-lines" = "off"
+"max-classes-per-file" = "off"
+
+# Off: module layout. The codebase uses named exports on purpose; `export` next to the declaration is the
+# convention these rules fight.
+"import/no-named-export" = "off"
+"import/group-exports" = "off"
+"import/exports-last" = "off"
+"import/prefer-default-export" = "off"
+
+# Off: the server and build scripts run on Bun and use Node built-ins (node:fs, node:path, ...) by design.
+"import/no-nodejs-modules" = "off"
+
+# Off: promise style. `.then` and `new Promise` wrapping events are the idiomatic form in these modules.
+"promise/prefer-await-to-then" = "off"
+"promise/prefer-await-to-callbacks" = "off"
+"promise/avoid-new" = "off"
+
+# Off: test-file conventions. bun:test globals are the test runner's API, and the vitest/jest rules describe
+# other runners.
+"vitest/require-hook" = "off"
+"jest/require-hook" = "off"
+"vitest/no-conditional-in-test" = "off"
+"jest/no-conditional-in-test" = "off"
+"vitest/prefer-importing-vitest-globals" = "off"
+
+# Off: casts. The DOM's query methods and the wire's JSON are narrowed with `as` in many places, and a type
+# guard for each would add more code than the check it gives.
+"@typescript-eslint/no-unsafe-type-assertion" = "off"
+
+# Off: synchronous fs. Its calls are one-time startup checks, a cached transform and the setup scripts; the
+# request paths use Bun's async file APIs.
+"n/no-sync" = "off"
+
+# Off: names. Build and fetch scripts are snake_case, the convention in `scripts/`. Playwright specs are
+# `*.spec.ts`.
+"unicorn/filename-case" = "off"
+"vitest/consistent-test-filename" = "off"
+
+# Off: `Array.from` keeps a typed array's type; spreading it would give `number[]`.
+"unicorn/prefer-spread" = "off"
+# Off: `window` is the name that reads right in page code; workers use `self`.
+"unicorn/prefer-global-this" = "off"
+# Off: `parseInt(s, 10)` and `Number(s)` read differently on input like "12px" and "".
+"unicorn/prefer-number-coercion" = "off"
+# Off: an explicit `undefined` keeps a positional argument in place and documents the gap.
+"unicorn/no-useless-undefined" = "off"
+# Off: the `unicorn/prefer-query-selector` rewrite of `getElementsBy*` changes the returned collection's type.
+"unicorn/prefer-query-selector" = "off"
+# Off: a Set for a short literal list is not worth the indirection.
+"unicorn/prefer-set-has" = "off"
+# Off: a test loops over its cases when a shared body reads clearer than a table.
+"vitest/prefer-each" = "off"
+"jest/prefer-each" = "off"
+"vitest/prefer-hooks-in-order" = "off"
+"jest/prefer-hooks-in-order" = "off"
+# Off: a dependency count is a poor proxy for a module's size; the entry points gather many on purpose.
+"import/max-dependencies" = "off"
+
+# Off: nesting. A nested conditional reads better than an if-ladder for a choice between a few values, and
+# nested blocks are normal in the parsers and the test loops.
+"no-nested-ternary" = "off"
+"unicorn/no-nested-ternary" = "off"
+"max-depth" = "off"
+
+# Off: formatting, owned by `bun fmt` (`sortImports`, and its own case for hex digits). The lint rules want
+# another order and case, so they would undo the formatter.
+"sort-imports" = "off"
+"unicorn/number-literal-case" = "off"
+
+# Import statements: `import type` next to a value import of the same module is the form that
+# import/consistent-type-specifier-style asks for, so one module may be imported by two statements.
+"no-duplicate-imports" = ["error", { allowSeparateTypeImports = true }]
+
 [fmt]
 printWidth = 120
 htmlWhitespaceSensitivity = "ignore"

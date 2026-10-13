@@ -4,7 +4,8 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 
-import { type App, startApp } from "../src/app";
+import { startApp } from "../src/app";
+import type { App } from "../src/app";
 import { buildDocumentPrompt, buildPrompt } from "../src/prompt";
 import {
   CHAT,
@@ -242,11 +243,10 @@ describe("streaming selection", () => {
     expect(res.status).toBe(200);
     if (sse) {
       expect(res.headers.get("content-type")).toStartWith("text/event-stream");
-      await res.text();
     } else {
       expect(res.headers.get("content-type")).toStartWith("application/json");
-      await res.text();
     }
+    await res.text();
   });
 
   test("stream: false does not stop an Accept: text/event-stream request from streaming", async () => {
@@ -299,7 +299,10 @@ describe("request body size", () => {
     let offset = 0;
     return new ReadableStream({
       pull(controller) {
-        if (offset >= bytes.length) return controller.close();
+        if (offset >= bytes.length) {
+          controller.close();
+          return;
+        }
         controller.enqueue(bytes.subarray(offset, offset + chunkSize));
         offset += chunkSize;
       },
@@ -332,7 +335,7 @@ describe("request body size", () => {
     expect(res.status).toBe(413);
     await res.text();
 
-    const health = await fetch(base + "/api/v1/health");
+    const health = await fetch(`${base}/api/v1/health`);
     expect(health.status).toBe(200);
     await health.text();
   });
@@ -343,7 +346,7 @@ describe("request body size", () => {
     expect(res.status).toBe(413);
     await res.text();
 
-    const health = await fetch(base + "/api/v1/health");
+    const health = await fetch(`${base}/api/v1/health`);
     expect(health.status).toBe(200);
     await health.text();
   });
@@ -487,27 +490,27 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
 
 describe("static files", () => {
   test("HEAD / returns 200 with no body", async () => {
-    const res = await fetch(base + "/", { method: "HEAD" });
+    const res = await fetch(`${base}/`, { method: "HEAD" });
     expect(res.status).toBe(200);
     // Bun sends no Content-Type on a HEAD answer, so only the status and the empty body are pinned.
     expect(await res.text()).toBe("");
   });
 
   test("POST / is refused with 405 and plain text", async () => {
-    const res = await fetch(base + "/", { method: "POST", body: "x" });
+    const res = await fetch(`${base}/`, { method: "POST", body: "x" });
     expect(res.status).toBe(405);
     expect(await res.text()).toBe("Method Not Allowed");
   });
 
   test("/index.html is served", async () => {
-    const res = await fetch(base + "/index.html");
+    const res = await fetch(`${base}/index.html`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toStartWith("text/html");
     await res.text();
   });
 
   test("/app.ts is the transpiled module: JavaScript, relative imports intact, revalidated by ETag", async () => {
-    const res = await fetch(base + "/app.ts");
+    const res = await fetch(`${base}/app.ts`);
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toStartWith("text/javascript");
     expect(res.headers.get("cache-control")).toBe("no-cache");
@@ -516,13 +519,13 @@ describe("static files", () => {
     expect(code).not.toContain(": HTMLElement");
 
     const etag = res.headers.get("etag")!;
-    const again = await fetch(base + "/app.ts", { headers: { "if-none-match": etag } });
+    const again = await fetch(`${base}/app.ts`, { headers: { "if-none-match": etag } });
     expect(again.status).toBe(304);
     expect(await again.text()).toBe("");
   });
 
   test("/select-model.ts is served so the browser and bun test share one module", async () => {
-    const res = await fetch(base + "/select-model.ts");
+    const res = await fetch(`${base}/select-model.ts`);
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("LONG_THRESHOLD_LETTERS");
   });
@@ -546,27 +549,27 @@ describe("static files", () => {
   });
 
   test("an undecodable path is a 400, not a server error", async () => {
-    const res = await fetch(base + "/%ff");
+    const res = await fetch(`${base}/%ff`);
     expect(res.status).toBe(400);
     expect(await res.text()).toBe("Bad Request");
   });
 
   test("a trailing slash on a file name is a 404", async () => {
-    const res = await fetch(base + "/index.html/");
+    const res = await fetch(`${base}/index.html/`);
     expect(res.status).toBe(404);
     await res.text();
   });
 
   test("/api/v1 without a trailing slash falls through to static files and is a plain 404", async () => {
     // Actual behaviour: only paths under /api/v1/ reach the API switch, so the bare prefix is static.
-    const res = await fetch(base + "/api/v1");
+    const res = await fetch(`${base}/api/v1`);
     expect(res.status).toBe(404);
     expect(res.headers.get("content-type")).toStartWith("text/plain");
     await res.text();
   });
 
   test("/api/v1/ is an API path and gets the JSON not_found envelope", async () => {
-    const res = await fetch(base + "/api/v1/");
+    const res = await fetch(`${base}/api/v1/`);
     expect(res.status).toBe(404);
     expect(res.headers.get("content-type")).toStartWith("application/json");
     expect((await json(res)).error.code).toBe("not_found");
@@ -577,7 +580,7 @@ describe("static files", () => {
     // The throw is answered as an internal error.
     const spy = spyOn(console, "error").mockImplementation(() => {});
     try {
-      const res = await fetch(base + "/%00");
+      const res = await fetch(`${base}/%00`);
       expect([400, 404]).toContain(res.status);
       await res.text();
     } finally {
@@ -590,14 +593,14 @@ describe("static files", () => {
     // The status is pinned to today's behaviour; see the test.failing above for the intended answer.
     const spy = spyOn(console, "error").mockImplementation(() => {});
     try {
-      const res = await fetch(base + "/%00");
+      const res = await fetch(`${base}/%00`);
       expect(res.status).toBe(500);
       expect(res.headers.get("content-type")).toStartWith("application/json");
       expect((await json(res)).error).toEqual({ code: "internal_error", message: "internal server error" });
     } finally {
       spy.mockRestore();
     }
-    const health = await fetch(base + "/api/v1/health");
+    const health = await fetch(`${base}/api/v1/health`);
     expect(health.status).toBe(200);
     await health.text();
   });
@@ -614,10 +617,10 @@ describe("error envelope", () => {
   test("every API error is application/json with {error:{code,message}}", async () => {
     const cases: [string, Promise<Response>, string, number][] = [
       ["400 invalid body", post("/api/v1/translate", { text: "", target_lang: "en" }), "invalid_request", 400],
-      ["404 unknown endpoint", fetch(base + "/api/v1/nope"), "not_found", 404],
+      ["404 unknown endpoint", fetch(`${base}/api/v1/nope`), "not_found", 404],
       [
         "405 wrong method",
-        fetch(base + "/api/v1/models", { method: "POST", body: "{}", headers: { "content-type": "application/json" } }),
+        fetch(`${base}/api/v1/models`, { method: "POST", body: "{}", headers: { "content-type": "application/json" } }),
         "method_not_allowed",
         405,
       ],
@@ -635,7 +638,7 @@ describe("error envelope", () => {
       ],
       [
         "403 foreign host",
-        fetch(base + "/api/v1/health", { headers: { host: "rebind.example" } }),
+        fetch(`${base}/api/v1/health`, { headers: { host: "rebind.example" } }),
         "forbidden_host",
         403,
       ],
@@ -682,7 +685,7 @@ describe("error envelope", () => {
   });
 
   test("HEAD on /api/v1/health is a 405 that allows GET (documented; unlike HEAD on static files)", async () => {
-    const res = await fetch(base + "/api/v1/health", { method: "HEAD" });
+    const res = await fetch(`${base}/api/v1/health`, { method: "HEAD" });
     expect(res.status).toBe(405);
     expect(res.headers.get("allow")).toBe("GET");
     await res.text();
@@ -735,12 +738,14 @@ describe("resumable streams", () => {
       const events: string[] = [];
       for (;;) {
         const { done } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
       }
       expect(events).toEqual([]);
-      const plain = await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true });
-      expect(plain.headers.get("x-translation-id")).toBeNull();
-      await plain.text();
+      const reply = await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true });
+      expect(reply.headers.get("x-translation-id")).toBeNull();
+      await reply.text();
     } finally {
       mock.delayMs = 0;
     }

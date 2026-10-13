@@ -8,7 +8,7 @@ const JSON_TAIL = "请以相同的 JSON 格式输出翻译结果，key 保持不
 
 /** The numbered lines of the 【约束要求】 block. */
 function constraintBlock(prompt: string): string[] {
-  const m = prompt.match(/【约束要求】\n([\s\S]*?)\n\n/);
+  const m = /【约束要求】\n([\s\S]*?)\n\n/.exec(prompt);
   return m ? m[1]!.split("\n") : [];
 }
 
@@ -118,10 +118,9 @@ describe("glossary constraints", () => {
   test("a glossary alone uses the constrained layout", () => {
     const prompt = buildPrompt({ text: "源", targetLang: "en", glossary: { k: "v" } });
     expect(prompt).toBe(
-      "请将以下文本翻译成英语，并且严格遵循所有约束要求。\n\n" +
-        "【源文】\n源\n\n" +
-        "【约束要求】\n1. 【硬性要求】专名/术语对照: k→v\n\n" +
-        PLAIN_TAIL,
+      `请将以下文本翻译成英语，并且严格遵循所有约束要求。\n\n` +
+        `【源文】\n源\n\n` +
+        `【约束要求】\n1. 【硬性要求】专名/术语对照: k→v\n\n${PLAIN_TAIL}`,
     );
   });
 
@@ -276,8 +275,11 @@ describe("models", () => {
   test("every kind is chat or document, and only document models carry directions", () => {
     for (const m of MODELS) {
       expect(["chat", "document"]).toContain(m.kind);
-      if (m.kind === "chat") expect(m.directions).toBeUndefined();
-      else expect(m.directions).toBeDefined();
+      if (m.kind === "chat") {
+        expect(m.directions).toBeUndefined();
+      } else {
+        expect(m.directions).toBeDefined();
+      }
     }
   });
 
@@ -296,7 +298,9 @@ describe("models", () => {
   });
 
   test("findModel returns the spec for a known id and undefined otherwise", () => {
-    for (const m of MODELS) expect(findModel(m.id)).toBe(m);
+    for (const m of MODELS) {
+      expect(findModel(m.id)).toBe(m);
+    }
     expect(findModel("no-such-model")).toBeUndefined();
     expect(findModel("")).toBeUndefined();
   });

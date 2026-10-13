@@ -6,10 +6,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, te
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { Engine, EngineError, type GenerationEvent, type Launcher, launchNative } from "../src/llama";
+import { Engine, EngineError, launchNative } from "../src/llama";
+import type { GenerationEvent, Launcher } from "../src/llama";
 import { chatPrompt, chatPromptParts } from "../src/llama-ffi";
 import { MODELS } from "../src/models";
-import { config, type FakeModel, fakeModel, mock, resetMock, TEMPLATE } from "./helpers/mock-engine";
+import { config, fakeModel, mock, resetMock, TEMPLATE } from "./helpers/mock-engine";
+import type { FakeModel } from "./helpers/mock-engine";
 
 // ---- fake launcher -------------------------------------------------------------------------
 
@@ -25,9 +27,13 @@ const fake = {
 };
 
 const launcher: Launcher = async (model) => {
-  if (fake.launchError) throw fake.launchError;
+  if (fake.launchError) {
+    throw fake.launchError;
+  }
   fake.launches.push(model.id);
-  if (fake.gate) await fake.gate;
+  if (fake.gate) {
+    await fake.gate;
+  }
   const loaded = fakeModel({ gate: () => fake.generationGate, onAbort: () => fake.aborted++ });
   fake.models.push(loaded);
   return loaded;
@@ -35,7 +41,9 @@ const launcher: Launcher = async (model) => {
 
 function gate(): { promise: Promise<void>; open(): void } {
   let open!: () => void;
-  const promise = new Promise<void>((resolve) => (open = resolve));
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
   return { promise, open };
 }
 
@@ -44,7 +52,9 @@ function gate(): { promise: Promise<void>; open(): void } {
 async function until(cond: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!cond()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}`);
+    }
     await Bun.sleep(5);
   }
 }
@@ -52,15 +62,17 @@ async function until(cond: () => boolean, what: string, timeoutMs = 5000): Promi
 async function errorOf(p: Promise<unknown>): Promise<any> {
   try {
     await p;
-  } catch (e) {
-    return e;
+  } catch (error) {
+    return error;
   }
   throw new Error("expected a rejection");
 }
 
 async function collect(gen: AsyncIterable<GenerationEvent>): Promise<GenerationEvent[]> {
   const events: GenerationEvent[] = [];
-  for await (const ev of gen) events.push(ev);
+  for await (const ev of gen) {
+    events.push(ev);
+  }
   return events;
 }
 
@@ -87,7 +99,9 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  for (const engine of engines.splice(0)) await engine.unload();
+  for (const engine of engines.splice(0)) {
+    await engine.unload();
+  }
   silence.mockRestore();
   resetMock();
   fake.launches = [];

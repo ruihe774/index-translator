@@ -5,14 +5,8 @@
 
 import { join } from "node:path";
 
-import {
-  countLetters,
-  englishEssays,
-  type Fixture,
-  missingParagraphs,
-  repeatedMarkers,
-  withMarkers,
-} from "../test/fixtures";
+import { countLetters, englishEssays, missingParagraphs, repeatedMarkers, withMarkers } from "../test/fixtures";
+import type { Fixture } from "../test/fixtures";
 
 export async function translateStream(baseUrl: string, body: Record<string, unknown>) {
   const res = await fetch(`${baseUrl}/api/v1/translate`, {
@@ -20,7 +14,9 @@ export async function translateStream(baseUrl: string, body: Record<string, unkn
     headers: { "content-type": "application/json", accept: "text/event-stream" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  }
 
   let translation = "";
   let start: any;
@@ -34,15 +30,24 @@ export async function translateStream(baseUrl: string, body: Record<string, unkn
       buffer = buffer.slice(end + 2);
       const event = /^event: (.*)$/m.exec(frame)?.[1];
       const data = /^data: (.*)$/m.exec(frame)?.[1];
-      if (!event || !data) continue;
+      if (!event || !data) {
+        continue;
+      }
       const payload = JSON.parse(data);
-      if (event === "delta") translation += payload.text;
-      else if (event === "start") start = payload;
-      else if (event === "done") done = payload;
-      else if (event === "error") throw new Error(`${payload.code}: ${payload.message}`);
+      if (event === "delta") {
+        translation += payload.text;
+      } else if (event === "start") {
+        start = payload;
+      } else if (event === "done") {
+        done = payload;
+      } else if (event === "error") {
+        throw new Error(`${payload.code}: ${payload.message}`);
+      }
     }
   }
-  if (!done) throw new Error("stream ended without a done event");
+  if (!done) {
+    throw new Error("stream ended without a done event");
+  }
   return { translation, start, done };
 }
 
@@ -74,14 +79,14 @@ export async function runPass(
   console.log(`  tokens: ${start.prompt_tokens} prompt + ${done.usage.completion_tokens} completion`);
   console.log(`  output: ${translation.length} characters, finish_reason=${done.finish_reason}`);
   console.log(`  time: ${seconds.toFixed(1)} s wall, ${done.timings.tokens_per_second} tokens/s generation`);
-  console.log(`  paragraphs with missing numbers: ${missing.length ? missing.join(", ") : "none"}`);
-  console.log(`  repeated numbers: ${repeated.length ? repeated.join(", ") : "none"}`);
+  console.log(`  paragraphs with missing numbers: ${missing.length > 0 ? missing.join(", ") : "none"}`);
+  console.log(`  repeated numbers: ${repeated.length > 0 ? repeated.join(", ") : "none"}`);
   return { ok, translation, missing, repeated, finishReason: done.finish_reason };
 }
 
 if (import.meta.main) {
   const base = (Bun.argv[2] ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
-  const outDir = Bun.argv[3];
+  const { 3: outDir } = Bun.argv;
 
   const model = Bun.env.MODEL ? { model: Bun.env.MODEL } : {};
   const english = await englishEssays();

@@ -25,7 +25,9 @@ export interface HistoryUi {
 const SNIPPET = 120;
 
 function snippet(text: string): string {
-  const flat = text.replace(/\s+/g, " ").trim();
+  const flat = text.replaceAll(/\s+/g, " ").trim();
+  // Spread splits by code point, so the cut never falls inside an emoji.
+  // eslint-disable-next-line @typescript-eslint/no-misused-spread -- splitting by code point is the point here
   return flat.length > SNIPPET ? `${[...flat].slice(0, SNIPPET).join("")}…` : flat;
 }
 
@@ -52,7 +54,9 @@ export function initHistoryUi(d: HistoryUiDeps): HistoryUi {
     text.dir = "auto";
     text.textContent = snippet(e.source);
     // The language of a stored text is only known when it was chosen; a guess is left to the browser.
-    if (e.from !== "auto") text.lang = e.from;
+    if (e.from !== "auto") {
+      text.lang = e.from;
+    }
 
     const label = `from ${dateTime.format(e.at)}, ${snippet(e.source).slice(0, 40)}`;
     const actions = document.createElement("div");
@@ -67,7 +71,9 @@ export function initHistoryUi(d: HistoryUiDeps): HistoryUi {
     restore.dataset.restore = "";
     restore.addEventListener("click", (ev) => {
       ev.preventDefault();
-      if (restore.getAttribute("aria-disabled") !== "true") d.restore(e);
+      if (restore.getAttribute("aria-disabled") !== "true") {
+        d.restore(e);
+      }
     });
     const del = document.createElement("a");
     del.href = "#history-list";
@@ -85,12 +91,14 @@ export function initHistoryUi(d: HistoryUiDeps): HistoryUi {
   }
 
   d.clear.addEventListener("click", () => {
-    if (d.clear.getAttribute("aria-disabled") !== "true") d.clearAll();
+    if (d.clear.getAttribute("aria-disabled") !== "true") {
+      d.clearAll();
+    }
   });
 
   return {
     show(entries) {
-      d.list.replaceChildren(...entries.map(item));
+      d.list.replaceChildren(...entries.map((entry) => item(entry)));
       d.empty.hidden = entries.length > 0;
       d.list.hidden = entries.length === 0;
       d.count.textContent = entries.length === 0 ? "" : `${entries.length} kept in this browser`;
@@ -98,7 +106,9 @@ export function initHistoryUi(d: HistoryUiDeps): HistoryUi {
     },
     setBusy(b) {
       busy = b;
-      for (const r of d.list.querySelectorAll<HTMLElement>("[data-restore]")) setBusyAttr(r);
+      for (const r of d.list.querySelectorAll<HTMLElement>("[data-restore]")) {
+        setBusyAttr(r);
+      }
     },
   };
 }

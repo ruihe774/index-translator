@@ -2,32 +2,21 @@
 
 import type { Server } from "bun";
 
-import { hostAllowed, type HostRule, originAllowed, type OriginRule, parseHostRule, parseOriginRule } from "./access";
-import { type Config, CONTEXT_MARGIN } from "./config";
+import { hostAllowed, originAllowed, parseHostRule, parseOriginRule } from "./access";
+import type { HostRule, OriginRule } from "./access";
+import { CONTEXT_MARGIN } from "./config";
+import type { Config } from "./config";
 import { createDevReload, DEV_PREFIX } from "./dev-reload";
 import { IMAGE_FORMATS, ImageRejected, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, prepareImage } from "./image";
-import {
-  Engine,
-  EngineError,
-  type EngineTimings,
-  type FinishReason,
-  ImageInputError,
-  ImageUnavailableError,
-  type Launcher,
-  launchNative,
-  type Usage,
-} from "./llama";
-import { findModel, MODELS, type ModelSpec } from "./models";
-import {
-  buildDocumentPrompt,
-  buildImagePrompt,
-  buildPrompt,
-  DOCUMENT_DIRECTIONS,
-  LANGUAGES,
-  type PromptInput,
-} from "./prompt";
+import { Engine, EngineError, ImageInputError, ImageUnavailableError, launchNative } from "./llama";
+import type { EngineTimings, FinishReason, Launcher, Usage } from "./llama";
+import { findModel, MODELS } from "./models";
+import type { ModelSpec } from "./models";
+import { buildDocumentPrompt, buildImagePrompt, buildPrompt, DOCUMENT_DIRECTIONS, LANGUAGES } from "./prompt";
+import type { PromptInput } from "./prompt";
 import { acceptsQoa, qoaLoader, qoaResponse } from "./qoa-stream";
-import { QueueFullError, SlotQueue, type Ticket } from "./queue";
+import { QueueFullError, SlotQueue } from "./queue";
+import type { Ticket } from "./queue";
 import {
   MAX_SAMPLE_BYTES,
   MAX_SAMPLE_RATE,
@@ -39,12 +28,10 @@ import {
   MIN_SPEED,
   nativeSpeech,
   SeparationError,
-  type Speech,
   SPEECH_LANGUAGES,
   SpeechError,
-  type SpeechLauncher,
-  type SpeechRequest,
 } from "./speech";
+import type { Speech, SpeechLauncher, SpeechRequest } from "./speech";
 import { createStaticServer } from "./static";
 import { readWav } from "./wav";
 
@@ -62,6 +49,7 @@ const RESUME_KEEP_MS = 10 * 60_000;
 const MAX_KEPT_JOBS = 16;
 
 class ApiError extends Error {
+  override name = "ApiError";
   constructor(
     public status: number,
     public code: string,
@@ -83,8 +71,12 @@ function imageError(e: unknown): ApiError | undefined {
   if (e instanceof ImageRejected) {
     return new ApiError(e.code === "image_too_large" ? 413 : 400, e.code, e.message, { field: "image" });
   }
-  if (e instanceof ImageInputError) return new ApiError(400, "invalid_request", e.message, { field: "image" });
-  if (e instanceof ImageUnavailableError) return new ApiError(503, "image_unavailable", e.message);
+  if (e instanceof ImageInputError) {
+    return new ApiError(400, "invalid_request", e.message, { field: "image" });
+  }
+  if (e instanceof ImageUnavailableError) {
+    return new ApiError(503, "image_unavailable", e.message);
+  }
   return undefined;
 }
 
@@ -97,7 +89,9 @@ function errorResponse(e: unknown): Response {
     return json({ error: { code: e.code, message: e.message, details: e.details } }, e.status, e.headers);
   }
   const image = imageError(e);
-  if (image) return errorResponse(image);
+  if (image) {
+    return errorResponse(image);
+  }
   if (e instanceof EngineError) {
     return json({ error: { code: "engine_error", message: e.message } }, 502);
   }
@@ -127,17 +121,24 @@ function invalid(message: string, field?: string): ApiError {
 
 function optionalString(body: Record<string, unknown>, field: string, maxLength: number): string | undefined {
   const v = body[field];
-  if (v === undefined || v === null) return undefined;
-  if (typeof v !== "string") throw invalid(`${field} must be a string`, field);
+  if (v === undefined || v === null) {
+    return undefined;
+  }
+  if (typeof v !== "string") {
+    throw invalid(`${field} must be a string`, field);
+  }
   // JSON Schema counts code points; String.length counts UTF-16 units, so only spread when that could matter.
-  if (v.length > maxLength && [...v].length > maxLength)
+  if (v.length > maxLength && Array.from(v).length > maxLength) {
     throw invalid(`${field} must be at most ${maxLength} characters`, field);
+  }
   return v;
 }
 
 function optionalStringArray(body: Record<string, unknown>, field: string): string[] | undefined {
   const v = body[field];
-  if (v === undefined || v === null) return undefined;
+  if (v === undefined || v === null) {
+    return undefined;
+  }
   if (!Array.isArray(v) || v.some((s) => typeof s !== "string")) {
     throw invalid(`${field} must be an array of strings`, field);
   }
@@ -156,8 +157,10 @@ function compileAccess(cfg: Config): Access {
   const exact = (name: string): HostRule => ({ name, wildcard: false, port: undefined });
   const own = cfg.host.replace(/^\[(.*)\]$/, "$1").toLowerCase();
   return {
-    hosts: [...LOOPBACK_HOSTS, own].map(exact).concat(cfg.allowedHosts.map(parseHostRule)),
-    origins: cfg.allowedOrigins.map(parseOriginRule),
+    hosts: [...LOOPBACK_HOSTS, own]
+      .map((name) => exact(name))
+      .concat(cfg.allowedHosts.map((entry) => parseHostRule(entry))),
+    origins: cfg.allowedOrigins.map((entry) => parseOriginRule(entry)),
   };
 }
 
@@ -171,7 +174,9 @@ function checkHost(req: Request, access: Access): void {
 /** A request without an Origin header is not from a browser page and is allowed. */
 function checkOrigin(req: Request, access: Access): void {
   const origin = req.headers.get("origin");
-  if (origin === null) return;
+  if (origin === null) {
+    return;
+  }
   const host = (req.headers.get("host") ?? "").toLowerCase();
   let sameOrigin = false;
   try {
@@ -201,7 +206,9 @@ async function parseBody(req: Request, withImage = false): Promise<Record<string
   checkJsonContentType(req);
   const tooLarge = () => new ApiError(413, "body_too_large", `request body exceeds ${MAX_BODY_BYTES} bytes`);
   const length = Number(req.headers.get("content-length") ?? 0);
-  if (length > MAX_BODY_BYTES + (withImage ? MAX_IMAGE_CHARS : 0)) throw tooLarge();
+  if (length > MAX_BODY_BYTES + (withImage ? MAX_IMAGE_CHARS : 0)) {
+    throw tooLarge();
+  }
   let body: unknown;
   try {
     body = await req.json();
@@ -213,15 +220,21 @@ async function parseBody(req: Request, withImage = false): Promise<Record<string
   }
   const fields = body as Record<string, unknown>;
   // Base64 is ASCII, so the string's length is its size in the body.
-  if (length - (typeof fields.image === "string" ? fields.image.length : 0) > MAX_BODY_BYTES) throw tooLarge();
+  if (length - (typeof fields.image === "string" ? fields.image.length : 0) > MAX_BODY_BYTES) {
+    throw tooLarge();
+  }
   return fields;
 }
 
 /** The `image` field's bytes: base64, bare or as a `data:` URL. What they are is for src/image.ts to find out. */
 function optionalImage(body: Record<string, unknown>): Uint8Array | undefined {
   const v = body.image;
-  if (v === undefined || v === null) return undefined;
-  if (typeof v !== "string" || !v) throw invalid("image must be a base64 string or a data: URL", "image");
+  if (v === undefined || v === null) {
+    return undefined;
+  }
+  if (typeof v !== "string" || !v) {
+    throw invalid("image must be a base64 string or a data: URL", "image");
+  }
   if (v.length > MAX_IMAGE_CHARS) {
     throw new ApiError(413, "image_too_large", `the image is larger than ${MAX_IMAGE_BYTES} bytes`, {
       field: "image",
@@ -230,7 +243,9 @@ function optionalImage(body: Record<string, unknown>): Uint8Array | undefined {
   }
   const base64 = v.startsWith("data:") ? v.slice(v.indexOf(",") + 1) : v;
   const bytes = new Uint8Array(Buffer.from(base64, "base64"));
-  if (bytes.length === 0) throw invalid("image must be a base64 string or a data: URL", "image");
+  if (bytes.length === 0) {
+    throw invalid("image must be a base64 string or a data: URL", "image");
+  }
   return bytes;
 }
 
@@ -244,7 +259,9 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
     throw invalid("text must be a non-empty string", "text");
   }
   const targetLang = optionalString(body, "target_lang", 64);
-  if (!targetLang?.trim()) throw invalid("target_lang must be a non-empty string", "target_lang");
+  if (!targetLang?.trim()) {
+    throw invalid("target_lang must be a non-empty string", "target_lang");
+  }
 
   const modelId = optionalString(body, "model", 64) ?? defaultModel;
   const model = findModel(modelId);
@@ -252,7 +269,7 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
     throw invalid(`unknown model "${modelId}"; see GET /api/v1/models`, "model");
   }
 
-  const glossary = body.glossary;
+  const { glossary } = body;
   if (glossary !== undefined && glossary !== null) {
     if (typeof glossary !== "object" || Array.isArray(glossary)) {
       throw invalid("glossary must be an object mapping source terms to target terms", "glossary");
@@ -263,10 +280,12 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
   }
 
   const maxOutputTokens = body.max_output_tokens;
-  if (maxOutputTokens !== undefined && maxOutputTokens !== null) {
-    if (!Number.isInteger(maxOutputTokens) || (maxOutputTokens as number) < 1) {
-      throw invalid("max_output_tokens must be a positive integer", "max_output_tokens");
-    }
+  if (
+    maxOutputTokens !== undefined &&
+    maxOutputTokens !== null &&
+    (!Number.isInteger(maxOutputTokens) || (maxOutputTokens as number) < 1)
+  ) {
+    throw invalid("max_output_tokens must be a positive integer", "max_output_tokens");
   }
   if (body.stream !== undefined && typeof body.stream !== "boolean") {
     throw invalid("stream must be a boolean", "stream");
@@ -290,10 +309,16 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
     resumable: body.resumable === true,
   };
   if (image) {
-    if (!model.mmproj) throw invalid(`image is not supported by ${model.id}`, "image");
-    if (input.genre) throw invalid("genre is not supported with an image", "genre");
+    if (!model.mmproj) {
+      throw invalid(`image is not supported by ${model.id}`, "image");
+    }
+    if (input.genre) {
+      throw invalid("genre is not supported with an image", "genre");
+    }
   }
-  if (model.kind === "document") checkDocumentRequest(input);
+  if (model.kind === "document") {
+    checkDocumentRequest(input);
+  }
   return input;
 }
 
@@ -312,13 +337,15 @@ function checkDocumentRequest(input: TranslateRequest): void {
     });
   }
   const unsupported: [string, unknown][] = [
-    ["glossary", input.glossary && Object.keys(input.glossary).length ? input.glossary : undefined],
+    ["glossary", input.glossary && Object.keys(input.glossary).length > 0 ? input.glossary : undefined],
     ["hard_constraints", input.hardConstraints?.length ? input.hardConstraints : undefined],
     ["soft_constraints", input.softConstraints?.length ? input.softConstraints : undefined],
     ["genre", input.genre],
   ];
   for (const [field, value] of unsupported) {
-    if (value !== undefined) throw invalid(`${field} is not supported by ${input.model.id}`, field);
+    if (value !== undefined) {
+      throw invalid(`${field} is not supported by ${input.model.id}`, field);
+    }
   }
 }
 
@@ -329,7 +356,9 @@ function documentDirection(input: TranslateRequest): string {
 
 /** The text of the user message; a request's image follows it. */
 function promptFor(input: TranslateRequest): string {
-  if (input.image) return buildImagePrompt(input);
+  if (input.image) {
+    return buildImagePrompt(input);
+  }
   return input.model.kind === "document"
     ? buildDocumentPrompt(documentDirection(input), input.text)
     : buildPrompt(input);
@@ -348,18 +377,22 @@ export class OutputCleaner {
   private held = "";
 
   push(text: string): string {
-    if (!this.inBody) {
+    if (this.inBody) {
+      text = this.held + text;
+    } else {
       this.head = (this.head + text).trimStart();
       if (this.head.startsWith(THINK_OPEN)) {
         const end = this.head.indexOf(THINK_CLOSE);
-        if (end < 0) return "";
+        if (end === -1) {
+          return "";
+        }
         this.head = this.head.slice(end + THINK_CLOSE.length).trimStart();
       }
-      if (!this.head || THINK_OPEN.startsWith(this.head)) return "";
+      if (!this.head || THINK_OPEN.startsWith(this.head)) {
+        return "";
+      }
       text = this.head;
       this.inBody = true;
-    } else {
-      text = this.held + text;
     }
     const body = text.trimEnd();
     this.held = text.slice(body.length);
@@ -368,7 +401,9 @@ export class OutputCleaner {
 
   /** Output held back because it could still have turned out to be a thinking tag. */
   flush(): string {
-    if (this.inBody || this.head.startsWith(THINK_OPEN)) return "";
+    if (this.inBody || this.head.startsWith(THINK_OPEN)) {
+      return "";
+    }
     this.inBody = true;
     return this.head.trimEnd();
   }
@@ -412,8 +447,8 @@ export async function startApp(
   function enterQueue(onPosition?: (position: number) => void, line = queue): Ticket {
     try {
       return line.enter(onPosition);
-    } catch (e) {
-      if (e instanceof QueueFullError) {
+    } catch (error) {
+      if (error instanceof QueueFullError) {
         throw new ApiError(
           429,
           "queue_full",
@@ -424,7 +459,7 @@ export async function startApp(
           { "retry-after": "10" },
         );
       }
-      throw e;
+      throw error;
     }
   }
 
@@ -434,10 +469,12 @@ export async function startApp(
     const onAbort = () => ticket.leave();
     signal.addEventListener("abort", onAbort);
     try {
-      if (!(await ticket.ready) || signal.aborted) throw cancelled();
+      if (!(await ticket.ready) || signal.aborted) {
+        throw cancelled();
+      }
       return await fn();
-    } catch (e) {
-      throw signal.aborted ? cancelled() : e;
+    } catch (error) {
+      throw signal.aborted ? cancelled() : error;
     } finally {
       signal.removeEventListener("abort", onAbort);
       ticket.leave();
@@ -480,7 +517,9 @@ export async function startApp(
   async function* run(input: TranslateRequest, ticket: Ticket, signal: AbortSignal) {
     const queuedAt = performance.now();
     // Leaving while waiting settles ready as false; the caller then sees no result and reports cancellation.
-    if (!(await ticket.ready) || signal.aborted) return;
+    if (!(await ticket.ready) || signal.aborted) {
+      return;
+    }
     const queueMs = Math.round(performance.now() - queuedAt);
 
     await engine.load(input.model);
@@ -497,10 +536,14 @@ export async function startApp(
     for await (const ev of engine.generate(b.prompt, b.maxOutputTokens, signal, input.image)) {
       if (ev.type === "delta") {
         const text = cleaner.push(ev.text);
-        if (text) yield { type: "delta" as const, text };
+        if (text) {
+          yield { type: "delta" as const, text };
+        }
       } else {
         const rest = cleaner.flush();
-        if (rest) yield { type: "delta" as const, text: rest };
+        if (rest) {
+          yield { type: "delta" as const, text: rest };
+        }
         yield {
           type: "done" as const,
           finish_reason: ev.finishReason,
@@ -519,8 +562,9 @@ export async function startApp(
       let translation = "";
       let result: Result | undefined;
       for await (const ev of run(input, ticket, signal)) {
-        if (ev.type === "delta") translation += ev.text;
-        else if (ev.type === "done") {
+        if (ev.type === "delta") {
+          translation += ev.text;
+        } else if (ev.type === "done") {
           result = {
             translation,
             finish_reason: ev.finish_reason,
@@ -530,11 +574,13 @@ export async function startApp(
           };
         }
       }
-      if (!result) throw cancelled();
+      if (!result) {
+        throw cancelled();
+      }
       return json(result);
-    } catch (e) {
+    } catch (error) {
       // An aborted engine call throws a raw AbortError; for a gone client that is a cancellation, not a failure.
-      throw signal.aborted ? cancelled() : e;
+      throw signal.aborted ? cancelled() : error;
     } finally {
       signal.removeEventListener("abort", onAbort);
       ticket.leave();
@@ -569,8 +615,13 @@ export async function startApp(
   function orphan(job: Job) {
     job.reader = undefined;
     job.closeReader = undefined;
-    if (job.finished) return;
-    if (!job.resumable) return job.abort.abort();
+    if (job.finished) {
+      return;
+    }
+    if (!job.resumable) {
+      job.abort.abort();
+      return;
+    }
     clearTimeout(job.timer);
     job.timer = setTimeout(() => job.abort.abort(), RESUME_GRACE_MS);
   }
@@ -579,11 +630,16 @@ export async function startApp(
     job.finished = true;
     clearTimeout(job.timer);
     job.closeReader?.();
-    if (!job.resumable) return dropJob(job);
+    if (!job.resumable) {
+      dropJob(job);
+      return;
+    }
     job.timer = setTimeout(() => dropJob(job), RESUME_KEEP_MS);
     // Bounded: the oldest finished jobs go first (a Map keeps insertion order).
     const finished = [...jobs.values()].filter((j) => j.finished);
-    for (const old of finished.slice(0, Math.max(0, finished.length - MAX_KEPT_JOBS))) dropJob(old);
+    for (const old of finished.slice(0, Math.max(0, finished.length - MAX_KEPT_JOBS))) {
+      dropJob(old);
+    }
   }
 
   /** Reads `job` from the frame after `after` on: what was kept, then what follows. */
@@ -599,7 +655,9 @@ export async function startApp(
             cancelRead();
           }
         };
-        for (let i = after; i < job.frames.length; i++) write(job.frames[i]!);
+        for (let i = after; i < job.frames.length; i++) {
+          write(job.frames[i]!);
+        }
         if (job.finished) {
           c.close();
           return;
@@ -608,15 +666,21 @@ export async function startApp(
         const reader = (frame: string) => write(frame);
         let ended = false;
         const end = () => {
-          if (ended) return;
+          if (ended) {
+            return;
+          }
           ended = true;
           clearInterval(keepalive);
           signal.removeEventListener("abort", cancelRead);
         };
         cancelRead = () => {
-          if (ended) return;
+          if (ended) {
+            return;
+          }
           end();
-          if (job.reader === reader) orphan(job);
+          if (job.reader === reader) {
+            orphan(job);
+          }
         };
         // A newer reader replaces this one: the old connection is a dead socket the server has not noticed yet.
         job.closeReader?.();
@@ -677,15 +741,17 @@ export async function startApp(
             emit("done", { finish_reason: ev.finish_reason, usage: ev.usage, timings: ev.timings });
           }
         }
-      } catch (e) {
+      } catch (error) {
         if (!job.abort.signal.aborted) {
-          const known = e instanceof ApiError ? e : imageError(e);
+          const known = error instanceof ApiError ? error : imageError(error);
           if (known) {
             emit("error", { code: known.code, message: known.message, details: known.details });
           } else {
-            const code = e instanceof EngineError ? "engine_error" : "internal_error";
-            if (code === "internal_error") console.error("[api] stream failed:", e);
-            emit("error", { code, message: e instanceof EngineError ? e.message : "internal server error" });
+            const code = error instanceof EngineError ? "engine_error" : "internal_error";
+            if (code === "internal_error") {
+              console.error("[api] stream failed:", error);
+            }
+            emit("error", { code, message: error instanceof EngineError ? error.message : "internal server error" });
           }
         }
       } finally {
@@ -700,15 +766,23 @@ export async function startApp(
   /** `/translations/{id}` (DELETE cancels) and `/translations/{id}/events` (GET reads again). */
   function translationRoute(rest: string, req: Request, url: URL): Response | undefined {
     const m = /^\/translations\/([0-9a-f-]{36})(\/events)?$/.exec(rest);
-    if (!m) return undefined;
+    if (!m) {
+      return undefined;
+    }
     const job = jobs.get(m[1]!);
-    if (!job || !job.resumable) throw new ApiError(404, "not_found", "no such translation (it may have expired)");
+    if (!job || !job.resumable) {
+      throw new ApiError(404, "not_found", "no such translation (it may have expired)");
+    }
     if (m[2]) {
-      if (req.method !== "GET") return methodNotAllowed("GET");
+      if (req.method !== "GET") {
+        return methodNotAllowed("GET");
+      }
       const last = Number(req.headers.get("last-event-id") ?? url.searchParams.get("after") ?? 0);
       return readJob(job, Number.isInteger(last) && last > 0 ? last : 0, req.signal);
     }
-    if (req.method !== "DELETE") return methodNotAllowed("DELETE");
+    if (req.method !== "DELETE") {
+      return methodNotAllowed("DELETE");
+    }
     job.abort.abort();
     return new Response(null, { status: 204 });
   }
@@ -732,14 +806,18 @@ export async function startApp(
         { "retry-after": "2" },
       );
     const counter = engine.loaded;
-    if (engine.state !== "ready" || !counter) throw unavailable();
+    if (engine.state !== "ready" || !counter) {
+      throw unavailable();
+    }
     let promptTokens: number;
     try {
       promptTokens = await engine.countPromptTokens(promptFor(input));
-    } catch (e) {
+    } catch (error) {
       // The model went away between the check above and the count (a swap freed it).
-      if (e instanceof EngineError) throw unavailable();
-      throw e;
+      if (error instanceof EngineError) {
+        throw unavailable();
+      }
+      throw error;
     }
     return {
       model: input.model.id,
@@ -756,7 +834,9 @@ export async function startApp(
   }
 
   async function parseSpeechRequest(body: Record<string, unknown>): Promise<SpeechRequest> {
-    if (typeof body.text !== "string" || !body.text.trim()) throw invalid("text must be a non-empty string", "text");
+    if (typeof body.text !== "string" || !body.text.trim()) {
+      throw invalid("text must be a non-empty string", "text");
+    }
     const text = optionalString(body, "text", MAX_SPEECH_CHARS)!;
     const lang = optionalString(body, "lang", 16)?.trim().toLowerCase();
     if (!lang || !SPEECH_LANGUAGES.includes(lang)) {
@@ -769,7 +849,9 @@ export async function startApp(
     if (typeof speed !== "number" || !(speed >= MIN_SPEED && speed <= MAX_SPEED)) {
       throw invalid(`speed must be a number from ${MIN_SPEED} to ${MAX_SPEED}`, "speed");
     }
-    if (speech.state === "unavailable") throw speechUnavailable(speech.error ?? "reading aloud is not available");
+    if (speech.state === "unavailable") {
+      throw speechUnavailable(speech.error ?? "reading aloud is not available");
+    }
     const voices = await speech.voices();
     if (voices.length === 0) {
       throw speechUnavailable(`no voices: upload a sample or put a WAV recording into ${cfg.voicesDir}`);
@@ -782,22 +864,32 @@ export async function startApp(
   }
 
   async function uploadVoice(req: Request, url: URL): Promise<Response> {
-    if (speech.state === "unavailable") throw speechUnavailable(speech.error ?? "reading aloud is not available");
+    if (speech.state === "unavailable") {
+      throw speechUnavailable(speech.error ?? "reading aloud is not available");
+    }
     if ((req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase() !== "audio/wav") {
       throw new ApiError(415, "unsupported_media_type", "request body must be audio/wav");
     }
     const declared = Number(req.headers.get("content-length"));
-    if (declared > MAX_SAMPLE_BYTES) throw new ApiError(413, "body_too_large", "the sample is too large");
+    if (declared > MAX_SAMPLE_BYTES) {
+      throw new ApiError(413, "body_too_large", "the sample is too large");
+    }
     const wav = await req.arrayBuffer();
-    if (wav.byteLength === 0) throw invalid("the body must be a WAV recording", "body");
-    if (wav.byteLength > MAX_SAMPLE_BYTES) throw new ApiError(413, "body_too_large", "the sample is too large");
-    const name = (url.searchParams.get("name") ?? "").replace(/\s+/g, " ").trim().slice(0, 60) || "Uploaded voice";
+    if (wav.byteLength === 0) {
+      throw invalid("the body must be a WAV recording", "body");
+    }
+    if (wav.byteLength > MAX_SAMPLE_BYTES) {
+      throw new ApiError(413, "body_too_large", "the sample is too large");
+    }
+    const name = (url.searchParams.get("name") ?? "").replaceAll(/\s+/g, " ").trim().slice(0, 60) || "Uploaded voice";
     try {
       return json(await speech.addVoice(name, wav), 201);
-    } catch (e) {
+    } catch (error) {
       // Not the client's doing: the sample was fine, the engine could not separate it. Mapped by onError.
-      if (e instanceof SpeechError && !(e instanceof SeparationError)) throw invalid(e.message, "body");
-      throw e;
+      if (error instanceof SpeechError && !(error instanceof SeparationError)) {
+        throw invalid(error.message, "body");
+      }
+      throw error;
     }
   }
 
@@ -809,33 +901,41 @@ export async function startApp(
       const codec = await qoaCodec();
       try {
         const pcm = readWav(new Uint8Array(wav));
-        if (codec && pcm.samples.length > 0) return qoaResponse(codec, pcm);
-      } catch (e) {
-        console.error(`[speech] the utterance could not be encoded as QOA, sending WAV: ${String(e)}`);
+        if (codec && pcm.samples.length > 0) {
+          return qoaResponse(codec, pcm);
+        }
+      } catch (error) {
+        console.error(`[speech] the utterance could not be encoded as QOA, sending WAV: ${String(error)}`);
       }
     }
     return new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store", vary: "accept" } });
   }
 
   async function speak(input: SpeechRequest, req: Request): Promise<Response> {
-    const signal = req.signal;
+    const { signal } = req;
     const ticket = enterQueue(undefined, speechQueue);
     // Aborted while waiting: leave the line. Once the utterance is handed to the engine the slot is
     // kept until the engine's `done`: the engine stops an abandoned utterance within one step of
     // the model, and the next one must not be started beside it.
     let handed = false;
     const onAbort = () => {
-      if (!handed) ticket.leave();
+      if (!handed) {
+        ticket.leave();
+      }
     };
     signal.addEventListener("abort", onAbort);
     try {
-      if (!(await ticket.ready) || signal.aborted) throw cancelled();
+      if (!(await ticket.ready) || signal.aborted) {
+        throw cancelled();
+      }
       handed = true;
       const wav = await speech.synthesize(input, signal, () => ticket.leave());
       return await speechResponse(wav, req.headers.get("accept"));
-    } catch (e) {
-      if (!handed) ticket.leave();
-      throw signal.aborted ? cancelled() : e;
+    } catch (error) {
+      if (!handed) {
+        ticket.leave();
+      }
+      throw signal.aborted ? cancelled() : error;
     } finally {
       signal.removeEventListener("abort", onAbort);
     }
@@ -849,14 +949,16 @@ export async function startApp(
     port: cfg.port,
     // Hard backstop; parseBody rejects anything over MAX_BODY_BYTES with a proper error body first.
     maxRequestBodySize: MAX_BODY_BYTES * 4,
-    async fetch(req, server) {
+    async fetch(req, srv) {
       const url = new URL(req.url);
       const path = url.pathname;
       if (devReload && path.startsWith(DEV_PREFIX)) {
         const res = devReload.handle(path, req, server);
-        if (res) return res;
+        if (res) {
+          return res;
+        }
       }
-      if (!path.startsWith(API + "/")) {
+      if (!path.startsWith(`${API}/`)) {
         const res = await serveStatic(path, req);
         return devReload ? devReload.inject(res) : res;
       }
@@ -866,7 +968,9 @@ export async function startApp(
         checkOrigin(req, access);
         switch (path.slice(API.length)) {
           case "/health": {
-            if (req.method !== "GET") return methodNotAllowed("GET");
+            if (req.method !== "GET") {
+              return methodNotAllowed("GET");
+            }
             return json(
               {
                 status: engine.state,
@@ -880,7 +984,9 @@ export async function startApp(
             );
           }
           case "/models": {
-            if (req.method !== "GET") return methodNotAllowed("GET");
+            if (req.method !== "GET") {
+              return methodNotAllowed("GET");
+            }
             return json({
               default: defaultModel.id,
               loaded: engine.loaded?.id ?? null,
@@ -889,7 +995,8 @@ export async function startApp(
                 label: m.label,
                 kind: m.kind,
                 image: m.mmproj !== undefined,
-                ...(m.directions ? { directions: m.directions } : {}),
+                // Undefined is left out of the JSON.
+                directions: m.directions,
               })),
               image: {
                 formats: IMAGE_FORMATS.map((f) => `image/${f}`),
@@ -899,12 +1006,18 @@ export async function startApp(
             });
           }
           case "/languages": {
-            if (req.method !== "GET") return methodNotAllowed("GET");
+            if (req.method !== "GET") {
+              return methodNotAllowed("GET");
+            }
             return json({ languages: LANGUAGES.map(({ code, name }) => ({ code, name })) });
           }
           case "/voices": {
-            if (req.method === "POST") return await uploadVoice(req, url);
-            if (req.method !== "GET") return methodNotAllowed("GET, POST");
+            if (req.method === "POST") {
+              return await uploadVoice(req, url);
+            }
+            if (req.method !== "GET") {
+              return methodNotAllowed("GET, POST");
+            }
             return json({
               status: speech.state,
               error: speech.error,
@@ -918,18 +1031,24 @@ export async function startApp(
             });
           }
           case "/speech": {
-            if (req.method !== "POST") return methodNotAllowed("POST");
+            if (req.method !== "POST") {
+              return methodNotAllowed("POST");
+            }
             const input = await parseSpeechRequest(await parseBody(req));
             // The first request starts the engine and loads the model.
-            server.timeout(req, 0);
+            srv.timeout(req, 0);
             return await speak(input, req);
           }
           case "/openapi.yaml": {
-            if (req.method !== "GET") return methodNotAllowed("GET");
+            if (req.method !== "GET") {
+              return methodNotAllowed("GET");
+            }
             return new Response(Bun.file(cfg.specPath), { headers: { "content-type": "application/yaml" } });
           }
           case "/tokenize": {
-            if (req.method !== "POST") return methodNotAllowed("POST");
+            if (req.method !== "POST") {
+              return methodNotAllowed("POST");
+            }
             const body = await parseBody(req);
             // Counting an image means preparing it on the engine thread, which would have to wait for the queue.
             if (body.image !== undefined && body.image !== null) {
@@ -939,22 +1058,28 @@ export async function startApp(
             return json(await tokenize(input));
           }
           case "/translate": {
-            if (req.method !== "POST") return methodNotAllowed("POST");
+            if (req.method !== "POST") {
+              return methodNotAllowed("POST");
+            }
             const input = parseTranslateRequest(req, await parseBody(req, true), cfg.defaultModel);
             // Before the queue: an upload that is not a usable image is refused like any other bad field.
-            if (input.image) input.image = await prepareImage(input.image);
+            if (input.image) {
+              input.image = await prepareImage(input.image);
+            }
             // A long translation can stay silent for minutes in JSON mode, and a model swap can take a while.
-            server.timeout(req, 0);
+            srv.timeout(req, 0);
             return input.stream ? translateSse(input, req.signal) : await translateJson(input, req.signal);
           }
           default: {
             const res = translationRoute(path.slice(API.length), req, url);
-            if (res) return res;
+            if (res) {
+              return res;
+            }
             throw new ApiError(404, "not_found", `no such endpoint: ${path}`);
           }
         }
-      } catch (e) {
-        return errorResponse(e);
+      } catch (error) {
+        return errorResponse(error);
       }
     },
     error(e) {

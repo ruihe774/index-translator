@@ -1,7 +1,8 @@
 // Shared fixtures: `mock` scripts the mock engine behind the server, and the page objects below
 // keep selectors in one place. Every test starts with the mock reset and a fresh browser context.
 
-import { expect, type Locator, type Page, test as base } from "@playwright/test";
+import { expect, test as base } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
@@ -59,24 +60,27 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
       );
     await call("DELETE");
     await use({
-      set: async (knobs) =>
-        void (await call("POST", {
+      set: async (knobs) => {
+        await call("POST", {
           ...knobs,
           failWith: knobs.failWith ?? undefined,
           failLaunch: knobs.failLaunch ?? undefined,
-        })),
+        });
+      },
       state: () => call("GET"),
-      unload: async () => void (await call("POST", undefined, "/restart")),
+      unload: async () => {
+        await call("POST", undefined, "/restart");
+      },
     });
     await call("DELETE");
   },
-  app: async ({ page, mock }, use) => {
-    void mock; // reset before the page loads
+  // `mock` is taken for its setup: the mock is reset before the page loads.
+  app: async ({ page, mock: _mock }, use) => {
     await use(new AppPage(page));
   },
 });
 
-export { expect };
+export { expect } from "@playwright/test";
 
 export class AppPage {
   readonly from: Locator;

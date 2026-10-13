@@ -1,6 +1,7 @@
 // Single-slot FIFO: one generation runs at a time, a bounded number wait behind it.
 
 export class QueueFullError extends Error {
+  override name = "QueueFullError";
   constructor() {
     super("translation queue is full");
   }
@@ -37,38 +38,46 @@ export class SlotQueue {
 
   /** `onPosition` receives the number of requests ahead, each time it changes while waiting. */
   enter(onPosition?: (position: number) => void): Ticket {
-    if (this.active && this.waiting.length >= this.maxWaiting) throw new QueueFullError();
+    if (this.active && this.waiting.length >= this.maxWaiting) {
+      throw new QueueFullError();
+    }
 
     let settle!: (granted: boolean) => void;
-    const ready = new Promise<boolean>((resolve) => (settle = resolve));
+    const ready = new Promise<boolean>((resolve) => {
+      settle = resolve;
+    });
     const entry: Entry = { settle, onPosition };
 
-    if (!this.active) {
-      this.active = entry;
-      settle(true);
-    } else {
+    if (this.active) {
       this.waiting.push(entry);
       try {
         onPosition?.(this.waiting.length);
-      } catch (e) {
+      } catch (error) {
         // The caller gets no ticket, so nothing could ever remove this entry; it would hold the slot once promoted.
         this.waiting.splice(this.waiting.indexOf(entry), 1);
-        throw e;
+        throw error;
       }
+    } else {
+      this.active = entry;
+      settle(true);
     }
 
     let left = false;
     return {
       ready,
       leave: () => {
-        if (left) return;
+        if (left) {
+          return;
+        }
         left = true;
         if (this.active === entry) {
           this.active = this.waiting.shift() ?? null;
           this.active?.settle(true);
         } else {
           const i = this.waiting.indexOf(entry);
-          if (i < 0) return;
+          if (i === -1) {
+            return;
+          }
           this.waiting.splice(i, 1);
           entry.settle(false);
         }

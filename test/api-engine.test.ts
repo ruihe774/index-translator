@@ -9,20 +9,13 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 
-import { type App, startApp } from "../src/app";
+import { startApp } from "../src/app";
+import type { App } from "../src/app";
 import type { Config } from "../src/config";
-import { EngineError, type Launcher } from "../src/llama";
-import {
-  CHAT,
-  config,
-  DOCUMENT,
-  fakeModel,
-  mock,
-  postTo,
-  resetMock,
-  type SseEvent,
-  waitReady,
-} from "./helpers/mock-engine";
+import { EngineError } from "../src/llama";
+import type { Launcher } from "../src/llama";
+import { CHAT, config, DOCUMENT, fakeModel, mock, postTo, resetMock, waitReady } from "./helpers/mock-engine";
+import type { SseEvent } from "./helpers/mock-engine";
 
 afterEach(() => resetMock());
 
@@ -62,10 +55,14 @@ class Control {
 
   private hold(field: "launchGate" | "generationGate"): () => void {
     let open!: () => void;
-    const gate = new Promise<void>((resolve) => (open = resolve));
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
     this[field] = gate;
     const release = () => {
-      if (this[field] === gate) this[field] = undefined;
+      if (this[field] === gate) {
+        this[field] = undefined;
+      }
       this.openers.delete(release);
       open();
     };
@@ -75,12 +72,16 @@ class Control {
 
   /** Opens every gate still held, so a failed test cannot leave a launch or generation hanging. */
   reset(): void {
-    for (const open of [...this.openers]) open();
+    for (const open of Array.from(this.openers)) {
+      open();
+    }
     this.zeroPromptUsage = false;
   }
 
   stopAll(): void {
-    for (const u of this.upstreams) u.kill();
+    for (const u of this.upstreams) {
+      u.kill();
+    }
   }
 
   latest(): Upstream {
@@ -88,10 +89,14 @@ class Control {
   }
 
   readonly launch: Launcher = async (model) => {
-    if (mock.failLaunch) throw new EngineError(mock.failLaunch);
+    if (mock.failLaunch) {
+      throw new EngineError(mock.failLaunch);
+    }
     this.launches.push(model.id);
     const gate = this.launchGate;
-    if (gate) await gate;
+    if (gate) {
+      await gate;
+    }
 
     const fake = fakeModel({
       onStart: (prompt) => {
@@ -140,14 +145,16 @@ const docBody = { text: "The fox.", source_lang: "en", target_lang: "zh", model:
 async function until(check: () => boolean | Promise<boolean>, what = "condition", timeoutMs = 3000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!(await check())) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}`);
+    }
     await Bun.sleep(5);
   }
 }
 
 function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
+  const timeout = new Promise<never>((_resolve, reject) => {
     timer = setTimeout(() => reject(new Error(`timed out: ${what}`)), ms);
   });
   return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
@@ -166,7 +173,7 @@ async function jsonOf(p: Promise<Response>): Promise<any> {
 }
 
 async function getHealth(origin: string): Promise<{ status: number; body: any }> {
-  const res = await fetch(origin + "/api/v1/health");
+  const res = await fetch(`${origin}/api/v1/health`);
   return { status: res.status, body: await res.json() };
 }
 
@@ -193,14 +200,18 @@ async function* sseEvents(res: Response): AsyncGenerator<SseEvent> {
   try {
     for (;;) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) {
+        break;
+      }
       buffer += decoder.decode(value, { stream: true });
       for (let end = buffer.indexOf("\n\n"); end >= 0; end = buffer.indexOf("\n\n")) {
         const frame = buffer.slice(0, end);
         buffer = buffer.slice(end + 2);
         const event = /^event: (.*)$/m.exec(frame)?.[1];
         const data = /^data: (.*)$/m.exec(frame)?.[1];
-        if (event && data) yield { event, data: JSON.parse(data) };
+        if (event && data) {
+          yield { event, data: JSON.parse(data) };
+        }
       }
     }
   } finally {
@@ -210,13 +221,17 @@ async function* sseEvents(res: Response): AsyncGenerator<SseEvent> {
 
 async function nextEvent(it: AsyncGenerator<SseEvent>): Promise<SseEvent> {
   const r = await it.next();
-  if (r.done) throw new Error("stream ended before the expected event");
+  if (r.done) {
+    throw new Error("stream ended before the expected event");
+  }
   return r.value;
 }
 
 async function collect(it: AsyncGenerator<SseEvent>): Promise<SseEvent[]> {
   const out: SseEvent[] = [];
-  for await (const ev of it) out.push(ev);
+  for await (const ev of it) {
+    out.push(ev);
+  }
   return out;
 }
 
@@ -236,7 +251,7 @@ describe("engine thread dies", () => {
 
   /** Starts a long JSON request and kills the engine once chunks are flowing. */
   async function killMidStreamJson(): Promise<Response> {
-    mock.chunks = Array(30).fill("ab");
+    mock.chunks = Array.from({ length: 30 }, () => "ab");
     mock.delayMs = 30;
     const before = h.ctl.chunksSent;
     const pending = translate(h.origin, { text: "long", target_lang: "en" });
@@ -247,7 +262,7 @@ describe("engine thread dies", () => {
 
   /** Starts a long SSE request, reads its first deltas, and kills the engine. Returns the rest of the stream. */
   async function killMidStreamSse(): Promise<SseEvent[]> {
-    mock.chunks = Array(30).fill("ab");
+    mock.chunks = Array.from({ length: 30 }, () => "ab");
     mock.delayMs = 30;
     const before = h.ctl.chunksSent;
     const it = sseEvents(await translate(h.origin, { text: "你好", target_lang: "en", stream: true }));
@@ -325,7 +340,7 @@ describe("default model fails to load at startup", () => {
     const log = spyOn(console, "error").mockImplementation(() => {});
     const app = await startApp(config(), ctl.launch);
     try {
-      const origin = app.server.url.origin;
+      const { origin } = app.server.url;
       await until(() => app.engine.state === "error", "startup load to fail");
 
       const health = await getHealth(origin);
@@ -504,7 +519,7 @@ describe("queued events", () => {
     expect(await nextEvent(c)).toEqual({ event: "queued", data: { position: 2 } });
 
     open();
-    const [, , cRest] = await Promise.all([collect(a), collect(b), collect(c)]);
+    const [_a, _b, cRest] = await Promise.all([collect(a), collect(b), collect(c)]);
     expect(queuedPositions(cRest)).toEqual([1]);
     expect(cRest.map((e) => e.event)).toEqual(["queued", "start", "delta", "delta", "delta", "done"]);
   });
@@ -543,7 +558,7 @@ describe("stopping the app during a stream", () => {
   test("stop resolves, stops the engine, and the client's stream ends instead of hanging", async () => {
     const ctl = new Control();
     const app = await startApp(config(), ctl.launch);
-    const origin = app.server.url.origin;
+    const { origin } = app.server.url;
     let stopped = false;
     try {
       await waitReady(app);
@@ -566,7 +581,9 @@ describe("stopping the app during a stream", () => {
       release();
     } finally {
       ctl.reset();
-      if (!stopped) await app.stop();
+      if (!stopped) {
+        await app.stop();
+      }
     }
   });
 });

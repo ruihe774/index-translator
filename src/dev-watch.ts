@@ -4,10 +4,10 @@
 
 // TypeScript types these as modules; at runtime Bun hands back the file's text.
 // @ts-expect-error
-import ffi from "./llama-ffi.ts" with { type: "text" };
+import ffi from "./llama-ffi.ts" with { type: "text" }; // eslint-disable-line import/default -- text import
 // @ts-expect-error
 import shim from "./llama-shim.c" with { type: "text" };
 // @ts-expect-error
-import worker from "./llama-worker.ts" with { type: "text" };
+import worker from "./llama-worker.ts" with { type: "text" }; // eslint-disable-line import/default -- text import
 
 export const watched: number[] = [worker.length, ffi.length, shim.length];

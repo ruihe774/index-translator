@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
 
-import { type PlayerState, SpeechPlayer, type SpeechSettings, UPDATE_SETTLE_MS } from "../public/speech";
+import { SpeechPlayer, UPDATE_SETTLE_MS } from "../public/speech";
+import type { PlayerState, SpeechSettings } from "../public/speech";
 import type { Segment } from "../public/speech-text";
 
 // ---- fakes -----------------------------------------------------------------------------------
@@ -37,7 +38,9 @@ class FakeAudioContext {
   /** The system changes the context's state (iOS: "interrupted"). */
   setState(state: string) {
     this.state = state;
-    for (const l of this.listeners) l();
+    for (const l of this.listeners) {
+      l();
+    }
   }
   constructor() {
     FakeAudioContext.last = this;
@@ -95,7 +98,9 @@ function makeSynth(auto = false) {
       };
       signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       requests.push(req);
-      if (auto) req.resolve();
+      if (auto) {
+        req.resolve();
+      }
     });
   return { requests, synthesize };
 }
@@ -106,7 +111,9 @@ const SEGMENTS = [seg("a1", 0), seg("a2", 0), seg("b1", 2), seg("c1", 4)];
 const SETTINGS: SpeechSettings = { lang: "en", voice: "v1", speed: 1 };
 
 const flush = async () => {
-  for (let i = 0; i < 5; i++) await Bun.sleep(0);
+  for (let i = 0; i < 5; i++) {
+    await Bun.sleep(0);
+  }
 };
 const sleep = (ms: number) => Bun.sleep(ms);
 
@@ -137,9 +144,9 @@ describe("audio that arrives decoded (QOA)", () => {
   test("is put into a buffer of its own, one array per channel, and played like a decoded WAV", async () => {
     const synthesize = () =>
       Promise.resolve({
-        sampleRate: 22050,
+        sampleRate: 22_050,
         channels: 2,
-        samples: Int16Array.of(0x4000, -0x8000, 0, 0x7fff),
+        samples: Int16Array.of(0x40_00, -0x80_00, 0, 0x7f_ff),
       });
     const player = new SpeechPlayer(synthesize, {
       onState() {},
@@ -152,10 +159,10 @@ describe("audio that arrives decoded (QOA)", () => {
     await flush();
     expect(player.state).toBe("playing");
     const buffer = FakeAudioContext.last.sources[0]!.buffer as ReturnType<FakeAudioContext["createBuffer"]>;
-    expect(buffer).toMatchObject({ channels: 2, length: 2, sampleRate: 22050 });
-    expect(buffer.data.map((c) => [...c])).toEqual([
+    expect(buffer).toMatchObject({ channels: 2, length: 2, sampleRate: 22_050 });
+    expect(buffer.data.map((c) => Array.from(c))).toEqual([
       [0.5, 0],
-      [-1, 0x7fff / 0x8000],
+      [-1, 0x7f_ff / 0x80_00],
     ]);
   });
 });

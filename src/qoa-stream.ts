@@ -34,7 +34,9 @@ const FRAMES_PER_CHUNK = 4;
 export function acceptsQoa(accept: string | null): boolean {
   for (const range of (accept ?? "").split(",")) {
     const [type, ...params] = range.split(";").map((part) => part.trim().toLowerCase());
-    if (type !== QOA_TYPE) continue;
+    if (type !== QOA_TYPE) {
+      continue;
+    }
     const q = params.find((p) => p.startsWith("q="));
     return q === undefined || Number(q.slice(2)) > 0;
   }
@@ -47,13 +49,15 @@ export function qoaLoader(publicDir: string): () => Promise<QoaCodec | undefined
   return async () => {
     const file = join(publicDir, "vendor", "qoa", "qoa.ts");
     // Not remembered while the file is missing, so installing it needs no restart.
-    if (!loading && !existsSync(file)) return undefined;
+    if (!loading && !existsSync(file)) {
+      return undefined;
+    }
     loading ??= (async () => {
       try {
         const { Qoa } = (await import(file)) as { Qoa: { create(): Promise<QoaCodec> } };
         return await Qoa.create();
-      } catch (e) {
-        console.error(`[speech] the QOA codec cannot be loaded, speech is sent as WAV: ${String(e)}`);
+      } catch (error) {
+        console.error(`[speech] the QOA codec cannot be loaded, speech is sent as WAV: ${String(error)}`);
         return undefined;
       }
     })();
@@ -64,7 +68,9 @@ export function qoaLoader(publicDir: string): () => Promise<QoaCodec | undefined
 /** 16-bit samples from the engine's floats, rounded as `writeWav` does. */
 function toInt16(samples: Float32Array): Int16Array {
   const out = new Int16Array(samples.length);
-  for (let i = 0; i < samples.length; i++) out[i] = Math.round(Math.max(-1, Math.min(1, samples[i]!)) * 0x7fff);
+  for (let i = 0; i < samples.length; i++) {
+    out[i] = Math.round(Math.max(-1, Math.min(1, samples[i]!)) * 0x7f_ff);
+  }
   return out;
 }
 

@@ -29,7 +29,7 @@ const port = Number(process.env.E2E_PORT ?? 3100);
 const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 3101);
 
 const app = await startApp(
-  config({ port, ctxSize: 65536, maxInputTokens: 28000, maxQueue: 1, defaultModel: CHAT }),
+  config({ port, ctxSize: 65_536, maxInputTokens: 28_000, maxQueue: 1, defaultModel: CHAT }),
   launcher,
   speechLauncher,
 );
@@ -42,16 +42,24 @@ const control = Bun.serve({
   hostname: "127.0.0.1",
   async fetch(req) {
     const { pathname } = new URL(req.url);
-    if (pathname !== "/mock" && pathname !== "/mock/restart") return new Response("not found", { status: 404 });
+    if (pathname !== "/mock" && pathname !== "/mock/restart") {
+      return new Response("not found", { status: 404 });
+    }
     if (pathname === "/mock/restart") {
       await app.engine.unload();
       return Response.json({ ok: true });
     }
     if (req.method === "POST") {
       const patch = (await req.json()) as Record<string, unknown>;
-      for (const key of KNOBS) if (key in patch) (mock as any)[key] = patch[key];
+      for (const key of KNOBS) {
+        if (key in patch) {
+          (mock as any)[key] = patch[key];
+        }
+      }
       // { speech: { state?, delayMs?, failWith? } } scripts the mock speech engine.
-      if (patch.speech) Object.assign(mockSpeech, patch.speech);
+      if (patch.speech) {
+        Object.assign(mockSpeech, patch.speech);
+      }
     } else if (req.method === "DELETE") {
       resetMock();
       resetMockSpeech();

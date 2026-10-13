@@ -28,12 +28,16 @@ const SVG = "http://www.w3.org/2000/svg";
 
 function icon(className: string | null, ...shapes: [tag: string, attrs: Record<string, string>][]): SVGElement {
   const svg = document.createElementNS(SVG, "svg");
-  if (className) svg.setAttribute("class", className);
+  if (className) {
+    svg.setAttribute("class", className);
+  }
   svg.setAttribute("viewBox", "0 0 24 24");
   svg.setAttribute("aria-hidden", "true");
   for (const [tag, attrs] of shapes) {
     const shape = document.createElementNS(SVG, tag);
-    for (const [name, value] of Object.entries(attrs)) shape.setAttribute(name, value);
+    for (const [name, value] of Object.entries(attrs)) {
+      shape.setAttribute(name, value);
+    }
     svg.append(shape);
   }
   return svg;
@@ -51,7 +55,9 @@ function button(id: string, ...icons: SVGElement[]): HTMLButtonElement {
 }
 
 function setAttr(el: Element, name: string, value: string) {
-  if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+  if (el.getAttribute(name) !== value) {
+    el.setAttribute(name, value);
+  }
 }
 
 export class SpeechControls extends HTMLElement {
@@ -63,10 +69,12 @@ export class SpeechControls extends HTMLElement {
   #built = false;
 
   connectedCallback() {
-    if (this.#built) return;
+    if (this.#built) {
+      return;
+    }
     this.#built = true;
     const side = this.getAttribute("side") ?? "";
-    const subject = this.subject;
+    const { subject } = this;
     this.setAttribute("aria-label", `Read the ${subject} aloud`);
 
     this.#listen = button(
@@ -118,7 +126,9 @@ export class SpeechControls extends HTMLElement {
       [this.#next, "next"],
     ] as const) {
       b.addEventListener("click", () => {
-        if (b.getAttribute("aria-disabled") !== "true") this.dispatchEvent(new Event(name));
+        if (b.getAttribute("aria-disabled") !== "true") {
+          this.dispatchEvent(new Event(name));
+        }
       });
     }
   }
@@ -129,7 +139,7 @@ export class SpeechControls extends HTMLElement {
   }
 
   show({ reading, state, blocked, canPrev, canNext }: SpeechView) {
-    const subject = this.subject;
+    const { subject } = this;
     // The controls that appear while reading go away when it ends: do not leave focus on one.
     if (!reading && [this.#pause, this.#prev, this.#next].includes(document.activeElement as HTMLButtonElement)) {
       this.#listen.focus();
@@ -140,9 +150,15 @@ export class SpeechControls extends HTMLElement {
     setAttr(this.#listen, "aria-label", label);
     this.#listen.title = blocked || label;
     // The reason is also the button's description: `title` alone is not reachable by keyboard or touch.
-    if (this.#why.textContent !== blocked) this.#why.textContent = blocked;
+    if (this.#why.textContent !== blocked) {
+      this.#why.textContent = blocked;
+    }
 
-    for (const b of [this.#prev, this.#pause, this.#next]) if (b.hidden === reading) b.hidden = !reading;
+    for (const b of [this.#prev, this.#pause, this.#next]) {
+      if (b.hidden === reading) {
+        b.hidden = !reading;
+      }
+    }
     // While the next audio is being made, only Stop works.
     const waiting = state === "loading";
     setAttr(this.#prev, "aria-disabled", String(waiting || !(reading && canPrev)));

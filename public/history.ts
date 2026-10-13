@@ -21,7 +21,9 @@ export interface HistoryEntry {
 }
 
 function isEntry(v: unknown): v is HistoryEntry {
-  if (typeof v !== "object" || v === null) return false;
+  if (typeof v !== "object" || v === null) {
+    return false;
+  }
   const e = v as Record<string, unknown>;
   return (
     typeof e.id === "string" &&
@@ -36,10 +38,12 @@ function isEntry(v: unknown): v is HistoryEntry {
 
 /** What was stored, minus anything that is not an entry; damaged or foreign data gives an empty list. */
 export function parseHistory(raw: string | null): HistoryEntry[] {
-  if (!raw) return [];
+  if (!raw) {
+    return [];
+  }
   try {
     const data: unknown = JSON.parse(raw);
-    return Array.isArray(data) ? data.filter(isEntry).slice(0, MAX_ENTRIES) : [];
+    return Array.isArray(data) ? data.filter((entry) => isEntry(entry)).slice(0, MAX_ENTRIES) : [];
   } catch {
     return [];
   }
@@ -63,7 +67,9 @@ export function loadHistory(): HistoryEntry[] {
 export function saveHistory(list: HistoryEntry[]): HistoryEntry[] {
   let kept = list;
   while (!store(HISTORY_KEY, JSON.stringify(kept))) {
-    if (kept.length === 0) return kept;
+    if (kept.length === 0) {
+      return kept;
+    }
     kept = kept.slice(0, -1);
   }
   return kept;

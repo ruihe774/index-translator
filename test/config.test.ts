@@ -18,8 +18,8 @@ describe("loadConfig defaults", () => {
       llamaDir: join(root, "vendor", "llama.cpp"),
       gpuLayers: -1,
       threads: 0,
-      ctxSize: 65536,
-      maxInputTokens: 28000,
+      ctxSize: 65_536,
+      maxInputTokens: 28_000,
       maxQueue: 8,
       allowedOrigins: [],
       allowedHosts: [],
@@ -58,7 +58,7 @@ describe("loadConfig defaults", () => {
   test("empty values fall back to the defaults", () => {
     const cfg = loadConfig({ PORT: "", CTX_SIZE: "" });
     expect(cfg.port).toBe(3000);
-    expect(cfg.ctxSize).toBe(65536);
+    expect(cfg.ctxSize).toBe(65_536);
   });
 
   test("valid overrides are applied", () => {
@@ -76,7 +76,7 @@ describe("loadConfig defaults", () => {
       threads: 8,
       ctxSize: 4096,
       maxInputTokens: 2000,
-      maxQueue: 100000,
+      maxQueue: 100_000,
     });
   });
 
@@ -144,7 +144,7 @@ describe("loadConfig rejections", () => {
 
   test("PORT above 65535 is rejected, 65535 is accepted", () => {
     expect(() => loadConfig({ PORT: "65536" })).toThrow("PORT must be at most 65535");
-    expect(loadConfig({ PORT: "65535" }).port).toBe(65535);
+    expect(loadConfig({ PORT: "65535" }).port).toBe(65_535);
   });
 
   test("GPU_LAYERS is a layer count or all; anything else is rejected", () => {
@@ -210,7 +210,9 @@ describe("loadConfig LLAMA_DIR", () => {
 describe("--help", () => {
   test("helpText names every setting's flag", () => {
     const text = helpText();
-    for (const name of SETTING_NAMES) expect(text).toContain(`--${name.toLowerCase().replaceAll("_", "-")} <value>`);
+    for (const name of SETTING_NAMES) {
+      expect(text).toContain(`--${name.toLowerCase().replaceAll("_", "-")} <value>`);
+    }
   });
 
   test("the server prints it and exits 0 without starting", async () => {

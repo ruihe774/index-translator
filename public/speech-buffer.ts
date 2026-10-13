@@ -32,7 +32,9 @@ export type Synthesize = (text: string, settings: SpeechSettings, signal: AbortS
 export function blockStarts(segments: Segment[]): number[] {
   const starts: number[] = [];
   segments.forEach((s, i) => {
-    if (i === 0 || s.line !== segments[i - 1]!.line) starts.push(i);
+    if (i === 0 || s.line !== segments[i - 1]!.line) {
+      starts.push(i);
+    }
   });
   return starts;
 }
@@ -82,7 +84,9 @@ export class SpeechBuffer {
     this.heard = { seconds: 0, chars: 0 };
     const waiters = [...this.waiters.values()].flat();
     this.waiters.clear();
-    for (const w of waiters) w.reject(new Error("the reading was stopped"));
+    for (const w of waiters) {
+      w.reject(new Error("the reading was stopped"));
+    }
   }
 
   /** The reader is at piece `i`: what is made next follows from there. */
@@ -98,9 +102,13 @@ export class SpeechBuffer {
   /** The audio of piece `i`, now or when it has been made; rejects if making it failed. */
   take(i: number): Promise<AudioBuffer> {
     const audio = this.audio.get(i);
-    if (audio) return Promise.resolve(audio);
+    if (audio) {
+      return Promise.resolve(audio);
+    }
     const failure = this.failed.get(i);
-    if (failure) return Promise.reject(failure);
+    if (failure) {
+      return Promise.reject(failure);
+    }
     return new Promise((resolve, reject) => {
       const waiting = this.waiters.get(i) ?? [];
       waiting.push({ resolve, reject });
@@ -111,7 +119,9 @@ export class SpeechBuffer {
   /** How long piece `i` is, or will be by the pieces heard so far. */
   private duration(i: number): number {
     const audio = this.audio.get(i);
-    if (audio) return audio.duration;
+    if (audio) {
+      return audio.duration;
+    }
     // Before anything was heard: roughly what the model does, a syllable per Chinese or Japanese character.
     const wide = this.settings.lang === "zh" || this.settings.lang === "ja";
     const rate =
@@ -133,7 +143,11 @@ export class SpeechBuffer {
   /** Where Next and Previous lead from the reader's place: the starts of the next, this and the previous block. */
   private targets(): number[] {
     let block = 0;
-    for (let b = 0; b < this.starts.length; b++) if (this.starts[b]! <= this.cursor) block = b;
+    for (let b = 0; b < this.starts.length; b++) {
+      if (this.starts[b]! <= this.cursor) {
+        block = b;
+      }
+    }
     return [this.starts[block + 1], this.starts[block], this.starts[block - 1]].filter(
       (i): i is number => i !== undefined,
     );
@@ -142,50 +156,70 @@ export class SpeechBuffer {
   /** The pieces still to be made, most urgent first. */
   private plan(): number[] {
     // The piece the reader waits for failed: the player is about to stop, nothing more is needed.
-    if (this.failed.has(this.cursor)) return [];
+    if (this.failed.has(this.cursor)) {
+      return [];
+    }
     const plan: number[] = [];
     for (const i of [...this.stretch(NEAR_SECONDS), ...this.targets(), ...this.stretch(AHEAD_SECONDS)]) {
-      if (!this.audio.has(i) && !this.failed.has(i) && !plan.includes(i)) plan.push(i);
+      if (!this.audio.has(i) && !this.failed.has(i) && !plan.includes(i)) {
+        plan.push(i);
+      }
     }
     return plan;
   }
 
   private pump(): void {
-    if (this.cursor >= this.segments.length) return;
+    if (this.cursor >= this.segments.length) {
+      return;
+    }
     const plan = this.plan();
-    const flight = this.flight;
+    const { flight } = this;
     if (flight) {
       // Stale: its piece is not wanted any more, or the reader waits for another one.
       const starved = plan[0] === this.cursor;
-      if (plan.includes(flight.index) && !(starved && flight.index !== this.cursor)) return;
+      if (plan.includes(flight.index) && !(starved && flight.index !== this.cursor)) {
+        return;
+      }
       this.flight = null;
       flight.abort.abort();
     }
-    if (plan.length > 0) this.fetch(plan[0]!);
+    if (plan.length > 0) {
+      this.fetch(plan[0]!);
+    }
   }
 
   private fetch(i: number): void {
     const flight = { index: i, abort: new AbortController() };
     this.flight = flight;
+    // eslint-disable-next-line promise/prefer-catch -- the rejection handler must not see errors from the success handler
     this.synthesize(this.segments[i]!.text, this.settings, flight.abort.signal)
       .then((audio) => this.decode(audio))
+      // The rejection handler must not see errors from the success handler, so this stays a two-argument then.
       .then(
         (audio) => {
           // Aborted, or closed, while it was on its way.
-          if (this.flight !== flight) return;
+          if (this.flight !== flight) {
+            return undefined;
+          }
           this.flight = null;
           this.store(i, audio);
           this.pump();
+          return undefined;
         },
         (error) => {
-          if (this.flight !== flight) return;
+          if (this.flight !== flight) {
+            return undefined;
+          }
           this.flight = null;
           // Reported when the reader gets there, by `take`.
           this.failed.set(i, error instanceof Error ? error : new Error(String(error)));
           const waiting = this.waiters.get(i) ?? [];
           this.waiters.delete(i);
-          for (const w of waiting) w.reject(error);
+          for (const w of waiting) {
+            w.reject(error);
+          }
           this.pump();
+          return undefined;
         },
       );
   }
@@ -197,15 +231,21 @@ export class SpeechBuffer {
     this.heard.chars += this.segments[i]!.text.length;
     const waiting = this.waiters.get(i) ?? [];
     this.waiters.delete(i);
-    for (const w of waiting) w.resolve(audio);
-    if (this.seconds <= KEEP_SECONDS) return;
+    for (const w of waiting) {
+      w.resolve(audio);
+    }
+    if (this.seconds <= KEEP_SECONDS) {
+      return;
+    }
     // Too much: what lies ahead of the reader and where the jumps lead stays, the rest goes, farthest first.
     const kept = new Set([...this.stretch(AHEAD_SECONDS), ...this.targets()]);
     const loose = [...this.audio.keys()]
       .filter((k) => !kept.has(k))
-      .sort((a, b) => Math.abs(b - this.cursor) - Math.abs(a - this.cursor));
+      .toSorted((a, b) => Math.abs(b - this.cursor) - Math.abs(a - this.cursor));
     for (const k of loose) {
-      if (this.seconds <= KEEP_SECONDS) break;
+      if (this.seconds <= KEEP_SECONDS) {
+        break;
+      }
       this.seconds -= this.audio.get(k)!.duration;
       this.audio.delete(k);
     }

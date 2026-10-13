@@ -3,7 +3,10 @@ import { describe, expect, test } from "bun:test";
 import { QueueFullError, SlotQueue } from "../src/queue";
 
 /** Lets every pending promise callback run (a macrotask, so all microtasks drain first). */
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const flush = () =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, 0);
+  });
 
 describe("SlotQueue admission", () => {
   test("with no waiting room the first request runs and the second is refused", () => {
@@ -62,9 +65,9 @@ describe("SlotQueue admission", () => {
     try {
       q.enter();
       throw new Error("expected enter to throw");
-    } catch (e) {
-      expect(e).toBeInstanceOf(QueueFullError);
-      expect((e as Error).message).toBe("translation queue is full");
+    } catch (error) {
+      expect(error).toBeInstanceOf(QueueFullError);
+      expect((error as Error).message).toBe("translation queue is full");
     }
   });
 });

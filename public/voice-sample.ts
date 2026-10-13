@@ -41,6 +41,8 @@ export async function uploadVoice(api: string, name: string, wav: ArrayBuffer): 
     body: wav,
   });
   const body = await res.json().catch(() => null);
-  if (!res.ok) throw new Error(body?.error?.message ?? `The server answered HTTP ${res.status}.`);
+  if (!res.ok) {
+    throw new Error(body?.error?.message ?? `The server answered HTTP ${res.status}.`);
+  }
   return body;
 }

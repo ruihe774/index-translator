@@ -2,7 +2,8 @@
 // Pure: no DOM access, so each branch can be unit tested.
 
 import { mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
-import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type ModelId, type Selection } from "./select-model.ts";
+import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS } from "./select-model.ts";
+import type { ModelId, Selection } from "./select-model.ts";
 
 export const MODEL_LABELS: Record<ModelId, string> = {
   [CHAT_MODEL]: "Index-Translate-9B",
@@ -20,43 +21,53 @@ export function selectionMessage(s: Selection): { text: string; warn: boolean } 
   const limit = number.format(LONG_THRESHOLD_LETTERS);
   const long = s.letters > LONG_THRESHOLD_LETTERS;
   switch (s.reason) {
-    case "short":
+    case "short": {
       return {
         text: `Model: ${name}. The text is within ${limit} letters, which it translates reliably.`,
         warn: false,
       };
-    case "long-document":
+    }
+    case "long-document": {
       return {
         text: `Model: ${name}. The text is over ${limit} letters, so the whole-document model is used. The first request after a switch takes a few seconds longer.`,
         warn: false,
       };
-    case "long-unsupported-direction":
+    }
+    case "long-unsupported-direction": {
       return {
         text: `Warning: the text is over ${limit} letters, but Index-NativeLong-9B only translates Chinese to or from English or Japanese. Index-Translate-9B will be used and may drop or repeat paragraphs. Translate the text in parts to be safe.`,
         warn: true,
       };
-    case "long-unknown-source":
+    }
+    case "long-unknown-source": {
       return {
         text: `Warning: the text is over ${limit} letters and its language could not be determined. Choose the source language under "From" to allow the whole-document model. Index-Translate-9B will be used and may drop or repeat paragraphs.`,
         warn: true,
       };
-    case "long-options":
+    }
+    case "long-options": {
       return {
         text: `Warning: the text is over ${limit} letters, but a glossary, constraints or genre need Index-Translate-9B, which may drop or repeat paragraphs. Clear them to allow the whole-document model.`,
         warn: true,
       };
-    case "manual":
+    }
+    case "manual": {
       return long && s.model === CHAT_MODEL
         ? {
             text: `Warning: you chose ${name} for a text over ${limit} letters. It may drop or repeat paragraphs.`,
             warn: true,
           }
         : { text: `Model: ${name}, as you chose.`, warn: false };
-    case "manual-document-unusable":
+    }
+    case "manual-document-unusable": {
       return {
         text: `Warning: Index-NativeLong-9B cannot translate this. It needs a source language, a direction of Chinese to or from English or Japanese, and no glossary, constraints or genre.`,
         warn: true,
       };
+    }
+    default: {
+      throw new Error(`unknown selection reason: ${s.reason satisfies never as string}`);
+    }
   }
 }
 
@@ -75,9 +86,15 @@ export const SAME_LANGUAGE_WARNING =
 export function adviceMessage(s: Selection, from: string, to: string, languageNote: string): string {
   const parts: string[] = [];
   const { text, warn } = selectionMessage(s);
-  if (warn) parts.push(text);
-  if (sameLanguage(from, to)) parts.push(SAME_LANGUAGE_WARNING);
-  if (languageNote) parts.push(languageNote);
+  if (warn) {
+    parts.push(text);
+  }
+  if (sameLanguage(from, to)) {
+    parts.push(SAME_LANGUAGE_WARNING);
+  }
+  if (languageNote) {
+    parts.push(languageNote);
+  }
   return parts.join(" ");
 }
 
@@ -92,8 +109,12 @@ export function imageAdviceMessage(documentChosen: boolean, from: string, to: st
       `Warning: ${MODEL_LABELS[DOCUMENT_MODEL]} does not translate images. ${MODEL_LABELS[CHAT_MODEL]} will be used.`,
     );
   }
-  if (sameLanguage(from, to)) parts.push(SAME_LANGUAGE_WARNING);
-  if (languageNote) parts.push(languageNote);
+  if (sameLanguage(from, to)) {
+    parts.push(SAME_LANGUAGE_WARNING);
+  }
+  if (languageNote) {
+    parts.push(languageNote);
+  }
   return parts.join(" ");
 }
 
@@ -109,10 +130,14 @@ export function healthMessage(h: Health): { text: string; loading: boolean } {
   const model = h.model ? modelLabel(h.model) : null;
   if (h.status === "ready") {
     let text = `Engine ready${model ? `, ${model} loaded` : ""}.`;
-    if (h.queue.waiting > 0) text += ` ${h.queue.waiting} waiting in the queue.`;
+    if (h.queue.waiting > 0) {
+      text += ` ${h.queue.waiting} waiting in the queue.`;
+    }
     return { text, loading: false };
   }
-  if (h.status === "loading") return { text: "Engine loading a model…", loading: true };
+  if (h.status === "loading") {
+    return { text: "Engine loading a model…", loading: true };
+  }
   return { text: `Engine ${h.status}${h.error ? `: ${h.error}` : ""}.`, loading: false };
 }
 
@@ -142,7 +167,9 @@ export function resultNotes(done: Pick<Done, "finish_reason">, ctx: ResultContex
     notes.push("The translation was cut off because it reached the output limit. It is incomplete.");
   }
   const mismatch = ctx.source === null ? null : paragraphMismatch(ctx.source, ctx.translation);
-  if (mismatch) notes.push(mismatchMessage(mismatch));
+  if (mismatch) {
+    notes.push(mismatchMessage(mismatch));
+  }
   if (ctx.model === DOCUMENT_MODEL && ctx.sourceLang === "zh" && ctx.targetLang === "en") {
     notes.push(
       "Long Chinese-to-English output can silently lose content. Check that every part of the source is present.",
@@ -161,6 +188,8 @@ export const INTERRUPTED_NOTE =
 
 /** What the page keeps on screen when a translation ends early, by a stop or by an error. */
 export function interruption(translation: string, stopped: boolean): { note: string | null; showCopy: boolean } {
-  if (!translation) return { note: null, showCopy: false };
+  if (!translation) {
+    return { note: null, showCopy: false };
+  }
   return { note: stopped ? STOPPED_NOTE : INTERRUPTED_NOTE, showCopy: true };
 }

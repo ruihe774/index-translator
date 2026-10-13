@@ -4,7 +4,8 @@
 // Without a file, the pinned spec version is downloaded. Exit 1 when an example fails that is not
 // listed below, or a listed one passes (then update the list and the document).
 
-import { type Block, type Inline, parseMarkdown } from "../public/markdown";
+import { parseMarkdown } from "../public/markdown";
+import type { Block, Inline } from "../public/markdown";
 
 const SPEC_VERSION = "0.31.2";
 
@@ -48,7 +49,8 @@ interface Example {
 
 // ---- reference rendering: the tree as the spec's HTML (unlike the page, which shifts headings and shows images as links)
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const esc = (s: string) =>
+  s.replaceAll("&", "&amp;").replaceAll("<", "&lt;").replaceAll(">", "&gt;").replaceAll('"', "&quot;");
 function url(s: string): string {
   try {
     return esc(encodeURI(decodeURI(s)));
@@ -61,21 +63,28 @@ function inline(nodes: Inline[]): string {
   return nodes
     .map((n) => {
       switch (n.type) {
-        case "text":
+        case "text": {
           return esc(n.text);
-        case "br":
+        }
+        case "br": {
           return "<br />\n";
-        case "code":
+        }
+        case "code": {
           return `<code>${esc(n.text)}</code>`;
+        }
         case "em":
         case "strong":
-        case "del":
+        case "del": {
           return `<${n.type}>${inline(n.children)}</${n.type}>`;
-        case "link":
+        }
+        case "link": {
           return `<a href="${url(n.href)}"${n.title ? ` title="${esc(n.title)}"` : ""}>${inline(n.children)}</a>`;
-        case "image":
+        }
+        case "image": {
           return `<img src="${url(n.href)}" alt="${esc(n.alt)}"${n.title ? ` title="${esc(n.title)}"` : ""} />`;
+        }
       }
+      return "";
     })
     .join("");
 }
@@ -84,24 +93,31 @@ function blocks(bs: Block[], tight = false): string {
   return bs
     .map((b) => {
       switch (b.type) {
-        case "heading":
+        case "heading": {
           return `<h${b.level}>${inline(b.children)}</h${b.level}>\n`;
-        case "paragraph":
+        }
+        case "paragraph": {
           return tight ? `${inline(b.children)}\n` : `<p>${inline(b.children)}</p>\n`;
-        case "code":
+        }
+        case "code": {
           return `<pre><code${b.lang ? ` class="language-${esc(b.lang)}"` : ""}>${esc(b.text)}${b.text ? "\n" : ""}</code></pre>\n`;
-        case "quote":
+        }
+        case "quote": {
           return `<blockquote>\n${blocks(b.children)}</blockquote>\n`;
-        case "hr":
+        }
+        case "hr": {
           return "<hr />\n";
+        }
         case "list": {
           const tag = b.ordered ? "ol" : "ul";
           const start = b.ordered && b.start !== 1 ? ` start="${b.start}"` : "";
           return `<${tag}${start}>\n${b.items.map((it) => `<li>${blocks(it.children, b.tight)}</li>\n`).join("")}</${tag}>\n`;
         }
-        case "table":
-          return "<table></table>\n"; // GFM; not in the CommonMark examples
+        case "table": {
+          return "<table></table>\n";
+        } // GFM; not in the CommonMark examples
       }
+      return "";
     })
     .join("");
 }
@@ -109,13 +125,13 @@ function blocks(bs: Block[], tight = false): string {
 /** Whitespace-insensitive between tags, in the spirit of the spec's normalize.py. */
 const normalize = (h: string) =>
   h
-    .replace(/\s+<\/li>/g, "</li>")
-    .replace(/<li>\s+/g, "<li>")
-    .replace(/>\s+</g, "><")
-    .replace(/\s+/g, " ")
+    .replaceAll(/\s+<\/li>/g, "</li>")
+    .replaceAll(/<li>\s+/g, "<li>")
+    .replaceAll(/>\s+</g, "><")
+    .replaceAll(/\s+/g, " ")
     .trim();
 /** The same, with a soft line break and <br /> counted as equal. */
-const normalizeBreaks = (h: string) => normalize(h.replace(/<br \/>\n?/g, "\n"));
+const normalizeBreaks = (h: string) => normalize(h.replaceAll(/<br \/>\n?/g, "\n"));
 
 // ---- run
 
@@ -124,12 +140,18 @@ const file = args[0] && !args[0].startsWith("--") ? args.shift()! : null;
 const spec: Example[] = file
   ? await Bun.file(file).json()
   : await fetch(`https://spec.commonmark.org/${SPEC_VERSION}/spec.json`).then((r) => {
-      if (!r.ok) throw new Error(`spec download failed: HTTP ${r.status}`);
+      if (!r.ok) {
+        throw new Error(`spec download failed: HTTP ${r.status}`);
+      }
       return r.json();
     });
 
 const reasonOf = new Map<number, string>();
-for (const [reason, ids] of Object.entries(KNOWN)) for (const id of ids) reasonOf.set(id, reason);
+for (const [reason, ids] of Object.entries(KNOWN)) {
+  for (const id of ids) {
+    reasonOf.set(id, reason);
+  }
+}
 
 const show = args[0] === "--show" ? new Set(args.slice(1)) : null;
 let pass = 0;
@@ -141,13 +163,17 @@ for (const ex of spec) {
   const strict = normalize(got) === normalize(ex.html);
   const loose = normalizeBreaks(got) === normalizeBreaks(ex.html);
   const reason = reasonOf.get(ex.example);
-  if (strict) pass++;
+  if (strict) {
+    pass++;
+  }
   const s = bySection.get(ex.section) ?? [0, 0];
   bySection.set(ex.section, [s[0] + (strict ? 1 : 0), s[1] + 1]);
   // Unlisted: must pass. "line-breaks": must differ only in line breaks. Any other reason: must still fail.
-  const expected = !reason ? "pass" : reason === "line-breaks" ? "breaks" : "fail";
+  const expected = reason ? (reason === "line-breaks" ? "breaks" : "fail") : "pass";
   const actual = strict ? "pass" : loose ? "breaks" : "fail";
-  if (actual !== expected) (reason && actual === "pass" ? stale : unexpected).push(ex.example);
+  if (actual !== expected) {
+    (reason && actual === "pass" ? stale : unexpected).push(ex.example);
+  }
   if (show && (show.has(String(ex.example)) || (reason && show.has(reason)))) {
     console.log(
       `## Example ${ex.example} (${ex.section})${reason ? `, ${reason}` : ""}\n--- markdown\n${ex.markdown}--- expected\n${ex.html}--- got\n${got}`,
@@ -156,12 +182,18 @@ for (const ex of spec) {
 }
 
 if (!show) {
-  for (const [section, [ok, n]] of bySection)
+  for (const [section, [ok, n]] of bySection) {
     console.log(`${String(ok).padStart(4)}/${String(n).padEnd(4)} ${section}`);
+  }
   console.log(`\nCommonMark ${SPEC_VERSION}: ${pass}/${spec.length} pass.`);
-  for (const [reason, ids] of Object.entries(KNOWN)) console.log(`  ${reason}: ${ids.length}`);
+  for (const [reason, ids] of Object.entries(KNOWN)) {
+    console.log(`  ${reason}: ${ids.length}`);
+  }
 }
-if (unexpected.length) console.error(`Unexpected failures: ${unexpected.join(", ")} (see --show <number>)`);
-if (stale.length)
+if (unexpected.length > 0) {
+  console.error(`Unexpected failures: ${unexpected.join(", ")} (see --show <number>)`);
+}
+if (stale.length > 0) {
   console.error(`Listed as divergent but now pass: ${stale.join(", ")}; update KNOWN and docs/markdown-conformance.md`);
-process.exit(unexpected.length || stale.length ? 1 : 0);
+}
+process.exit(unexpected.length > 0 || stale.length > 0 ? 1 : 0);

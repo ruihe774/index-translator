@@ -13,7 +13,9 @@ const PDFJS = "/vendor/pdfjs";
 const INSPECTOR = "/vendor/pdf-inspector";
 
 /** A failure with a message for the user. */
-export class PdfError extends Error {}
+export class PdfError extends Error {
+  override name = "PdfError";
+}
 
 const NOT_LOADED = "PDF support could not be loaded";
 
@@ -53,9 +55,9 @@ function loadPdfJs(): Promise<PdfJs> {
       module.GlobalWorkerOptions.workerSrc = `${PDFJS}/pdf.worker.min.mjs`;
       return module;
     },
-    (e) => {
+    (error) => {
       pdfjs = undefined; // the next PDF tries again
-      console.error(e);
+      console.error(error);
       throw new PdfError(`${NOT_LOADED}.`);
     },
   );
@@ -90,23 +92,32 @@ function startExtractor(): Extractor {
 
   const fail = (e: Error) => {
     dead = e;
-    for (const w of waiting.values()) w.reject(e);
+    for (const w of waiting.values()) {
+      w.reject(e);
+    }
     waiting.clear();
   };
   worker.addEventListener("message", (event: MessageEvent<WorkerReply>) => {
     const { id, ...reply } = event.data;
     const w = waiting.get(id);
     waiting.delete(id);
-    if (!w) return;
-    if ("error" in reply) w.reject(new PdfError(reply.error));
-    else w.resolve(reply);
+    if (!w) {
+      return;
+    }
+    if ("error" in reply) {
+      w.reject(new PdfError(reply.error));
+    } else {
+      w.resolve(reply);
+    }
   });
   // The worker's own script did not load or threw outside a request.
   worker.addEventListener("error", () => fail(new PdfError(`${NOT_LOADED}.`)));
 
   return {
     ask(request, transfer = []) {
-      if (dead) return Promise.reject(dead);
+      if (dead) {
+        return Promise.reject(dead);
+      }
       const id = next++;
       return new Promise<Reply>((resolve, reject) => {
         waiting.set(id, { resolve, reject });
@@ -151,22 +162,26 @@ export async function openPdf(bytes: Uint8Array<ArrayBuffer>): Promise<PdfDocume
   let doc: PdfJsDocument;
   try {
     doc = await task.promise;
-  } catch (e) {
+  } catch (error) {
     void task.destroy();
-    const name = (e as { name?: string } | null)?.name;
-    if (name === "PasswordException") throw new PdfError("It is protected by a password.");
-    if (name === "InvalidPDFException" || name === "FormatError") throw new PdfError("It is not a readable PDF.");
-    console.error(e);
+    const name = (error as { name?: string } | null)?.name;
+    if (name === "PasswordException") {
+      throw new PdfError("It is protected by a password.");
+    }
+    if (name === "InvalidPDFException" || name === "FormatError") {
+      throw new PdfError("It is not a readable PDF.");
+    }
+    console.error(error);
     throw new PdfError(`${NOT_LOADED}, or the file is damaged.`);
   }
 
   const extractor = startExtractor();
   try {
     await extractor.ask({ open: copy }, [copy]);
-  } catch (e) {
+  } catch (error) {
     extractor.end();
     void task.destroy();
-    throw e;
+    throw error;
   }
 
   return {

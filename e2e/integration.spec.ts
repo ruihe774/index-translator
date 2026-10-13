@@ -2,7 +2,8 @@
 // These cover what the mock engine cannot produce on demand: error envelopes, status codes, an
 // unreachable server, SSE framing and the health polling.
 
-import { type AppPage, expect, test } from "./fixtures";
+import { expect, test } from "./fixtures";
+import type { AppPage } from "./fixtures";
 
 const sse = (events: [string, unknown][]) =>
   events.map(([event, data]) => `event: ${event}\ndata: ${JSON.stringify(data)}\n\n`).join("");
@@ -16,7 +17,7 @@ const done = {
 const health = (over: object = {}) => ({
   status: "ready",
   model: "index-translate-9b",
-  limits: { context_tokens: 65536, max_input_tokens: 28000 },
+  limits: { context_tokens: 65_536, max_input_tokens: 28_000 },
   queue: { running: false, waiting: 0, max_waiting: 8 },
   ...over,
 });
@@ -75,7 +76,7 @@ for (const [name, status, error, message] of [
   [
     "input_too_long",
     413,
-    { code: "input_too_long", details: { prompt_tokens: 30000, max_input_tokens: 28000 } },
+    { code: "input_too_long", details: { prompt_tokens: 30_000, max_input_tokens: 28_000 } },
     "30,000 tokens, and the limit is 28,000",
   ],
   ["a bare 429", 429, {}, "The translator is busy. Try again in a minute."],
@@ -163,6 +164,7 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   await stubTranslate(
     app,
     200,
+    // eslint-disable-next-line @typescript-eslint/no-misused-spread -- one event per code point, so no character is split
     sse([...[...md].map((c): [string, unknown] => ["delta", { text: c }]), ["done", done]]),
   );
   await run(app, "# Title\n\n- **one**\n- [link](https://example.com)");
@@ -340,9 +342,9 @@ test("Clear empties both sides and returns the source to the plain textarea", as
 /** Top of `el` relative to the top of the box of `scroller`. */
 async function offsetIn(app: AppPage, el: string, scroller: string): Promise<number> {
   return app.page.evaluate(
-    ({ el, scroller }) =>
-      document.querySelector(el)!.getBoundingClientRect().top -
-      document.querySelector(scroller)!.getBoundingClientRect().top,
+    ({ el: target, scroller: frame }) =>
+      document.querySelector(target)!.getBoundingClientRect().top -
+      document.querySelector(frame)!.getBoundingClientRect().top,
     { el, scroller },
   );
 }
@@ -352,8 +354,8 @@ const paragraphs = (n: number, make: (i: number) => string) =>
 
 test("matching paragraphs: a click on either side scrolls the other to the same paragraph", async ({ app }) => {
   await app.page.setViewportSize({ width: 1280, height: 800 });
-  const source = "# Doc\n\n" + paragraphs(30, (i) => `Paragraph ${i} ${"word ".repeat(i % 3 ? 8 : 40)}`);
-  const translation = "# 文档\n\n" + paragraphs(30, (i) => `第${i}段 ${"字".repeat(i % 2 ? 10 : 90)}`);
+  const source = `# Doc\n\n${paragraphs(30, (i) => `Paragraph ${i} ${"word ".repeat(i % 3 ? 8 : 40)}`)}`;
+  const translation = `# 文档\n\n${paragraphs(30, (i) => `第${i}段 ${"字".repeat(i % 2 ? 10 : 90)}`)}`;
   await stubTranslate(
     app,
     200,
@@ -427,8 +429,8 @@ test("matching lines in plain text: the raw textarea and the output sync both wa
 
 test("paragraphs that do not match: no sync", async ({ app }) => {
   await app.page.setViewportSize({ width: 1280, height: 800 });
-  const source = "# Doc\n\n" + paragraphs(30, (i) => `Paragraph ${i}`);
-  const translation = "# 文档\n\n" + paragraphs(25, (i) => `第${i}段`);
+  const source = `# Doc\n\n${paragraphs(30, (i) => `Paragraph ${i}`)}`;
+  const translation = `# 文档\n\n${paragraphs(25, (i) => `第${i}段`)}`;
   await stubTranslate(
     app,
     200,

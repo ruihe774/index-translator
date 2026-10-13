@@ -7,7 +7,6 @@ import { join } from "node:path";
 
 import {
   acceptNotices,
-  type Download,
   FetchError,
   fetchFile,
   fetchModels,
@@ -16,6 +15,7 @@ import {
   parseArgs,
   plan,
 } from "../scripts/fetch_models";
+import type { Download } from "../scripts/fetch_models";
 import { MODELS } from "../src/models";
 
 const curl = Bun.which("curl");
@@ -36,12 +36,18 @@ beforeAll(() => {
     hostname: "127.0.0.1",
     fetch(req) {
       const path = new URL(req.url).pathname;
-      if (path === "/redirect") return Response.redirect("/file", 302);
-      if (path !== "/file") return new Response("not here", { status: 404 });
+      if (path === "/redirect") {
+        return Response.redirect("/file", 302);
+      }
+      if (path !== "/file") {
+        return new Response("not here", { status: 404 });
+      }
       const range = req.headers.get("range");
       ranges.push(range);
       const from = Number(range?.match(/^bytes=(\d+)-$/)?.[1] ?? 0);
-      if (!range) return new Response(CONTENT);
+      if (!range) {
+        return new Response(CONTENT);
+      }
       if (from >= CONTENT.length) {
         return new Response(null, { status: 416, headers: { "content-range": `bytes */${CONTENT.length}` } });
       }
@@ -57,7 +63,9 @@ beforeAll(() => {
 afterAll(() => server.stop(true));
 
 beforeEach(() => {
-  if (dir) rmSync(dir, { recursive: true, force: true });
+  if (dir) {
+    rmSync(dir, { recursive: true, force: true });
+  }
   dir = mkdtempSync(join(tmpdir(), "fetch-models-"));
   ranges = [];
 });
@@ -76,9 +84,11 @@ async function run(download: Download): Promise<{ error?: FetchError; log: strin
   try {
     await fetchFile(download, endpoint, curl!, (line) => log.push(line));
     return { log };
-  } catch (e) {
-    if (!(e instanceof FetchError)) throw e;
-    return { error: e, log };
+  } catch (error) {
+    if (!(error instanceof FetchError)) {
+      throw error;
+    }
+    return { error, log };
   }
 }
 
@@ -116,7 +126,9 @@ describe("plan", () => {
     for (const model of MODELS) {
       const files = plan([model.id], dirs);
       expect(files).toHaveLength(model.mmproj ? 2 : 1);
-      if (!model.mmproj) continue;
+      if (!model.mmproj) {
+        continue;
+      }
       expect(files[1]!.dest).toBe(join("/m", model.mmproj));
       expect(files[1]!.url).toBe(files[0]!.url.replace(model.file, model.mmproj));
       expect(files[1]!.sha256).toMatch(/^[0-9a-f]{64}$/);
@@ -295,7 +307,9 @@ describe("notices", () => {
   });
 
   test("fetchModels asks before it writes anything", async () => {
-    if (!curl) return;
+    if (!curl) {
+      return;
+    }
     const models = join(dir, "models");
     const attempt = fetchModels(
       ["--model", "index-translate-9b", "--models-dir", models],

@@ -2,7 +2,8 @@
 // the user leaves it; the server keeps a resumable translation running for a while and replays its
 // events from any point, so the page reconnects and carries on. No DOM access: unit tested.
 
-import { type SseEvent, sseEvents } from "./sse.ts";
+import { sseEvents } from "./sse.ts";
+import type { SseEvent } from "./sse.ts";
 
 export interface ResumeOptions {
   /** Opens the stream: the first call (`lastId` 0) starts the translation, later ones read it again from after `lastId`. */
@@ -26,7 +27,10 @@ export const TRANSLATION_ID_HEADER = "x-translation-id";
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
-    if (signal.aborted) return resolve();
+    if (signal.aborted) {
+      resolve();
+      return;
+    }
     const timer = setTimeout(done, ms);
     function done() {
       clearTimeout(timer);
@@ -39,10 +43,14 @@ function sleep(ms: number, signal: AbortSignal): Promise<void> {
 
 /** Resolves when the page is visible again (at once if it is). */
 function whenVisible(o: ResumeOptions): Promise<void> {
-  if (o.visible() || o.signal.aborted) return Promise.resolve();
+  if (o.visible() || o.signal.aborted) {
+    return Promise.resolve();
+  }
   return new Promise((resolve) => {
     const off = o.wake(() => {
-      if (!o.visible()) return;
+      if (!o.visible()) {
+        return;
+      }
       off();
       resolve();
     });
@@ -69,8 +77,12 @@ export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<SseEven
     const signal = AbortSignal.any([o.signal, link.signal]);
     try {
       const res = await o.connect(lastId, signal);
-      if (lastId === 0 && res.headers.has(TRANSLATION_ID_HEADER)) resumable = true;
-      if (!res.body) throw new TypeError("no response body");
+      if (lastId === 0 && res.headers.has(TRANSLATION_ID_HEADER)) {
+        resumable = true;
+      }
+      if (!res.body) {
+        throw new TypeError("no response body");
+      }
       if (reconnecting) {
         reconnecting = false;
         o.onReconnected?.();
@@ -78,17 +90,25 @@ export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<SseEven
       for await (const ev of sseEvents(res.body)) {
         failures = 0;
         const n = Number(ev.id);
-        if (Number.isInteger(n) && n > lastId) lastId = n;
+        if (Number.isInteger(n) && n > lastId) {
+          lastId = n;
+        }
         yield ev;
-        if (ev.event === "done" || ev.event === "error") return;
+        if (ev.event === "done" || ev.event === "error") {
+          return;
+        }
       }
       // Ended without a final event: the connection was cut.
       throw new TypeError("the stream ended early");
-    } catch (e) {
-      if (o.signal.aborted) throw e;
-      // Only a dropped connection is worth another try: a refused request (an ApiFailure) is the answer.
-      const dropped = e instanceof TypeError || (e instanceof DOMException && e.name === "AbortError");
-      if (!resumable || !dropped) throw e;
+    } catch (error) {
+      if (o.signal.aborted) {
+        throw error;
+      }
+      // Only a dropped connection is worth another try: a refused request (an ApiFailureError) is the answer.
+      const dropped = error instanceof TypeError || (error instanceof DOMException && error.name === "AbortError");
+      if (!resumable || !dropped) {
+        throw error;
+      }
       if (!reconnecting) {
         reconnecting = true;
         o.onReconnecting?.();
@@ -98,10 +118,16 @@ export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<SseEven
     }
 
     // Replaced by the page coming back: try again at once, without counting a failure.
-    if (link.signal.aborted) continue;
+    if (link.signal.aborted) {
+      continue;
+    }
     await whenVisible(o);
-    if (o.signal.aborted) break;
-    if (failures >= delays.length) throw new TypeError("the connection could not be restored");
+    if (o.signal.aborted) {
+      break;
+    }
+    if (failures >= delays.length) {
+      throw new TypeError("the connection could not be restored");
+    }
     await sleep(delays[failures++]!, o.signal);
   }
   throw new DOMException("aborted", "AbortError");

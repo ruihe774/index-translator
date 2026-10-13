@@ -1,7 +1,7 @@
 // Accessibility checks that need a rendered page: axe-core, reflow, text spacing, keyboard order.
 // The acceptance record is A11Y-ACCEPTANCE.md.
 
-import AxeBuilder from "@axe-core/playwright";
+import { AxeBuilder } from "@axe-core/playwright";
 
 import { expect, test, THINK } from "./fixtures";
 
@@ -212,6 +212,8 @@ test("skip link is first in the tab order and the whole form is reachable in rea
   for (let i = 0; i < 14; i++) {
     await app.page.keyboard.press("Tab");
     names.push(
+      // An empty id means no id: the text is the name then.
+      // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- see above
       await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""),
     );
   }
@@ -246,6 +248,7 @@ test("pointer targets are at least 24 px", async ({ app }) => {
   const small = await app.page.evaluate(() =>
     [...document.querySelectorAll<HTMLElement>("button, select, input, summary, textarea")]
       .filter((el) => el.offsetParent)
+      // eslint-disable-next-line oxc/no-map-spread -- a handful of controls, so the copy costs nothing
       .map((el) => ({ id: el.id, ...el.getBoundingClientRect().toJSON() }))
       .filter((r) => r.width < 24 || r.height < 24)
       .map((r) => r.id),
@@ -276,7 +279,9 @@ for (const scheme of ["light", "dark"] as const) {
         return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
       });
     });
-    for (const r of ratios) expect(r).toBeGreaterThanOrEqual(4.5);
+    for (const r of ratios) {
+      expect(r).toBeGreaterThanOrEqual(4.5);
+    }
   });
 }
 
@@ -333,7 +338,7 @@ test("the link dialog is keyboard operable: focus moves in, stays in, Esc closes
     // The page behind is inert: focus is in the dialog or has left the document (browser chrome).
     expect(
       await app.page.evaluate(
-        () => document.activeElement === document.body || !!document.activeElement?.closest("dialog"),
+        () => document.activeElement === document.body || Boolean(document.activeElement?.closest("dialog")),
       ),
     ).toBe(true);
   }

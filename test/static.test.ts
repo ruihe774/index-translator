@@ -22,7 +22,7 @@ async function write(rel: string, content: string) {
 /** Serves `path` the way src/app.ts calls it; a `publicDir` gets its own server. */
 function get(path: string, init: RequestInit = {}, publicDir?: string): Promise<Response> {
   const handler = publicDir === undefined ? serve : createStaticServer(publicDir);
-  return handler(path, new Request("http://127.0.0.1" + path, init));
+  return handler(path, new Request(`http://127.0.0.1${path}`, init));
 }
 
 beforeAll(() => {
@@ -174,12 +174,12 @@ describe("paths", () => {
   });
 
   test("a trailing slash on the public directory serves the same files", async () => {
-    const res = await get("/index.html", {}, dir + "/");
+    const res = await get("/index.html", {}, `${dir}/`);
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("<title>");
-    expect((await get("/app.ts", {}, dir + "/")).status).toBe(200);
-    expect((await get("/", {}, dir + "/")).status).toBe(200);
-    expect((await get("/../etc/passwd", {}, dir + "/")).status).toBe(404);
+    expect((await get("/app.ts", {}, `${dir}/`)).status).toBe(200);
+    expect((await get("/", {}, `${dir}/`)).status).toBe(200);
+    expect((await get("/../etc/passwd", {}, `${dir}/`)).status).toBe(404);
   });
 
   test("a relative public directory serves the same files, including with ./", async () => {
@@ -191,7 +191,7 @@ describe("paths", () => {
       rel = relative(process.cwd(), local);
       onTestFinished(() => rmSync(local, { recursive: true, force: true }));
     }
-    for (const publicDir of [rel, "./" + rel, rel + "/"]) {
+    for (const publicDir of [rel, `./${rel}`, `${rel}/`]) {
       const res = await get("/style.css", {}, publicDir);
       expect(res.status).toBe(200);
       expect(await res.text()).toContain("color");
@@ -202,12 +202,14 @@ describe("paths", () => {
 
   // "/" is the root of the current drive on Windows, so the temp directory must be on it.
   test("a public directory of / is not doubled into // and still serves", async () => {
-    if (process.platform === "win32" && resolve(dir)[0] !== resolve("/")[0]) return;
+    if (process.platform === "win32" && !resolve(dir).startsWith(resolve("/").slice(0, 1))) {
+      return;
+    }
     const rel = resolve(dir)
       .replace(/^[A-Za-z]:/, "")
       .replaceAll("\\", "/")
       .slice(1);
-    const res = await get("/" + rel + "/style.css", {}, "/");
+    const res = await get(`/${rel}/style.css`, {}, "/");
     expect(res.status).toBe(200);
     await res.text();
   });
@@ -237,9 +239,9 @@ describe("headers", () => {
     await write("vendor/lib/pdf.min.mjs", "export const a = 1;\n");
     await write("vendor/lib/lib_bg.wasm", "\0asm");
     await write("vendor/lib/VERSION", "1.0.0 abc\n");
-    const module = await get("/vendor/lib/pdf.min.mjs");
-    expect(module.headers.get("content-type")).toStartWith("text/javascript");
-    expect(await module.text()).toBe("export const a = 1;\n");
+    const served = await get("/vendor/lib/pdf.min.mjs");
+    expect(served.headers.get("content-type")).toStartWith("text/javascript");
+    expect(await served.text()).toBe("export const a = 1;\n");
     const wasm = await get("/vendor/lib/lib_bg.wasm");
     expect(wasm.headers.get("content-type")).toBe("application/wasm");
     await wasm.arrayBuffer();

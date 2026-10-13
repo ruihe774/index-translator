@@ -26,9 +26,13 @@ const SHELL = ["/", "/manifest.webmanifest", "/icons/icon.svg", "/icons/icon-192
 
 /** Everything the server answers under these prefixes is live data or development tooling. */
 function cacheable(req: Request): boolean {
-  if (req.method !== "GET") return false;
+  if (req.method !== "GET") {
+    return false;
+  }
   const url = new URL(req.url);
-  if (url.origin !== sw.location.origin) return false;
+  if (url.origin !== sw.location.origin) {
+    return false;
+  }
   return !url.pathname.startsWith("/api/") && !url.pathname.startsWith("/__dev/");
 }
 
@@ -38,11 +42,14 @@ async function staleWhileRevalidate(event: FetchEvent): Promise<Response> {
   const refresh = fetch(event.request).then((res) => {
     // A full, ordinary answer only: never an error page, a partial range, or a response marked no-store.
     if (res.status === 200 && !res.headers.get("cache-control")?.includes("no-store")) {
+      // eslint-disable-next-line promise/no-nesting -- the cache write is fire-and-forget; the answer does not wait for it
       void cache.put(event.request, res.clone()).catch(() => {});
     }
     return res;
   });
-  if (!hit) return refresh;
+  if (!hit) {
+    return refresh;
+  }
   // Kept alive after the cached answer went out; offline it simply fails and the cache stays.
   event.waitUntil(refresh.catch(() => {}));
   return hit;
@@ -68,5 +75,7 @@ sw.addEventListener("activate", (event) => {
 });
 
 sw.addEventListener("fetch", (event) => {
-  if (cacheable(event.request)) event.respondWith(staleWhileRevalidate(event));
+  if (cacheable(event.request)) {
+    event.respondWith(staleWhileRevalidate(event));
+  }
 });
