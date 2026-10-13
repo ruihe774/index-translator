@@ -21,8 +21,9 @@
 
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
+
 import { libraryPath, libraryVersion } from "../src/audiocpp-ffi";
-import { COMPILERS, checkout, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
+import { checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
 
 const TAG = "v0.9.1";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */

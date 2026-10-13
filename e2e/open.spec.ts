@@ -5,8 +5,10 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+
 import type { Page } from "@playwright/test";
-import { expect, THINK, test } from "./fixtures";
+
+import { expect, test, THINK } from "./fixtures";
 
 const SAMPLE = join(import.meta.dirname, "..", "test", "fixtures", "sample.pdf");
 const VENDOR = join(import.meta.dirname, "..", "public", "vendor");

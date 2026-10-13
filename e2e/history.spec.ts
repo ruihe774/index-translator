@@ -1,6 +1,6 @@
 // The History panel: finished translations kept in the browser, never sent to the server.
 
-import { expect, THINK, test } from "./fixtures";
+import { expect, test, THINK } from "./fixtures";
 
 test("a finished translation is listed, survives a reload and can be restored", async ({ app, mock }) => {
   await mock.set({ chunks: [THINK, "你好，世界"] });

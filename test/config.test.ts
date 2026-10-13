@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
+
 import { CONTEXT_MARGIN, helpText, loadConfig, parseArgs, SETTING_NAMES } from "../src/config";
 import { DEFAULT_MODEL_ID } from "../src/models";
 

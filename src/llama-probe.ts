@@ -5,6 +5,7 @@
 // and not the server.
 
 import { dlopen } from "bun:ffi";
+
 import { devices } from "./llama-ffi";
 
 export type Probe =

@@ -2,6 +2,7 @@
 // of silence and records what it was asked to say.
 
 import type { Page } from "@playwright/test";
+
 import { expect, test } from "./fixtures";
 
 const MARKDOWN = `# Release notes

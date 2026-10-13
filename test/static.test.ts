@@ -5,6 +5,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, onTestFinished, spyO
 import { cpSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
+
 import { createStaticServer } from "../src/static";
 
 let dir: string;

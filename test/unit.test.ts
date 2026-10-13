@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { OutputCleaner } from "../src/app";
 import { buildPrompt, languageName } from "../src/prompt";
 import { QueueFullError, SlotQueue } from "../src/queue";

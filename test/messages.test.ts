@@ -1,19 +1,20 @@
 import { describe, expect, test } from "bun:test";
+
 import {
   adviceMessage,
   healthMessage,
-  INTERRUPTED_NOTE,
   imageAdviceMessage,
+  INTERRUPTED_NOTE,
   interruption,
   metaLine,
   modelLabel,
   type ResultContext,
   resultNotes,
   SAME_LANGUAGE_WARNING,
-  STOPPED_NOTE,
   sameLanguage,
   seconds,
   selectionMessage,
+  STOPPED_NOTE,
 } from "../public/messages";
 import {
   CHAT_MODEL,

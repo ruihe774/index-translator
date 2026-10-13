@@ -8,6 +8,7 @@
 // resetMock() afterwards.
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+
 import { type App, startApp } from "../src/app";
 import type { Config } from "../src/config";
 import { EngineError, type Launcher } from "../src/llama";

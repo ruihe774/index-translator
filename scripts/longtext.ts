@@ -4,6 +4,7 @@
 // Usage: [MODEL=index-nailong-9b] bun scripts/longtext.ts [base-url] [output-dir]
 
 import { join } from "node:path";
+
 import {
   countLetters,
   englishEssays,

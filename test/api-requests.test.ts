@@ -3,6 +3,7 @@
 // Findings the server gets wrong are written as test.failing and listed in the report.
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
+
 import { type App, startApp } from "../src/app";
 import { buildDocumentPrompt, buildPrompt } from "../src/prompt";
 import {

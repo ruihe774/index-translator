@@ -3,6 +3,7 @@
 // model each load was for.
 
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
+
 import { type App, startApp } from "../src/app";
 import type { Config } from "../src/config";
 import { buildDocumentPrompt } from "../src/prompt";

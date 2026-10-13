@@ -1,9 +1,11 @@
 // HTTP surface: REST + SSE API under /api/v1 and static files for the web app.
 
 import type { Server } from "bun";
-import { type HostRule, hostAllowed, type OriginRule, originAllowed, parseHostRule, parseOriginRule } from "./access";
-import { CONTEXT_MARGIN, type Config } from "./config";
+
+import { hostAllowed, type HostRule, originAllowed, type OriginRule, parseHostRule, parseOriginRule } from "./access";
+import { type Config, CONTEXT_MARGIN } from "./config";
 import { createDevReload, DEV_PREFIX } from "./dev-reload";
+import { IMAGE_FORMATS, ImageRejected, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, prepareImage } from "./image";
 import {
   Engine,
   EngineError,
@@ -15,7 +17,6 @@ import {
   launchNative,
   type Usage,
 } from "./llama";
-import { IMAGE_FORMATS, ImageRejected, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, prepareImage } from "./image";
 import { findModel, MODELS, type ModelSpec } from "./models";
 import {
   buildDocumentPrompt,
@@ -38,8 +39,8 @@ import {
   MIN_SPEED,
   nativeSpeech,
   SeparationError,
-  SPEECH_LANGUAGES,
   type Speech,
+  SPEECH_LANGUAGES,
   SpeechError,
   type SpeechLauncher,
   type SpeechRequest,

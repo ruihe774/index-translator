@@ -5,7 +5,7 @@
 // Each top-level element carries `data-line`, the index of its first line in the text (one span
 // per line for plain text, one element per block for Markdown), so scrolling can be synced by line.
 
-import { LINK_NOTE, type LinkReference, linkProblem } from "./links.ts";
+import { LINK_NOTE, linkProblem, type LinkReference } from "./links.ts";
 import { type Align, type Block, type Inline, MarkdownStream, type ParsedBlock } from "./markdown.ts";
 
 export interface OutputView {

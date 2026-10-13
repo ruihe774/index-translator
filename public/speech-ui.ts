@@ -16,11 +16,11 @@ import type { MetaLine } from "./elements/meta-line.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.ts";
 import type { ApiErrorBody } from "./errors.ts";
-import { giveUpQoa, QOA_TYPE, QoaError, qoaDecoder } from "./qoa.ts";
-import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
+import { giveUpQoa, QOA_TYPE, qoaDecoder, QoaError } from "./qoa.ts";
 import type { SpeechAudio } from "./speech-audio.ts";
 import { canSpeak, speechSegments } from "./speech-text.ts";
-import { type Side, setState, state } from "./state.ts";
+import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
+import { setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
 import { audioToWav, uploadVoice } from "./voice-sample.ts";
 

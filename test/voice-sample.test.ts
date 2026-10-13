@@ -1,6 +1,7 @@
 // Microphone recording and WAV encoding for voice samples (public/voice-sample.ts), with fakes.
 
 import { describe, expect, test } from "bun:test";
+
 import { encodeWav, type MicMediaRecorder, MicRecorder, type MicStream } from "../public/mic-recorder";
 import { readWav } from "../src/wav";
 

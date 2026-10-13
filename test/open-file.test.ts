@@ -1,12 +1,13 @@
 import { describe, expect, test } from "bun:test";
+
 import {
   decodeText,
   fileKind,
   MAX_IMAGE_BYTES,
   MAX_PDF_BYTES,
   MAX_TEXT_BYTES,
-  type PageText,
   pageNote,
+  type PageText,
   refusal,
 } from "../public/open-file";
 

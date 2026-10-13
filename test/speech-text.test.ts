@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { canSpeak, kanjiNumber, speechSegments } from "../public/speech-text";
 
 const texts = (text: string, markdown: boolean, lang = "en") => speechSegments(text, markdown, lang).map((s) => s.text);

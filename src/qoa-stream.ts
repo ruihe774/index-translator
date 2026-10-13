@@ -12,6 +12,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+
 import type { Pcm } from "./wav";
 
 export const QOA_TYPE = "audio/qoa";

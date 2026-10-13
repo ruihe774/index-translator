@@ -10,12 +10,12 @@ import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { ViewSwitch } from "./elements/view-switch.ts";
 import type { VoiceSettings } from "./elements/voice-settings.ts";
 import type { ApiErrorBody } from "./errors.ts";
-import { type HistoryEntry, loadHistory, newId, saveHistory, withEntry } from "./history.ts";
 import { initHistoryUi } from "./history-ui.ts";
+import { type HistoryEntry, loadHistory, newId, saveHistory, withEntry } from "./history.ts";
 import { confirmLink } from "./link-dialog.ts";
 import { type LinkReference, linkReference } from "./links.ts";
-import { looksLikeMarkdown } from "./markdown.ts";
 import { checkLinks, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
+import { looksLikeMarkdown } from "./markdown.ts";
 import {
   adviceMessage,
   type Done,
@@ -29,14 +29,14 @@ import {
   selectionMessage,
 } from "./messages.ts";
 import { initOpenUi } from "./open-ui.ts";
-import { type Alignment, alignBlocks } from "./paragraphs.ts";
-import { createRender } from "./render.ts";
-import { buildImageRequest, buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.ts";
-import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.ts";
+import { alignBlocks, type Alignment } from "./paragraphs.ts";
 import { registerServiceWorker } from "./pwa.ts";
-import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
+import { createRender } from "./render.ts";
+import { buildImageRequest, buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.ts";
 import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
-import { bindRender, type Side, setState, state } from "./state.ts";
+import { CHAT_MODEL, type Choice, detectSource, DOCUMENT_MODEL, type Selection, selectModel } from "./select-model.ts";
+import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
+import { bindRender, setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
 

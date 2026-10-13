@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { buildDocumentPrompt, DOCUMENT_DIRECTIONS } from "../src/prompt";
 
 describe("buildDocumentPrompt", () => {

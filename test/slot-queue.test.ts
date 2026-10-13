@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { QueueFullError, SlotQueue } from "../src/queue";
 
 /** Lets every pending promise callback run (a macrotask, so all microtasks drain first). */

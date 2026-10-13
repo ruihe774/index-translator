@@ -3,6 +3,7 @@
 // The library runs on a worker thread (src/llama-worker.ts); this file is the server-thread side.
 
 import { join } from "node:path";
+
 import type { Config } from "./config";
 import type { WorkerReply, WorkerRequest } from "./llama-worker";
 import type { ModelSpec } from "./models";

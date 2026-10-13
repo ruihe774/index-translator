@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { type SseEvent, sseEvents } from "../public/sse";
 
 const encoder = new TextEncoder();

@@ -1,7 +1,7 @@
 // Shared fixtures: `mock` scripts the mock engine behind the server, and the page objects below
 // keep selectors in one place. Every test starts with the mock reset and a fresh browser context.
 
-import { test as base, expect, type Locator, type Page } from "@playwright/test";
+import { expect, type Locator, type Page, test as base } from "@playwright/test";
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);

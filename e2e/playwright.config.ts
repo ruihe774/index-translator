@@ -1,5 +1,6 @@
 import { availableParallelism } from "node:os";
 import { fileURLToPath } from "node:url";
+
 import { defineConfig, devices } from "@playwright/test";
 
 // Paths are relative to this file (e2e/), which is where Playwright resolves them; the repository root is `..`.

@@ -20,8 +20,9 @@
 
 import { cp, mkdir, readdir, rm, rmdir, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
+
 import { devices, libraryPath, shimPath } from "../src/llama-ffi";
-import { COMPILERS, checkout, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
+import { checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
 
 const TAG = "b11552";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */

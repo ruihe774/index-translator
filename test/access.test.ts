@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { hostAllowed, originAllowed, parseHostRule, parseOriginRule } from "../src/access";
 import { loadConfig } from "../src/config";
 

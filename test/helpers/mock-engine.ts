@@ -7,6 +7,7 @@
 // (or call resetMock() in afterEach/finally), because bun runs test files in one process.
 
 import { join, resolve } from "node:path";
+
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
 import {
@@ -24,8 +25,8 @@ import {
   type SpeechLauncher,
   type SpeechRequest,
   type SpeechState,
-  type Voice,
   validateSample,
+  type Voice,
 } from "../../src/speech";
 
 export const root = resolve(import.meta.dir, "..", "..");

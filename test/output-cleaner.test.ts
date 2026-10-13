@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { OutputCleaner } from "../src/app";
 
 const clean = (chunks: string[]) => {

@@ -4,6 +4,7 @@
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+
 import type { Config } from "./config";
 import type { Probe } from "./llama-probe";
 import { findModel } from "./models";

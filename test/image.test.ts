@@ -2,6 +2,7 @@
 // format takes the same path through Bun.Image and reaches the engine as a PNG.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
+
 import { type App, startApp } from "../src/app";
 import { engineSize, ImageRejected, MAX_IMAGE_BYTES, prepareImage } from "../src/image";
 import { imageChatPrompt } from "../src/llama-ffi";

@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { AHEAD_SECONDS, blockStarts, KEEP_SECONDS, NEAR_SECONDS, SpeechBuffer } from "../public/speech-buffer";
 import type { Segment } from "../public/speech-text";
 

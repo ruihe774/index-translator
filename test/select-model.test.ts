@@ -1,10 +1,11 @@
 import { describe, expect, test } from "bun:test";
+
 import {
   CHAT_MODEL,
-  DOCUMENT_DIRECTIONS as CLIENT_DIRECTIONS,
   countLetters,
-  DOCUMENT_MODEL,
   detectSource,
+  DOCUMENT_DIRECTIONS as CLIENT_DIRECTIONS,
+  DOCUMENT_MODEL,
   LONG_THRESHOLD_LETTERS,
   type SelectionInput,
   selectModel,

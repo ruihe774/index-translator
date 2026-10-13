@@ -4,6 +4,7 @@
 // messages, so an utterance is stopped through memory it shares with the server thread instead.
 
 import { readFileSync } from "node:fs";
+
 import { AbortedError, SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
 import { normalizeLoudness, readWav, resample, writeWav } from "./wav";
 

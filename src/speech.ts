@@ -12,6 +12,7 @@ import { existsSync } from "node:fs";
 import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
+
 import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
 import { fetchCommand } from "./preflight";

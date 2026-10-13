@@ -10,6 +10,7 @@
 import { CString, dlopen, type Pointer, ptr, suffix, toArrayBuffer } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
+
 import type { Pcm } from "./wav";
 
 /** The major version of the C API these declarations were written against (`audiocpp.h`, 0.2). */

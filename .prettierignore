@@ -1,5 +1,0 @@
-# Markdown and the hand-aligned page stay as written.
-*.md
-public/index.html
-# Diagram sources, the diagram theme and the OpenAPI spec are not formatted.
-docs/

@@ -1,4 +1,5 @@
 import { expect, test } from "bun:test";
+
 import { linkProblem, linkPrompt, linkReference } from "../public/links.ts";
 import { alignBlocks } from "../public/paragraphs.ts";
 

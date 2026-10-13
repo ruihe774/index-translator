@@ -8,7 +8,7 @@
     "test": "bun test",
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "lint:css": "bun scripts/lint_css.ts",
-    "lint:ts": "bun lint --type-aware --type-check",
+    "lint:ts": "bun lint",
     "format:write": "bun fmt",
     "format:check": "bun fmt --check"
   },

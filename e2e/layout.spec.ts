@@ -1,7 +1,7 @@
 // Layout and wording of the page: aligned panes, no shift between views, status text at the bottom,
 // placeholders instead of labels and hints, the Model switch and the engine link.
 
-import { type AppPage, expect, THINK, test } from "./fixtures";
+import { type AppPage, expect, test, THINK } from "./fixtures";
 
 const MARKDOWN = "# Title\n\nSome **bold** text.\n\n- one\n- two\n";
 

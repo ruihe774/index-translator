@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
+
 import { DEFAULT_MODEL_ID, findModel, MODELS } from "../src/models";
-import { buildDocumentPrompt, buildPrompt, DOCUMENT_DIRECTIONS, LANGUAGES, languageName } from "../src/prompt";
+import { buildDocumentPrompt, buildPrompt, DOCUMENT_DIRECTIONS, languageName, LANGUAGES } from "../src/prompt";
 
 const PLAIN_TAIL = "只输出译文，不要有任何额外说明。";
 const JSON_TAIL = "请以相同的 JSON 格式输出翻译结果，key 保持不变，value 为对应译文。只输出 JSON，不要有任何额外说明。";

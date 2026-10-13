@@ -1,6 +1,6 @@
 // End to end: the web app in a real browser against the real server, with the mock engine.
 
-import { CHAT, DOCUMENT, expect, THINK, test } from "./fixtures";
+import { CHAT, DOCUMENT, expect, test, THINK } from "./fixtures";
 
 test("the page loads languages and reports a ready engine", async ({ app }) => {
   await app.open();

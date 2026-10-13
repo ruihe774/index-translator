@@ -9,6 +9,15 @@ dots = true
 [lint]
 ignorePatterns = ["vendor/", "models/", "dist/", "playwright-report/", "test-results/"]
 maxWarnings = 0
+typeAware = true
+typeCheck = true
+
+[lint.categories]
+correctness = "error"
+suspicious = "error"
+pedantic = "warn"
+perf = "warn"
+style = "warn"
 
 [lint.rules]
 # Off on purpose: the app and its tests handle untyped JSON from the wire (HTTP responses, SSE events,
@@ -23,5 +32,17 @@ maxWarnings = 0
 # rule would have them drop the await.
 "@typescript-eslint/await-thenable" = "off"
 "no-empty" = ["error", { allowEmptyCatch = true }]
-"@typescript-eslint/no-unused-vars" = ["error", { argsIgnorePattern = "^_", varsIgnorePattern = "^_", caughtErrorsIgnorePattern = "^_" }]
+"@typescript-eslint/no-unused-vars" = [
+  "error",
+  { argsIgnorePattern = "^_", varsIgnorePattern = "^_", caughtErrorsIgnorePattern = "^_" },
+]
 "@typescript-eslint/ban-ts-comment" = ["error", { "ts-expect-error" = false }]
+
+[fmt]
+printWidth = 120
+htmlWhitespaceSensitivity = "ignore"
+sortImports = true
+ignorePatterns = ["*.md", "docs/"]
+
+[run]
+noOrphans = true

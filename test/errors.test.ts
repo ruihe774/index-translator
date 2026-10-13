@@ -1,4 +1,5 @@
 import { describe, expect, test } from "bun:test";
+
 import { describeError } from "../public/errors";
 
 // The same grouping the browser uses, so the expected numbers match on any locale.
