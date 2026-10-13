@@ -24,3 +24,6 @@ existing Chromium. Env: `E2E_PORT` (3100), `E2E_CONTROL_PORT` (3101), `E2E_WORKE
 the CPUs, at most 6; `1` runs serially). Each worker has its own mock server, app and control ports
 stepping by 2 from those two (worker n: `E2E_PORT + 2n`), so tests run in parallel; a test that needs
 state outside its `mock` fixture would break that. `bun test` ignores this directory (see `bunfig.toml`).
+
+Coverage: `bun run e2e:coverage` (`E2E_COVERAGE=1`) writes `coverage/e2e-web/` (the page, `lcov-report/` for HTML) and
+`coverage/e2e-server/<n>/lcov.info` (one per mock server). It always starts its own servers.

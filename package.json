@@ -6,7 +6,9 @@
   "scripts": {
     "dev": "OPEN_BROWSER=0 DEV_RELOAD=1 bun --watch src/server.ts",
     "test": "bun test",
+    "test:coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov --coverage-dir=coverage/unit",
     "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e:coverage": "E2E_COVERAGE=1 playwright test -c e2e/playwright.config.ts",
     "lint:css": "bun scripts/lint_css.ts",
     "lint:ts": "bun lint",
     "format:write": "bun fmt"
@@ -17,6 +19,7 @@
     "@types/bun": "^1.4",
     "browserslist": "^4.29",
     "doiuse": "^6.0",
+    "monocart-coverage-reports": "^2.13",
     "postcss": "^8.5"
   }
 }

@@ -47,7 +47,16 @@ jobs:
 
       # Both use the mock engines: no GPU, no models.
       - name: Unit and API integration tests
-        run: bun test
+        run: bun run test:coverage
+
+      - name: Upload unit test coverage
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/unit/lcov.info
+          flags: unit
+          # A fork's pull request has no secret: Codecov's tokenless upload may fail without failing the checks.
+          fail_ci_if_error: ${{ github.event.pull_request.head.repo.fork != true }}
 
       - name: Markdown conformance
         run: bun scripts/commonmark.ts
@@ -56,7 +65,25 @@ jobs:
         run: bunx playwright install --with-deps chromium
 
       - name: Browser tests (end to end, integration, accessibility)
-        run: bun run e2e
+        run: bun run e2e:coverage
+
+      # The web app (Chromium's coverage mapped to public/*.ts), then the server under the mock engine (one
+      # report per mock server, so many as there are Playwright workers); Codecov merges them.
+      - name: Upload browser test coverage (web app)
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: coverage/e2e-web/lcov.info
+          flags: e2e
+          fail_ci_if_error: ${{ github.event.pull_request.head.repo.fork != true }}
+
+      - name: Upload browser test coverage (server)
+        uses: codecov/codecov-action@v7
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          directory: coverage/e2e-server
+          flags: e2e
+          fail_ci_if_error: ${{ github.event.pull_request.head.repo.fork != true }}
 
       - name: Keep the Playwright report
         if: ${{ failure() }}

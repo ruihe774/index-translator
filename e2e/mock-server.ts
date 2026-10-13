@@ -78,9 +78,18 @@ const control = Bun.serve({
 
 console.error(`[e2e] app ${app.server.url}, mock control ${control.url}`);
 
-for (const sig of ["SIGINT", "SIGTERM"] as const) {
-  process.on(sig, () => {
-    void control.stop(true);
-    void app.stop().then(() => process.exit(0));
-  });
-}
+/** Settles once a signal has stopped both servers. Run directly the process then exits; `e2e/mock-server.coverage.test.ts`
+ * imports this module and lets `bun test` exit by itself, which is when it writes the coverage report. */
+export const stopped = new Promise<void>((resolve) => {
+  for (const sig of ["SIGINT", "SIGTERM"] as const) {
+    process.on(sig, () => {
+      void control.stop(true);
+      void app.stop().finally(() => {
+        resolve();
+        if (import.meta.main) {
+          process.exit(0);
+        }
+      });
+    });
+  }
+});

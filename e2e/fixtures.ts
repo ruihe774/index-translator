@@ -1,7 +1,11 @@
 // Shared fixtures: `mock` scripts the mock engine behind the server, and the page objects below
 // keep selectors in one place. Every test starts with the mock reset and a fresh browser context.
 
-import { expect, type Locator, type Page, test as base } from "@playwright/test";
+import { expect, test as base } from "@playwright/test";
+import type { Locator, Page } from "@playwright/test";
+import { CoverageReport } from "monocart-coverage-reports";
+
+import { COVERAGE, mappedModule, REPORT } from "./coverage";
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
 const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
@@ -46,7 +50,29 @@ export const THINK = "<think>\n\n</think>\n\n";
 export const CHAT = "index-translate-9b";
 export const DOCUMENT = "index-nailong-9b";
 
+// Under `E2E_COVERAGE` every page measures its JS; globalTeardown merges the workers' data (`e2e/coverage.ts`).
+const coverage = COVERAGE ? new CoverageReport(REPORT) : undefined;
+
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
+  page: async ({ page }, use) => {
+    if (!coverage) {
+      await use(page);
+      return;
+    }
+    // Registered first, so a test's own routes still win.
+    await page.route(
+      (url) => /\.(ts|js)$/.test(url.pathname) && mappedModule(url.pathname) !== undefined,
+      (route) =>
+        route.fulfill({
+          contentType: "text/javascript; charset=utf-8",
+          headers: { "cache-control": "no-store" },
+          body: mappedModule(new URL(route.request().url()).pathname),
+        }),
+    );
+    await page.coverage.startJSCoverage({ resetOnNavigation: false });
+    await use(page);
+    await coverage.add(await page.coverage.stopJSCoverage());
+  },
   // Worker n talks to the n-th server of `e2e/playwright.config.ts` (ports step by 2).
   baseURL: async ({}, use, testInfo) => {
     await use(`http://127.0.0.1:${PORT + 2 * testInfo.parallelIndex}`);

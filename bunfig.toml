@@ -2,6 +2,9 @@
 # Playwright specs under e2e/ run with `bun run e2e`, not `bun test`.
 root = "test"
 onlyFailures = true
+# `bun test --coverage` (`bun run test:coverage`) reports the application code, not the tests or their mocks.
+coverageSkipTestFiles = true
+coveragePathIgnorePatterns = ["test/**", "e2e/**", "public/vendor/**"]
 
 [test.reporter]
 dots = true

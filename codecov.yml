@@ -1,0 +1,8 @@
+# Coverage comes from two CI uploads: `unit` (`bun run test:coverage`) and `e2e` (`bun run e2e:coverage`, web app
+# and server). Only files a run loaded are reported: the model workers and FFI bindings are not run by any test.
+ignore:
+  - test
+  - e2e
+  - scripts
+  - public/vendor
+  - packaging
