@@ -38,6 +38,36 @@ function cacheControl(relativePath: string): string {
   return /^(icons|vendor)[\\/]/.test(relativePath) ? "public, max-age=86400" : "no-cache";
 }
 
+/**
+ * Whitespace between tags is dropped from pages: the layout is flex or grid wherever it holds several
+ * elements, so none of it is rendered (measured on every element of index.html at five widths, both
+ * colour schemes). Text keeps one space where it had any, and elements whose text is literal are left alone.
+ * A page that relied on a space between inline elements would need `&#32;`.
+ */
+function stripWhitespace(html: Response): Response {
+  let literal = 0; // depth inside <pre>, <textarea>, <script>, <style>
+  let pending = ""; // the current text node, which the rewriter delivers in chunks
+  const rewriter = new HTMLRewriter()
+    .on("pre, textarea, script, style", {
+      element(el) {
+        literal++;
+        el.onEndTag(() => void literal--);
+      },
+    })
+    .onDocument({
+      text(chunk) {
+        if (literal) return;
+        pending += chunk.text;
+        chunk.remove();
+        if (!chunk.lastInTextNode) return;
+        const text = pending.replace(/\s+/g, " ");
+        pending = "";
+        if (text !== " ") chunk.after(text, { html: true });
+      },
+    });
+  return rewriter.transform(html);
+}
+
 export function createStaticServer(publicDir: string) {
   // Resolved once so the traversal check below compares like with like, whatever form the caller used.
   const dir = resolve(publicDir);
@@ -57,6 +87,11 @@ export function createStaticServer(publicDir: string) {
     const etag = `W/"${info.mtimeMs}-${info.size}"`;
     const headers = { etag, "cache-control": cacheControl(path.slice(prefix.length)) };
     if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
+    if (path.endsWith(".html")) {
+      return new Response(await stripWhitespace(new Response(file)).text(), {
+        headers: { ...headers, "content-type": "text/html; charset=utf-8" },
+      });
+    }
     return new Response(file, { headers });
   }
 

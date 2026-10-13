@@ -43,6 +43,20 @@ beforeEach(async () => {
   serve = createStaticServer(dir);
 });
 
+describe("HTML whitespace", () => {
+  test("whitespace between tags is dropped, text keeps one space, literal elements are untouched", async () => {
+    await write(
+      "ws.html",
+      "<!doctype html>\n<p>\n  a   <b>b</b>\n  <i>c</i>\n</p>\n<textarea>\n  x  </textarea>\n<pre>  y\n  z</pre>\n<script>let  a = 1;\n</script>\n",
+    );
+    const res = await get("/ws.html");
+    expect(res.headers.get("content-type")).toStartWith("text/html");
+    expect(await res.text()).toBe(
+      "<!doctype html><p> a <b>b</b><i>c</i></p><textarea>\n  x  </textarea><pre>  y\n  z</pre><script>let  a = 1;\n</script>",
+    );
+  });
+});
+
 describe("caching", () => {
   test("pages and scripts are revalidated, icons and vendored libraries may be kept for a day", async () => {
     await write("icons/icon.svg", "<svg/>");
