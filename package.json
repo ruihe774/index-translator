@@ -10,7 +10,7 @@
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "e2e:coverage": "E2E_COVERAGE=1 playwright test -c e2e/playwright.config.ts",
     "lint:css": "bun scripts/lint_css.ts",
-    "lint:ts": "bun lint",
+    "lint:ts": "bun lint -f agent",
     "format:write": "bun fmt"
   },
   "devDependencies": {
