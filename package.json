@@ -9,8 +9,8 @@
     "e2e": "playwright test -c e2e/playwright.config.ts",
     "lint:css": "bun scripts/lint_css.ts",
     "lint:ts": "bun lint --type-aware --type-check",
-    "format:write": "bun format",
-    "format:check": "bun format --check"
+    "format:write": "bun fmt",
+    "format:check": "bun fmt --check"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13",
