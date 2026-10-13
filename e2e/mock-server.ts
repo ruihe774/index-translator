@@ -71,9 +71,8 @@ const control = Bun.serve({
 console.error(`[e2e] app ${app.server.url}, mock control ${control.url}`);
 
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
-  process.on(sig, async () => {
-    control.stop(true);
-    await app.stop();
-    process.exit(0);
+  process.on(sig, () => {
+    void control.stop(true);
+    void app.stop().then(() => process.exit(0));
   });
 }

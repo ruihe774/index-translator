@@ -47,13 +47,15 @@ export class VoiceSettings extends HTMLElement {
     this.#voice.addEventListener("change", () => this.dispatchEvent(new Event("voicechange")));
     this.#speed.addEventListener("change", () => this.dispatchEvent(new Event("speedchange")));
     find("#voice-file-button").addEventListener("click", () => this.#file.click());
-    this.#file.addEventListener("change", async () => {
-      const file = this.#file.files?.[0];
-      this.#file.value = "";
-      if (!file) return;
-      this.#sample(file.name.replace(/\.[^.]*$/, ""), await file.arrayBuffer());
-    });
+    this.#file.addEventListener("change", () => void this.#loadFile());
     this.#record.addEventListener("click", () => void this.#toggleRecording());
+  }
+
+  async #loadFile(): Promise<void> {
+    const file = this.#file.files?.[0];
+    this.#file.value = "";
+    if (!file) return;
+    this.#sample(file.name.replace(/\.[^.]*$/, ""), await file.arrayBuffer());
   }
 
   /** The selected voice's id; empty when there are none. */

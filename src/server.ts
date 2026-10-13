@@ -18,7 +18,9 @@ if (problem) {
 }
 if (cfg.devReload) await import("./dev-watch");
 const app = await startApp(cfg);
-console.error(`[server] listening on ${app.server.url} (default model ${cfg.defaultModel}, context ${cfg.ctxSize})`);
+console.error(
+  `[server] listening on ${String(app.server.url)} (default model ${cfg.defaultModel}, context ${cfg.ctxSize})`,
+);
 
 if (cfg.openBrowser) {
   // A wildcard bind address is not browsable; use loopback instead.
@@ -28,11 +30,10 @@ if (cfg.openBrowser) {
 
 let stopping = false;
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
-  process.on(sig, async () => {
+  process.on(sig, () => {
     if (stopping) return;
     stopping = true;
     console.error(`[server] ${sig}, shutting down`);
-    await app.stop();
-    process.exit(0);
+    void app.stop().then(() => process.exit(0));
   });
 }

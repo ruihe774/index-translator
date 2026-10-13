@@ -758,7 +758,7 @@ describe("browser request checks", () => {
   // Some sandboxes have no IPv6 at all (EAFNOSUPPORT on listen), which says nothing about the code.
   const ipv6 = (() => {
     try {
-      Bun.serve({ hostname: "::1", port: 0, fetch: () => new Response() }).stop(true);
+      void Bun.serve({ hostname: "::1", port: 0, fetch: () => new Response() }).stop(true);
       return true;
     } catch {
       return false;

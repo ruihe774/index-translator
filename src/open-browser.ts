@@ -13,6 +13,6 @@ export function openBrowser(url: string): void {
       if (code !== 0) console.error(`[server] could not open browser (${cmd[0]} exited ${code})`);
     });
   } catch (err) {
-    console.error(`[server] could not open browser: ${err instanceof Error ? err.message : err}`);
+    console.error(`[server] could not open browser: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

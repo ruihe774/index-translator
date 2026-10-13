@@ -809,7 +809,7 @@ export async function startApp(
         const pcm = readWav(new Uint8Array(wav));
         if (codec && pcm.samples.length > 0) return qoaResponse(codec, pcm);
       } catch (e) {
-        console.error(`[speech] the utterance could not be encoded as QOA, sending WAV: ${e}`);
+        console.error(`[speech] the utterance could not be encoded as QOA, sending WAV: ${String(e)}`);
       }
     }
     return new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store", vary: "accept" } });

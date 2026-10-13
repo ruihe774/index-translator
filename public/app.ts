@@ -818,7 +818,7 @@ modelSwitch.addEventListener("change", () => {
   store("model", modelChoice);
 });
 
-copyBtn.addEventListener("click", async () => {
+async function copyTranslation(): Promise<void> {
   if (copyBtn.getAttribute("aria-disabled") === "true") return;
   try {
     await navigator.clipboard.writeText(state.translation);
@@ -826,7 +826,8 @@ copyBtn.addEventListener("click", async () => {
   } catch {
     metaEl.flash("Copying failed. Select the translation and copy it by hand.");
   }
-});
+}
+copyBtn.addEventListener("click", () => void copyTranslation());
 
 const savedModel = stored("model");
 if (CHOICES.includes(savedModel as Choice)) setModelChoice(savedModel as Choice);
@@ -856,4 +857,4 @@ document.addEventListener("visibilitychange", () => {
   void pollHealth();
   if (document.visibilityState === "visible") speech.recheck();
 });
-window.addEventListener("focus", speech.recheck);
+window.addEventListener("focus", () => speech.recheck());

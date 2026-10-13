@@ -52,7 +52,7 @@ export function qoaLoader(publicDir: string): () => Promise<QoaCodec | undefined
         const { Qoa } = (await import(file)) as { Qoa: { create(): Promise<QoaCodec> } };
         return await Qoa.create();
       } catch (e) {
-        console.error(`[speech] the QOA codec cannot be loaded, speech is sent as WAV: ${e}`);
+        console.error(`[speech] the QOA codec cannot be loaded, speech is sent as WAV: ${String(e)}`);
         return undefined;
       }
     })();
