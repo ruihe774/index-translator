@@ -11,18 +11,18 @@
 // Markdown, the panes' elements) comes in through `SpeechUiDeps`. What the controls look like
 // follows `state` (state.ts), so `refresh` is what `render()` runs after it writes the rest.
 
-import { API, ApiFailure, failureMessage } from "./api.js";
-import type { MetaLine } from "./elements/meta-line.js";
-import type { SpeechControls } from "./elements/speech-controls.js";
-import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.js";
-import type { ApiErrorBody } from "./errors.js";
-import { giveUpQoa, QOA_TYPE, QoaError, qoaDecoder } from "./qoa.js";
-import { SpeechPlayer, type SpeechSettings } from "./speech.js";
-import type { SpeechAudio } from "./speech-audio.js";
-import { canSpeak, speechSegments } from "./speech-text.js";
-import { type Side, setState, state } from "./state.js";
-import { store, stored } from "./storage.js";
-import { audioToWav, uploadVoice } from "./voice-sample.js";
+import { API, ApiFailure, failureMessage } from "./api.ts";
+import type { MetaLine } from "./elements/meta-line.ts";
+import type { SpeechControls } from "./elements/speech-controls.ts";
+import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.ts";
+import type { ApiErrorBody } from "./errors.ts";
+import { giveUpQoa, QOA_TYPE, QoaError, qoaDecoder } from "./qoa.ts";
+import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
+import type { SpeechAudio } from "./speech-audio.ts";
+import { canSpeak, speechSegments } from "./speech-text.ts";
+import { type Side, setState, state } from "./state.ts";
+import { store, stored } from "./storage.ts";
+import { audioToWav, uploadVoice } from "./voice-sample.ts";
 
 const SIDES: Side[] = ["source", "output"];
 const SIDE_NAME: Record<Side, string> = { source: "source text", output: "translation" };

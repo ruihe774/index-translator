@@ -8,10 +8,10 @@
 // Opening happens in this browser: no request carries the file or says that one was opened. Only
 // Translate sends something, and for an image that is the file.
 
-import type { PdfPages } from "./elements/pdf-pages.js";
-import { looksLikeMarkdown } from "./markdown.js";
-import { ACCEPT_IMAGE, ACCEPT_PDF, ACCEPT_TEXT, decodeText, fileKind, pageNote, refusal } from "./open-file.js";
-import { openPdf, type PdfDocument, PdfError, pdfInstalled } from "./pdf.js";
+import type { PdfPages } from "./elements/pdf-pages.ts";
+import { looksLikeMarkdown } from "./markdown.ts";
+import { ACCEPT_IMAGE, ACCEPT_PDF, ACCEPT_TEXT, decodeText, fileKind, pageNote, refusal } from "./open-file.ts";
+import { openPdf, type PdfDocument, PdfError, pdfInstalled } from "./pdf.ts";
 
 export interface OpenUiDeps {
   button: HTMLElement;

@@ -6,8 +6,8 @@
 //
 // Nothing here talks to the API: speech-ui.ts asks, this decodes the body it gets.
 
-import type { QoaReply, QoaRequest } from "./qoa-worker.js";
-import type { Pcm16 } from "./speech-audio.js";
+import type { QoaReply, QoaRequest } from "./qoa-worker.ts";
+import type { Pcm16 } from "./speech-audio.ts";
 
 export const QOA_TYPE = "audio/qoa";
 
@@ -31,7 +31,7 @@ function startDecoder(): Promise<QoaDecoder | null> {
   return new Promise((ready) => {
     let worker: Worker;
     try {
-      worker = new Worker("/qoa-worker.js", { type: "module" });
+      worker = new Worker("/qoa-worker.ts", { type: "module" });
     } catch {
       ready(null);
       return;

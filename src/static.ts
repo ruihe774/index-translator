@@ -1,7 +1,9 @@
 // Static files for the web app. TypeScript modules in the public directory are served as
 // JavaScript, transpiled on request by Bun's own transpiler; there is no build step and nothing
-// is written to disk. A request for /x.js is answered from x.ts when no real x.js exists.
-// The .ts sources themselves are never served.
+// is written to disk. A request for /x.ts is the transpiled module, with a JavaScript media type
+// (the response sets it, so the extension does not decide it). The .ts sources themselves are
+// never served. A request for /x.js is answered from x.ts when no real x.js exists: pages and
+// service workers installed before the modules were named .ts still ask for the .js names.
 
 import { join, normalize, resolve, sep } from "node:path";
 
@@ -98,8 +100,8 @@ export function createStaticServer(publicDir: string) {
     if (rel.endsWith("/")) rel += "index.html";
     const path = normalize(join(dir, rel));
     if (!path.startsWith(prefix)) return notFound();
-    // Raw TypeScript is never served, with any MIME type: the app loads its modules as .js, transpiled below.
-    if (path.toLowerCase().endsWith(".ts")) return notFound();
+    // The module's name is .ts, its answer is JavaScript: the transpiled code, never the source.
+    if (path.endsWith(".ts")) return (await transpiled(path, req)) ?? notFound();
 
     const file = await plainFile(path, req);
     if (file) return file;

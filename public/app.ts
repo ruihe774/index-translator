@@ -2,20 +2,20 @@
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
-import { API, ApiFailure, failureMessage } from "./api.js";
-import "./elements/index.js";
-import type { MetaLine } from "./elements/meta-line.js";
-import type { PdfPages } from "./elements/pdf-pages.js";
-import type { SpeechControls } from "./elements/speech-controls.js";
-import type { ViewSwitch } from "./elements/view-switch.js";
-import type { VoiceSettings } from "./elements/voice-settings.js";
-import type { ApiErrorBody } from "./errors.js";
-import { type HistoryEntry, loadHistory, newId, saveHistory, withEntry } from "./history.js";
-import { initHistoryUi } from "./history-ui.js";
-import { confirmLink } from "./link-dialog.js";
-import { type LinkReference, linkReference } from "./links.js";
-import { looksLikeMarkdown } from "./markdown.js";
-import { checkLinks, createOutput, type OutputView, renderText } from "./markdown-dom.js";
+import { API, ApiFailure, failureMessage } from "./api.ts";
+import "./elements/index.ts";
+import type { MetaLine } from "./elements/meta-line.ts";
+import type { PdfPages } from "./elements/pdf-pages.ts";
+import type { SpeechControls } from "./elements/speech-controls.ts";
+import type { ViewSwitch } from "./elements/view-switch.ts";
+import type { VoiceSettings } from "./elements/voice-settings.ts";
+import type { ApiErrorBody } from "./errors.ts";
+import { type HistoryEntry, loadHistory, newId, saveHistory, withEntry } from "./history.ts";
+import { initHistoryUi } from "./history-ui.ts";
+import { confirmLink } from "./link-dialog.ts";
+import { type LinkReference, linkReference } from "./links.ts";
+import { looksLikeMarkdown } from "./markdown.ts";
+import { checkLinks, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
 import {
   adviceMessage,
   type Done,
@@ -27,18 +27,18 @@ import {
   modelLabel,
   resultNotes,
   selectionMessage,
-} from "./messages.js";
-import { initOpenUi } from "./open-ui.js";
-import { type Alignment, alignBlocks } from "./paragraphs.js";
-import { createRender } from "./render.js";
-import { buildImageRequest, buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
-import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.js";
-import { registerServiceWorker } from "./pwa.js";
-import { initSpeechUi, type SpeechUi } from "./speech-ui.js";
-import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.js";
-import { bindRender, type Side, setState, state } from "./state.js";
-import { store, stored } from "./storage.js";
-import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.js";
+} from "./messages.ts";
+import { initOpenUi } from "./open-ui.ts";
+import { type Alignment, alignBlocks } from "./paragraphs.ts";
+import { createRender } from "./render.ts";
+import { buildImageRequest, buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.ts";
+import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.ts";
+import { registerServiceWorker } from "./pwa.ts";
+import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
+import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
+import { bindRender, type Side, setState, state } from "./state.ts";
+import { store, stored } from "./storage.ts";
+import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
 
 const HEALTH_LOADING_POLL_MS = 2000;
 let healthTimer: ReturnType<typeof setTimeout> | undefined;

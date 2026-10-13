@@ -2,9 +2,9 @@
 // becomes a mono 16-bit WAV that the server hands to the speech model as the reference voice.
 // The recording itself and the WAV writer are in mic-recorder.ts (no DOM types, tested with fakes).
 
-import { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS } from "./mic-recorder.js";
+import { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS } from "./mic-recorder.ts";
 
-export { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS, MicRecorder } from "./mic-recorder.js";
+export { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS, MicRecorder } from "./mic-recorder.ts";
 
 const RATE = 24_000;
 

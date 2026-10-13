@@ -5,8 +5,8 @@
 // a translation runs. Every write is skipped when the value is already there, so rendering often
 // costs nothing.
 
-import type { ViewSwitch } from "./elements/view-switch.js";
-import { state } from "./state.js";
+import type { ViewSwitch } from "./elements/view-switch.ts";
+import { state } from "./state.ts";
 
 export interface RenderTargets {
   translate: HTMLElement;

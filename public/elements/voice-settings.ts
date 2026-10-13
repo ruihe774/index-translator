@@ -7,7 +7,7 @@
 // events (`voicechange`, `speedchange`, and `sample` with the audio as picked or recorded, which the
 // page turns into a voice) and answers with `setVoices`, `addVoice` and `status`.
 
-import { MicRecorder } from "../voice-sample.js";
+import { MicRecorder } from "../voice-sample.ts";
 
 export interface VoiceOption {
   id: string;

@@ -1,8 +1,8 @@
 // Sentences the page shows about model selection, engine status and finished translations.
 // Pure: no DOM access, so each branch can be unit tested.
 
-import { mismatchMessage, paragraphMismatch } from "./paragraphs.js";
-import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type ModelId, type Selection } from "./select-model.js";
+import { mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
+import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type ModelId, type Selection } from "./select-model.ts";
 
 export const MODEL_LABELS: Record<ModelId, string> = {
   [CHAT_MODEL]: "Index-Translate-9B",

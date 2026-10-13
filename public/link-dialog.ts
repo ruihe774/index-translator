@@ -1,7 +1,7 @@
 // The confirm dialog shown before a link in the output is opened. A modal <dialog> keeps focus
 // inside and returns it to the link; Cancel has the initial focus.
 
-import { linkPrompt } from "./links.js";
+import { linkPrompt } from "./links.ts";
 
 interface Parts {
   dialog: HTMLDialogElement;

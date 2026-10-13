@@ -9,9 +9,9 @@
 // playback, so a change of speed or voice is heard from the start of the current piece, and all
 // audio is made again.
 
-import { type SpeechAudio, splitChannels } from "./speech-audio.js";
-import { blockStarts, SpeechBuffer, type SpeechSettings, type Synthesize } from "./speech-buffer.js";
-import type { Segment } from "./speech-text.js";
+import { type SpeechAudio, splitChannels } from "./speech-audio.ts";
+import { blockStarts, SpeechBuffer, type SpeechSettings, type Synthesize } from "./speech-buffer.ts";
+import type { Segment } from "./speech-text.ts";
 
 export type { SpeechSettings, Synthesize };
 

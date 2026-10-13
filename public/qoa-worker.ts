@@ -9,7 +9,7 @@
 // `{ type: "unavailable", message }` when the codec cannot run here; then per stream
 // `{ type: "audio", id, sampleRate, channels, samples }` or `{ type: "error", id, message }`.
 
-import type { Pcm16 } from "./speech-audio.js";
+import type { Pcm16 } from "./speech-audio.ts";
 
 export type QoaRequest =
   | { type: "open"; id: number }
@@ -110,7 +110,7 @@ function handle(request: QoaRequest): QoaReply | undefined {
 
 async function start(): Promise<void> {
   try {
-    const module = (await import(`${DIR}/qoa.js`)) as { Qoa: { create(): Promise<Codec> } };
+    const module = (await import(`${DIR}/qoa.ts`)) as { Qoa: { create(): Promise<Codec> } };
     codec = await module.Qoa.create();
     self.postMessage({ type: "ready" } satisfies QoaReply);
   } catch (e) {

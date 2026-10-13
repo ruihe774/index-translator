@@ -1,8 +1,8 @@
 // The History panel: one list item per kept translation, built with the DOM API. The page supplies
 // what to do with an entry (app.ts) and the names of the languages; this file only draws the list.
 
-import type { HistoryEntry } from "./history.js";
-import { modelLabel } from "./messages.js";
+import type { HistoryEntry } from "./history.ts";
+import { modelLabel } from "./messages.ts";
 
 export interface HistoryUiDeps {
   list: HTMLElement;

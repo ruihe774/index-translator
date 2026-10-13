@@ -505,23 +505,23 @@ describe("static files", () => {
     await res.text();
   });
 
-  test("/app.js is the transpiled app.ts: JavaScript, relative imports intact, revalidated by ETag", async () => {
-    const res = await fetch(base + "/app.js");
+  test("/app.ts is the transpiled module: JavaScript, relative imports intact, revalidated by ETag", async () => {
+    const res = await fetch(base + "/app.ts");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toStartWith("text/javascript");
     expect(res.headers.get("cache-control")).toBe("no-cache");
     const code = await res.text();
-    expect(code).toContain('from "./select-model.js"');
+    expect(code).toContain('from "./select-model.ts"');
     expect(code).not.toContain(": HTMLElement");
 
     const etag = res.headers.get("etag")!;
-    const again = await fetch(base + "/app.js", { headers: { "if-none-match": etag } });
+    const again = await fetch(base + "/app.ts", { headers: { "if-none-match": etag } });
     expect(again.status).toBe(304);
     expect(await again.text()).toBe("");
   });
 
-  test("/select-model.js is served so the browser and bun test share one module", async () => {
-    const res = await fetch(base + "/select-model.js");
+  test("/select-model.ts is served so the browser and bun test share one module", async () => {
+    const res = await fetch(base + "/select-model.ts");
     expect(res.status).toBe(200);
     expect(await res.text()).toContain("LONG_THRESHOLD_LETTERS");
   });

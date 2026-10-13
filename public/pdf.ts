@@ -6,8 +6,8 @@
 //
 // The file's bytes stay in this browser; nothing here talks to the API.
 
-import type { PageText } from "./open-file.js";
-import type { WorkerReply, WorkerRequest } from "./pdf-worker.js";
+import type { PageText } from "./open-file.ts";
+import type { WorkerReply, WorkerRequest } from "./pdf-worker.ts";
 
 const PDFJS = "/vendor/pdfjs";
 const INSPECTOR = "/vendor/pdf-inspector";
@@ -83,7 +83,7 @@ interface Extractor {
 }
 
 function startExtractor(): Extractor {
-  const worker = new Worker("/pdf-worker.js", { type: "module" });
+  const worker = new Worker("/pdf-worker.ts", { type: "module" });
   const waiting = new Map<number, { resolve: (reply: Reply) => void; reject: (e: Error) => void }>();
   let next = 0;
   let dead: Error | undefined;

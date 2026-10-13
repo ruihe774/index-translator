@@ -9,7 +9,7 @@
 // Each piece carries the `data-line` of the top-level element it comes from, so the page can show
 // which block is being read.
 
-import { type Block, type Inline, parseLines } from "./markdown.js";
+import { type Block, type Inline, parseLines } from "./markdown.ts";
 
 /** The languages IndexTTS-2.5 speaks; the same list as SPEECH_LANGUAGES in src/speech.ts. */
 export const SPEECH_LANGS = ["zh", "en", "ja", "es", "ar"];

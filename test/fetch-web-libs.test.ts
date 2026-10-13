@@ -95,10 +95,4 @@ describe("the pinned files of a commit", () => {
     }
     expect(qoa.files.map((f) => f.to)).toEqual(["qoa.ts", "qoa_wasm.ts", "LICENSE"]);
   });
-
-  test("qoa.ts names its sibling as the page does, .js, which the server answers from the .ts", () => {
-    const edit = qoa.files[0]!.edit!;
-    expect(edit('import { A } from "./qoa_wasm.ts";\n')).toBe('import { A } from "./qoa_wasm.js";\n');
-    expect(() => edit("nothing to change\n")).toThrow("no longer imports");
-  });
 });

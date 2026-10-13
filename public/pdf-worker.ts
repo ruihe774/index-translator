@@ -6,7 +6,7 @@
 // Messages in: `{ id, open }` with the file's bytes (kept), then `{ id, page }` (1-based).
 // Out: `{ id, ok: true }`, `{ id, markdown, needsOcr }`, or `{ id, error }`.
 
-import type { PageText } from "./open-file.js";
+import type { PageText } from "./open-file.ts";
 
 export type WorkerRequest = { id: number; open: ArrayBuffer } | { id: number; page: number };
 export type WorkerReply = { id: number } & ({ ok: true } | PageText | { error: string });

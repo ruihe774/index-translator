@@ -2,7 +2,7 @@
 // its text and a line to its position on screen; the paragraph alignment (`paragraphs.ts`) maps a
 // block of one text to the same block of the other. Used only while the paragraph check passes.
 
-import { blockAt } from "./paragraphs.js";
+import { blockAt } from "./paragraphs.ts";
 
 export interface Pane {
   /** The element that scrolls. */

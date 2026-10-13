@@ -1,7 +1,7 @@
 // Translation history: finished translations kept in this browser's local storage only. Nothing
 // here is sent to the server, and the server has no endpoint for it.
 
-import { store, stored } from "./storage.js";
+import { store, stored } from "./storage.ts";
 
 export const HISTORY_KEY = "history";
 /** Newest first; the oldest entry goes when a new one would be the 51st. */

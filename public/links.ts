@@ -6,8 +6,8 @@
 // - "mismatch": the target occurs in the source but not in the source block that the output block
 //   was matched to, or the blocks could not be matched at all. The link is marked, not disabled.
 
-import { type Block, type Inline, parseLines } from "./markdown.js";
-import { type Alignment, blockAt } from "./paragraphs.js";
+import { type Block, type Inline, parseLines } from "./markdown.ts";
+import { type Alignment, blockAt } from "./paragraphs.ts";
 
 export type LinkProblem = "missing" | "mismatch";
 

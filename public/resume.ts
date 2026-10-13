@@ -2,7 +2,7 @@
 // the user leaves it; the server keeps a resumable translation running for a while and replays its
 // events from any point, so the page reconnects and carries on. No DOM access: unit tested.
 
-import { type SseEvent, sseEvents } from "./sse.js";
+import { type SseEvent, sseEvents } from "./sse.ts";
 
 export interface ResumeOptions {
   /** Opens the stream: the first call (`lastId` 0) starts the translation, later ones read it again from after `lastId`. */

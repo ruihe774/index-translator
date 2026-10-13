@@ -78,8 +78,6 @@ interface FileLibrary {
     to: string;
     url: string;
     sha256: string;
-    /** Changes the downloaded text before it is written; must change it, so a changed file fails here. */
-    edit?: (text: string) => string;
   }[];
 }
 
@@ -88,9 +86,8 @@ const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${Q
 
 /**
  * qoa-wasm (the `qoa` branch of this project's repository): the QOA audio codec the speech stream
- * uses, with its WebAssembly embedded in qoa_wasm.ts as base64 (dist/ is not needed). The pages
- * name modules as `.js` and the server answers those from the `.ts` files, so qoa.ts's import of
- * `./qoa_wasm.ts` is rewritten to `./qoa_wasm.js`.
+ * uses, with its WebAssembly embedded in qoa_wasm.ts as base64 (dist/ is not needed). Its modules
+ * import each other as `.ts`, which the server answers as JavaScript, so the files are used as they are.
  */
 export const FILE_LIBRARIES: FileLibrary[] = [
   {
@@ -101,11 +98,6 @@ export const FILE_LIBRARIES: FileLibrary[] = [
         to: "qoa.ts",
         url: `${QOA_RAW}/src/qoa.ts`,
         sha256: "43ca450102618e760b3bc4e12dbf00e22ed75c297c97496360b3530fd7c45489",
-        edit: (text) => {
-          const edited = text.replace('from "./qoa_wasm.ts"', 'from "./qoa_wasm.js"');
-          if (edited === text) throw new Error("qoa.ts no longer imports ./qoa_wasm.ts");
-          return edited;
-        },
       },
       {
         to: "qoa_wasm.ts",
@@ -170,10 +162,7 @@ async function fetchFileLibrary(lib: FileLibrary, vendor: string): Promise<void>
   }
   // Everything is downloaded and checked before the directory is touched.
   const texts = await Promise.all(
-    lib.files.map(async (f) => {
-      const text = new TextDecoder().decode(await download(f.url, f.sha256));
-      return f.edit ? f.edit(text) : text;
-    }),
+    lib.files.map(async (f) => new TextDecoder().decode(await download(f.url, f.sha256))),
   );
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });

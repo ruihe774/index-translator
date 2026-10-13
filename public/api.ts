@@ -1,7 +1,7 @@
 // What every call to the server's API shares: its base path, and a failed call as an error that
 // carries the server's error body, so the page can say what went wrong in a sentence.
 
-import { type ApiErrorBody, describeError } from "./errors.js";
+import { type ApiErrorBody, describeError } from "./errors.ts";
 
 export const API = "/api/v1";
 

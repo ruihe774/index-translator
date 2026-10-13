@@ -4,7 +4,7 @@
 export function registerServiceWorker(): void {
   if (!("serviceWorker" in navigator) || !window.isSecureContext) return;
   if (document.querySelector('script[src^="/__dev/"]')) return;
-  navigator.serviceWorker.register("/sw.js", { scope: "/" }).catch(() => {
+  navigator.serviceWorker.register("/sw.ts", { scope: "/" }).catch(() => {
     // The app works without it; there is nothing to tell the user.
   });
 }

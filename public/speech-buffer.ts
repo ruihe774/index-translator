@@ -9,8 +9,8 @@
 // whose piece is no longer wanted, or that stands in the way of the piece the reader waits for, is
 // aborted: the server stops the engine and the next request starts at once.
 
-import type { SpeechAudio } from "./speech-audio.js";
-import type { Segment } from "./speech-text.js";
+import type { SpeechAudio } from "./speech-audio.ts";
+import type { Segment } from "./speech-text.ts";
 
 /** Continuous audio from the reader's place that is secured before the jump targets are made. */
 export const NEAR_SECONDS = 15;
