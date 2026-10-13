@@ -131,6 +131,8 @@ await cp(join(packaging, "AppRun"), join(appDir, "AppRun"));
 await chmod(join(appDir, "AppRun"), 0o755);
 await cp(join(packaging, "index-translator.desktop"), join(appDir, "index-translator.desktop"));
 await cp(join(packaging, "index-translator.svg"), join(appDir, "index-translator.svg"));
+// The icon file managers show for the .AppImage file itself (an AppImage has no embedded icon resource).
+await cp(join(root, "public", "icons", "icon-512.png"), join(appDir, ".DirIcon"));
 
 await mkdir(work, { recursive: true });
 const appimagetool = join(work, `appimagetool-${ARCH}.AppImage`);

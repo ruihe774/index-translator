@@ -93,6 +93,8 @@ if (
   Math.max(
     Bun.file(join(packaging, "launcher.c")).lastModified,
     Bun.file(join(packaging, "launcher.manifest")).lastModified,
+    Bun.file(join(packaging, "launcher.rc")).lastModified,
+    Bun.file(join(packaging, "launcher.ico")).lastModified,
   ) > built
 ) {
   await run(["cmd.exe", "/c", join(packaging, "build.bat")]);

@@ -27,6 +27,7 @@ OutputBaseFilename=Index_Translator-Setup-x86_64
 Compression=lzma2/normal
 SolidCompression=yes
 WizardStyle=modern
+SetupIconFile=launcher.ico
 DisableProgramGroupPage=yes
 UninstallDisplayIcon={app}\launcher.exe
 

@@ -5,7 +5,7 @@
    Modern look: Common Controls 6 (command links, visual styles) and Per-Monitor DPI Awareness V2,
    both declared in launcher.manifest, which build.bat embeds. All sizes are in 96-dpi units and
    scaled by the window's DPI; WM_DPICHANGED rebuilds the font and the layout.
-   Build: packaging\windows\build.bat (MSVC). */
+   The exe's icon is launcher.ico through launcher.rc. Build: packaging\windows\build.bat (MSVC). */
 #define UNICODE
 #define _UNICODE
 #define WINVER 0x0A00
@@ -50,7 +50,9 @@ static int find_root(void) {
   }
 }
 
-/* Run `cmd /k <line>` in a new console, in the repository directory. Returns whether it started. */
+/* Run `cmd /k <line>` in a new console, in the repository directory. Returns whether it started.
+   Afterwards tells the user to keep that console open (closing it ends the command) and to answer
+   it when it asks; the box is modal over the launcher window, which closes once it is dismissed. */
 static BOOL run(HWND owner, const WCHAR *line) {
   WCHAR cmd[2048];
   swprintf(cmd, 2048, L"cmd.exe /k %s", line);
@@ -59,6 +61,11 @@ static BOOL run(HWND owner, const WCHAR *line) {
   if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, root, &si, &pi)) {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
+    MessageBoxW(owner,
+                L"The command is running in a separate console window.\n\n"
+                L"Do not close that window: closing it stops the command.\n"
+                L"If it asks for confirmation, click it and type your answer there.",
+                L"Index Translator", MB_ICONINFORMATION | MB_OK);
     return TRUE;
   }
   MessageBoxW(owner, L"Could not start cmd.exe.", L"Index Translator", MB_ICONERROR);
@@ -178,6 +185,7 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show) {
   WNDCLASSW wc = {0};
   wc.lpfnWndProc = proc;
   wc.hInstance = inst;
+  wc.hIcon = LoadIconW(inst, MAKEINTRESOURCEW(1));
   wc.hCursor = LoadCursorW(NULL, IDC_ARROW);
   wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
   wc.lpszClassName = L"IndexTranslatorLauncher";
