@@ -687,3 +687,68 @@ describe("error envelope", () => {
     await res.text();
   });
 });
+
+describe("resumable streams", () => {
+  const start = (extra: Record<string, unknown> = {}) =>
+    post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true, resumable: true, ...extra });
+
+  test("events are numbered and can be read again from any point", async () => {
+    const res = await start();
+    const id = res.headers.get("x-translation-id")!;
+    expect(id).toMatch(/^[0-9a-f-]{36}$/);
+    const text = await res.text();
+    expect([...text.matchAll(/^id: (\d+)$/gm)].map((m) => m[1])).toEqual(["1", "2", "3", "4", "5"]);
+
+    const rest = await fetch(`${base}/api/v1/translations/${id}/events`, { headers: { "last-event-id": "3" } });
+    expect((await readSse(rest)).map((e) => e.event)).toEqual(["delta", "done"]);
+    const all = await fetch(`${base}/api/v1/translations/${id}/events`);
+    expect((await readSse(all)).map((e) => e.event)).toEqual(["start", "delta", "delta", "delta", "done"]);
+  });
+
+  test("keeps running when the reader leaves, and the next reader gets the whole translation", async () => {
+    mock.delayMs = 40;
+    try {
+      const res = await start();
+      const id = res.headers.get("x-translation-id")!;
+      const reader = res.body!.getReader();
+      await reader.read();
+      await reader.cancel();
+      await Bun.sleep(300);
+      const again = await fetch(`${base}/api/v1/translations/${id}/events`, { headers: { "last-event-id": "1" } });
+      const events = await readSse(again);
+      expect(events.at(-1)!.event).toBe("done");
+    } finally {
+      mock.delayMs = 0;
+    }
+  });
+
+  test("DELETE cancels it, and an unknown or non-resumable id is a 404", async () => {
+    mock.delayMs = 100;
+    try {
+      const res = await start();
+      const id = res.headers.get("x-translation-id")!;
+      const reader = res.body!.getReader();
+      await reader.read();
+      const gone = await fetch(`${base}/api/v1/translations/${id}`, { method: "DELETE" });
+      expect(gone.status).toBe(204);
+      const events: string[] = [];
+      for (;;) {
+        const { done } = await reader.read();
+        if (done) break;
+      }
+      expect(events).toEqual([]);
+      const plain = await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true });
+      expect(plain.headers.get("x-translation-id")).toBeNull();
+      await plain.text();
+    } finally {
+      mock.delayMs = 0;
+    }
+    const missing = await fetch(`${base}/api/v1/translations/00000000-0000-4000-8000-000000000000/events`);
+    expect(missing.status).toBe(404);
+  });
+
+  test("resumable must be a boolean", async () => {
+    const res = await start({ resumable: "yes" });
+    expect(res.status).toBe(400);
+  });
+});

@@ -42,6 +42,11 @@ const DEFAULT_OUTPUT_RATIO = 4;
 const DEFAULT_OUTPUT_FLOOR = 512;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
 const KEEPALIVE_MS = 15_000;
+/** How long a resumable translation keeps running with nobody reading it (a phone in the background). */
+const RESUME_GRACE_MS = 120_000;
+/** How long a finished resumable translation can still be fetched. */
+const RESUME_KEEP_MS = 10 * 60_000;
+const MAX_KEPT_JOBS = 16;
 
 class ApiError extends Error {
   constructor(
@@ -82,6 +87,8 @@ interface TranslateRequest extends PromptInput {
   model: ModelSpec;
   maxOutputTokens?: number;
   stream: boolean;
+  /** SSE only: the translation survives a dropped connection and can be picked up again. */
+  resumable: boolean;
 }
 
 function invalid(message: string, field?: string): ApiError {
@@ -206,6 +213,9 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
   if (body.stream !== undefined && typeof body.stream !== "boolean") {
     throw invalid("stream must be a boolean", "stream");
   }
+  if (body.resumable !== undefined && typeof body.resumable !== "boolean") {
+    throw invalid("resumable must be a boolean", "resumable");
+  }
 
   const input: TranslateRequest = {
     text: body.text,
@@ -218,6 +228,7 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
     genre: optionalString(body, "genre", 64),
     maxOutputTokens: (maxOutputTokens as number | null) ?? undefined,
     stream: body.stream === true || (req.headers.get("accept") ?? "").includes("text/event-stream"),
+    resumable: body.resumable === true,
   };
   if (model.kind === "document") checkDocumentRequest(input);
   return input;
@@ -464,85 +475,175 @@ export async function startApp(
     }
   }
 
-  function translateSse(input: TranslateRequest, signal: AbortSignal): Response {
+  /**
+   * A streamed translation runs as a job that is independent of the response reading it. Every
+   * event is kept, numbered, so a resumable job can be read again from any point after the
+   * connection drops (iOS cuts it when the page leaves the screen). A job nobody reads for
+   * RESUME_GRACE_MS is cancelled; a job whose client did not ask for `resumable` is cancelled as
+   * soon as its connection closes.
+   */
+  interface Job {
+    id: string;
+    resumable: boolean;
+    frames: string[];
+    finished: boolean;
+    abort: AbortController;
+    reader?: (frame: string) => void;
+    closeReader?: () => void;
+    timer?: ReturnType<typeof setTimeout>;
+  }
+  const jobs = new Map<string, Job>();
+
+  function dropJob(job: Job) {
+    clearTimeout(job.timer);
+    jobs.delete(job.id);
+  }
+
+  /** Called when nobody reads the job (any more): cancel it now, or after the grace period. */
+  function orphan(job: Job) {
+    job.reader = undefined;
+    job.closeReader = undefined;
+    if (job.finished) return;
+    if (!job.resumable) return job.abort.abort();
+    clearTimeout(job.timer);
+    job.timer = setTimeout(() => job.abort.abort(), RESUME_GRACE_MS);
+  }
+
+  function finishJob(job: Job) {
+    job.finished = true;
+    clearTimeout(job.timer);
+    job.closeReader?.();
+    if (!job.resumable) return dropJob(job);
+    job.timer = setTimeout(() => dropJob(job), RESUME_KEEP_MS);
+    // Bounded: the oldest finished jobs go first (a Map keeps insertion order).
+    const finished = [...jobs.values()].filter((j) => j.finished);
+    for (const old of finished.slice(0, Math.max(0, finished.length - MAX_KEPT_JOBS))) dropJob(old);
+  }
+
+  /** Reads `job` from the frame after `after` on: what was kept, then what follows. */
+  function readJob(job: Job, after: number, signal: AbortSignal): Response {
     const encoder = new TextEncoder();
-    const abort = new AbortController();
-    const cancel = () => abort.abort();
-    signal.addEventListener("abort", cancel);
-
-    let controller!: ReadableStreamDefaultController<Uint8Array>;
-    const send = (event: string, data: unknown) => {
-      if (abort.signal.aborted) return;
-      try {
-        controller.enqueue(encoder.encode(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`));
-      } catch {
-        abort.abort();
-      }
-    };
-
-    // Entering the queue before the response starts lets a full queue surface as a plain 429.
-    const pending: number[] = [];
-    let live = false;
-    const ticket = enterQueue((position) => (live ? send("queued", { position }) : pending.push(position)));
-    abort.signal.addEventListener("abort", () => ticket.leave());
-
+    let cancelRead = () => {};
     const stream = new ReadableStream<Uint8Array>({
-      async start(c) {
-        controller = c;
-        live = true;
-        for (const position of pending) send("queued", { position });
-        const keepalive = setInterval(() => {
+      start(c) {
+        const write = (text: string) => {
           try {
-            c.enqueue(encoder.encode(": keepalive\n\n"));
+            c.enqueue(encoder.encode(text));
           } catch {
-            abort.abort();
+            cancelRead();
           }
-        }, KEEPALIVE_MS);
-
-        try {
-          for await (const ev of run(input, ticket, abort.signal)) {
-            if (ev.type === "start") {
-              send("start", {
-                model: ev.model,
-                prompt_tokens: ev.promptTokens,
-                max_output_tokens: ev.maxOutputTokens,
-                queue_ms: ev.queueMs,
-              });
-            } else if (ev.type === "delta") {
-              send("delta", { text: ev.text });
-            } else {
-              send("done", { finish_reason: ev.finish_reason, usage: ev.usage, timings: ev.timings });
-            }
-          }
-        } catch (e) {
-          if (!abort.signal.aborted) {
-            if (e instanceof ApiError) {
-              send("error", { code: e.code, message: e.message, details: e.details });
-            } else {
-              const code = e instanceof EngineError ? "engine_error" : "internal_error";
-              if (code === "internal_error") console.error("[api] stream failed:", e);
-              send("error", { code, message: e instanceof EngineError ? e.message : "internal server error" });
-            }
-          }
-        } finally {
+        };
+        for (let i = after; i < job.frames.length; i++) write(job.frames[i]!);
+        if (job.finished) {
+          c.close();
+          return;
+        }
+        const keepalive = setInterval(() => write(": keepalive\n\n"), KEEPALIVE_MS);
+        const reader = (frame: string) => write(frame);
+        let ended = false;
+        const end = () => {
+          if (ended) return;
+          ended = true;
           clearInterval(keepalive);
-          signal.removeEventListener("abort", cancel);
-          ticket.leave();
+          signal.removeEventListener("abort", cancelRead);
+        };
+        cancelRead = () => {
+          if (ended) return;
+          end();
+          if (job.reader === reader) orphan(job);
+        };
+        // A newer reader replaces this one: the old connection is a dead socket the server has not noticed yet.
+        job.closeReader?.();
+        clearTimeout(job.timer);
+        job.reader = reader;
+        job.closeReader = () => {
+          end();
           try {
             c.close();
           } catch {}
-        }
+        };
+        signal.addEventListener("abort", cancelRead);
       },
-      cancel,
+      cancel: () => cancelRead(),
     });
-
     return new Response(stream, {
       headers: {
         "content-type": "text/event-stream; charset=utf-8",
         "cache-control": "no-cache, no-transform",
         "x-accel-buffering": "no",
+        ...(job.resumable ? { "x-translation-id": job.id } : {}),
       },
     });
+  }
+
+  function translateSse(input: TranslateRequest, signal: AbortSignal): Response {
+    const job: Job = {
+      id: crypto.randomUUID(),
+      resumable: input.resumable,
+      frames: [],
+      finished: false,
+      abort: new AbortController(),
+    };
+    const emit = (event: string, data: unknown) => {
+      const frame = `id: ${job.frames.length + 1}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
+      job.frames.push(frame);
+      job.reader?.(frame);
+    };
+
+    // Entering the queue before the response starts lets a full queue surface as a plain 429.
+    const ticket = enterQueue((position) => emit("queued", { position }));
+    jobs.set(job.id, job);
+    job.abort.signal.addEventListener("abort", () => ticket.leave());
+
+    void (async () => {
+      try {
+        for await (const ev of run(input, ticket, job.abort.signal)) {
+          if (ev.type === "start") {
+            emit("start", {
+              model: ev.model,
+              prompt_tokens: ev.promptTokens,
+              max_output_tokens: ev.maxOutputTokens,
+              queue_ms: ev.queueMs,
+            });
+          } else if (ev.type === "delta") {
+            emit("delta", { text: ev.text });
+          } else {
+            emit("done", { finish_reason: ev.finish_reason, usage: ev.usage, timings: ev.timings });
+          }
+        }
+      } catch (e) {
+        if (!job.abort.signal.aborted) {
+          if (e instanceof ApiError) {
+            emit("error", { code: e.code, message: e.message, details: e.details });
+          } else {
+            const code = e instanceof EngineError ? "engine_error" : "internal_error";
+            if (code === "internal_error") console.error("[api] stream failed:", e);
+            emit("error", { code, message: e instanceof EngineError ? e.message : "internal server error" });
+          }
+        }
+      } finally {
+        ticket.leave();
+        finishJob(job);
+      }
+    })();
+
+    return readJob(job, 0, signal);
+  }
+
+  /** `/translations/{id}` (DELETE cancels) and `/translations/{id}/events` (GET reads again). */
+  function translationRoute(rest: string, req: Request, url: URL): Response | undefined {
+    const m = /^\/translations\/([0-9a-f-]{36})(\/events)?$/.exec(rest);
+    if (!m) return undefined;
+    const job = jobs.get(m[1]!);
+    if (!job || !job.resumable) throw new ApiError(404, "not_found", "no such translation (it may have expired)");
+    if (m[2]) {
+      if (req.method !== "GET") return methodNotAllowed("GET");
+      const last = Number(req.headers.get("last-event-id") ?? url.searchParams.get("after") ?? 0);
+      return readJob(job, Number.isInteger(last) && last > 0 ? last : 0, req.signal);
+    }
+    if (req.method !== "DELETE") return methodNotAllowed("DELETE");
+    job.abort.abort();
+    return new Response(null, { status: 204 });
   }
 
   const serveStatic = createStaticServer(cfg.publicDir);
@@ -766,8 +867,11 @@ export async function startApp(
             server.timeout(req, 0);
             return input.stream ? translateSse(input, req.signal) : await translateJson(input, req.signal);
           }
-          default:
+          default: {
+            const res = translationRoute(path.slice(API.length), req, url);
+            if (res) return res;
             throw new ApiError(404, "not_found", `no such endpoint: ${path}`);
+          }
         }
       } catch (e) {
         return errorResponse(e);

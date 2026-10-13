@@ -297,6 +297,62 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "502":
           $ref: "#/components/responses/EngineError"
+  /translations/{id}/events:
+    get:
+      tags: [translation]
+      operationId: resumeTranslation
+      summary: Read a streamed translation again
+      description: |
+        A streamed translation started with `resumable: true` keeps running when the connection
+        drops (for example when a phone puts the page in the background) and its events are kept.
+        This returns them again as Server-Sent Events, starting after the event numbered by the
+        `Last-Event-ID` header (or the `after` query parameter); with neither, from the first.
+        Every event carries an `id:` line, a number counting up from 1. A translation that nobody
+        reads for two minutes is cancelled, and a finished one is kept for ten.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The `X-Translation-Id` response header of the `POST /translate` that started it.
+        - name: after
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Same as `Last-Event-ID`.
+        - name: Last-Event-ID
+          in: header
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: The events after the given one; the same format as `POST /translate`.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "404":
+          $ref: "#/components/responses/NotFound"
+  /translations/{id}:
+    delete:
+      tags: [translation]
+      operationId: cancelTranslation
+      summary: Cancel a resumable translation
+      description: "Stops a translation started with `resumable: true` now, instead of after the grace period."
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Cancelled (or already finished).
+        "404":
+          $ref: "#/components/responses/NotFound"
   /tokenize:
     post:
       tags: [translation]
@@ -489,6 +545,12 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/Error"
+    NotFound:
+      description: No such translation; it never existed, was not resumable, or has expired (`not_found`).
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
   schemas:
     TranslateRequest:
       type: object
@@ -560,6 +622,13 @@ components:
           type: boolean
           default: false
           description: Respond with Server-Sent Events.
+        resumable:
+          type: boolean
+          default: false
+          description: |
+            With `stream: true`: the translation survives a dropped connection. The response carries
+            an `X-Translation-Id` header and numbered events, and `GET /translations/{id}/events`
+            reads it again. Without it, closing the connection cancels the translation at once.
     TranslateResponse:
       type: object
       required: [translation, finish_reason, model, usage, timings]

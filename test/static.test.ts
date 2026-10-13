@@ -43,6 +43,23 @@ beforeEach(async () => {
   serve = createStaticServer(dir);
 });
 
+describe("caching", () => {
+  test("pages and scripts are revalidated, icons and vendored libraries may be kept for a day", async () => {
+    await write("icons/icon.svg", "<svg/>");
+    await write("vendor/lib/a.js", "export {}");
+    expect((await get("/style.css")).headers.get("cache-control")).toBe("no-cache");
+    expect((await get("/icons/icon.svg")).headers.get("cache-control")).toBe("public, max-age=86400");
+    expect((await get("/vendor/lib/a.js")).headers.get("cache-control")).toBe("public, max-age=86400");
+  });
+
+  test("the service worker is served as a script that is always revalidated", async () => {
+    await write("sw.ts", "const x: number = 1;\n");
+    const res = await get("/sw.js");
+    expect(res.headers.get("content-type")).toStartWith("text/javascript");
+    expect(res.headers.get("cache-control")).toBe("no-cache");
+  });
+});
+
 describe("transpiled .js", () => {
   test("is JavaScript without type annotations, revalidated with a 304 on a matching ETag", async () => {
     const res = await get("/app.js");

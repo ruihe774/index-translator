@@ -28,6 +28,14 @@ function withSecurityHeaders(res: Response): Response {
   return res;
 }
 
+/**
+ * Pages, scripts and styles change with the code and are revalidated on every load (a 304 is cheap).
+ * Icons and the vendored libraries change only with a release or a pinned upgrade, so a day old is fine.
+ */
+function cacheControl(relativePath: string): string {
+  return /^(icons|vendor)[\\/]/.test(relativePath) ? "public, max-age=86400" : "no-cache";
+}
+
 export function createStaticServer(publicDir: string) {
   // Resolved once so the traversal check below compares like with like, whatever form the caller used.
   const dir = resolve(publicDir);
@@ -45,7 +53,7 @@ export function createStaticServer(publicDir: string) {
     if (!info?.isFile()) return undefined;
 
     const etag = `W/"${info.mtimeMs}-${info.size}"`;
-    const headers = { etag, "cache-control": "no-cache" };
+    const headers = { etag, "cache-control": cacheControl(path.slice(prefix.length)) };
     if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
     return new Response(file, { headers });
   }

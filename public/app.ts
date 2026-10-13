@@ -32,8 +32,9 @@ import { type Alignment, alignBlocks } from "./paragraphs.js";
 import { createRender } from "./render.js";
 import { buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
 import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.js";
+import { registerServiceWorker } from "./pwa.js";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.js";
-import { sseEvents } from "./sse.js";
+import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.js";
 import { bindRender, type Side, setState, state } from "./state.js";
 import { store, stored } from "./storage.js";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.js";
@@ -444,25 +445,54 @@ async function translate() {
   metaEl.show(`Translating with ${modelLabel(sel.model)}…`);
 
   let stopped = false;
+  let translationId: string | null = null;
   stopBtn.onclick = () => {
     stopped = true;
     controller.abort();
+    // The server keeps a resumable translation running without a reader, so it is told to stop.
+    if (translationId) void fetch(`${API}/translations/${translationId}`, { method: "DELETE", keepalive: true }).catch(() => {});
   };
 
   try {
-    const res = await fetch(`${API}/translate`, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(built.body),
+    const events = resumableEvents({
       signal: controller.signal,
+      visible: () => document.visibilityState === "visible",
+      wake: (callback) => {
+        const listener = () => {
+          if (document.visibilityState === "visible") callback();
+        };
+        document.addEventListener("visibilitychange", listener);
+        window.addEventListener("pageshow", listener);
+        return () => {
+          document.removeEventListener("visibilitychange", listener);
+          window.removeEventListener("pageshow", listener);
+        };
+      },
+      onReconnecting: () => metaEl.show("Connection lost. Reconnecting…"),
+      onReconnected: () => metaEl.show(`Translating with ${modelLabel(sel.model)}…`),
+      connect: async (lastId, signal) => {
+        const res = translationId
+          ? await fetch(`${API}/translations/${translationId}/events`, {
+              headers: { "last-event-id": String(lastId) },
+              signal,
+            })
+          : await fetch(`${API}/translate`, {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ ...built.body, resumable: true }),
+              signal,
+            });
+        if (!res.ok || !res.body) {
+          const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
+          throw new ApiFailure(payload?.error ?? {}, res.status);
+        }
+        translationId ??= res.headers.get(TRANSLATION_ID_HEADER);
+        return res;
+      },
     });
-    if (!res.ok || !res.body) {
-      const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-      throw new ApiFailure(payload?.error ?? {}, res.status);
-    }
 
     let done: Done | null = null;
-    for await (const { event, data } of sseEvents(res.body)) {
+    for await (const { event, data } of events) {
       if (event === "queued") {
         metaEl.show(`Waiting in the queue, position ${data.position}…`);
       } else if (event === "start") {
@@ -745,6 +775,7 @@ refreshControls();
 historyUi.show(history);
 void loadLanguages();
 void speech.loadVoices();
+registerServiceWorker();
 void pollHealth();
 document.addEventListener("visibilitychange", () => {
   void pollHealth();

@@ -28,6 +28,8 @@ export default defineConfig({
     trace: "retain-on-failure",
     // The page keeps language choices in localStorage; each test gets a fresh context.
     locale: "en-US",
+    // The tests script the network from the page (route, the mock engine); a cache in between would hide it.
+    serviceWorkers: "block",
   },
   projects: [
     {

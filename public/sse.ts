@@ -4,6 +4,8 @@
 export interface SseEvent {
   event: string;
   data: any;
+  /** The `id:` field, when the server sent one: where to pick up again from (`Last-Event-ID`). */
+  id?: string;
 }
 
 /**
@@ -45,15 +47,17 @@ export async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerat
 /** Reads one event block. Returns null when the block carries no data lines (comments, keepalives). */
 function parseBlock(block: string): SseEvent | null {
   let event = "message";
+  let id: string | undefined;
   const data: string[] = [];
   for (const line of block.split("\n")) {
     if (line.startsWith(":")) continue; // comment or keepalive
     if (line.startsWith("event:")) event = line.slice(6).trim();
+    else if (line.startsWith("id:")) id = line.slice(3).trim();
     else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
   }
   if (!data.length) return null;
   try {
-    return { event, data: JSON.parse(data.join("\n")) };
+    return { event, data: JSON.parse(data.join("\n")), id };
   } catch {
     throw new Error("the server sent an unreadable event");
   }
