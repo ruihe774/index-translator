@@ -297,7 +297,7 @@ describe("MarkdownStream", () => {
     let seed = 7;
     for (let round = 0; round < 50; round++) {
       const chunks: string[] = [];
-      for (let i = 0; i < DOC.length; ) {
+      for (let i = 0; i < DOC.length;) {
         seed = (seed * 1103515245 + 12345) % 2 ** 31;
         const len = 1 + (seed % 12);
         chunks.push(DOC.slice(i, i + len));

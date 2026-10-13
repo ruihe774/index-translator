@@ -137,7 +137,7 @@ export function untar(tgz: Uint8Array): Map<string, Uint8Array> {
   const text = new TextDecoder();
   const field = (at: number, length: number) => text.decode(tar.subarray(at, at + length)).split("\0")[0]!;
   const files = new Map<string, Uint8Array>();
-  for (let at = 0; at + 512 <= tar.length; ) {
+  for (let at = 0; at + 512 <= tar.length;) {
     const name = field(at, 100);
     if (name === "") break; // the end marker: empty blocks
     const size = Number.parseInt(field(at + 124, 12).trim(), 8);

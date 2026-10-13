@@ -72,9 +72,7 @@ function rig(limitMs = 60_000): Rig {
         super(stream as FakeStream, r);
         r.recorders.push(this);
       }
-    } as unknown as new (
-      stream: MicStream,
-    ) => MicMediaRecorder,
+    } as unknown as new (stream: MicStream) => MicMediaRecorder,
   });
   return r;
 }

@@ -24,8 +24,7 @@ export interface EngineTimings {
 }
 
 export type GenerationEvent =
-  | { type: "delta"; text: string }
-  | { type: "done"; finishReason: FinishReason; usage: Usage; timings: EngineTimings };
+  { type: "delta"; text: string } | { type: "done"; finishReason: FinishReason; usage: Usage; timings: EngineTimings };
 
 export class EngineError extends Error {}
 

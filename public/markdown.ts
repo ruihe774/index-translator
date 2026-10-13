@@ -188,17 +188,15 @@ function endsInParagraph(body: string[]): boolean {
  */
 function lazyLine(line: string): string {
   const l = line.trimStart();
-  if (
-    !(
-      ATX.test(l) ||
-      FENCE_OPEN.test(l) ||
-      HR.test(l) ||
-      QUOTE.test(l) ||
-      SETEXT.test(l) ||
-      listMarker(l) ||
-      l.startsWith("|")
-    )
-  )
+  if (!(
+    ATX.test(l) ||
+    FENCE_OPEN.test(l) ||
+    HR.test(l) ||
+    QUOTE.test(l) ||
+    SETEXT.test(l) ||
+    listMarker(l) ||
+    l.startsWith("|")
+  ))
     return l;
   return /^\d/.test(l) ? l.replace(/^(\d+)([.)])/, "$1\\$2") : "\\" + l;
 }

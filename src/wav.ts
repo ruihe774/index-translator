@@ -41,7 +41,7 @@ export function readWav(bytes: Uint8Array): Pcm {
   let channels = 0;
   let sampleRate = 0;
   let width = 0;
-  for (let at = 12; at + 8 <= bytes.length; ) {
+  for (let at = 12; at + 8 <= bytes.length;) {
     const size = view.getUint32(at + 4, true);
     const body = at + 8;
     if (tag(at) === "fmt " && body + 16 <= bytes.length) {
