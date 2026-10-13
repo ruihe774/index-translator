@@ -1,0 +1,28 @@
+{
+  "name": "qoa-wasm",
+  "version": "0.1.0",
+  "description": "QOA (Quite OK Audio) encoder/decoder in hand-written WebAssembly text with TypeScript glue",
+  "type": "module",
+  "license": "MIT",
+  "scripts": {
+    "build": "node scripts/build.ts",
+    "test": "node --test \"test/*.test.ts\"",
+    "test:bun": "bun test test/",
+    "typecheck": "tsc -p . && tsc -p tsconfig.dev.json",
+    "bench": "node bench/bench.ts"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.5",
+    "typescript": "^7.0.2",
+    "wabt": "^1.0.39"
+  },
+  "main": "./src/qoa.ts",
+  "exports": {
+    ".": "./src/qoa.ts",
+    "./qoa.wasm": "./dist/qoa.wasm",
+    "./qoa-simd.wasm": "./dist/qoa-simd.wasm"
+  },
+  "engines": {
+    "node": ">=22.18"
+  }
+}
