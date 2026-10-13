@@ -1,61 +1,77 @@
-# Index Translator
+<p align="center">
+  <img src="public/icons/icon.svg" width="112" height="112" alt="Index Translator logo: two overlapping pages, a blue one behind and a white one in front">
+</p>
 
-A local text translator. It runs entirely on your machine, using the Index-Translate 9B models
-on your GPU, and does not send your text anywhere.
+<h1 align="center">Index Translator</h1>
 
-![Index Translator translating Markdown release notes from English to Chinese. Both sides are shown formatted, and the list the pointer rests on is highlighted on both sides.](docs/screenshot.png)
+<p align="center">
+  <b>Translate whole documents, PDFs and pictures on your own GPU.<br>Nothing leaves your machine.</b>
+</p>
 
-*A Markdown document translated from English to Chinese. Headings, lists, inline code and emphasis
-are kept and shown formatted on both sides. The mouse pointer is on the numbered list in the
-source, and the matching list in the translation is highlighted too; a click scrolls the other side
-to it.*
+<p align="center">
+  <a href="https://github.com/ruihe774/index-translator/actions/workflows/ci.yml"><img src="https://github.com/ruihe774/index-translator/actions/workflows/ci.yml/badge.svg" alt="CI status"></a>
+  <a href="https://codecov.io/gh/ruihe774/index-translator"><img src="https://codecov.io/gh/ruihe774/index-translator/graph/badge.svg" alt="Code coverage on Codecov"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-Unlicense-blue" alt="License: Unlicense"></a>
+  <img src="https://img.shields.io/badge/platform-Linux%20%7C%20Windows-lightgrey" alt="Platforms: Linux and Windows">
+  <img src="https://img.shields.io/badge/runs-offline-success" alt="Runs offline">
+  <img src="https://img.shields.io/badge/GPU-Vulkan-red" alt="GPU: Vulkan">
+</p>
 
-## What sets it apart
+<p align="center">
+  <a href="#install">Install</a> ·
+  <a href="#using-it">Using it</a> ·
+  <a href="#listen-to-a-text">Read aloud</a> ·
+  <a href="#settings">Settings</a> ·
+  <a href="docs/openapi.yaml">API</a> ·
+  <a href="THIRD_PARTY_NOTICES.md">Licenses</a>
+</p>
 
-Compared with widely used online translation tools:
+<p align="center">
+  <img src="docs/screenshot.png" alt="Index Translator with a PDF open: a strip of page thumbnails beside the source, page 110 of a NASA report shown as formatted Markdown with a heading, a paragraph and a table, and its Chinese translation on the right with the same table. The paragraph under the pointer is highlighted on both sides.">
+  <br>
+  <sub>One click on a PDF page thumbnail turns the page into Markdown, translated here from English to Chinese.
+  Headings and tables survive and are shown formatted on both sides; the paragraph under the pointer is highlighted in both,
+  and a click scrolls the other side to it. Page 110 of
+  <a href="https://ntrs.nasa.gov/citations/20140003548">NASA/TM-2014-217388</a>, a US government work in the public domain.</sub>
+</p>
 
-- **Private and offline.** The models run on your own GPU. Your text never leaves your machine, so
-  it is safe for confidential documents, and there are no accounts, quotas or fees.
-- **Built for whole documents.** A dedicated long-document model translates a full document in one
-  pass (Chinese ↔ English, Chinese ↔ Japanese), and the app picks between it and the general model
-  by text length.
-- **You control the terminology and style.** Give a glossary, hard rules ("keep placeholders
-  unchanged"), soft style guidance and a genre such as academic paper or subtitles, and the
-  translation follows them.
-- **It tells you when something is missing.** Language models can silently drop or repeat
-  paragraphs. The app counts paragraphs after each translation and warns you if they differ.
-- **Check the result against the original.** When the paragraphs line up, click one on either side
-  and the other side scrolls to the matching paragraph.
-- **Markdown stays Markdown.** Headings, lists, tables and code blocks in your text are translated
-  and shown formatted as they arrive, with a Raw / Preview switch on each side, and Copy gives you
-  the Markdown back.
-- **Opens PDFs without uploading them.** Text, Markdown and PDF files are read in your browser; a
-  PDF page becomes Markdown with one click on its thumbnail.
-- **Translates the text in a picture.** Open or drop a screenshot or a photo (JPEG, PNG, WebP) and
-  the model reads and translates the text in it, on your own machine, with no separate text
-  recognition step.
-- **Streaming with Stop.** Text appears as it is generated, and you can stop at any time.
-- **Reads aloud, locally.** Listen to your text or the translation in Chinese, English, Japanese,
-  Spanish or Arabic, with pause, speed and a choice of voices. The speech model (IndexTTS-2.5)
-  also runs on your GPU. A Markdown document is read as a document, not as its markup.
-- **Correct Chinese and Japanese typography.** Line breaking and fonts follow Japanese and Chinese
-  typesetting rules instead of using one font for every language.
-- **Accessible.** The interface is checked against WCAG 2.2 AA, including keyboard use and screen
-  readers.
-- **Scriptable.** A local REST API with streaming is documented in `docs/openapi.yaml`, so other
-  programs can use the same translator.
+---
 
-## Start the app
+## Why Index Translator
 
-There are three ways to run it: the AppImage on Linux or the installer on Windows (both bring
-everything but the models), or the source.
+It is a local translator for people who cannot, or would rather not, paste their documents into an online
+service. It runs the Index-Translate 9B models on your GPU, with no accounts, quotas or fees.
 
-Either way you need a GPU with a working Vulkan driver. It was tested on an AMD Radeon RX 9070
-(16 GiB). Without a usable GPU, set `GPU_LAYERS=0` to run on the CPU, which is much slower. If
-something the app needs is missing (no Vulkan driver, no models yet), it says what and how to get
-it, and stops.
+| | |
+|---|---|
+| 🔒 **Private and offline** | Models run on your GPU. Your text never leaves your machine, so confidential documents are fine. |
+| 📄 **Built for whole documents** | A long-document model translates a full text in one pass (Chinese ↔ English, Chinese ↔ Japanese). The app picks it for you by length. |
+| 🖼️ **Reads pictures** | Drop a screenshot or photo (JPEG, PNG, WebP); the model reads and translates the text in it. No separate OCR step. |
+| 📑 **Opens PDFs locally** | Text, Markdown and PDF files are read in your browser. One click on a page thumbnail turns it into Markdown. |
+| 🔊 **Reads aloud** | Listen to the source or the translation in Chinese, English, Japanese, Spanish or Arabic, with voices and speed (IndexTTS-2.5, also local). |
+| 📚 **Terminology and style** | Glossary, hard rules ("keep placeholders unchanged"), soft style guidance and a genre such as academic paper or subtitles. |
+| ✅ **Tells you what went missing** | Models can silently drop or repeat paragraphs. The app counts paragraphs and warns you; when they match, click one side to jump to the same paragraph on the other. |
+| ✍️ **Markdown stays Markdown** | Headings, lists, tables and code are shown formatted as they stream in, with Raw / Preview per side. Copy returns the Markdown. |
 
-### With the AppImage
+Also: streaming with **Stop**, correct Chinese and Japanese typography, an interface checked against WCAG 2.2 AA
+(keyboard and screen readers), and a local REST API with streaming ([`docs/openapi.yaml`](docs/openapi.yaml)) so
+other programs can use the same translator.
+
+## Install
+
+**You need** a GPU with a working Vulkan driver (tested on an AMD Radeon RX 9070, 16 GiB) and about 18 GiB of disk
+for the models. Without a usable GPU, set `GPU_LAYERS=0` to run on the CPU, which is much slower. If something is
+missing (no Vulkan driver, no models yet), the app says what and how to fix it, then stops.
+
+Pick one:
+
+| Your system | Use |
+|---|---|
+| Linux (x86-64 or aarch64) | [AppImage](#linux-appimage) |
+| Windows 10 / 11 (64-bit) | [Installer](#windows-installer) |
+| Anything else, or you want to hack on it | [Build from source](#build-from-source) |
+
+### Linux AppImage
 
 `Index_Translator-x86_64.AppImage` and `Index_Translator-aarch64.AppImage` are built for every
 change: on GitHub, open **Actions**, the latest **CI** run, and download the one for your
@@ -80,7 +96,7 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
   the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
   an x86-64 processor with AVX2.
 
-### With the Windows installer
+### Windows installer
 
 `Index_Translator-Setup-x86_64.exe` is built for every change: on GitHub, open **Actions**, the
 latest **CI** run, and download it under **Artifacts** (GitHub hands it out as a zip file; unpack
@@ -110,7 +126,7 @@ the install folder. Uninstalling (Windows **Settings**, **Apps**) leaves them in
 the folder by hand if you want the space back. Downloading needs `curl`, which Windows 10 and later
 include. Reading aloud needs a processor with AVX2.
 
-### From the source
+### Build from source
 
 ```bash
 bun src/server.ts
@@ -149,13 +165,24 @@ development with C++" workload, and the [Vulkan SDK](https://vulkan.lunarg.com/s
 Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Setup if it is not
 installed), both in `dist/`.
 
-## Translate text
+> [!NOTE]
+> Reading aloud is optional. Skipping it saves 14.2 GiB of downloads and about 5.7 GiB of VRAM.
+
+## Using it
+
+Open the app in your browser (the AppImage and installer do it for you; from source it is
+http://127.0.0.1:3000/). Pick languages, paste text, click **Translate**.
+
+
+<details>
+<summary><b>Translate text</b>: languages, Markdown, copy</summary>
+
 
 1. Choose the **From** and **To** languages. Pick **Detect language** if you are not sure of the
    source. Languages include English, Chinese, Japanese, Korean, German, French, Spanish, Russian
    and about 25 more.
 2. Paste or type your text into the box, or click **Open** to take it from a file (see
-   [Open a file](#open-a-file)).
+   Open a file, below).
 3. Click **Translate**. The translation appears as it is generated. Click **Stop** to end it early,
    and **Copy translation** to copy the result. **Clear** empties both sides for a new text.
 
@@ -168,13 +195,17 @@ Markdown source and the formatted view; **Raw** on your side brings back the tex
 **Copy translation** still copies the Markdown source. Links open in a new tab; images are shown as
 links and are not loaded.
 
-### Open a file
+</details>
+
+<details>
+<summary><b>Open a file</b>: text, Markdown, PDF</summary>
+
 
 **Open**, next to the **From** language, takes the text from a file on your computer; dropping or pasting a
 file anywhere on the page does the same. A text or PDF file is read by your browser and stays
 there: nothing is uploaded, and the server only receives the text you then send with
 **Translate**. An image is different: it is what gets translated, so **Translate** sends the image
-itself to the server (see [Translate an image](#translate-an-image)). Opening a file replaces what
+itself to the server (see Translate an image, below). Opening a file replaces what
 is in the box and removes the translation of the old text; it never starts a translation.
 
 - **Plain text and Markdown** (`.txt`, `.md`, `.markdown`, UTF-8, up to 2 MB) go into the box as
@@ -186,7 +217,7 @@ is in the box and removes the translation of the old text; it never starts a tra
   page at a time is taken, so a long document is translated page by page. While a PDF is open,
   **Open** reads **Close**: close the PDF before you open another file. The text you took stays.
 - **Images** (`.jpg`, `.jpeg`, `.png`, `.webp`, up to 8 MB): the picture takes the place of the
-  text box. See [Translate an image](#translate-an-image).
+  text box. See Translate an image, below.
 
 What to expect from a PDF: the text comes from the PDF's text layer. A scanned page has none, and
 the app says so instead of filling the box (it does no character recognition). Where the PDF does
@@ -197,7 +228,11 @@ translate. Password-protected PDFs are not opened. Use a current browser: with a
 year-old Chromium (141) ran out of memory and closed the tab, while Chrome 156 and Firefox 157
 opened it. **Open** and the page pictures have not been through the accessibility review yet.
 
-### Translate an image
+</details>
+
+<details>
+<summary><b>Translate an image</b></summary>
+
 
 Open, drop or paste (Ctrl+V) a JPEG, PNG or WebP image (a screenshot, a photo of a sign or a menu, a diagram) and
 it is shown where the text box was. Choose the **To** language and click **Translate**: the image
@@ -217,10 +252,14 @@ mixes several. **Clear** removes the picture and brings the text box back.
 - The first image loads the model's image encoder (0.6 GiB, part of `fetch`), which then uses
   about 1 GiB more GPU memory until the model is switched; together with reading aloud that
   fills a 16 GiB card. If the server says that images cannot be
-  translated, the encoder file is missing: run `fetch` again (see [Start the app](#start-the-app)).
+  translated, the encoder file is missing: run `fetch` again (see [Install](#install)).
 - A transparent background is treated as white.
 
-### Choosing a model
+</details>
+
+<details>
+<summary><b>Choosing a model</b></summary>
+
 
 Leave the model on **Automatic** (it picks by text length) unless you have a reason to pick one yourself.
 The app then chooses:
@@ -232,7 +271,11 @@ The app then chooses:
 - **Index-Translate-9B** for longer texts in other directions, with a warning that it may drop or
   repeat paragraphs.
 
-### Glossary and constraints
+</details>
+
+<details>
+<summary><b>Glossary and constraints</b></summary>
+
 
 Open **Glossary and constraints** to refine a translation. This works with Index-Translate-9B only.
 
@@ -247,7 +290,11 @@ In **Automatic** mode, entering any of these makes the app use Index-Translate-9
 Index-NativeLong-9B by hand while they are filled in, the app warns that the request cannot be
 translated with that model.
 
-## History
+</details>
+
+<details>
+<summary><b>History</b></summary>
+
 
 The **History** panel under **Model and options** lists your last 50 finished translations, newest
 first, with the time, languages and model. **Restore** puts the text, the languages and the
@@ -256,7 +303,10 @@ history** all of them. The history lives in your browser's local storage only: t
 receives or stores it, and it is not shared between browsers. Clearing the site's data in the
 browser clears it too.
 
+</details>
+
 ## Listen to a text
+
 
 Each side has a **Listen** button (the loudspeaker) under its text. Click it to hear the source
 text or the finished translation. While it reads, the button becomes **Stop**, and a **Pause**
@@ -297,6 +347,7 @@ oddly in any language.
 
 ## Check long translations
 
+
 Language models can occasionally drop or repeat paragraphs, and this is not reported as an error.
 After each translation, the app compares the number of paragraphs with the source. If they differ,
 it shows a warning. When you see one:
@@ -312,6 +363,7 @@ document to Chinese completely, but Chinese-to-English translation of a full-len
 not reliable, so check those results carefully.
 
 ## Settings
+
 
 Optional settings are environment variables set before the app starts, or command-line flags
 (the lowercase name with dashes: `PORT` is `--port`, `DEFAULT_MODEL` is `--default-model`). A flag
@@ -341,7 +393,12 @@ closed); flags work as above.
 
 Only one translation runs at a time. Other requests wait in line.
 
+## Contributing
+
+Building, testing and the project's conventions are in [CLAUDE.md](CLAUDE.md) (commands, layout, invariants),
+[WINDOWS.md](WINDOWS.md) and [A11Y-ACCEPTANCE.md](A11Y-ACCEPTANCE.md). Run `bun test` before sending a change.
+
 ## License
 
-Index Translator is released into the public domain under [The Unlicense](LICENSE). The software
-and models it uses keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
+Index Translator is released into the public domain under [The Unlicense](LICENSE). The software and models it
+uses keep their own licenses; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
