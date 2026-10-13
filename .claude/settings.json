@@ -1,0 +1,26 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(bun install)",
+      "Bash(bun test)",
+      "Bash(bun test *)",
+      "Bash(bun run typecheck)",
+      "Bash(bun lint)",
+      "Bash(bun lint *)",
+      "Bash(bun run format:check)",
+      "Bash(bun run format:write)",
+      "Bash(bun run lint:css)",
+      "Bash(bun run e2e)",
+      "Bash(bun run e2e *)",
+      "Bash(bun scripts/commonmark.ts)",
+      "Bash(git status *)",
+      "Bash(git diff *)",
+      "Bash(git log *)",
+      "Bash(git show *)"
+    ]
+  },
+  "enabledPlugins": {
+    "cc-plugin-you-should-know@builtin": true,
+    "claude-md-management@anthropic-plugin-directory": true
+  }
+}
