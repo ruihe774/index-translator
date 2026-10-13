@@ -8,8 +8,10 @@ names them and says where the full texts are. The AppImage carries this file in
 
 | Component | Used for | License | Full text |
 |---|---|---|---|
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) (libllama, the Vulkan and CPU backends), pinned in `scripts/build_llama.ts` | Running the translation models | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) (libllama, libmtmd, the Vulkan and CPU backends), pinned in `scripts/build_llama.ts` | Running the translation models | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | [ggml](https://github.com/ggml-org/ggml), part of llama.cpp | Tensor library under llama.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
+| libmtmd (`libmtmd.so`), part of llama.cpp (`tools/mtmd`) | Image input: the image encoder of Index-Translate-9B | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
+| stb_image, miniaudio and hash functions (SHA-1, SHA-256, xxHash), in llama.cpp's source tree (`vendor/`) | Compiled into `libmtmd.so`; stb_image decodes the image | Each under its own license: public domain or MIT (stb_image, Sean Barrett), public domain or MIT-0 (miniaudio, David Reid), public domain (SHA-1, SHA-256), BSD 2-Clause (xxHash, Copyright (c) 2012-2021 Yann Collet); the texts are in llama.cpp's repository at the pinned commit | `vendor/stb/stb_image.h`, `vendor/miniaudio/miniaudio.h`, `vendor/hash/*/` there |
 | [audio.cpp](https://github.com/0xShug0/audio.cpp) (`libaudiocpp.so`), pinned in `scripts/build_audiocpp.ts` | Reading aloud (IndexTTS-2.5) and voice separation (BS-RoFormer) | Apache-2.0, Copyright 2026 ShugoAI LLC | `vendor/audio.cpp/LICENSE` |
 | ggml, audio.cpp's fork, linked statically into `libaudiocpp.so` | Tensor library under audio.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/audio.cpp/LICENSE.ggml` |
 | cJSON, SentencePiece and the Abseil subset that comes with SentencePiece, in audio.cpp's source tree (`external/`) | Compiled into `libaudiocpp.so` | Each under its own license (MIT, Apache-2.0, Apache-2.0); the files are in audio.cpp's repository at the pinned commit | `external/*/LICENSE` there |
@@ -45,6 +47,8 @@ about to download and asks for `yes` first (the same text as here, in short).
 ### Index-Translate-9B and Index-NativeLong-9B (`index-translate-9b`, `index-nailong-9b`)
 
 - Authors: IndexTeam (bilibili). Files: `Index-Translate-9B-GGUF`, `Index-Nailong-9B-GGUF` on Hugging Face.
+  With `index-translate-9b` comes its image encoder (`Index-Translate-9B.mmproj-Q8_0.gguf`), a second
+  file of the same repository, which lets the model read the text in an image.
 - License: Apache-2.0 (as stated on both model cards).
 - <https://huggingface.co/IndexTeam/Index-Translate-9B-GGUF>, <https://huggingface.co/IndexTeam/Index-Nailong-9B-GGUF>
 

@@ -22,6 +22,10 @@ export function describeError(e: ApiErrorBody | undefined, status?: number): str
       return "The translation engine is loading or switching models. Try again in a moment.";
     case "body_too_large":
       return "The request is too large to send.";
+    case "image_too_large":
+      return `The image is too large${e.message ? `: ${e.message}` : ""}. Make it smaller and open it again.`;
+    case "image_unavailable":
+      return `Images cannot be translated on this server${e.message ? `: ${e.message}` : ""}.`;
     case "speech_unavailable":
       return `Reading aloud is not available${e.message ? `: ${e.message}` : ""}.`;
     case "speech_error":

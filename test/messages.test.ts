@@ -3,9 +3,11 @@ import {
   adviceMessage,
   healthMessage,
   INTERRUPTED_NOTE,
+  imageAdviceMessage,
   interruption,
   metaLine,
   modelLabel,
+  type ResultContext,
   resultNotes,
   SAME_LANGUAGE_WARNING,
   STOPPED_NOTE,
@@ -92,6 +94,17 @@ describe("adviceMessage", () => {
   });
 });
 
+describe("imageAdviceMessage", () => {
+  test("nothing to say for the chat model or Automatic", () => {
+    expect(imageAdviceMessage(false, "auto", "en", "")).toBe("");
+  });
+  test("the document model was chosen: the chat model is used, and the warnings keep their order", () => {
+    expect(imageAdviceMessage(true, "en", "en", "Note.")).toBe(
+      `Warning: Index-NativeLong-9B does not translate images. Index-Translate-9B will be used. ${SAME_LANGUAGE_WARNING} Note.`,
+    );
+  });
+});
+
 describe("healthMessage", () => {
   const queue = { running: false, waiting: 0 };
   test("ready with and without a model, and with a queue", () => {
@@ -165,6 +178,20 @@ describe("resultNotes", () => {
     expect(notes[0]).toContain("output limit");
     expect(notes[1]).toContain("lines");
     expect(notes[2]).toContain("Chinese-to-English");
+  });
+});
+
+describe("resultNotes for an image", () => {
+  test("there is no source to compare paragraphs with; a cut-off translation is still said", () => {
+    const ctx: ResultContext = {
+      source: null,
+      translation: "One.\n\nTwo.",
+      model: CHAT_MODEL,
+      sourceLang: undefined,
+      targetLang: "en",
+    };
+    expect(resultNotes({ finish_reason: "stop" }, ctx)).toEqual([]);
+    expect(resultNotes({ finish_reason: "length" }, ctx)).toHaveLength(1);
   });
 });
 

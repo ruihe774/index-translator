@@ -46,6 +46,7 @@ describe("metadata endpoints", () => {
       id: DOCUMENT,
       label: expect.any(String),
       kind: "document",
+      image: false,
       directions: ["zh-en", "en-zh", "zh-ja", "ja-zh"],
     });
   });

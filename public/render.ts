@@ -33,7 +33,7 @@ export function createRender(t: RenderTargets): () => void {
     const hasText = state.source.length > 0;
     const hasOutput = state.translation.length > 0;
     setAttr(t.translate, "aria-disabled", String(running || !state.languagesReady));
-    setAttr(t.clear, "aria-disabled", String(!hasText && !hasOutput));
+    setAttr(t.clear, "aria-disabled", String(!hasText && !state.image && !hasOutput));
     setAttr(t.copy, "aria-disabled", String(!hasOutput || running));
     t.sourceSwitch.disabled = !hasText;
     t.outputSwitch.disabled = !hasOutput;

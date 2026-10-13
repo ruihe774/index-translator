@@ -9,12 +9,22 @@ import {
   EngineError,
   type EngineTimings,
   type FinishReason,
+  ImageInputError,
+  ImageUnavailableError,
   type Launcher,
   launchNative,
   type Usage,
 } from "./llama";
+import { IMAGE_FORMATS, ImageRejected, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, prepareImage } from "./image";
 import { findModel, MODELS, type ModelSpec } from "./models";
-import { buildDocumentPrompt, buildPrompt, DOCUMENT_DIRECTIONS, LANGUAGES, type PromptInput } from "./prompt";
+import {
+  buildDocumentPrompt,
+  buildImagePrompt,
+  buildPrompt,
+  DOCUMENT_DIRECTIONS,
+  LANGUAGES,
+  type PromptInput,
+} from "./prompt";
 import { acceptsQoa, qoaLoader, qoaResponse } from "./qoa-stream";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 import {
@@ -41,6 +51,8 @@ const API = "/api/v1";
 const DEFAULT_OUTPUT_RATIO = 4;
 const DEFAULT_OUTPUT_FLOOR = 512;
 const MAX_BODY_BYTES = 4 * 1024 * 1024;
+/** Longest `image` string: the largest image in base64, with room for a data URL's head. */
+const MAX_IMAGE_CHARS = Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 64;
 const KEEPALIVE_MS = 15_000;
 /** How long a resumable translation keeps running with nobody reading it (a phone in the background). */
 const RESUME_GRACE_MS = 120_000;
@@ -65,6 +77,16 @@ function cancelled(): ApiError {
   return new ApiError(499, "cancelled", "the request was cancelled");
 }
 
+/** What went wrong with a request's image, as the API reports it; `undefined` for any other error. */
+function imageError(e: unknown): ApiError | undefined {
+  if (e instanceof ImageRejected) {
+    return new ApiError(e.code === "image_too_large" ? 413 : 400, e.code, e.message, { field: "image" });
+  }
+  if (e instanceof ImageInputError) return new ApiError(400, "invalid_request", e.message, { field: "image" });
+  if (e instanceof ImageUnavailableError) return new ApiError(503, "image_unavailable", e.message);
+  return undefined;
+}
+
 function json(body: unknown, status = 200, headers?: Record<string, string>): Response {
   return Response.json(body, { status, headers });
 }
@@ -73,6 +95,8 @@ function errorResponse(e: unknown): Response {
   if (e instanceof ApiError) {
     return json({ error: { code: e.code, message: e.message, details: e.details } }, e.status, e.headers);
   }
+  const image = imageError(e);
+  if (image) return errorResponse(image);
   if (e instanceof EngineError) {
     return json({ error: { code: "engine_error", message: e.message } }, 502);
   }
@@ -85,6 +109,11 @@ function errorResponse(e: unknown): Response {
 
 interface TranslateRequest extends PromptInput {
   model: ModelSpec;
+  /**
+   * The image whose text is translated: the uploaded file as parsed, the PNG made from it
+   * (src/image.ts) from then on. With one, `text` may be empty and only says what to look at.
+   */
+  image?: Uint8Array;
   maxOutputTokens?: number;
   stream: boolean;
   /** SSE only: the translation survives a dropped connection and can be picked up again. */
@@ -166,11 +195,12 @@ function checkJsonContentType(req: Request): void {
   }
 }
 
-async function parseBody(req: Request): Promise<Record<string, unknown>> {
+/** `withImage`: the body may carry an `image`, which does not count towards MAX_BODY_BYTES. */
+async function parseBody(req: Request, withImage = false): Promise<Record<string, unknown>> {
   checkJsonContentType(req);
-  if (Number(req.headers.get("content-length") ?? 0) > MAX_BODY_BYTES) {
-    throw new ApiError(413, "body_too_large", `request body exceeds ${MAX_BODY_BYTES} bytes`);
-  }
+  const tooLarge = () => new ApiError(413, "body_too_large", `request body exceeds ${MAX_BODY_BYTES} bytes`);
+  const length = Number(req.headers.get("content-length") ?? 0);
+  if (length > MAX_BODY_BYTES + (withImage ? MAX_IMAGE_CHARS : 0)) throw tooLarge();
   let body: unknown;
   try {
     body = await req.json();
@@ -180,11 +210,38 @@ async function parseBody(req: Request): Promise<Record<string, unknown>> {
   if (typeof body !== "object" || body === null || Array.isArray(body)) {
     throw invalid("request body must be a JSON object");
   }
-  return body as Record<string, unknown>;
+  const fields = body as Record<string, unknown>;
+  // Base64 is ASCII, so the string's length is its size in the body.
+  if (length - (typeof fields.image === "string" ? fields.image.length : 0) > MAX_BODY_BYTES) throw tooLarge();
+  return fields;
+}
+
+/** The `image` field's bytes: base64, bare or as a `data:` URL. What they are is for src/image.ts to find out. */
+function optionalImage(body: Record<string, unknown>): Uint8Array | undefined {
+  const v = body.image;
+  if (v === undefined || v === null) return undefined;
+  if (typeof v !== "string" || !v) throw invalid("image must be a base64 string or a data: URL", "image");
+  if (v.length > MAX_IMAGE_CHARS) {
+    throw new ApiError(413, "image_too_large", `the image is larger than ${MAX_IMAGE_BYTES} bytes`, {
+      field: "image",
+      max_image_bytes: MAX_IMAGE_BYTES,
+    });
+  }
+  const base64 = v.startsWith("data:") ? v.slice(v.indexOf(",") + 1) : v;
+  const bytes = new Uint8Array(Buffer.from(base64, "base64"));
+  if (bytes.length === 0) throw invalid("image must be a base64 string or a data: URL", "image");
+  return bytes;
 }
 
 function parseTranslateRequest(req: Request, body: Record<string, unknown>, defaultModel: string): TranslateRequest {
-  if (typeof body.text !== "string" || !body.text.trim()) throw invalid("text must be a non-empty string", "text");
+  const image = optionalImage(body);
+  if (image) {
+    if (body.text !== undefined && body.text !== null && typeof body.text !== "string") {
+      throw invalid("text must be a string", "text");
+    }
+  } else if (typeof body.text !== "string" || !body.text.trim()) {
+    throw invalid("text must be a non-empty string", "text");
+  }
   const targetLang = optionalString(body, "target_lang", 64);
   if (!targetLang?.trim()) throw invalid("target_lang must be a non-empty string", "target_lang");
 
@@ -218,7 +275,8 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
   }
 
   const input: TranslateRequest = {
-    text: body.text,
+    text: (body.text as string | null | undefined) ?? "",
+    image,
     model,
     targetLang,
     sourceLang: optionalString(body, "source_lang", 64),
@@ -230,6 +288,10 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
     stream: body.stream === true || (req.headers.get("accept") ?? "").includes("text/event-stream"),
     resumable: body.resumable === true,
   };
+  if (image) {
+    if (!model.mmproj) throw invalid(`image is not supported by ${model.id}`, "image");
+    if (input.genre) throw invalid("genre is not supported with an image", "genre");
+  }
   if (model.kind === "document") checkDocumentRequest(input);
   return input;
 }
@@ -264,7 +326,9 @@ function documentDirection(input: TranslateRequest): string {
   return `${input.sourceLang!.trim().toLowerCase()}-${input.targetLang.trim().toLowerCase()}`;
 }
 
+/** The text of the user message; a request's image follows it. */
 function promptFor(input: TranslateRequest): string {
+  if (input.image) return buildImagePrompt(input);
   return input.model.kind === "document"
     ? buildDocumentPrompt(documentDirection(input), input.text)
     : buildPrompt(input);
@@ -389,7 +453,7 @@ export async function startApp(
 
   async function prepare(input: TranslateRequest): Promise<Budget> {
     const prompt = promptFor(input);
-    const promptTokens = await engine.countPromptTokens(prompt);
+    const promptTokens = await engine.countPromptTokens(prompt, input.image);
     if (promptTokens > cfg.maxInputTokens) {
       throw new ApiError(413, "input_too_long", "the input exceeds the token limit for a single translation", {
         prompt_tokens: promptTokens,
@@ -428,7 +492,7 @@ export async function startApp(
     };
 
     const cleaner = new OutputCleaner();
-    for await (const ev of engine.generate(b.prompt, b.maxOutputTokens, signal)) {
+    for await (const ev of engine.generate(b.prompt, b.maxOutputTokens, signal, input.image)) {
       if (ev.type === "delta") {
         const text = cleaner.push(ev.text);
         if (text) yield { type: "delta" as const, text };
@@ -613,8 +677,9 @@ export async function startApp(
         }
       } catch (e) {
         if (!job.abort.signal.aborted) {
-          if (e instanceof ApiError) {
-            emit("error", { code: e.code, message: e.message, details: e.details });
+          const known = e instanceof ApiError ? e : imageError(e);
+          if (known) {
+            emit("error", { code: known.code, message: known.message, details: known.details });
           } else {
             const code = e instanceof EngineError ? "engine_error" : "internal_error";
             if (code === "internal_error") console.error("[api] stream failed:", e);
@@ -821,8 +886,14 @@ export async function startApp(
                 id: m.id,
                 label: m.label,
                 kind: m.kind,
+                image: m.mmproj !== undefined,
                 ...(m.directions ? { directions: m.directions } : {}),
               })),
+              image: {
+                formats: IMAGE_FORMATS.map((f) => `image/${f}`),
+                max_bytes: MAX_IMAGE_BYTES,
+                max_pixels: MAX_IMAGE_PIXELS,
+              },
             });
           }
           case "/languages": {
@@ -857,12 +928,19 @@ export async function startApp(
           }
           case "/tokenize": {
             if (req.method !== "POST") return methodNotAllowed("POST");
-            const input = parseTranslateRequest(req, await parseBody(req), cfg.defaultModel);
+            const body = await parseBody(req);
+            // Counting an image means preparing it on the engine thread, which would have to wait for the queue.
+            if (body.image !== undefined && body.image !== null) {
+              throw invalid("image is not supported by /tokenize", "image");
+            }
+            const input = parseTranslateRequest(req, body, cfg.defaultModel);
             return json(await tokenize(input));
           }
           case "/translate": {
             if (req.method !== "POST") return methodNotAllowed("POST");
-            const input = parseTranslateRequest(req, await parseBody(req), cfg.defaultModel);
+            const input = parseTranslateRequest(req, await parseBody(req, true), cfg.defaultModel);
+            // Before the queue: an upload that is not a usable image is refused like any other bad field.
+            if (input.image) input.image = await prepareImage(input.image);
             // A long translation can stay silent for minutes in JSON mode, and a model swap can take a while.
             server.timeout(req, 0);
             return input.stream ? translateSse(input, req.signal) : await translateJson(input, req.signal);

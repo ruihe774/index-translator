@@ -1,5 +1,12 @@
 import { describe, expect, test } from "bun:test";
-import { buildRequest, type FormValues, glossaryMessage, hasOptions, lines } from "../public/request";
+import {
+  buildImageRequest,
+  buildRequest,
+  type FormValues,
+  glossaryMessage,
+  hasOptions,
+  lines,
+} from "../public/request";
 import { CHAT_MODEL, DOCUMENT_MODEL } from "../public/select-model";
 
 const form = (over: Partial<FormValues> = {}): FormValues => ({
@@ -30,6 +37,31 @@ describe("lines", () => {
   test("trims and drops blank lines", () => {
     expect(lines(" a \n\n  \nb\n")).toEqual(["a", "b"]);
     expect(lines("")).toEqual([]);
+  });
+});
+
+describe("buildImageRequest", () => {
+  const image = "data:image/png;base64,AAAA";
+
+  test("the image goes to the chat model in place of a text", () => {
+    expect(bodyOf(buildImageRequest(image, undefined, form()))).toEqual({
+      model: CHAT_MODEL,
+      image,
+      target_lang: "zh",
+      stream: true,
+    });
+    expect(bodyOf(buildImageRequest(image, "ja", form()))).toMatchObject({ source_lang: "ja" });
+  });
+  test("glossary and constraints are sent with it, genre never", () => {
+    const body = bodyOf(
+      buildImageRequest(image, undefined, form({ glossary: "拉面 = ramen", hard: "a\nb", soft: "c", genre: "菜单" })),
+    );
+    expect(body).toMatchObject({ glossary: { 拉面: "ramen" }, hard_constraints: ["a", "b"], soft_constraints: ["c"] });
+    expect(body).not.toHaveProperty("genre");
+    expect(body).not.toHaveProperty("text");
+  });
+  test("a malformed glossary stops the request", () => {
+    expect(buildImageRequest(image, undefined, form({ glossary: "no separator" }))).toHaveProperty("glossaryProblem");
   });
 });
 

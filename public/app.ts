@@ -21,6 +21,7 @@ import {
   type Done,
   type Health,
   healthMessage,
+  imageAdviceMessage,
   interruption,
   metaLine,
   modelLabel,
@@ -30,7 +31,7 @@ import {
 import { initOpenUi } from "./open-ui.js";
 import { type Alignment, alignBlocks } from "./paragraphs.js";
 import { createRender } from "./render.js";
-import { buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
+import { buildImageRequest, buildRequest, hasOptions as formHasOptions, glossaryMessage } from "./request.js";
 import { CHAT_MODEL, type Choice, DOCUMENT_MODEL, detectSource, type Selection, selectModel } from "./select-model.js";
 import { registerServiceWorker } from "./pwa.js";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.js";
@@ -92,6 +93,44 @@ function showFieldError(error: HTMLElement, input: HTMLElement, message: string 
   else input.setAttribute("aria-invalid", "true");
 }
 
+// ---- an image as the source ------------------------------------------------------------------
+//
+// An opened image stands where the text box is, drawn on a canvas (the page's CSP allows no
+// `blob:` or `data:` picture). The box stays empty under it. Translate sends the file, and only
+// then does it leave the browser; everything that puts a text in the box (`loadSource`, a restored
+// history entry) takes the image away.
+
+const imageArea = $("source-image");
+const imageCanvas = $<HTMLCanvasElement>("source-canvas");
+/** The longer side of the canvas at most: the picture is for looking at, the file is what is sent. */
+const MAX_CANVAS_SIDE = 2048;
+let sourceImage: File | null = null;
+
+function setSourceImage(file: File | null, picture?: ImageBitmap) {
+  sourceImage = file;
+  if (file && picture) {
+    const scale = Math.min(1, MAX_CANVAS_SIDE / Math.max(picture.width, picture.height));
+    imageCanvas.width = Math.max(1, Math.round(picture.width * scale));
+    imageCanvas.height = Math.max(1, Math.round(picture.height * scale));
+    imageCanvas.getContext("2d")?.drawImage(picture, 0, 0, imageCanvas.width, imageCanvas.height);
+    imageCanvas.setAttribute("aria-label", `Image to translate: ${file.name}`);
+  } else {
+    // Gives the pixels back.
+    imageCanvas.width = 0;
+    imageCanvas.height = 0;
+  }
+  picture?.close();
+}
+
+function readDataUrl(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error(`${file.name} could not be read`));
+    reader.readAsDataURL(file);
+  });
+}
+
 const CHOICES: Choice[] = ["auto", CHAT_MODEL, DOCUMENT_MODEL];
 let modelChoice: Choice = "auto";
 
@@ -133,6 +172,14 @@ function setLang(el: HTMLElement, lang: string | undefined) {
 function refreshSelection() {
   const s = currentSelection();
   setLang(textInput, sourceLangOf());
+  if (sourceImage) {
+    const { width, height } = imageCanvas;
+    setText(countEl, `${sourceImage.name}, ${number.format(width)} × ${number.format(height)} pixels`);
+    const documentChosen = modelChoice === DOCUMENT_MODEL;
+    setText(adviceEl, imageAdviceMessage(documentChosen, fromSelect.value, toSelect.value, languageNote));
+    options.disabled = false;
+    return s;
+  }
   setText(countEl, `${number.format(s.letters)} letters`);
   setText(adviceEl, adviceMessage(s, fromSelect.value, toSelect.value, languageNote));
   const documentModel = s.model === DOCUMENT_MODEL && s.reason !== "manual-document-unusable";
@@ -246,17 +293,19 @@ function showSwitch(el: ViewSwitch, side: keyof typeof views) {
  * input the state does not own, so everything that changes it or the view around it comes here.
  */
 function refreshControls() {
-  setState({ source: textInput.value });
+  setState({ source: textInput.value, image: sourceImage !== null });
 }
 
 function showSource() {
-  const preview = views.source.view === "preview" && textInput.value.length > 0;
+  const image = sourceImage !== null;
+  const preview = !image && views.source.view === "preview" && textInput.value.length > 0;
   showSwitch(sourceSwitch, "source");
   setLang(sourceView, sourceLangOf());
   if (preview) renderText(sourceView, textInput.value, views.source.available);
   else sourceView.replaceChildren();
   sourceArea.hidden = !preview;
-  textInput.hidden = preview;
+  imageArea.hidden = !image;
+  textInput.hidden = preview || image;
   refreshControls();
   refreshSync();
   speech.showSpeaking();
@@ -399,8 +448,9 @@ async function translate() {
     return;
   }
 
+  const image = sourceImage;
   const text = textInput.value;
-  if (!text.trim()) {
+  if (!image && !text.trim()) {
     showFieldError(textError, textInput, "Enter some text to translate.");
     textInput.focus();
     return;
@@ -408,19 +458,25 @@ async function translate() {
   showFieldError(textError, textInput, null);
 
   const sel = refreshSelection();
-  if (sel.reason === "manual-document-unusable") {
+  if (!image && sel.reason === "manual-document-unusable") {
     fail(selectionMessage(sel).text);
     return;
   }
+  // Only the chat model reads images.
+  const model = image ? CHAT_MODEL : sel.model;
 
-  const built = buildRequest(sel.model, sel.sourceLang, {
+  const values = {
     text,
     targetLang: toSelect.value,
     glossary: glossaryInput.value,
     hard: hardInput.value,
     soft: softInput.value,
     genre: genreInput.value,
-  });
+  };
+  // The image itself is put in when the request is sent.
+  const built = image
+    ? buildImageRequest("", fromSelect.value === "auto" ? undefined : fromSelect.value, values)
+    : buildRequest(sel.model, sel.sourceLang, values);
   if ("glossaryProblem" in built) {
     advancedOpen();
     showFieldError(glossaryError, glossaryInput, glossaryMessage(built.glossaryProblem));
@@ -436,13 +492,13 @@ async function translate() {
   const controller = new AbortController();
   setState({ running: controller });
   following = true;
-  const markdown = looksLikeMarkdown(text);
+  const markdown = !image && looksLikeMarkdown(text);
   clearResult(markdown);
   views.source = { available: markdown, view: markdown ? "preview" : "raw" };
   showSource();
   outputEl.lang = toSelect.value;
   stopBtn.focus();
-  metaEl.show(`Translating with ${modelLabel(sel.model)}…`);
+  metaEl.show(`Translating with ${modelLabel(model)}…`);
 
   let stopped = false;
   let translationId: string | null = null;
@@ -455,6 +511,12 @@ async function translate() {
   };
 
   try {
+    const body = JSON.stringify({
+      ...built.body,
+      ...(image ? { image: await readDataUrl(image) } : {}),
+      resumable: true,
+    });
+    controller.signal.throwIfAborted();
     const events = resumableEvents({
       signal: controller.signal,
       visible: () => document.visibilityState === "visible",
@@ -470,7 +532,7 @@ async function translate() {
         };
       },
       onReconnecting: () => metaEl.show("Connection lost. Reconnecting…"),
-      onReconnected: () => metaEl.show(`Translating with ${modelLabel(sel.model)}…`),
+      onReconnected: () => metaEl.show(`Translating with ${modelLabel(model)}…`),
       connect: async (lastId, signal) => {
         const res = translationId
           ? await fetch(`${API}/translations/${translationId}/events`, {
@@ -480,7 +542,7 @@ async function translate() {
           : await fetch(`${API}/translate`, {
               method: "POST",
               headers: { "content-type": "application/json" },
-              body: JSON.stringify({ ...built.body, resumable: true }),
+              body,
               signal,
             });
         if (!res.ok || !res.body) {
@@ -513,18 +575,19 @@ async function translate() {
 
     const translation = state.translation;
     const notes = resultNotes(done, {
-      source: text,
+      source: image ? null : text,
       translation,
-      model: sel.model,
+      model,
       sourceLang: sel.sourceLang,
       targetLang: toSelect.value,
     });
     for (const n of notes) addNote(n);
-    const alignment = done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
+    const alignment = !image && done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
     if (alignment) synced = { source: text, translation, alignment };
-    metaEl.show(metaLine(sel.model, done));
+    metaEl.show(metaLine(model, done));
     if (markdown) linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
-    if (translation.trim()) {
+    // An image's translation is not kept: the history holds texts, and the picture stays out of local storage.
+    if (!image && translation.trim()) {
       addToHistory({
         id: newId(),
         at: Date.now(),
@@ -562,6 +625,7 @@ async function translate() {
  */
 function loadSource(text: string, preview = false) {
   speech.stop();
+  setSourceImage(null);
   textInput.value = text;
   textInput.scrollTop = 0;
   sourceArea.scrollTop = 0;
@@ -571,6 +635,14 @@ function loadSource(text: string, preview = false) {
   clearResult(false);
   placeholderEl.hidden = false;
   refreshSync();
+  refreshSelection();
+}
+
+/** Puts an opened image in place of the source box: a new start like `loadSource`, with no text. */
+function loadImage(file: File, picture: ImageBitmap) {
+  loadSource("");
+  setSourceImage(file, picture);
+  showSource();
   refreshSelection();
 }
 
@@ -594,6 +666,7 @@ const openUi = initOpenUi({
   note: $("file-note"),
   area: $("source-field"),
   load: loadSource,
+  loadImage,
 });
 
 // ---- history ---------------------------------------------------------------------------------
@@ -661,6 +734,7 @@ function restoreEntry(entry: HistoryEntry) {
   if (state.running) return;
   speech.stop();
   openUi.deselect();
+  setSourceImage(null);
   textInput.value = entry.source;
   showFieldError(textError, textInput, null);
   const has = (select: HTMLSelectElement, v: string) => [...select.options].some((o) => o.value === v);

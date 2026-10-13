@@ -8,7 +8,7 @@ import { join } from "node:path";
 import { type App, startApp } from "../src/app";
 import { MODELS } from "../src/models";
 import { MAX_SPEECH_CHARS, MAX_SPEED, MIN_SPEED, SPEECH_LANGUAGES } from "../src/speech";
-import { CHAT, config, launcher, mock, postTo, readSse, resetMock, root, waitReady } from "./helpers/mock-engine";
+import { CHAT, config, launcher, mock, PNG, postTo, readSse, resetMock, root, waitReady } from "./helpers/mock-engine";
 
 const spec = Bun.YAML.parse(await Bun.file(join(root, "docs", "openapi.yaml")).text()) as any;
 
@@ -335,6 +335,21 @@ describe("POST success responses", () => {
     expect(check("ErrorEvent", events[0]!.data)).toEqual([]);
     expect(events[0]!.data.code).toBe("input_too_long");
   });
+
+  test("an image request's failures in the engine arrive as ErrorEvents", async () => {
+    const body = { image: PNG.toString("base64"), target_lang: "zh", stream: true };
+    for (const [knob, code] of [
+      ["imageUnavailable", "image_unavailable"],
+      ["imageFailWith", "invalid_request"],
+    ] as const) {
+      mock[knob] = "no";
+      const events = await readSse(await post("/api/v1/translate", body));
+      mock[knob] = undefined;
+      expect(events.map((e) => e.event)).toEqual(["error"]);
+      expect(check("ErrorEvent", events[0]!.data)).toEqual([]);
+      expect(events[0]!.data.code).toBe(code);
+    }
+  });
 });
 
 describe("error responses match components/schemas/Error", () => {
@@ -459,7 +474,7 @@ describe("the spec against the server", () => {
 
   test("the error responses documented for /translate all point at the Error schema", () => {
     const errorSchema = spec.components.schemas.Error;
-    for (const status of ["400", "403", "413", "415", "429", "502"]) {
+    for (const status of ["400", "403", "413", "415", "429", "502", "503"]) {
       expect({ status, schema: deref(documented("/translate", "post", status)) }).toEqual({
         status,
         schema: errorSchema,
@@ -494,6 +509,14 @@ describe("the spec against the server", () => {
           return (await post("/api/v1/translate", plain)).status;
         } finally {
           mock.failWith = undefined;
+        }
+      },
+      "503": async () => {
+        mock.imageUnavailable = "the image encoder is not installed";
+        try {
+          return (await post("/api/v1/translate", { image: PNG.toString("base64"), target_lang: "zh" })).status;
+        } finally {
+          mock.imageUnavailable = undefined;
         }
       },
     };

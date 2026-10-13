@@ -35,7 +35,7 @@ const app = await startApp(
 );
 await waitReady(app);
 
-const KNOBS = ["chunks", "delayMs", "finish", "failWith", "failLaunch", "ready"] as const;
+const KNOBS = ["chunks", "delayMs", "finish", "failWith", "failLaunch", "imageUnavailable", "ready"] as const;
 
 const control = Bun.serve({
   port: controlPort,
@@ -59,7 +59,12 @@ const control = Bun.serve({
       mock.aborted = 0;
       mock.launches.length = 0;
     }
-    return Response.json({ ...mock, models: { CHAT, DOCUMENT }, speech: mockSpeech });
+    // An image is reported by what a test can check: its size in bytes and whether it is the PNG the engine is given.
+    const requests = mock.requests.map(({ image, ...rest }) => ({
+      ...rest,
+      ...(image ? { image: { bytes: image.length, png: image[0] === 0x89 && image[1] === 0x50 } } : {}),
+    }));
+    return Response.json({ ...mock, requests, models: { CHAT, DOCUMENT }, speech: mockSpeech });
   },
 });
 

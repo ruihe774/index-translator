@@ -1,14 +1,16 @@
 // The Open button: a text or Markdown file goes into the source box, a PDF is shown as a strip of
 // page thumbnails (elements/pdf-pages.ts) and the page that is clicked goes into the box as
-// Markdown. While a PDF is open the button reads Close and puts it away. Nothing is translated by
-// opening. The page (app.ts) supplies how a text is put in the
-// box; open-file.ts holds the rules and the wording, pdf.ts the libraries.
+// Markdown, and an image (JPEG, PNG, WebP) takes the place of the box. While a PDF is open the
+// button reads Close and puts it away. Nothing is translated by opening. The page (app.ts) supplies
+// how a text or an image is put in the box; open-file.ts holds the rules and the wording, pdf.ts
+// the libraries.
 //
-// Everything happens in this browser: no request carries the file or says that one was opened.
+// Opening happens in this browser: no request carries the file or says that one was opened. Only
+// Translate sends something, and for an image that is the file.
 
 import type { PdfPages } from "./elements/pdf-pages.js";
 import { looksLikeMarkdown } from "./markdown.js";
-import { ACCEPT_PDF, ACCEPT_TEXT, decodeText, fileKind, pageNote, refusal } from "./open-file.js";
+import { ACCEPT_IMAGE, ACCEPT_PDF, ACCEPT_TEXT, decodeText, fileKind, pageNote, refusal } from "./open-file.js";
 import { openPdf, type PdfDocument, PdfError, pdfInstalled } from "./pdf.js";
 
 export interface OpenUiDeps {
@@ -25,6 +27,11 @@ export interface OpenUiDeps {
    * likely read than edited (a Markdown file, a PDF page).
    */
   load: (text: string, preview: boolean) => void;
+  /**
+   * Shows `picture`, the decoded `file`, in place of the source box and drops the text and its
+   * translation. The file is what Translate then sends; the picture becomes the page's to close.
+   */
+  loadImage: (file: File, picture: ImageBitmap) => void;
 }
 
 export interface OpenUi {
@@ -81,6 +88,24 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     say(`Opened ${file.name}.`);
   }
 
+  async function openImage(file: File, mine: number) {
+    let picture: ImageBitmap;
+    try {
+      picture = await createImageBitmap(file);
+    } catch {
+      reading(false, mine);
+      if (mine === turn) say(`${file.name} was not opened: it could not be read as an image.`, "error");
+      return;
+    }
+    reading(false, mine);
+    if (mine !== turn || busy) {
+      picture.close();
+      return;
+    }
+    d.loadImage(file, picture);
+    say(`Opened ${file.name}. Translate sends the image to the server, which reads the text in it.`);
+  }
+
   async function openDocument(file: File, mine: number) {
     say(`Opening ${file.name}…`);
     let doc: PdfDocument;
@@ -111,7 +136,11 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     if (problem !== null) say(problem, "error");
     else {
       reading(true);
-      void (kind === "pdf" ? openDocument(file, mine) : openText(file, mine));
+      void (kind === "pdf"
+        ? openDocument(file, mine)
+        : kind === "image"
+          ? openImage(file, mine)
+          : openText(file, mine));
     }
   }
 
@@ -195,10 +224,10 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   d.pages.addEventListener("page", (e) => void takePage((e as CustomEvent<number>).detail));
 
   // Without the libraries the picker offers no PDFs, and one that is picked anyway is refused by openPdf.
-  d.input.accept = `${ACCEPT_TEXT},${ACCEPT_PDF}`;
+  d.input.accept = `${ACCEPT_TEXT},${ACCEPT_PDF},${ACCEPT_IMAGE}`;
   void pdfInstalled().then((installed) => {
     if (installed) return;
-    d.input.accept = ACCEPT_TEXT;
+    d.input.accept = `${ACCEPT_TEXT},${ACCEPT_IMAGE}`;
     d.button.title = NOT_INSTALLED;
   });
 

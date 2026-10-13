@@ -18,10 +18,15 @@ const libName = (name: string) => (process.platform === "win32" ? `${name}.${suf
 export const libraryPath = (dir: string) => join(dir, libName("llama"));
 /** src/llama-shim.c as scripts/build_llama.ts compiled it, against the headers of the libllama beside it. */
 export const shimPath = (dir: string) => join(dir, libName("llama-shim"));
+/** llama.cpp's library for image input, from the same build. */
+export const mtmdPath = (dir: string) => join(dir, libName("mtmd"));
 
 function bind(dir: string) {
   if (!existsSync(libraryPath(dir)) || !existsSync(shimPath(dir))) {
     throw new Error(`libllama and its shim not found in ${dir}; run: bun scripts/build_llama.ts`);
+  }
+  if (!existsSync(mtmdPath(dir))) {
+    throw new Error(`libmtmd not found in ${dir} (a build from before image input); run: bun scripts/build_llama.ts`);
   }
   const llama = dlopen(libraryPath(dir), {
     llama_model_free: { args: ["ptr"], returns: "void" },
@@ -44,9 +49,22 @@ function bind(dir: string) {
     shim_load_model: { args: ["ptr", "i32"], returns: "ptr" },
     shim_new_context: { args: ["ptr", "u32", "u32", "i32"], returns: "ptr" },
     shim_decode: { args: ["ptr", "ptr", "i32"], returns: "i32" },
+    shim_decode_at: { args: ["ptr", "ptr", "i32", "i32"], returns: "i32" },
+    shim_mtmd_load: { args: ["ptr", "ptr", "bool", "i32"], returns: "ptr" },
+    shim_mtmd_bitmap: { args: ["ptr", "usize"], returns: "ptr" },
+    shim_mtmd_tokenize: { args: ["ptr", "ptr", "usize", "ptr", "ptr", "usize"], returns: "ptr" },
+    shim_mtmd_eval_chunk: { args: ["ptr", "ptr", "ptr", "i32", "i32", "ptr"], returns: "i32" },
+  }).symbols;
+  // libmtmd (tools/mtmd/mtmd.h, mtmd-helper.h): the calls that need no struct. The shim links it.
+  const mtmd = dlopen(mtmdPath(dir), {
+    mtmd_free: { args: ["ptr"], returns: "void" },
+    mtmd_bitmap_free: { args: ["ptr"], returns: "void" },
+    mtmd_input_chunks_size: { args: ["ptr"], returns: "usize" },
+    mtmd_input_chunks_free: { args: ["ptr"], returns: "void" },
+    mtmd_helper_get_n_tokens: { args: ["ptr"], returns: "usize" },
   }).symbols;
   shim.shim_init(cstr(dir));
-  return { ...llama, ...shim };
+  return { ...llama, ...shim, ...mtmd };
 }
 
 type Lib = ReturnType<typeof bind>;
@@ -100,6 +118,18 @@ export function chatPrompt(content: string, emptyThink: boolean): string {
   return `<|im_start|>user\n${trimmed}<|im_end|>\n<|im_start|>assistant\n${emptyThink ? "<think>\n\n</think>\n\n" : ""}`;
 }
 
+/**
+ * The same prompt for a user message of `content` followed by one image, as what stands before the
+ * image and what stands after it. The template writes the image as `<|vision_start|>`, its
+ * embeddings, `<|vision_end|>`, which libmtmd puts between the two.
+ */
+export function imageChatPrompt(content: string, emptyThink: boolean): [before: string, after: string] {
+  const whole = chatPrompt(`${content}\0`, emptyThink);
+  // The last one: nothing after the content holds a NUL, the content might.
+  const at = whole.lastIndexOf("\0");
+  return [whole.slice(0, at), whole.slice(at + 1)];
+}
+
 export interface ModelOptions {
   /** Directory with libllama, its backends and the shim. */
   dir: string;
@@ -109,6 +139,37 @@ export interface ModelOptions {
   ctxSize: number;
   /** 0 keeps the library default. */
   threads: number;
+  /** The model's image encoder and projector (its mmproj GGUF); loaded when the first image arrives. */
+  mmproj?: string;
+}
+
+/** An image the model cannot take: not a readable image file, or the model has no encoder for one. */
+export class ImageError extends Error {}
+
+/** A prompt with an image, tokenized and preprocessed for one evaluation. `free()` must be called. */
+export class ImagePrompt {
+  private freed = false;
+
+  constructor(
+    private lib: Lib,
+    /** libmtmd's chunks: text, the image, text. */
+    readonly handle: Handle,
+  ) {}
+
+  /** Tokens the prompt occupies in the context, the image's embeddings included. */
+  get tokens(): number {
+    return Number(this.lib.mtmd_helper_get_n_tokens(this.handle));
+  }
+
+  /** Pieces to hand to `Model.evalChunk` in order. */
+  get chunks(): number {
+    return Number(this.lib.mtmd_input_chunks_size(this.handle));
+  }
+
+  free(): void {
+    if (!this.freed) this.lib.mtmd_input_chunks_free(this.handle);
+    this.freed = true;
+  }
 }
 
 /** One model with one context. Not thread-safe; `free()` must be called to release its memory. */
@@ -122,6 +183,11 @@ export class Model {
   private sampler: Handle;
   private emptyThink: boolean;
   private one = new Int32Array(1);
+  /** The image encoder, once an image has asked for it. */
+  private vision?: Handle;
+  /** Where the next token goes after a prompt with an image, which only libmtmd can tell; -1 while libllama counts. */
+  private nextPos = -1;
+  private posBuf = new Int32Array(1);
   private pieceBuf = new Uint8Array(256);
   private freed = false;
 
@@ -129,7 +195,9 @@ export class Model {
     private lib: Lib,
     private model: Handle,
     private ctx: Handle,
-    onGpu: boolean,
+    private onGpu: boolean,
+    private threads: number,
+    private mmproj: string | undefined,
   ) {
     this.promptStep = onGpu ? BATCH_SIZE : CPU_PROMPT_STEP;
     this.ctxSize = lib.llama_n_ctx(ctx);
@@ -153,7 +221,7 @@ export class Model {
       lib.llama_model_free(model);
       throw new Error(`llama.cpp could not create a ${opts.ctxSize}-token context (out of memory?)`);
     }
-    return new Model(lib, model, ctx, opts.gpuLayers !== 0);
+    return new Model(lib, model, ctx, opts.gpuLayers !== 0, opts.threads, opts.mmproj);
   }
 
   /** Tokens of the whole prompt for a user message with this content. Special tokens written out in the content are parsed as such. */
@@ -166,14 +234,59 @@ export class Model {
     return tokens.subarray(0, n);
   }
 
+  /**
+   * The prompt for a user message of `content` followed by the image in `file` (a PNG; anything
+   * else stb_image reads would do). The image is decoded and scaled to what the encoder takes here;
+   * encoding it is left to `evalChunk`. The first call loads the encoder. Throws ImageError when the
+   * file is not an image or the model takes none.
+   */
+  imagePrompt(content: string, file: Uint8Array): ImagePrompt {
+    if (!this.mmproj) throw new ImageError("this model does not take images");
+    if (!this.vision) {
+      const vision = this.lib.shim_mtmd_load(cstr(this.mmproj), this.model, this.onGpu, this.threads);
+      if (!vision) throw new Error(`llama.cpp could not load the image encoder ${this.mmproj}`);
+      this.vision = vision;
+    }
+    const bitmap = this.lib.shim_mtmd_bitmap(file, file.length);
+    if (!bitmap) throw new ImageError("the image could not be decoded");
+    const [before, after] = imageChatPrompt(content, this.emptyThink).map((s) => new TextEncoder().encode(s)) as [
+      Uint8Array,
+      Uint8Array,
+    ];
+    const chunks = this.lib.shim_mtmd_tokenize(this.vision, before, before.length, bitmap, after, after.length);
+    // The chunks hold the preprocessed image; the decoded one is not needed again.
+    this.lib.mtmd_bitmap_free(bitmap);
+    if (!chunks) throw new ImageError("the image could not be prepared for the model");
+    return new ImagePrompt(this.lib, chunks);
+  }
+
+  /**
+   * Evaluates piece `index` of an image prompt after what the context already holds, starting with
+   * 0 on an empty context. The image's piece runs the encoder and decodes its embeddings in one
+   * blocking call.
+   */
+  evalChunk(prompt: ImagePrompt, index: number): void {
+    if (index === 0) this.posBuf[0] = 0;
+    const status = this.lib.shim_mtmd_eval_chunk(this.vision!, this.ctx, prompt.handle, index, BATCH_SIZE, this.posBuf);
+    if (status !== 0) throw new Error(`evaluating the image prompt failed with status ${status}`);
+    this.nextPos = this.posBuf[0]!;
+  }
+
   /** Empties the context so the next prompt starts from position 0. */
   reset(): void {
     this.lib.llama_memory_clear(this.lib.llama_get_memory(this.ctx), true);
+    this.nextPos = -1;
   }
 
   /** Evaluates up to `promptStep` tokens after what the context already holds. */
   decode(tokens: Int32Array): void {
-    const status = this.lib.shim_decode(this.ctx, tokens, tokens.length);
+    let status: number;
+    if (this.nextPos < 0) {
+      status = this.lib.shim_decode(this.ctx, tokens, tokens.length);
+    } else {
+      status = this.lib.shim_decode_at(this.ctx, tokens, tokens.length, this.nextPos);
+      this.nextPos += tokens.length;
+    }
     if (status !== 0) throw new Error(`llama_decode failed with status ${status}`);
   }
 
@@ -206,6 +319,7 @@ export class Model {
     if (this.freed) return;
     this.freed = true;
     this.lib.llama_sampler_free(this.sampler);
+    if (this.vision) this.lib.mtmd_free(this.vision);
     this.lib.llama_free(this.ctx);
     this.lib.llama_model_free(this.model);
   }

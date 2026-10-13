@@ -1,8 +1,8 @@
 openapi: 3.1.0
 info:
   title: Index Translator API
-  version: 1.2.0
-  summary: Text translation backed by locally deployed Index-Translate models.
+  version: 1.3.0
+  summary: Text and image translation backed by locally deployed Index-Translate models.
   description: |
     The backend runs Index-Translate models through llama.cpp and exposes them over REST.
     Two checkpoints are available (see `GET /models`):
@@ -18,6 +18,13 @@ info:
     **Single-pass translation.** A request is translated in one generation; the backend never
     splits the input. Input size is limited in tokens (see `limits` in `GET /health`), and
     `POST /tokenize` reports how many tokens a request would use before it is sent.
+
+    **Images.** `index-translate-9b` also translates the text in an image: a request carries an
+    `image` (JPEG, PNG or WebP, at most 8 MiB and 50 million pixels) in place of `text`. The
+    server decodes it and hands it to the model's image encoder, a separate file that is loaded
+    with the first image; the answer is the translation of the text the model reads in it, with
+    no separate text recognition step. An image costs up to about 4,100 tokens of the input
+    limit, depending on its size.
 
     **Model switching.** The GPU holds one model at a time. A request for a model that is not
     loaded waits in the queue, unloads the current model, loads the requested one (this takes
@@ -206,8 +213,13 @@ paths:
         as `application/json` (`415`), and browser requests must pass the Host and Origin checks
         (`403`); see `ALLOWED_ORIGINS` and `ALLOWED_HOSTS` in the README. Everything after that
         happens in the queue or the engine: an input over the token limit, a model that fails to
-        load, and an engine failure are reported as `413` or `502` in JSON mode, and as an
-        `error` event in SSE mode, because the stream has already started by then.
+        load, an image encoder that is not installed and an engine failure are reported as `413`,
+        `503` or `502` in JSON mode, and as an `error` event in SSE mode, because the stream has
+        already started by then.
+
+        With an `image` the request translates the text in that image; see `TranslateRequest`.
+        An upload that is not a JPEG, PNG or WebP image the server can decode is a `400`, one
+        that is too large a `413` (`image_too_large`), both before the response starts.
       requestBody:
         required: true
         content:
@@ -239,6 +251,11 @@ paths:
                   model: index-nailong-9b
                   text: "The town library reopened last month after a renovation that took far longer than anyone had planned.\n\nThe old reading room has been replaced by a bright hall."
                   source_lang: en
+                  target_lang: zh
+              image:
+                summary: The text in an image
+                value:
+                  image: data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAQAAAABazTCJAAAADElEQVQI12M4wHAAAAMEAYHFO6KpAAAAAElFTkSuQmCC
                   target_lang: zh
       responses:
         "200":
@@ -297,6 +314,14 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "502":
           $ref: "#/components/responses/EngineError"
+        "503":
+          description: |
+            The request has an image and the model's image encoder is not installed on the server
+            (`image_unavailable`); the message names the file and how to download it.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /translations/{id}/events:
     get:
       tags: [translation]
@@ -361,6 +386,8 @@ paths:
       description: |
         Accepts the same body as `POST /translate` (`stream` and `max_output_tokens` are
         ignored) and reports the size of the resulting prompt without translating anything.
+        A request with an `image` is refused (`400`): an image is counted by preparing it for
+        the model, which only a translation waits for.
         An input that is too long is reported with `fits: false`, not with an error.
 
         Tokenizing never waits in the queue, never uses a slot and never loads or swaps a model,
@@ -499,8 +526,9 @@ components:
     TooLarge:
       description: |
         Either the prompt exceeds the input token limit (`input_too_long`, with
-        `details.prompt_tokens` and `details.max_input_tokens`), or the request body exceeds
-        4 MiB (`body_too_large`).
+        `details.prompt_tokens` and `details.max_input_tokens`), or the request body without its
+        `image` exceeds 4 MiB (`body_too_large`), or the image is over 8 MiB or 50 million pixels
+        (`image_too_large`).
       content:
         application/json:
           schema:
@@ -554,7 +582,8 @@ components:
   schemas:
     TranslateRequest:
       type: object
-      required: [text, target_lang]
+      required: [target_lang]
+      description: Either `text` or `image` is required.
       properties:
         model:
           type: string
@@ -565,8 +594,19 @@ components:
             different model than the one loaded cause a model switch.
         text:
           type: string
-          pattern: "\\S"
-          description: Source text. Must contain a non-whitespace character; surrounding whitespace is ignored.
+          description: |
+            Source text. Without an `image` it is required and must contain a non-whitespace
+            character; surrounding whitespace is ignored. With an `image` it is optional and is
+            not translated: it tells the model what to look at in the image.
+        image:
+          type: string
+          maxLength: 11184876
+          description: |
+            An image whose text is translated, as base64 or as a `data:` URL holding base64. JPEG,
+            PNG or WebP, at most 8 MiB and 50 million pixels; transparency is shown on white.
+            Only for models with `image: true` in `GET /models`. `glossary`, `hard_constraints`
+            and `soft_constraints` apply; `genre` is not accepted. Not accepted by
+            `POST /tokenize`.
         target_lang:
           type: string
           minLength: 1
@@ -610,7 +650,8 @@ components:
           default: 文本
           description: |
             Genre or domain of the source, such as `专栏文章`, `学术论文`, `小说` or `字幕`.
-            Only used when a glossary or constraint is present. Not accepted by `index-nailong-9b`.
+            Only used when a glossary or constraint is present. Not accepted by `index-nailong-9b`
+            or together with an `image`.
         max_output_tokens:
           type: integer
           minimum: 1
@@ -679,9 +720,26 @@ components:
           type: array
           items:
             $ref: "#/components/schemas/ModelInfo"
+        image:
+          type: object
+          description: What an `image` in a translation request may be.
+          required: [formats, max_bytes, max_pixels]
+          properties:
+            formats:
+              type: array
+              items:
+                type: string
+              examples:
+                - [image/jpeg, image/png, image/webp]
+            max_bytes:
+              type: integer
+              description: Largest image file.
+            max_pixels:
+              type: integer
+              description: Largest width times height.
     ModelInfo:
       type: object
-      required: [id, label, kind]
+      required: [id, label, kind, image]
       properties:
         id:
           type: string
@@ -695,6 +753,11 @@ components:
             `chat` translates free text with optional glossary and constraints. `document`
             translates a whole text with a fixed prompt and takes no options beyond the language
             pair and output budget.
+        image:
+          type: boolean
+          description: |
+            Whether the model translates the text in an image. Its image encoder is a separate
+            file; a request finds out whether that is installed (`503 image_unavailable`).
         directions:
           type: array
           items:
@@ -895,6 +958,8 @@ components:
                 - unsupported_language_pair
                 - input_too_long
                 - body_too_large
+                - image_too_large
+                - image_unavailable
                 - queue_full
                 - engine_error
                 - engine_unavailable
@@ -957,10 +1022,11 @@ components:
       properties:
         code:
           type: string
-          enum: [input_too_long, engine_error, internal_error]
+          enum: [input_too_long, engine_error, image_unavailable, invalid_request, internal_error]
           description: |
             `input_too_long` carries the same `details` as the JSON `413`. `engine_error` covers
-            both failed generations and failed model loads.
+            both failed generations and failed model loads. `image_unavailable` is the JSON `503`.
+            `invalid_request` here means the engine could not read the image.
         message:
           type: string
         details:

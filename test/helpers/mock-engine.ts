@@ -9,7 +9,15 @@
 import { join, resolve } from "node:path";
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
-import { EngineError, type FinishReason, type GenerationEvent, type Launcher, type Running } from "../../src/llama";
+import {
+  EngineError,
+  type FinishReason,
+  type GenerationEvent,
+  ImageInputError,
+  ImageUnavailableError,
+  type Launcher,
+  type Running,
+} from "../../src/llama";
 import {
   SeparationError,
   SpeechError,
@@ -23,6 +31,13 @@ import {
 export const root = resolve(import.meta.dir, "..", "..");
 
 export const TEMPLATE = "<user></user>";
+/** What the fake counts for an image, whatever its size. */
+export const IMAGE_TOKENS = 64;
+/** A white 2 × 2 PNG: the smallest thing the API takes as an image. */
+export const PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACAQAAAABazTCJAAAADElEQVQI12M4wHAAAAMEAYHFO6KpAAAAAElFTkSuQmCC",
+  "base64",
+);
 
 export const CHAT = "index-translate-9b";
 export const DOCUMENT = "index-nailong-9b";
@@ -37,8 +52,12 @@ export const mock = {
   finish: "stop" as FinishReason,
   failWith: undefined as string | undefined,
   failLaunch: undefined as string | undefined,
-  /** Every generation the shared launcher's models were asked for. */
-  requests: [] as { prompt: string; maxTokens: number }[],
+  /** The engine cannot read the image it is given. */
+  imageFailWith: undefined as string | undefined,
+  /** The model's image encoder is not installed. */
+  imageUnavailable: undefined as string | undefined,
+  /** Every generation the shared launcher's models were asked for; `image` is the PNG handed to the engine. */
+  requests: [] as { prompt: string; maxTokens: number; image?: Uint8Array }[],
   aborted: 0,
   launches: [] as string[],
 };
@@ -51,11 +70,13 @@ export function resetMock(): void {
   mock.finish = "stop";
   mock.failWith = undefined;
   mock.failLaunch = undefined;
+  mock.imageFailWith = undefined;
+  mock.imageUnavailable = undefined;
 }
 
 export interface FakeHooks {
-  /** Called when a generation starts. */
-  onStart?(prompt: string, maxTokens: number): void;
+  /** Called when a generation starts; `image` is the PNG the request's image was made into. */
+  onStart?(prompt: string, maxTokens: number, image?: Uint8Array): void;
   /** A promise the generation waits for before its first chunk. */
   gate?(): Promise<void> | undefined;
   onChunk?(): void;
@@ -102,13 +123,15 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
     stopped: false,
     stop: () => end(undefined),
     kill: (reason = "the engine thread exited") => end(reason),
-    async countTokens(content) {
+    async countTokens(content, image) {
       if (model.stopped) throw new EngineError("the model is not loaded");
-      return Array.from(content).length + TEMPLATE.length;
+      if (image && mock.imageFailWith) throw new ImageInputError(mock.imageFailWith);
+      if (image && mock.imageUnavailable) throw new ImageUnavailableError(mock.imageUnavailable);
+      return Array.from(content).length + TEMPLATE.length + (image ? IMAGE_TOKENS : 0);
     },
-    async *generate(prompt, maxTokens, client): AsyncGenerator<GenerationEvent> {
+    async *generate(prompt, maxTokens, client, image): AsyncGenerator<GenerationEvent> {
       const signal = client ? AbortSignal.any([client, gone.signal]) : gone.signal;
-      hooks.onStart?.(prompt, maxTokens);
+      hooks.onStart?.(prompt, maxTokens, image);
       const { chunks, delayMs, finish: finishReason, failWith } = mock;
       let played = false;
       try {
@@ -140,7 +163,7 @@ export const launcher: Launcher = async (model) => {
   mock.launches.push(model.id);
   while (!mock.ready) await Bun.sleep(10);
   return fakeModel({
-    onStart: (prompt, maxTokens) => mock.requests.push({ prompt, maxTokens }),
+    onStart: (prompt, maxTokens, image) => mock.requests.push({ prompt, maxTokens, ...(image ? { image } : {}) }),
     onAbort: () => mock.aborted++,
   });
 };

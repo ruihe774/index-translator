@@ -28,16 +28,31 @@ export type GenerationEvent =
 
 export class EngineError extends Error {}
 
+/** The model cannot be given images here: it has no image encoder, or the encoder's file is not downloaded. */
+export class ImageUnavailableError extends EngineError {}
+
+/** The engine could not read the image it was given; the engine itself is fine. */
+export class ImageInputError extends EngineError {}
+
 /** A loaded model, as seen by the engine. */
 export interface Running {
   /** Resolves once the model is gone: with `undefined` after stop(), otherwise with what went wrong. */
   exited: Promise<string | undefined>;
   /** Asks for the model to be freed; the engine waits on `exited`. */
   stop(): void;
-  /** Tokens a user message with this content occupies in the context, chat template included. */
-  countTokens(content: string): Promise<number>;
+  /**
+   * Tokens a user message with this content occupies in the context, chat template included.
+   * `image` is a PNG file that follows the content in the message; counting it waits for a running
+   * generation, counting text alone does not.
+   */
+  countTokens(content: string, image?: Uint8Array): Promise<number>;
   /** Answers one user message, greedily, with at most `maxTokens` tokens. Aborting rejects with the signal's reason. */
-  generate(content: string, maxTokens: number, signal?: AbortSignal): AsyncGenerator<GenerationEvent>;
+  generate(
+    content: string,
+    maxTokens: number,
+    signal?: AbortSignal,
+    image?: Uint8Array,
+  ): AsyncGenerator<GenerationEvent>;
 }
 
 /** Loads one model. Replaceable so tests can run without the library or the weights. */
@@ -82,7 +97,7 @@ class NativeWorker {
     return new Promise((resolve, reject) => {
       const req = this.send(msg, (reply) => {
         this.waiting.delete(req);
-        if (reply.type === "error") reject(new EngineError(reply.message));
+        if (reply.type === "error") reject(new (reply.image ? ImageInputError : EngineError)(reply.message));
         else resolve(reply);
       });
     });
@@ -90,12 +105,24 @@ class NativeWorker {
 
   async load(model: ModelSpec, cfg: Config): Promise<Running> {
     const no = ++this.lastModel;
+    const mmproj = model.mmproj && join(cfg.modelsDir, model.mmproj);
+    /** Before an image goes to the engine thread: a missing encoder is the user's to download, not an engine failure. */
+    const checkImage = async (image: Uint8Array | undefined) => {
+      if (!image) return;
+      if (!mmproj) throw new ImageUnavailableError(`${model.id} does not translate images`);
+      if (!(await Bun.file(mmproj).exists())) {
+        throw new ImageUnavailableError(
+          `the image encoder of ${model.id} is not at ${mmproj}; download it with: ${fetchCommand()} --model ${model.id}`,
+        );
+      }
+    };
     await this.call({
       type: "load",
       model: no,
       options: {
         dir: cfg.llamaDir,
         path: join(cfg.modelsDir, model.file),
+        mmproj,
         gpuLayers: cfg.gpuLayers,
         ctxSize: cfg.ctxSize,
         // Physical cores, roughly: hyperthreads do not help llama.cpp.
@@ -109,12 +136,13 @@ class NativeWorker {
     return {
       exited,
       stop: () => void this.call({ type: "unload", model: no }).then(() => finish(undefined), finish),
-      countTokens: async (content) => {
-        const reply = await this.call({ type: "count", model: no, content });
+      countTokens: async (content, image) => {
+        await checkImage(image);
+        const reply = await this.call({ type: "count", model: no, content, image });
         if (reply.type !== "count") throw new EngineError(`unexpected ${reply.type} reply to a token count`);
         return reply.tokens;
       },
-      generate: (content, maxTokens, signal) => this.generate(no, content, maxTokens, signal),
+      generate: (content, maxTokens, signal, image) => this.generate(no, content, maxTokens, signal, image, checkImage),
     };
   }
 
@@ -122,12 +150,16 @@ class NativeWorker {
     model: number,
     content: string,
     maxTokens: number,
-    signal?: AbortSignal,
+    signal: AbortSignal | undefined,
+    image: Uint8Array | undefined,
+    checkImage: (image: Uint8Array | undefined) => Promise<void>,
   ): AsyncGenerator<GenerationEvent> {
+    signal?.throwIfAborted();
+    await checkImage(image);
     signal?.throwIfAborted();
     const replies: WorkerReply[] = [];
     let wake: (() => void) | undefined;
-    const req = this.send({ type: "generate", model, content, maxTokens }, (reply) => {
+    const req = this.send({ type: "generate", model, content, maxTokens, image }, (reply) => {
       replies.push(reply);
       wake?.();
     });
@@ -147,6 +179,7 @@ class NativeWorker {
           return;
         } else if (reply.type === "error") {
           ended = true;
+          if (reply.image) throw new ImageInputError(reply.message);
           throw new EngineError(`generation failed: ${reply.message}`);
         }
       }
@@ -259,11 +292,17 @@ export class Engine {
    * Counted by the model that is loaded now, without waiting for a generation. Throws EngineError
    * when no model is ready or it goes away before answering.
    */
-  async countPromptTokens(content: string): Promise<number> {
-    return this.ready().countTokens(content);
+  async countPromptTokens(content: string, image?: Uint8Array): Promise<number> {
+    return this.ready().countTokens(content, image);
   }
 
-  async *generate(prompt: string, maxTokens: number, signal?: AbortSignal): AsyncGenerator<GenerationEvent> {
-    yield* this.ready().generate(prompt, maxTokens, signal);
+  /** `image` is a PNG file that follows the prompt in the user message. */
+  async *generate(
+    prompt: string,
+    maxTokens: number,
+    signal?: AbortSignal,
+    image?: Uint8Array,
+  ): AsyncGenerator<GenerationEvent> {
+    yield* this.ready().generate(prompt, maxTokens, signal, image);
   }
 }

@@ -12,6 +12,8 @@ export interface MockKnobs {
   finish?: "stop" | "length";
   failWith?: string | null;
   failLaunch?: string | null;
+  /** The model's image encoder is not installed: an image request fails with this message. */
+  imageUnavailable?: string;
   /** The mock speech engine: `state: "unavailable"` is an install without it. */
   speech?: {
     state?: string;
@@ -23,7 +25,8 @@ export interface MockKnobs {
 }
 
 export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs">> {
-  requests: { prompt: string; maxTokens: number }[];
+  /** `image`: the request carried one, which reached the engine with this size, as a PNG or not. */
+  requests: { prompt: string; maxTokens: number; image?: { bytes: number; png: boolean } }[];
   aborted: number;
   launches: string[];
   /** `requests` are the utterances asked of the speech engine, in order. */

@@ -17,6 +17,8 @@ export interface State {
   languagesReady: boolean;
   /** The source text as in the text box. */
   source: string;
+  /** An image stands in place of the text box and is what Translate sends. */
+  image: boolean;
   /** Why nothing can be read aloud at all (not installed, no voices); empty when it can. */
   speechProblem: string;
   /** The side being read and the first line of the block being spoken; `null` when none is. */
@@ -30,6 +32,7 @@ export const state: State = {
   translation: "",
   languagesReady: false,
   source: "",
+  image: false,
   speechProblem: "Checking whether reading aloud is available…",
   speaking: null,
   voicesStale: false,

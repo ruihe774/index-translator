@@ -42,6 +42,22 @@
   }
 }
 
+/* An image in place of the source box: whole, at most its own size, in the middle. The canvas
+   keeps its proportions when both limits bind. Transparent parts are white in either colour
+   scheme, which is what the server makes of them for the model. */
+.source-image {
+  overflow: hidden;
+
+  > canvas {
+    flex: none;
+    background: #fff;
+    max-inline-size: 100%;
+    max-block-size: 100%;
+    margin: auto;
+    object-fit: contain;
+  }
+}
+
 /* A file is being dragged over the page: open-ui.ts takes it through the Open path. */
 html.dropping::after {
   content: "";

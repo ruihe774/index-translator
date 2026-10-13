@@ -41,7 +41,8 @@ development with C++" workload (found with `vswhere`; `vcvars64.bat` supplies `c
 (`glslc`, headers, `vulkan-1.lib`; sets `VULKAN_SDK`). Ninja is not needed: CMake's Visual Studio
 generator is used (`--config Release`). A terminal opened before the installs needs a restart to see the new PATH.
 
-- llama.cpp gives `llama.dll`, `ggml*.dll`, `ggml-vulkan.dll`, nine `ggml-cpu-*.dll`, and `llama-shim.dll`
+- llama.cpp gives `llama.dll`, `mtmd.dll` (image input; not yet built or run on Windows: the shim links `mtmd.lib`
+  and takes `stbi_load_from_memory` from it, which `WINDOWS_EXPORT_ALL_SYMBOLS` should export), `ggml*.dll`, `ggml-vulkan.dll`, nine `ggml-cpu-*.dll`, and `llama-shim.dll`
   (compiled by `cl`; the shim marks its functions `dllexport`). The `.lib` import libraries stay in
   `vendor/llama.cpp` so `--shim` can rebuild the shim. About 100 s on 20 threads.
 - audio.cpp gives `audiocpp.dll` (exports only `audiocpp_*`, checked with `dumpbin /exports`), AVX2 code. About 4 min.

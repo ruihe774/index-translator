@@ -76,6 +76,23 @@ describe("describeError: body_too_large", () => {
   });
 });
 
+describe("describeError: images", () => {
+  test("image_too_large says what to do, with the server's reason", () => {
+    expect(describeError({ code: "image_too_large", message: "the image has more than 50000000 pixels" }, 413)).toBe(
+      "The image is too large: the image has more than 50000000 pixels. Make it smaller and open it again.",
+    );
+    expect(describeError({ code: "image_too_large" }, 413)).toBe(
+      "The image is too large. Make it smaller and open it again.",
+    );
+  });
+
+  test("image_unavailable names the server as the place to fix it", () => {
+    expect(describeError({ code: "image_unavailable", message: "the image encoder is not at /m/x.gguf" }, 503)).toBe(
+      "Images cannot be translated on this server: the image encoder is not at /m/x.gguf.",
+    );
+  });
+});
+
 describe("describeError: other recognised codes keep the server message", () => {
   for (const code of [
     "invalid_request",

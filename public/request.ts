@@ -37,13 +37,34 @@ export function glossaryMessage(p: GlossaryProblem): string {
 export type RequestResult = { body: Record<string, unknown> } | { glossaryProblem: GlossaryProblem };
 
 /**
- * The options (glossary, constraints, genre) go only to the chat model; the document model rejects
- * them. A malformed glossary stops the request. `sourceLang` is what the selection decided to send.
+ * The request for a text. The options (glossary, constraints, genre) go only to the chat model; the
+ * document model rejects them. A malformed glossary stops the request. `sourceLang` is what the
+ * selection decided to send.
  */
 export function buildRequest(model: ModelId, sourceLang: string | undefined, v: FormValues): RequestResult {
-  const body: Record<string, unknown> = { model, text: v.text, target_lang: v.targetLang, stream: true };
+  return build({ model, text: v.text, target_lang: v.targetLang, stream: true }, sourceLang, v);
+}
+
+/**
+ * The request for an image (a `data:` URL of the file) in place of a text. Only the chat model reads
+ * images; it takes the glossary and the constraints with one, but no genre, and no text is sent.
+ */
+export function buildImageRequest(
+  image: string,
+  sourceLang: string | undefined,
+  v: Omit<FormValues, "text" | "genre">,
+): RequestResult {
+  const body = { model: CHAT_MODEL, image, target_lang: v.targetLang, stream: true };
+  return build(body, sourceLang, { ...v, genre: "" });
+}
+
+function build(
+  body: Record<string, unknown>,
+  sourceLang: string | undefined,
+  v: Omit<FormValues, "text">,
+): RequestResult {
   if (sourceLang) body.source_lang = sourceLang;
-  if (model !== CHAT_MODEL) return { body };
+  if (body.model !== CHAT_MODEL) return { body };
 
   const { glossary, error } = parseGlossary(v.glossary);
   if (error) return { glossaryProblem: error };

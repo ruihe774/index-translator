@@ -35,7 +35,7 @@ Index Translator: a local text translator that runs on your GPU.
 
 Usage:
   $self [--setting value ...]   start the translator and open it in the browser
-  $self fetch [--model id ...]  download the models and the example voices (about 17.7 GiB)
+  $self fetch [--model id ...]  download the models and the example voices (about 17.9 GiB)
   $self notices                 print the third-party notices (licenses of what is bundled)
   $self --version
 
@@ -58,7 +58,8 @@ EOF
 esac
 
 cat >&2 <<EOF
-Index Translator bundles third-party software: llama.cpp and ggml (MIT), audio.cpp (Apache-2.0,
+Index Translator bundles third-party software: llama.cpp and ggml (MIT, with stb_image, miniaudio
+and xxHash), audio.cpp (Apache-2.0,
 with cJSON, SentencePiece and Abseil), Bun (MIT, with JavaScriptCore under the LGPL and other
 components) and, in the browser, pdf-inspector (MIT) and pdf.js (Apache-2.0, with fonts and
 decoders under their own licenses) for PDF files and the QOA codec (public domain) for speech. Models are not bundled; \`fetch\` shows their licenses before it downloads them.

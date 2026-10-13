@@ -111,6 +111,28 @@ function isJsonObject(text: string): boolean {
   }
 }
 
+/**
+ * The text of a user message that is followed by an image whose text is to be translated, as the
+ * `--image` branch of translate.py writes it. `text`, when there is any, is what to look at in the
+ * image, not something to translate. Genre has no place in this prompt.
+ */
+export function buildImagePrompt(input: Partial<Pick<PromptInput, "text">> & Omit<PromptInput, "text">): string {
+  const tgt = languageName(input.targetLang);
+  const hasSource = !!input.sourceLang && input.sourceLang.trim().toLowerCase() !== "auto";
+  const src = hasSource ? languageName(input.sourceLang!) : "";
+  const base = `请将图片中的${src}文本翻译为${tgt}，直接输出翻译结果，不要进行任何解释。`;
+
+  const extras: string[] = [];
+  const text = input.text?.trim();
+  if (text) extras.push(`【参考文本/关注内容】\n${text}`);
+  extras.push(...constraintLines(input.hardConstraints, HARD, [HARD]));
+  extras.push(...constraintLines(input.softConstraints, "【软性要求】", [SOFT, "【软性要求】"]));
+  const terms = Object.entries(input.glossary ?? {}).map(([k, v]) => `${k.trim()}→${v.trim()}`);
+  if (terms.length) extras.push(`【专名/术语对照】${terms.join("、")}`);
+  if (!extras.length) return base;
+  return `${base}\n\n${extras.join("\n\n")}\n\n只输出翻译结果，不要进行任何解释。`;
+}
+
 export function buildPrompt(input: PromptInput): string {
   const text = input.text.trim();
   const tgt = languageName(input.targetLang);

@@ -4,13 +4,14 @@
 // cancellations are seen.
 
 import type { EngineTimings, FinishReason, Usage } from "./llama";
-import { Model, type ModelOptions } from "./llama-ffi";
+import { ImageError, type ImagePrompt, Model, type ModelOptions } from "./llama-ffi";
 
 export type WorkerRequest =
   | { type: "load"; req: number; model: number; options: ModelOptions }
   | { type: "unload"; req: number; model: number }
-  | { type: "count"; req: number; model: number; content: string }
-  | { type: "generate"; req: number; model: number; content: string; maxTokens: number }
+  // `image`: a PNG file that follows the content in the user message.
+  | { type: "count"; req: number; model: number; content: string; image?: Uint8Array }
+  | { type: "generate"; req: number; model: number; content: string; maxTokens: number; image?: Uint8Array }
   | { type: "cancel"; req: number };
 
 export type WorkerReply =
@@ -18,7 +19,8 @@ export type WorkerReply =
   | { type: "count"; req: number; tokens: number }
   | { type: "delta"; req: number; text: string }
   | { type: "done"; req: number; finishReason: FinishReason; usage: Usage; timings: EngineTimings }
-  | { type: "error"; req: number; message: string };
+  // `image`: the image itself is at fault, not the engine.
+  | { type: "error"; req: number; message: string; image?: boolean };
 
 // eslint-disable-next-line no-var -- only `var` declares a global
 declare var self: Worker;
@@ -38,8 +40,11 @@ let chain: Promise<void> = Promise.resolve();
 const active = new Set<number>();
 const cancelled = new Set<number>();
 
+const postError = (req: number, e: unknown) =>
+  post({ type: "error", req, message: messageOf(e), ...(e instanceof ImageError ? { image: true } : {}) });
+
 function exclusive(req: number, fn: () => void | Promise<void>): void {
-  chain = chain.then(fn).catch((e) => post({ type: "error", req, message: messageOf(e) }));
+  chain = chain.then(fn).catch((e) => postError(req, e));
 }
 
 function unload(): void {
@@ -48,20 +53,51 @@ function unload(): void {
   modelNo = 0;
 }
 
-async function generate(m: Model, started: number, req: number, content: string, maxTokens: number): Promise<void> {
+/**
+ * Evaluates a prompt with an image on the emptied context, piece by piece; the image's piece (its
+ * encoding and the decoding of its embeddings) cannot be stopped midway.
+ */
+async function evalImagePrompt(m: Model, prompt: ImagePrompt, stopped: () => boolean): Promise<void> {
+  for (let i = 0; i < prompt.chunks && !stopped(); i++) {
+    m.evalChunk(prompt, i);
+    await tick();
+  }
+}
+
+async function generate(
+  m: Model,
+  started: number,
+  req: number,
+  content: string,
+  maxTokens: number,
+  image?: Uint8Array,
+): Promise<void> {
   // True once the client is gone or the model is about to be replaced.
   const stopped = () => cancelled.has(req) || epoch !== started;
 
-  const tokens = m.tokenize(content);
-  const room = m.ctxSize - tokens.length;
-  if (room < 1) throw new Error(`the prompt (${tokens.length} tokens) does not fit the ${m.ctxSize}-token context`);
+  const tokens = image ? undefined : m.tokenize(content);
+  const imagePrompt = image ? m.imagePrompt(content, image) : undefined;
+  const promptTokens = imagePrompt?.tokens ?? tokens!.length;
+  const room = m.ctxSize - promptTokens;
+  if (room < 1) {
+    imagePrompt?.free();
+    throw new Error(`the prompt (${promptTokens} tokens) does not fit the ${m.ctxSize}-token context`);
+  }
   const limit = maxTokens > 0 ? Math.min(maxTokens, room) : room;
 
   m.reset();
   const promptStart = performance.now();
-  for (let i = 0; i < tokens.length && !stopped(); i += m.promptStep) {
-    m.decode(tokens.subarray(i, i + m.promptStep));
-    await tick();
+  if (imagePrompt) {
+    try {
+      await evalImagePrompt(m, imagePrompt, stopped);
+    } finally {
+      imagePrompt.free();
+    }
+  } else {
+    for (let i = 0; i < tokens!.length && !stopped(); i += m.promptStep) {
+      m.decode(tokens!.subarray(i, i + m.promptStep));
+      await tick();
+    }
   }
 
   const generationStart = performance.now();
@@ -90,7 +126,7 @@ async function generate(m: Model, started: number, req: number, content: string,
     type: "done",
     req,
     finishReason,
-    usage: { prompt_tokens: tokens.length, completion_tokens: produced },
+    usage: { prompt_tokens: promptTokens, completion_tokens: produced },
     timings: {
       prompt_ms: Math.round(generationStart - promptStart),
       generation_ms: Math.round(generationMs),
@@ -118,14 +154,28 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         post({ type: "ok", req: msg.req });
       });
       break;
-    case "count":
+    case "count": {
+      const { image } = msg;
+      if (image) {
+        // Counting an image means decoding and scaling it, and the first one loads the encoder: that
+        // waits its turn like a generation, which the caller has the queue slot for anyway.
+        exclusive(msg.req, () => {
+          if (!model || msg.model !== modelNo) throw new Error("the model is not loaded");
+          const prompt = model.imagePrompt(msg.content, image);
+          const tokens = prompt.tokens;
+          prompt.free();
+          post({ type: "count", req: msg.req, tokens });
+        });
+        break;
+      }
       try {
         if (!model || msg.model !== modelNo) throw new Error("the model is not loaded");
         post({ type: "count", req: msg.req, tokens: model.tokenize(msg.content).length });
       } catch (e) {
-        post({ type: "error", req: msg.req, message: messageOf(e) });
+        postError(msg.req, e);
       }
       break;
+    }
     case "generate": {
       const started = epoch;
       active.add(msg.req);
@@ -133,7 +183,7 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         try {
           if (cancelled.has(msg.req)) return;
           if (!model || msg.model !== modelNo || epoch !== started) throw new Error("the model is not loaded");
-          await generate(model, started, msg.req, msg.content, msg.maxTokens);
+          await generate(model, started, msg.req, msg.content, msg.maxTokens, msg.image);
         } finally {
           active.delete(msg.req);
           cancelled.delete(msg.req);

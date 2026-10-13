@@ -81,6 +81,22 @@ export function adviceMessage(s: Selection, from: string, to: string, languageNo
   return parts.join(" ");
 }
 
+/**
+ * The same for an image in place of the text. Only Index-Translate-9B reads images, so it is used
+ * whatever was chosen; `documentChosen` says that the other model was.
+ */
+export function imageAdviceMessage(documentChosen: boolean, from: string, to: string, languageNote: string): string {
+  const parts: string[] = [];
+  if (documentChosen) {
+    parts.push(
+      `Warning: ${MODEL_LABELS[DOCUMENT_MODEL]} does not translate images. ${MODEL_LABELS[CHAT_MODEL]} will be used.`,
+    );
+  }
+  if (sameLanguage(from, to)) parts.push(SAME_LANGUAGE_WARNING);
+  if (languageNote) parts.push(languageNote);
+  return parts.join(" ");
+}
+
 export interface Health {
   status: string;
   error?: string;
@@ -111,7 +127,8 @@ export interface Done {
 }
 
 export interface ResultContext {
-  source: string;
+  /** `null` for an image: there is no source text to compare the translation with. */
+  source: string | null;
   translation: string;
   model: ModelId;
   sourceLang: string | undefined;
@@ -124,7 +141,7 @@ export function resultNotes(done: Pick<Done, "finish_reason">, ctx: ResultContex
   if (done.finish_reason === "length") {
     notes.push("The translation was cut off because it reached the output limit. It is incomplete.");
   }
-  const mismatch = paragraphMismatch(ctx.source, ctx.translation);
+  const mismatch = ctx.source === null ? null : paragraphMismatch(ctx.source, ctx.translation);
   if (mismatch) notes.push(mismatchMessage(mismatch));
   if (ctx.model === DOCUMENT_MODEL && ctx.sourceLang === "zh" && ctx.targetLang === "en") {
     notes.push(

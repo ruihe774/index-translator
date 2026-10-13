@@ -111,6 +111,18 @@ describe("plan", () => {
     }
   });
 
+  test("a model's image encoder is downloaded with it, from the same revision", () => {
+    for (const model of MODELS) {
+      const files = plan([model.id], dirs);
+      expect(files).toHaveLength(model.mmproj ? 2 : 1);
+      if (!model.mmproj) continue;
+      expect(files[1]!.dest).toBe(join("/m", model.mmproj));
+      expect(files[1]!.url).toBe(files[0]!.url.replace(model.file, model.mmproj));
+      expect(files[1]!.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(files[1]!.sha256).not.toBe(files[0]!.sha256);
+    }
+  });
+
   test("the separation model is one pinned file in its own directory", () => {
     const files = plan(["bs-roformer"], dirs);
     expect(files).toHaveLength(1);

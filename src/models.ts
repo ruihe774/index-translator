@@ -14,6 +14,11 @@ export interface ModelSpec {
   kind: "chat" | "document";
   /** Directions a document model accepts, as "<source>-<target>" codes. */
   directions?: string[];
+  /**
+   * File name, inside the models directory, of the model's image encoder and projector. A model
+   * that has one translates the text in an image; the file is loaded when the first image arrives.
+   */
+  mmproj?: string;
 }
 
 export const MODELS: ModelSpec[] = [
@@ -22,6 +27,7 @@ export const MODELS: ModelSpec[] = [
     label: "Index-Translate-9B (Q6_K)",
     file: "Index-Translate-9B.Q6_K.gguf",
     kind: "chat",
+    mmproj: "Index-Translate-9B.mmproj-Q8_0.gguf",
   },
   {
     id: "index-nailong-9b",

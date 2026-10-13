@@ -31,6 +31,9 @@ Compared with widely used online translation tools:
   the Markdown back.
 - **Opens PDFs without uploading them.** Text, Markdown and PDF files are read in your browser; a
   PDF page becomes Markdown with one click on its thumbnail.
+- **Translates the text in a picture.** Open or drop a screenshot or a photo (JPEG, PNG, WebP) and
+  the model reads and translates the text in it, on your own machine, with no separate text
+  recognition step.
 - **Streaming with Stop.** Text appears as it is generated, and you can stop at any time.
 - **Reads aloud, locally.** Listen to your text or the translation in Chinese, English, Japanese,
   Spanish or Arabic, with pause, speed and a choice of voices. The speech model (IndexTTS-2.5)
@@ -61,7 +64,7 @@ use the x86-64 name. Then:
 
 ```bash
 chmod +x Index_Translator-x86_64.AppImage
-./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 17.7 GiB
+./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 17.9 GiB
 ./Index_Translator-x86_64.AppImage         # start; the app opens in your browser
 ```
 
@@ -88,7 +91,7 @@ it). It needs 64-bit Windows 10 or 11. Then:
    signed, so Windows SmartScreen may warn you: choose **More info**, then **Run anyway**.
 2. Start **Index Translator** from the Start menu (or let the installer start it). A small window
    with four links opens.
-3. Once, click **Download models**: it fetches the models and example voices (about 17.7 GiB) in a
+3. Once, click **Download models**: it fetches the models and example voices (about 17.9 GiB) in a
    console window, shows each model's license and waits for you to type `yes`. **Do not close the
    console window until it says it is done**: closing it stops the download (running it again
    continues where it stopped).
@@ -115,7 +118,7 @@ bun src/server.ts
 
 Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`.
 
-Before the first start, build the engines and get the models once (about 17.7 GiB):
+Before the first start, build the engines and get the models once (about 17.9 GiB):
 
 ```bash
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
@@ -167,10 +170,12 @@ links and are not loaded.
 
 ### Open a file
 
-**Open**, next to the **From** language, takes the text from a file on your computer. The file is
-read by your browser and stays there: nothing is uploaded, and the server only receives the text you
-then send with **Translate**. Opening a file replaces what is in the box and removes the
-translation of the old text; it never starts a translation.
+**Open**, next to the **From** language, takes the text from a file on your computer; dropping a
+file anywhere on the page does the same. A text or PDF file is read by your browser and stays
+there: nothing is uploaded, and the server only receives the text you then send with
+**Translate**. An image is different: it is what gets translated, so **Translate** sends the image
+itself to the server (see [Translate an image](#translate-an-image)). Opening a file replaces what
+is in the box and removes the translation of the old text; it never starts a translation.
 
 - **Plain text and Markdown** (`.txt`, `.md`, `.markdown`, UTF-8, up to 2 MB) go into the box as
   they are. A text written in Markdown is shown formatted right away; **Raw** brings back the text
@@ -180,6 +185,8 @@ translation of the old text; it never starts a translation.
   allows); it is shown formatted, with **Raw** for editing. Click another page to replace it. One
   page at a time is taken, so a long document is translated page by page. While a PDF is open,
   **Open** reads **Close**: close the PDF before you open another file. The text you took stays.
+- **Images** (`.jpg`, `.jpeg`, `.png`, `.webp`, up to 8 MB): the picture takes the place of the
+  text box. See [Translate an image](#translate-an-image).
 
 What to expect from a PDF: the text comes from the PDF's text layer. A scanned page has none, and
 the app says so instead of filling the box (it does no character recognition). Where the PDF does
@@ -189,6 +196,29 @@ columns can come out in a different reading order than on paper, so look the tex
 translate. Password-protected PDFs are not opened. Use a current browser: with a 17 MB paper, a
 year-old Chromium (141) ran out of memory and closed the tab, while Chrome 156 and Firefox 157
 opened it. **Open** and the page pictures have not been through the accessibility review yet.
+
+### Translate an image
+
+Open or drop a JPEG, PNG or WebP image (a screenshot, a photo of a sign or a menu, a diagram) and
+it is shown where the text box was. Choose the **To** language and click **Translate**: the image
+is sent to the server on your machine, and Index-Translate-9B reads the text in it and writes the
+translation. **From** can stay on **Detect language**; choosing the language helps when the picture
+mixes several. **Clear** removes the picture and brings the text box back.
+
+- Images are always translated by Index-Translate-9B, whatever model is chosen; the long-document
+  model does not read images. A glossary and constraints apply as for text; the genre is not used.
+- The translation is plain text in the order the model reads the picture. There is nothing to
+  compare it with, so the paragraph check and click-to-scroll do not apply, and the picture is not
+  kept in the History.
+- An image may be up to 8 MB and 50 million pixels. Large pictures are scaled down to about
+  4 million pixels for the model, so very small print in a big photo can be lost: crop to the part
+  you need. A full-size picture takes a few seconds to read before the translation starts and
+  uses about 4,100 tokens of the input limit.
+- The first image loads the model's image encoder (0.6 GiB, part of `fetch`), which then uses
+  about 1 GiB more GPU memory until the model is switched; together with reading aloud that
+  fills a 16 GiB card. If the server says that images cannot be
+  translated, the encoder file is missing: run `fetch` again (see [Start the app](#start-the-app)).
+- A transparent background is treated as white.
 
 ### Choosing a model
 

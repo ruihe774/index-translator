@@ -1,4 +1,5 @@
-// The Open button: text, Markdown and PDF files into the source box, in the browser alone.
+// The Open button: text, Markdown and PDF files into the source box, in the browser alone, and
+// images in its place, which Translate sends.
 // The PDF tests need the libraries in public/vendor/ (bun scripts/fetch_web_libs.ts) and use
 // test/fixtures/sample.pdf (three pages, see make_sample_pdf.py beside it).
 
@@ -32,6 +33,145 @@ function watchApi(page: Page): { method: string; path: string; body: string }[] 
   });
   return seen;
 }
+
+/** A PNG of one colour, drawn by the browser itself. */
+async function png(page: Page, width: number, height: number): Promise<Buffer> {
+  const base64 = await page.evaluate(
+    ([w, h]) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = w!;
+      canvas.height = h!;
+      const ctx = canvas.getContext("2d")!;
+      ctx.fillStyle = "#fff";
+      ctx.fillRect(0, 0, w!, h!);
+      return canvas.toDataURL("image/png").split(",")[1]!;
+    },
+    [width, height],
+  );
+  return Buffer.from(base64, "base64");
+}
+
+test.describe("images", () => {
+  const picture = (page: Page) => page.getByRole("img", { name: "Image to translate: menu.png" });
+
+  test("an image takes the place of the text box and is sent only by Translate", async ({ app, mock }) => {
+    await mock.set({ chunks: [THINK, "拉面 800 日元"] });
+    const api = watchApi(app.page);
+    await app.open();
+    await app.text.fill("old text");
+    const file = await png(app.page, 300, 120);
+    await pick(app.page, "menu.png", file, "image/png");
+
+    await expect(picture(app.page)).toBeVisible();
+    await expect(box(app.page)).toBeHidden();
+    await expect(box(app.page)).toHaveValue("");
+    await expect(note(app.page)).toHaveText(
+      "Opened menu.png. Translate sends the image to the server, which reads the text in it.",
+    );
+    await expect(app.page.locator("#count")).toHaveText("menu.png, 300 × 120 pixels");
+    await expect(app.page.getByRole("group", { name: "Source view" }).getByRole("button").first()).toHaveAttribute(
+      "aria-disabled",
+      "true",
+    );
+    expect(api.filter((r) => r.method !== "GET")).toEqual([]);
+
+    await app.to.selectOption("zh");
+    await app.translate.click();
+    await expect(app.output).toHaveText("拉面 800 日元");
+    await expect(app.meta).toContainText("Index-Translate-9B");
+    await expect(app.notes).toHaveCount(0);
+    // Still there after the translation, to compare with.
+    await expect(picture(app.page)).toBeVisible();
+
+    const sent = api.filter((r) => r.path === "/api/v1/translate");
+    expect(sent).toHaveLength(1);
+    const body = JSON.parse(sent[0]!.body) as Record<string, unknown>;
+    expect(body).toMatchObject({ model: "index-translate-9b", target_lang: "zh", stream: true });
+    expect(body).not.toHaveProperty("text");
+    expect(body.image).toBe(`data:image/png;base64,${file.toString("base64")}`);
+    const { requests } = await mock.state();
+    expect(requests).toHaveLength(1);
+    expect(requests[0]!.prompt).toBe("请将图片中的文本翻译为中文，直接输出翻译结果，不要进行任何解释。");
+    expect(requests[0]!.image?.png).toBe(true);
+    // Not kept in the history, which holds texts.
+    await expect(app.page.locator("#history-list li")).toHaveCount(0);
+  });
+
+  test("Clear, and opening a text, put the text box back", async ({ app }) => {
+    await app.open();
+    await pick(app.page, "menu.png", await png(app.page, 40, 40), "image/png");
+    await expect(picture(app.page)).toBeVisible();
+    const clear = app.page.getByRole("button", { name: "Clear", exact: true }).first();
+    await expect(clear).toHaveAttribute("aria-disabled", "false");
+    await clear.click();
+    await expect(picture(app.page)).toBeHidden();
+    await expect(app.text).toBeVisible();
+    await expect(app.text).toBeFocused();
+    await expect(app.page.locator("#count")).toHaveText("0 letters");
+
+    await pick(app.page, "menu.png", await png(app.page, 40, 40), "image/png");
+    await expect(picture(app.page)).toBeVisible();
+    await pick(app.page, "notes.txt", "Some text", "text/plain");
+    await expect(picture(app.page)).toBeHidden();
+    await expect(app.text).toHaveValue("Some text");
+  });
+
+  test("a dropped image is opened like a picked one, whole inside the pane", async ({ app }) => {
+    await app.open();
+    const bytes = [...(await png(app.page, 200, 3000))];
+    const dt = await app.page.evaluateHandle((data) => {
+      const t = new DataTransfer();
+      t.items.add(new File([new Uint8Array(data)], "menu.png", { type: "image/png" }));
+      return t;
+    }, bytes);
+    const target = app.page.locator("header").first();
+    await target.dispatchEvent("dragover", { dataTransfer: dt });
+    await target.dispatchEvent("drop", { dataTransfer: dt });
+    await expect(picture(app.page)).toBeVisible();
+    // Far taller than the pane: scaled to fit it, in proportion.
+    const pane = (await app.page.locator("#source-image").boundingBox())!;
+    const shown = await picture(app.page).evaluate((el) => {
+      const canvas = el as HTMLCanvasElement;
+      const box = canvas.getBoundingClientRect();
+      // `object-fit: contain` draws the picture inside the box at its own proportions.
+      const scale = Math.min(box.width / canvas.width, box.height / canvas.height);
+      return { boxHeight: box.height, boxWidth: box.width, height: canvas.height * scale, width: canvas.width * scale };
+    });
+    expect(shown.boxHeight).toBeLessThanOrEqual(pane.height);
+    expect(shown.boxWidth).toBeLessThanOrEqual(pane.width);
+    expect(shown.height / shown.width).toBeCloseTo(15, 0);
+    expect(shown.height).toBeGreaterThan(pane.height * 0.9);
+  });
+
+  test("what is not an image, and one over 8 MB, are refused with a reason", async ({ app }) => {
+    await app.open();
+    await app.text.fill("kept");
+    await pick(app.page, "broken.png", "this is not a picture", "image/png");
+    await expect(note(app.page)).toHaveText("broken.png was not opened: it could not be read as an image.");
+    await expect(note(app.page)).toHaveClass(/error/);
+    await pick(app.page, "huge.jpg", Buffer.alloc(8 * 2 ** 20 + 1), "image/jpeg");
+    await expect(note(app.page)).toHaveText("huge.jpg was not opened: it is larger than 8 MB.");
+    await pick(app.page, "anim.gif", "GIF89a", "image/gif");
+    await expect(note(app.page)).toContainText("anim.gif was not opened: only plain text");
+    await expect(app.text).toHaveValue("kept");
+    await expect(app.text).toBeVisible();
+  });
+
+  test("the document model is not used for an image, and a missing image encoder is said", async ({ app, mock }) => {
+    await mock.set({ imageUnavailable: "the image encoder of index-translate-9b is not at /models/mmproj.gguf" });
+    await app.open();
+    await app.model("Index-NativeLong-9B").click();
+    await pick(app.page, "menu.png", await png(app.page, 40, 40), "image/png");
+    await expect(app.advice).toContainText("Index-NativeLong-9B does not translate images");
+    await app.translate.click();
+    await expect(app.meta).toContainText(
+      "Images cannot be translated on this server: the image encoder of index-translate-9b is not at /models/mmproj.gguf.",
+    );
+    await expect(app.meta).toHaveAttribute("role", "alert");
+    await expect(picture(app.page)).toBeVisible();
+    expect((await mock.state()).launches).not.toContain("index-nailong-9b");
+  });
+});
 
 test.describe("text and Markdown", () => {
   test("a text file goes into the box and nothing is translated or sent", async ({ app, mock }) => {
@@ -111,7 +251,7 @@ test.describe("text and Markdown", () => {
     await app.text.fill("kept");
     await pick(app.page, "report.docx", "PK");
     await expect(note(app.page)).toHaveText(
-      "report.docx was not opened: only plain text, Markdown and PDF files can be.",
+      "report.docx was not opened: only plain text, Markdown and PDF files and JPEG, PNG and WebP images can be.",
     );
     await expect(note(app.page)).toHaveClass(/error/);
     await pick(app.page, "gbk.txt", Buffer.from([0xc4, 0xe3, 0xba, 0xc3]));
@@ -119,6 +259,14 @@ test.describe("text and Markdown", () => {
     await pick(app.page, "empty.txt", "");
     await expect(note(app.page)).toHaveText("empty.txt was not opened: it is empty.");
     await expect(app.text).toHaveValue("kept");
+  });
+
+  test("the picker offers text, Markdown and images", async ({ app }) => {
+    await app.open();
+    const accept = (await app.page.locator("#open-file").getAttribute("accept")) ?? "";
+    for (const kind of [".txt", ".md", ".jpg", ".jpeg", ".png", ".webp", "image/jpeg", "image/png", "image/webp"]) {
+      expect(accept.split(",")).toContain(kind);
+    }
   });
 
   test("Open waits for a running translation", async ({ app, mock }) => {
@@ -356,7 +504,10 @@ test.describe("PDF", () => {
     app.page.on("pageerror", (e) => errors.push(e.message));
     await app.open();
     const input = app.page.locator("#open-file");
-    await expect(input).toHaveAttribute("accept", ".txt,.md,.markdown,text/plain,text/markdown");
+    await expect(input).toHaveAttribute(
+      "accept",
+      ".txt,.md,.markdown,text/plain,text/markdown,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp",
+    );
     await expect(app.page.getByRole("button", { name: "Open a file" })).toHaveAttribute("title", /not installed/);
 
     await input.setInputFiles(SAMPLE);

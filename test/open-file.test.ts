@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   decodeText,
   fileKind,
+  MAX_IMAGE_BYTES,
   MAX_PDF_BYTES,
   MAX_TEXT_BYTES,
   type PageText,
@@ -15,12 +16,18 @@ describe("fileKind", () => {
     expect(fileKind("README.MD", "")).toBe("text");
     expect(fileKind("a.b.markdown", "application/octet-stream")).toBe("text");
     expect(fileKind("paper.PDF", "")).toBe("pdf");
+    expect(fileKind("photo.JPG", "")).toBe("image");
+    expect(fileKind("photo.jpeg", "")).toBe("image");
+    expect(fileKind("shot.png", "")).toBe("image");
+    expect(fileKind("shot.webp", "")).toBe("image");
   });
 
   test("falls back to the media type when the extension says nothing", () => {
     expect(fileKind("LICENSE", "text/plain")).toBe("text");
     expect(fileKind("notes", "text/markdown; charset=utf-8")).toBe("text");
     expect(fileKind("download", "application/pdf")).toBe("pdf");
+    expect(fileKind("image", "image/png")).toBe("image");
+    expect(fileKind("blob", "image/webp")).toBe("image");
   });
 
   test("takes nothing else", () => {
@@ -28,7 +35,8 @@ describe("fileKind", () => {
       null,
     );
     expect(fileKind("page.html", "text/html")).toBe(null);
-    expect(fileKind("photo.png", "image/png")).toBe(null);
+    expect(fileKind("photo.gif", "image/gif")).toBe(null);
+    expect(fileKind("scan.heic", "image/heic")).toBe(null);
     expect(fileKind("noextension", "")).toBe(null);
   });
 });
@@ -51,7 +59,12 @@ describe("decodeText", () => {
 
 describe("refusal", () => {
   test("names the file and the reason", () => {
-    expect(refusal("a.docx", null, 10)).toContain("only plain text, Markdown and PDF");
+    expect(refusal("a.docx", null, 10)).toContain(
+      "only plain text, Markdown and PDF files and JPEG, PNG and WebP images",
+    );
+    expect(refusal("a.png", "image", MAX_IMAGE_BYTES + 1)).toContain("larger than 8 MB");
+    expect(refusal("a.png", "image", MAX_IMAGE_BYTES)).toBe(null);
+    expect(refusal("a.png", "image", 0)).toContain("empty");
     expect(refusal("a.txt", "text", 0)).toContain("empty");
     expect(refusal("a.txt", "text", MAX_TEXT_BYTES + 1)).toContain("larger than 2 MB");
     expect(refusal("a.pdf", "pdf", MAX_PDF_BYTES + 1)).toContain("larger than 256 MB");

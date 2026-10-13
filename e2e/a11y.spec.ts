@@ -23,6 +23,40 @@ for (const scheme of ["light", "dark"] as const) {
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toEqual([]);
   });
+
+  test(`an image as the source passes axe in ${scheme} mode and is named for assistive technology`, async ({
+    app,
+    mock,
+  }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await mock.set({ chunks: [THINK, "你好，世界"] });
+    await app.open();
+    const file = await app.page.evaluate(() => {
+      const canvas = document.createElement("canvas");
+      canvas.width = 320;
+      canvas.height = 200;
+      canvas.getContext("2d")!.fillRect(0, 0, 320, 200);
+      return canvas.toDataURL("image/png").split(",")[1]!;
+    });
+    await app.page
+      .locator("#open-file")
+      .setInputFiles({ name: "sign.png", mimeType: "image/png", buffer: Buffer.from(file, "base64") });
+    const picture = app.page.getByRole("img", { name: "Image to translate: sign.png" });
+    await expect(picture).toBeVisible();
+    await expect(picture).toHaveAccessibleDescription("sign.png, 320 × 200 pixels");
+    await expect(app.page.locator("#file-note")).toHaveAttribute("role", "status");
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+
+    await app.translate.click();
+    await expect(app.meta).toContainText("generated");
+    await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toEqual([]);
+    // At 320 px the picture still fits its pane: no horizontal scrolling.
+    await app.page.setViewportSize({ width: 320, height: 640 });
+    expect(await app.page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+  });
 }
 
 for (const scheme of ["light", "dark"] as const) {

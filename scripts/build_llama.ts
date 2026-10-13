@@ -1,6 +1,6 @@
-// Build the translation engine: libllama from the pinned llama.cpp source, with the Vulkan and CPU
-// backends as loadable libraries and nothing else of llama.cpp (no tools, server or examples), and
-// the C shim (src/llama-shim.c) as libllama-shim, into ./vendor/llama.cpp.
+// Build the translation engine: libllama and libmtmd (image input) from the pinned llama.cpp source,
+// with the Vulkan and CPU backends as loadable libraries and nothing else of llama.cpp (no tools,
+// server or examples), and the C shim (src/llama-shim.c) as libllama-shim, into ./vendor/llama.cpp.
 // Usage: bun scripts/build_llama.ts [--native] [--keep] [--shim]
 //
 //   --native  build one CPU backend for this machine's processor; the library may then die with
@@ -15,7 +15,7 @@
 //   sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
 // On Windows: git, cmake, Visual Studio 2022 (or its Build Tools) with the "Desktop development
 // with C++" workload, and the Vulkan SDK (glslc, the headers and vulkan-1.lib; it sets VULKAN_SDK).
-// The result is llama.dll, ggml*.dll, ggml-cpu-*.dll, ggml-vulkan.dll and llama-shim.dll, plus the
+// The result is llama.dll, mtmd.dll, ggml*.dll, ggml-cpu-*.dll, ggml-vulkan.dll and llama-shim.dll, plus the
 // import libraries the shim is linked against. Building needs no administrator rights.
 
 import { cp, mkdir, readdir, rm, rmdir, unlink } from "node:fs/promises";
@@ -27,9 +27,11 @@ const TAG = "b11552";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
 const COMMIT = "23b0202a189c44a54625aadcb37a946dd1d6278d";
 const REPO = "https://github.com/ggml-org/llama.cpp.git";
-/** llama.h and everything it includes, relative to the source tree. The shim is compiled against them. */
+/** llama.h, libmtmd's headers and everything they include, relative to the source tree. The shim is compiled against them. */
 const HEADERS = [
   "include/llama.h",
+  "tools/mtmd/mtmd.h",
+  "tools/mtmd/mtmd-helper.h",
   "ggml/include/ggml.h",
   "ggml/include/ggml-alloc.h",
   "ggml/include/ggml-backend.h",
@@ -45,7 +47,7 @@ const HEADERS = [
  */
 const BASELINE = process.arch === "x64" && !windows ? ["-march=x86-64"] : [];
 /** The import libraries the shim is linked against on Windows; they stay beside the DLLs so `--shim` works. */
-const IMPORT_LIBS = ["llama", "ggml", "ggml-base"];
+const IMPORT_LIBS = ["llama", "mtmd", "ggml", "ggml-base"];
 
 const OPTIONS = ["--native", "--keep", "--shim"];
 const flags = new Set(Bun.argv.slice(2));
@@ -104,6 +106,7 @@ async function buildShim(dir: string): Promise<void> {
     `-I${join(dir, "include")}`,
     `-L${dir}`,
     "-lllama",
+    "-lmtmd",
     "-lggml",
     "-lggml-base",
     // The shim finds libllama beside itself, and a function the libraries lack fails here, not at startup.
@@ -159,8 +162,11 @@ try {
     `-DGGML_NATIVE=${native ? "ON" : "OFF"}`,
     `-DGGML_CPU_ALL_VARIANTS=${native ? "OFF" : "ON"}`,
     ...(native ? [] : BASELINE.flatMap((flag) => [`-DCMAKE_C_FLAGS=${flag}`, `-DCMAKE_CXX_FLAGS=${flag}`])),
-    // Only libllama and ggml: the tools, the server and the tests all need the common library.
+    // Only libllama, libmtmd and ggml: the tools, the server and the tests all need the common library.
     "-DLLAMA_BUILD_COMMON=OFF",
+    // libmtmd on its own, for image input. Its video support would start an ffmpeg found in PATH.
+    "-DLLAMA_BUILD_MTMD=ON",
+    "-DMTMD_VIDEO=OFF",
     "-DLLAMA_BUILD_TOOLS=OFF",
     "-DLLAMA_BUILD_SERVER=OFF",
     "-DLLAMA_BUILD_APP=OFF",

@@ -1,7 +1,8 @@
-// Download the pinned models and verify their checksums: the two Index-Translate GGUF models and
+// Download the pinned models and verify their checksums: the two Index-Translate GGUF models with
+// the chat model's image encoder (its mmproj GGUF), and
 // the IndexTTS-2.5 GGUF for reading aloud and the BS-RoFormer GGUF that separates an uploaded voice
 // sample from music and noise into MODELS_DIR (./models), and the example voices into VOICES_DIR
-// (./voices). About 17.7 GiB in all. In the AppImage this is its `fetch` subcommand.
+// (./voices). About 17.9 GiB in all. In the AppImage this is its `fetch` subcommand.
 // Usage: bun scripts/fetch_models.ts [--model index-translate-9b ...] [--models-dir DIR] [--voices-dir DIR]
 //
 //   --model  one of index-translate-9b, index-nailong-9b, index-tts-2.5 (the speech model and the
@@ -33,12 +34,16 @@ export interface Download {
 
 const resolveUrl = (repo: string, revision: string, file: string) => `/${repo}/resolve/${revision}/${file}`;
 
-/** Model id to repository, pinned revision and checksum; the file names are those of src/models.ts. */
-const TRANSLATION: Record<string, { repo: string; revision: string; sha256: string }> = {
+/**
+ * Model id to repository, pinned revision and checksum; the file names are those of src/models.ts.
+ * `mmproj` is the checksum of the model's image encoder (Q8_0, 0.6 GB), from the same revision.
+ */
+const TRANSLATION: Record<string, { repo: string; revision: string; sha256: string; mmproj?: string }> = {
   "index-translate-9b": {
     repo: "IndexTeam/Index-Translate-9B-GGUF",
     revision: "645939fbab839a656f1bc39975a872bc8ad749f8",
     sha256: "5e47c636c75de6c5065f8550869a744e049451ac591a001968872d5c8b4b7898",
+    mmproj: "0c654bbb219cea5dbb80656ec506e308c82b06aac7287f7636b9b6d06a44b957",
   },
   "index-nailong-9b": {
     repo: "IndexTeam/Index-Nailong-9B-GGUF",
@@ -87,7 +92,7 @@ const VOICES: Record<string, string> = {
 /** What the user is shown before a model is downloaded; THIRD_PARTY_NOTICES.md has the full account. */
 export const NOTICES: Record<string, string> = {
   "index-translate-9b": [
-    "Index-Translate-9B (IndexTeam / bilibili), GGUF Q6_K",
+    "Index-Translate-9B (IndexTeam / bilibili), GGUF Q6_K, and its image encoder (mmproj, GGUF Q8_0)",
     "  License: Apache-2.0",
     "  https://huggingface.co/IndexTeam/Index-Translate-9B-GGUF",
   ].join("\n"),
@@ -153,8 +158,15 @@ export function plan(
   for (const id of ids) {
     const pin = TRANSLATION[id];
     if (pin) {
-      const file = MODELS.find((m) => m.id === id)!.file;
+      const { file, mmproj } = MODELS.find((m) => m.id === id)!;
       files.push({ url: resolveUrl(pin.repo, pin.revision, file), sha256: pin.sha256, dest: join(dirs.models, file) });
+      if (pin.mmproj && mmproj) {
+        files.push({
+          url: resolveUrl(pin.repo, pin.revision, mmproj),
+          sha256: pin.mmproj,
+          dest: join(dirs.models, mmproj),
+        });
+      }
     } else if (id === SEPARATION) {
       files.push({
         url: SEPARATION_URL,

@@ -2,23 +2,29 @@
 // is said about a PDF page. Pure, so it is tested without a browser (test/open-file.test.ts); the
 // page side is open-ui.ts, the PDF libraries are behind pdf.ts.
 //
-// Files never leave the browser: a text file is decoded here, a PDF by the libraries in
-// public/vendor/, and the server only ever sees the text that is sent for translation.
+// Text and PDF files never leave the browser: a text file is decoded here, a PDF by the libraries
+// in public/vendor/, and the server only ever sees the text that is sent for translation. An image
+// is the exception: it takes the place of the text, and Translate sends the file itself.
 
 /** Plain text and Markdown are the same to the page: whether a text is Markdown is read from it. */
-export type FileKind = "text" | "pdf";
+export type FileKind = "text" | "pdf" | "image";
 
 /** What the file picker offers, as an `accept` list. */
 export const ACCEPT_TEXT = ".txt,.md,.markdown,text/plain,text/markdown";
 export const ACCEPT_PDF = ".pdf,application/pdf";
+export const ACCEPT_IMAGE = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
 
 /** A text far beyond what a model takes is refused instead of freezing the text box. */
 export const MAX_TEXT_BYTES = 2 * 2 ** 20;
 /** The file is held in memory twice (once per library). */
 export const MAX_PDF_BYTES = 256 * 2 ** 20;
+/** What the server takes (MAX_IMAGE_BYTES in src/image.ts). */
+export const MAX_IMAGE_BYTES = 8 * 2 ** 20;
 
 const TEXT_EXTENSIONS = ["txt", "text", "md", "markdown"];
 const TEXT_TYPES = ["text/plain", "text/markdown", "text/x-markdown"];
+const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 /** The kind of a picked file, by its name's extension, else by its media type; `null` when neither is taken. */
 export function fileKind(name: string, type: string): FileKind | null {
@@ -26,9 +32,11 @@ export function fileKind(name: string, type: string): FileKind | null {
   const extension = dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
   if (extension === "pdf") return "pdf";
   if (TEXT_EXTENSIONS.includes(extension)) return "text";
+  if (IMAGE_EXTENSIONS.includes(extension)) return "image";
   const media = type.split(";")[0]!.trim().toLowerCase();
   if (media === "application/pdf") return "pdf";
   if (TEXT_TYPES.includes(media)) return "text";
+  if (IMAGE_TYPES.includes(media)) return "image";
   return null;
 }
 
@@ -53,8 +61,10 @@ export function megabytes(bytes: number): string {
 
 /** Why a picked file is not opened; `null` when it can be. */
 export function refusal(name: string, kind: FileKind | null, size: number): string | null {
-  if (kind === null) return `${name} was not opened: only plain text, Markdown and PDF files can be.`;
-  const limit = kind === "pdf" ? MAX_PDF_BYTES : MAX_TEXT_BYTES;
+  if (kind === null) {
+    return `${name} was not opened: only plain text, Markdown and PDF files and JPEG, PNG and WebP images can be.`;
+  }
+  const limit = kind === "pdf" ? MAX_PDF_BYTES : kind === "image" ? MAX_IMAGE_BYTES : MAX_TEXT_BYTES;
   if (size > limit) return `${name} was not opened: it is larger than ${megabytes(limit)}.`;
   if (size === 0) return `${name} was not opened: it is empty.`;
   return null;
