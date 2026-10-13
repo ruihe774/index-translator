@@ -52,7 +52,7 @@ test("Markdown is read from what is rendered, piece by piece, and reading ends b
 test("the translation is read in the target language and the block being read is shaded", async ({ app, mock }) => {
   await mock.set({
     chunks: ["# 发布说明\n\n", "我们修复了 **三个** 错误。\n\n", "- 安装\n- 运行\n"],
-    speech: { delayMs: 300 },
+    speech: { delayMs: 300, audioSeconds: 1 },
   });
   await app.open();
   await app.from.selectOption("en");
@@ -262,7 +262,7 @@ test("without the speech engine Listen says why and the speech settings stay hid
 });
 
 test("the rendered source is read from Preview, and the shade follows in it", async ({ app, mock }) => {
-  await mock.set({ chunks: ["# 发布说明\n\n", "完成。\n"], speech: { delayMs: 300, audioSeconds: 0.5 } });
+  await mock.set({ chunks: ["# 发布说明\n\n", "完成。\n"], speech: { delayMs: 300, audioSeconds: 1 } });
   await app.open();
   await app.from.selectOption("en");
   await app.text.fill(MARKDOWN);
