@@ -9,13 +9,12 @@
     "typecheck": "bun check -p tsconfig.json && bun check -p public/tsconfig.json && bun check -p e2e/tsconfig.json",
     "e2e": "playwright test",
     "lint:css": "bun scripts/lint_css.ts",
-    "lint": "biome lint .",
-    "format": "biome format --write .",
-    "lint:biome": "biome check ."
+    "lint:ts": "bun lint",
+    "format:write": "bun format",
+    "format:check": "bun format --check"
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
-    "@biomejs/biome": "2.5.15",
     "@playwright/test": "1.56.1",
     "@types/bun": "^1.4.2",
     "browserslist": "^4.29.3",

@@ -1,3 +1,12 @@
 [test]
 # Playwright specs under e2e/ run with `bun run e2e`, not `bun test`.
 root = "test"
+
+[lint]
+ignorePatterns = ["vendor/", "models/", "dist/", "playwright-report/", "test-results/"]
+
+[lint.rules]
+"@typescript-eslint/no-explicit-any" = "warn"
+"no-empty" = ["error", { allowEmptyCatch = true }]
+"@typescript-eslint/no-unused-vars" = ["error", { argsIgnorePattern = "^_", varsIgnorePattern = "^_", caughtErrorsIgnorePattern = "^_" }]
+"@typescript-eslint/ban-ts-comment" = ["error", { "ts-expect-error" = false }]
