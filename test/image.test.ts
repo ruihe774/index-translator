@@ -3,7 +3,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { type App, startApp } from "../src/app";
-import { ImageRejected, MAX_IMAGE_BYTES, prepareImage } from "../src/image";
+import { engineSize, ImageRejected, MAX_IMAGE_BYTES, prepareImage } from "../src/image";
 import { imageChatPrompt } from "../src/llama-ffi";
 import {
   CHAT,
@@ -40,10 +40,11 @@ describe("prepareImage", () => {
   test("JPEG, WebP and PNG all come out as a PNG of the same size", async () => {
     const jpeg = await new Bun.Image(PNG).jpeg().bytes();
     const webp = await new Bun.Image(PNG).webp().bytes();
+    // 2 × 2 is below the encoder's minimum: it is made the 96 × 96 the encoder would make of it.
     for (const file of [PNG, jpeg, webp]) {
       const png = await prepareImage(file);
       expect(isPng(png)).toBe(true);
-      expect(await new Bun.Image(png).metadata()).toEqual({ width: 2, height: 2, format: "png" });
+      expect(await new Bun.Image(png).metadata()).toEqual({ width: 96, height: 96, format: "png" });
     }
   });
 
@@ -55,16 +56,46 @@ describe("prepareImage", () => {
     expect(Buffer.from(png).includes("not part of the image")).toBe(false);
   });
 
-  test("a very large picture is scaled down in proportion; one the engine can take is left as it is", async () => {
+  test("a picture is resized once, to the size the encoder would make of it", async () => {
     const big = await new Bun.Image(PNG).resize(6000, 4000).jpeg().bytes();
     const scaled = await new Bun.Image(await prepareImage(big)).metadata();
-    expect(scaled.width * scaled.height).toBeLessThanOrEqual(16_100_000);
-    expect(scaled.width * scaled.height).toBeGreaterThan(15_900_000);
-    expect(scaled.width / scaled.height).toBeCloseTo(1.5, 2);
+    expect({ width: scaled.width, height: scaled.height }).toEqual({ width: 2496, height: 1664 });
+    expect(scaled.width * scaled.height).toBeLessThanOrEqual(4096 * 32 * 32);
+    expect(scaled.width / scaled.height).toBeCloseTo(1.5, 1);
 
-    // A long screenshot: many pixels on one side, few in all.
+    // A long screenshot: many pixels on one side, few in all. Only rounded to the grid of 32.
     const long = await new Bun.Image(PNG).resize(400, 9000).png().bytes();
-    expect(await new Bun.Image(await prepareImage(long)).metadata()).toMatchObject({ width: 400, height: 9000 });
+    expect(await new Bun.Image(await prepareImage(long)).metadata()).toMatchObject({ width: 416, height: 8992 });
+
+    // A picture that has the encoder's size already is not touched.
+    const exact = await new Bun.Image(PNG).resize(128, 96).png().bytes();
+    expect(await new Bun.Image(await prepareImage(exact)).metadata()).toMatchObject({ width: 128, height: 96 });
+  });
+
+  test("the size follows the picture as EXIF turns it", async () => {
+    const plain = Buffer.from(await new Bun.Image(PNG).resize(200, 100).jpeg().bytes());
+    // An APP1 segment with Orientation = 6 (90° clockwise), right after the SOI marker.
+    const tiff = [0x4d, 0x4d, 0, 0x2a, 0, 0, 0, 8, 0, 1, 0x01, 0x12, 0, 3, 0, 0, 0, 1, 0, 6, 0, 0, 0, 0, 0, 0];
+    const exif = Buffer.concat([Buffer.from("Exif\0\0"), Buffer.from(tiff)]);
+    const segment = Buffer.from([0xff, 0xe1, (exif.length + 2) >> 8, (exif.length + 2) & 255]);
+    const turned = Buffer.concat([plain.subarray(0, 2), segment, exif, plain.subarray(2)]);
+    expect(await new Bun.Image(turned).metadata()).toMatchObject({ width: 100, height: 200 });
+    expect(await new Bun.Image(await prepareImage(plain)).metadata()).toMatchObject({ width: 192, height: 96 });
+    expect(await new Bun.Image(await prepareImage(turned)).metadata()).toMatchObject({ width: 96, height: 192 });
+  });
+
+  test("engineSize is libmtmd's calc_size_preserved_ratio for the Qwen3-VL encoder", () => {
+    // Computed with a copy of the C++ function at the pinned llama.cpp (174,818 sizes, no difference).
+    const cases: [number, number, number, number][] = [
+      [1, 1, 96, 96],
+      [100, 100, 96, 96],
+      [1000, 1000, 992, 992],
+      [4000, 3000, 2336, 1760],
+      [3024, 4032, 1760, 2336],
+      [8000, 8000, 2048, 2048],
+      [50, 20000, 64, 20000],
+    ];
+    for (const [w, h, rw, rh] of cases) expect(engineSize(w, h)).toEqual({ width: rw, height: rh });
   });
 
   test("what is not a JPEG, PNG or WebP image is refused as invalid", async () => {

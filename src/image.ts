@@ -5,14 +5,22 @@
 
 /** Largest image file accepted. */
 export const MAX_IMAGE_BYTES = 8 * 2 ** 20;
-/** Largest decoded image, in pixels: a small file can claim a huge canvas. The encoder scales down to about 4 million anyway. */
+/** Largest decoded image, in pixels: a small file can claim a huge canvas. */
 export const MAX_IMAGE_PIXELS = 50_000_000;
 /**
- * A larger picture is scaled to this many pixels here. The encoder takes about 4 million and scales
- * the rest away itself; this only keeps a 50-million-pixel photo from crossing to the engine thread
- * as 200 MB of PNG. Four times the encoder's size, so its own scaling still decides the result.
+ * What libmtmd does to an image before the encoder (`mtmd_image_preprocessor_dyn_size`, clip.cpp's
+ * Qwen3-VL branch at the pinned llama.cpp): each side to a multiple of patch size × spatial merge,
+ * the area kept within 8 to 4,096 tokens of that many pixels. The mmproj GGUF of index-translate-9b
+ * has `clip.vision.patch_size` 16 and `spatial_merge_size` 2 and no min/max pixel keys, so these
+ * are clip.cpp's defaults. When the picture already has the target size libmtmd copies it without
+ * resampling, so `prepareImage` resizes to it once, here, and the engine gets exactly what it wants.
+ * Check them on every llama.cpp pin change and for every other mmproj.
  */
-const ENGINE_PIXELS = 16_000_000;
+const ALIGN = 16 * 2;
+const MIN_TOKENS = 8;
+const MAX_TOKENS = 4096;
+const MIN_PIXELS = MIN_TOKENS * ALIGN * ALIGN;
+const MAX_PIXELS = MAX_TOKENS * ALIGN * ALIGN;
 /** What an upload may be, as Bun.Image names the formats. */
 export const IMAGE_FORMATS = ["jpeg", "png", "webp"] as const;
 
@@ -26,7 +34,31 @@ export class ImageRejected extends Error {
   }
 }
 
-/** `file` as an uncompressed PNG. Throws ImageRejected when it is not a JPEG, PNG or WebP image within the limits. */
+/**
+ * The size libmtmd would resize a `width` × `height` image to: `img_tool::calc_size_preserved_ratio`
+ * ("smart resize") in mtmd-image.cpp, with its `float` arithmetic (`fround`) so that the result is the
+ * same number to the pixel. A target the encoder does not recognise as its own is resampled again.
+ */
+export function engineSize(width: number, height: number): { width: number; height: number } {
+  const f = Math.fround;
+  const round = (x: number) => Math.round(f(x / ALIGN)) * ALIGN;
+  const ceil = (x: number) => Math.ceil(f(x / ALIGN)) * ALIGN;
+  const floor = (x: number) => Math.floor(f(x / ALIGN)) * ALIGN;
+  let w = Math.max(ALIGN, round(width));
+  let h = Math.max(ALIGN, round(height));
+  if (h * w > MAX_PIXELS) {
+    const beta = f(Math.sqrt(f(f(f(height) * width) / MAX_PIXELS)));
+    h = Math.max(ALIGN, floor(f(height / beta)));
+    w = Math.max(ALIGN, floor(f(width / beta)));
+  } else if (h * w < MIN_PIXELS) {
+    const beta = f(Math.sqrt(f(MIN_PIXELS / f(f(height) * width))));
+    h = ceil(f(height * beta));
+    w = ceil(f(width * beta));
+  }
+  return { width: w, height: h };
+}
+
+/** `file` as an uncompressed PNG, already at the size the encoder takes (`engineSize`). Throws ImageRejected when it is not a JPEG, PNG or WebP image within the limits. */
 export async function prepareImage(file: Uint8Array): Promise<Uint8Array> {
   if (file.length > MAX_IMAGE_BYTES) {
     throw new ImageRejected("image_too_large", `the image is larger than ${MAX_IMAGE_BYTES} bytes`);
@@ -37,10 +69,13 @@ export async function prepareImage(file: Uint8Array): Promise<Uint8Array> {
     if (!(IMAGE_FORMATS as readonly string[]).includes(format)) {
       throw new ImageRejected("invalid_request", `the image must be JPEG, PNG or WebP, not ${format}`);
     }
-    const side = Math.max(width, height);
-    const scale = Math.sqrt(ENGINE_PIXELS / (width * height));
-    // A square box of the scaled longer side: the same whichever way EXIF turns the picture.
-    if (scale < 1) image.resize(Math.round(side * scale), Math.round(side * scale), { fit: "inside" });
+    // `metadata()` reports the size after EXIF orientation, which is also the order the pipeline
+    // applies things in (orient, then resize). Cubic is the kernel libmtmd's own resize uses
+    // (bicubic, as Pillow); a stretch to the exact size, not "inside", because libmtmd would pad.
+    const target = engineSize(width, height);
+    if (target.width !== width || target.height !== height) {
+      image.resize(target.width, target.height, { filter: "cubic" });
+    }
     // Not compressed: it is read once, on this machine, a moment later.
     return await image.png({ compressionLevel: 0 }).bytes();
   } catch (e) {
