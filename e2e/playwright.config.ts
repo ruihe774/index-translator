@@ -23,7 +23,7 @@ export default defineConfig({
   workers: WORKERS,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["list"], ["html", { open: "never", outputFolder: at("../playwright-report") }]] : "list",
+  reporter: process.env.CI ? [["dot"], ["html", { open: "never", outputFolder: at("../playwright-report") }]] : "dot",
   use: {
     trace: "retain-on-failure",
     // The page keeps language choices in localStorage; each test gets a fresh context.

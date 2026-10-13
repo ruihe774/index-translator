@@ -1,6 +1,10 @@
 [test]
 # Playwright specs under e2e/ run with `bun run e2e`, not `bun test`.
 root = "test"
+onlyFailures = true
+
+[test.reporter]
+dots = true
 
 [lint]
 ignorePatterns = ["vendor/", "models/", "dist/", "playwright-report/", "test-results/"]
