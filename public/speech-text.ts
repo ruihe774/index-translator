@@ -175,28 +175,25 @@ interface Utterance {
 }
 
 function inlineText(nodes: Inline[], lang: string): string {
-  return (
-    nodes
-      // biome-ignore lint/suspicious/useIterableCallbackReturn: the switch covers every inline type; tsc checks it
-      .map((n): string => {
-        switch (n.type) {
-          case "text":
-          case "code":
-            return n.text;
-          case "br":
-            // Source lines of one paragraph: a wrapped sentence goes on.
-            return isCjk(lang) ? "" : " ";
-          case "em":
-          case "strong":
-          case "del":
-          case "link":
-            return inlineText(n.children, lang);
-          case "image":
-            return n.alt;
-        }
-      })
-      .join("")
-  );
+  return nodes
+    .map((n): string => {
+      switch (n.type) {
+        case "text":
+        case "code":
+          return n.text;
+        case "br":
+          // Source lines of one paragraph: a wrapped sentence goes on.
+          return isCjk(lang) ? "" : " ";
+        case "em":
+        case "strong":
+        case "del":
+        case "link":
+          return inlineText(n.children, lang);
+        case "image":
+          return n.alt;
+      }
+    })
+    .join("");
 }
 
 function tableRows(head: Inline[][], rows: Inline[][][], lang: string): string[] {

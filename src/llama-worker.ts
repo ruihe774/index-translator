@@ -20,6 +20,7 @@ export type WorkerReply =
   | { type: "done"; req: number; finishReason: FinishReason; usage: Usage; timings: EngineTimings }
   | { type: "error"; req: number; message: string };
 
+// eslint-disable-next-line no-var -- only `var` declares a global
 declare var self: Worker;
 
 const post = (reply: WorkerReply) => self.postMessage(reply);

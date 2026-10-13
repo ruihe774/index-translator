@@ -9,7 +9,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type App, startApp } from "../src/app";
 import { acceptsQoa, type QoaCodec, qoaLoader, qoaResponse } from "../src/qoa-stream";
-import { type Pcm, writeWav } from "../src/wav";
+import type { Pcm } from "../src/wav";
 import {
   config,
   launcher,

@@ -432,7 +432,7 @@ function linkTail(s: string, k: number): { href: string; title: string; end: num
     while (s[k] === " " || s[k] === "\t" || s[k] === "\n") k++;
   };
   skipSpace();
-  let href = "";
+  let href: string;
   if (s[k] === "<") {
     let j = k + 1;
     for (; j < s.length && s[j] !== ">"; j++) {
@@ -448,7 +448,7 @@ function linkTail(s: string, k: number): { href: string; title: string; end: num
     for (; k < s.length; k++) {
       const ch = s[k]!;
       if (ch === "\\" && ASCII_PUNCT.test(s[k + 1] ?? "")) k++;
-      // biome-ignore lint/suspicious/noControlCharactersInRegex: a bare link destination ends at a control character
+      // eslint-disable-next-line no-control-regex -- a bare link destination ends at a control character
       else if (/[ \x00-\x1f\x7f]/.test(ch)) break;
       else if (ch === "(") parens++;
       else if (ch === ")") {

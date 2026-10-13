@@ -26,7 +26,7 @@ export function countLetters(text: string): number {
 /** Paragraph numbers (1-based) whose markers are not all present in `translation`. */
 export function missingParagraphs(fixture: Fixture, translation: string): number[] {
   // Translations may group digits ("38,750").
-  const normalized = translation.replace(/(\d)[,  ](?=\d{3}(?!\d))/g, "$1");
+  const normalized = translation.replace(/(\d)[,\u00a0\u202f](?=\d{3}(?!\d))/g, "$1");
   const missing: number[] = [];
   fixture.markers.forEach((group, i) => {
     const present = group.every((m) => new RegExp(`(?<!\\d)${m}(?!\\d)`).test(normalized));
@@ -37,7 +37,7 @@ export function missingParagraphs(fixture: Fixture, translation: string): number
 
 /** Markers that occur more often in `translation` than in the source: a sign of repeated passages. */
 export function repeatedMarkers(fixture: Fixture, translation: string): string[] {
-  const normalized = translation.replace(/(\d)[,  ](?=\d{3}(?!\d))/g, "$1");
+  const normalized = translation.replace(/(\d)[,\u00a0\u202f](?=\d{3}(?!\d))/g, "$1");
   const count = (haystack: string, m: string) => haystack.match(new RegExp(`(?<!\\d)${m}(?!\\d)`, "g"))?.length ?? 0;
   return [...new Set(fixture.markers.flat())].filter((m) => count(normalized, m) > count(fixture.text, m));
 }

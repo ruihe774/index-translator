@@ -40,7 +40,6 @@ function link(href: string, title: string, children: Node[]): Node {
 }
 
 function inlineNodes(nodes: Inline[]): Node[] {
-  // biome-ignore lint/suspicious/useIterableCallbackReturn: the switch covers every inline type; tsc checks it
   return nodes.map((n): Node => {
     switch (n.type) {
       case "text":

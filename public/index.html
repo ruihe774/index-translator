@@ -36,7 +36,6 @@
               </div>
               <button type="button" id="open" aria-label="Open a file">Open</button>
               <input type="file" id="open-file" aria-label="Text, Markdown or PDF file to open" hidden>
-              <!-- biome-ignore lint/a11y/useSemanticElements: a custom group keeps the layout; a fieldset needs a legend and resets -->
               <view-switch id="source-switch" class="view-switch" role="group" aria-label="Source view">
                 <button type="button" data-value="raw" aria-pressed="true" aria-disabled="true">Raw</button>
                 <button type="button" data-value="preview" aria-pressed="false" aria-disabled="true">Preview</button>
@@ -54,7 +53,6 @@
             </div>
 
             <div class="panel-foot">
-              <!-- biome-ignore lint/a11y/useSemanticElements: a custom group keeps the layout; a fieldset needs a legend and resets -->
               <speech-controls id="speech-source" class="speech" role="group" side="source" subject="source text"></speech-controls>
               <p id="count" class="hint"></p>
               <div class="actions">
@@ -75,7 +73,6 @@
                 <label for="to">To</label>
                 <select id="to" name="to"></select>
               </div>
-              <!-- biome-ignore lint/a11y/useSemanticElements: a custom group keeps the layout; a fieldset needs a legend and resets -->
               <view-switch id="output-switch" class="view-switch" role="group" aria-label="Translation view">
                 <button type="button" data-value="raw" aria-pressed="false" aria-disabled="true">Raw</button>
                 <button type="button" data-value="preview" aria-pressed="true" aria-disabled="true">Preview</button>
@@ -88,7 +85,6 @@
             </div>
 
             <div class="panel-foot">
-              <!-- biome-ignore lint/a11y/useSemanticElements: a custom group keeps the layout; a fieldset needs a legend and resets -->
               <speech-controls id="speech-output" class="speech" role="group" side="output" subject="translation"></speech-controls>
               <meta-line id="meta" class="hint" role="status"></meta-line>
               <button type="button" id="copy" aria-label="Copy translation" aria-disabled="true">Copy</button>
@@ -100,7 +96,6 @@
         <section class="settings" aria-labelledby="settings-heading">
           <div class="settings-head">
             <h2 id="settings-heading">Model and options</h2>
-            <!-- biome-ignore lint/a11y/useSemanticElements: a custom group keeps the layout; a fieldset needs a legend and resets -->
             <view-switch id="model-switch" class="view-switch" role="group" aria-label="Model">
               <button type="button" data-value="auto" aria-pressed="true"><span class="long">Automatic</span><span class="short">Auto</span></button>
               <button type="button" data-value="index-translate-9b" aria-pressed="false"><span class="long">Index-Translate-9B</span><span class="short">Index-Translate</span></button>
@@ -128,7 +123,6 @@
             </div>
             <div class="field">
               <span id="clone-label">Clone a voice</span>
-              <!-- biome-ignore lint/a11y/useSemanticElements: a div group keeps the layout -->
               <div class="clone-row" role="group" aria-labelledby="clone-label">
                 <button type="button" id="voice-file-button">Upload audio…</button>
                 <input type="file" id="voice-file" aria-label="Voice sample audio file" accept="audio/*,.m4a,.mp3,.wav,.aac,audio/mp4,audio/x-m4a" hidden>

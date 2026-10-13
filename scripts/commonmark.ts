@@ -58,58 +58,52 @@ function url(s: string): string {
 }
 
 function inline(nodes: Inline[]): string {
-  return (
-    nodes
-      // biome-ignore lint/suspicious/useIterableCallbackReturn: the switch covers every inline type; tsc checks it
-      .map((n) => {
-        switch (n.type) {
-          case "text":
-            return esc(n.text);
-          case "br":
-            return "<br />\n";
-          case "code":
-            return `<code>${esc(n.text)}</code>`;
-          case "em":
-          case "strong":
-          case "del":
-            return `<${n.type}>${inline(n.children)}</${n.type}>`;
-          case "link":
-            return `<a href="${url(n.href)}"${n.title ? ` title="${esc(n.title)}"` : ""}>${inline(n.children)}</a>`;
-          case "image":
-            return `<img src="${url(n.href)}" alt="${esc(n.alt)}"${n.title ? ` title="${esc(n.title)}"` : ""} />`;
-        }
-      })
-      .join("")
-  );
+  return nodes
+    .map((n) => {
+      switch (n.type) {
+        case "text":
+          return esc(n.text);
+        case "br":
+          return "<br />\n";
+        case "code":
+          return `<code>${esc(n.text)}</code>`;
+        case "em":
+        case "strong":
+        case "del":
+          return `<${n.type}>${inline(n.children)}</${n.type}>`;
+        case "link":
+          return `<a href="${url(n.href)}"${n.title ? ` title="${esc(n.title)}"` : ""}>${inline(n.children)}</a>`;
+        case "image":
+          return `<img src="${url(n.href)}" alt="${esc(n.alt)}"${n.title ? ` title="${esc(n.title)}"` : ""} />`;
+      }
+    })
+    .join("");
 }
 
 function blocks(bs: Block[], tight = false): string {
-  return (
-    bs
-      // biome-ignore lint/suspicious/useIterableCallbackReturn: the switch covers every block type; tsc checks it
-      .map((b) => {
-        switch (b.type) {
-          case "heading":
-            return `<h${b.level}>${inline(b.children)}</h${b.level}>\n`;
-          case "paragraph":
-            return tight ? `${inline(b.children)}\n` : `<p>${inline(b.children)}</p>\n`;
-          case "code":
-            return `<pre><code${b.lang ? ` class="language-${esc(b.lang)}"` : ""}>${esc(b.text)}${b.text ? "\n" : ""}</code></pre>\n`;
-          case "quote":
-            return `<blockquote>\n${blocks(b.children)}</blockquote>\n`;
-          case "hr":
-            return "<hr />\n";
-          case "list": {
-            const tag = b.ordered ? "ol" : "ul";
-            const start = b.ordered && b.start !== 1 ? ` start="${b.start}"` : "";
-            return `<${tag}${start}>\n${b.items.map((it) => `<li>${blocks(it.children, b.tight)}</li>\n`).join("")}</${tag}>\n`;
-          }
-          case "table":
-            return "<table></table>\n"; // GFM; not in the CommonMark examples
+  return bs
+    .map((b) => {
+      switch (b.type) {
+        case "heading":
+          return `<h${b.level}>${inline(b.children)}</h${b.level}>\n`;
+        case "paragraph":
+          return tight ? `${inline(b.children)}\n` : `<p>${inline(b.children)}</p>\n`;
+        case "code":
+          return `<pre><code${b.lang ? ` class="language-${esc(b.lang)}"` : ""}>${esc(b.text)}${b.text ? "\n" : ""}</code></pre>\n`;
+        case "quote":
+          return `<blockquote>\n${blocks(b.children)}</blockquote>\n`;
+        case "hr":
+          return "<hr />\n";
+        case "list": {
+          const tag = b.ordered ? "ol" : "ul";
+          const start = b.ordered && b.start !== 1 ? ` start="${b.start}"` : "";
+          return `<${tag}${start}>\n${b.items.map((it) => `<li>${blocks(it.children, b.tight)}</li>\n`).join("")}</${tag}>\n`;
         }
-      })
-      .join("")
-  );
+        case "table":
+          return "<table></table>\n"; // GFM; not in the CommonMark examples
+      }
+    })
+    .join("");
 }
 
 /** Whitespace-insensitive between tags, in the spirit of the spec's normalize.py. */

@@ -153,7 +153,7 @@ interface Language {
 }
 
 async function loadLanguages() {
-  let languages: Language[] = [];
+  let languages: Language[];
   try {
     const res = await fetch(`${API}/languages`);
     const body = (await res.json()) as { languages?: unknown };

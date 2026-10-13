@@ -43,7 +43,7 @@ export const CHAT = "index-translate-9b";
 export const DOCUMENT = "index-nailong-9b";
 
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
-  // biome-ignore lint/correctness/noEmptyPattern: Playwright reads the fixture's dependencies from this parameter
+  // eslint-disable-next-line no-empty-pattern -- Playwright reads the fixture's dependencies from this parameter
   mock: async ({}, use) => {
     const call = (method: string, body?: unknown, path = ""): Promise<any> =>
       fetch(CONTROL + path, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) =>

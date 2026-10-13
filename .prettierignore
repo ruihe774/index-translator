@@ -1,3 +1,3 @@
-# Biome never formatted these; Markdown and the hand-aligned page stay as written.
+# Markdown and the hand-aligned page stay as written.
 *.md
 public/index.html

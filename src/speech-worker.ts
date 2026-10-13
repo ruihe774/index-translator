@@ -32,6 +32,7 @@ export type SpeechWorkerReply =
   | { type: "aborted"; req: number }
   | { type: "error"; req: number; message: string };
 
+// eslint-disable-next-line no-var -- only `var` declares a global
 declare var self: Worker;
 
 /** Sampling is seeded so the same sentence sounds the same when it is played again. */
