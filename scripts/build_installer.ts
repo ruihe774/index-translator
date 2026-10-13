@@ -12,7 +12,7 @@
 // the one running this script. Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
-import { cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { cp, mkdir, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
@@ -124,5 +124,5 @@ await run([
 
 // The packed Bun starts and reads the packed files.
 await run([join(stage, "bun.exe"), "--no-env-file", join(stage, "src", "server.ts"), "--help"]);
-const megabytes = Math.round((await stat(out)).size / 1e6);
+const megabytes = Math.round(Bun.file(out).size / 1e6);
 console.log(`ok ${out} (${megabytes} MB)`);

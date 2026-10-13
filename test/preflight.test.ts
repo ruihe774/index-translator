@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import type { Probe } from "../src/llama-probe";
@@ -13,11 +13,11 @@ const NO_GPU: Probe = { gpus: [], cpu: true, vulkanLoader: true };
 let dir = "";
 let withModel = "";
 
-beforeAll(() => {
+beforeAll(async () => {
   dir = mkdtempSync(join(tmpdir(), "preflight-"));
   withModel = join(dir, "models");
   mkdirSync(withModel);
-  writeFileSync(join(withModel, MODELS[0]!.file), "");
+  await Bun.write(join(withModel, MODELS[0]!.file), "");
 });
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));

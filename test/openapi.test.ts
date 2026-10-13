@@ -1,9 +1,8 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 
 const root = resolve(import.meta.dir, "..");
-const specText = readFileSync(join(root, "docs", "openapi.yaml"), "utf8");
+const specText = await Bun.file(join(root, "docs", "openapi.yaml")).text();
 const spec = Bun.YAML.parse(specText) as any;
 
 /** Paths of every object key called `key`, anywhere in the document. */
@@ -28,9 +27,9 @@ describe("docs/openapi.yaml", () => {
     expect(specText).not.toContain("nullable:");
   });
 
-  test("Error.code enum covers every error code the server can send", () => {
+  test("Error.code enum covers every error code the server can send", async () => {
     const enumCodes = new Set<string>(spec.components.schemas.Error.properties.error.properties.code.enum);
-    const src = readFileSync(join(root, "src", "app.ts"), "utf8");
+    const src = await Bun.file(join(root, "src", "app.ts")).text();
     // invalid(...) is the helper for invalid_request; its own definition is excluded.
     const used = new Set([...src.matchAll(/new ApiError\(\s*\d+,\s*"([a-z_]+)"/g)].map((m) => m[1]!));
     if (/(?<!function )\binvalid\(/.test(src)) used.add("invalid_request");

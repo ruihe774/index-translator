@@ -4,7 +4,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type App, startApp } from "../src/app";
@@ -229,7 +229,7 @@ describe("the native speech engine without audio.cpp", () => {
     const dir = await mkdtemp(join(tmpdir(), "voices-"));
     try {
       for (const name of ["narrator_two.wav", "alice.wav", "notes.txt", "clip.mp3"])
-        await writeFile(join(dir, name), "");
+        await Bun.write(join(dir, name), "");
       expect(await nativeSpeech(config({ voicesDir: dir })).voices()).toEqual([
         { id: "alice", name: "Alice" },
         { id: "narrator_two", name: "Narrator two" },
@@ -261,7 +261,7 @@ describe("NativeSpeech with a fake worker", () => {
 
   async function setup() {
     const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
-    await writeFile(libraryPath(dir), "");
+    await Bun.write(libraryPath(dir), "");
     const worker = fakeWorker();
     const speech = new NativeSpeech(config({ speech: true, audioDir: dir, speechModelDir: dir }), () => worker);
     return { dir, worker, speech };
@@ -415,8 +415,8 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   /** `separation`: the separation model is installed (a .gguf file in its directory). */
   async function setup(overrides: object = {}, separation = false) {
     const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
-    await writeFile(libraryPath(dir), "");
-    if (separation) await writeFile(join(dir, "bs-roformer.gguf"), "");
+    await Bun.write(libraryPath(dir), "");
+    if (separation) await Bun.write(join(dir, "bs-roformer.gguf"), "");
     const workers: any[] = [];
     const speech = new NativeSpeech(
       config({ speech: true, audioDir: dir, speechModelDir: dir, separationModelDir: dir, ...overrides }),

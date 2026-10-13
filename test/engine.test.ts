@@ -3,7 +3,7 @@
 // library. libllama itself is never loaded here.
 
 import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, test } from "bun:test";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { Engine, EngineError, type GenerationEvent, type Launcher, launchNative } from "../src/llama";
 import { chatPrompt } from "../src/llama-ffi";
@@ -382,11 +382,11 @@ const TMP = join(import.meta.dir, ".tmp-engine");
 const MODELS_DIR = join(TMP, "models");
 const EMPTY_DIR = join(TMP, "empty");
 
-beforeAll(() => {
+beforeAll(async () => {
   rmSync(TMP, { recursive: true, force: true });
   mkdirSync(MODELS_DIR, { recursive: true });
   mkdirSync(EMPTY_DIR, { recursive: true });
-  writeFileSync(join(MODELS_DIR, MODELS[0]!.file), "");
+  await Bun.write(join(MODELS_DIR, MODELS[0]!.file), "");
 });
 
 afterAll(() => rmSync(TMP, { recursive: true, force: true }));

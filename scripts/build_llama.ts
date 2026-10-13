@@ -19,7 +19,6 @@
 // import libraries the shim is linked against. Building needs no administrator rights.
 
 import { cp, mkdir, readdir, rm, rmdir, unlink } from "node:fs/promises";
-import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { devices, libraryPath, shimPath } from "../src/llama-ffi";
 import { COMPILERS, checkout, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
@@ -168,7 +167,7 @@ try {
     "-DLLAMA_BUILD_EXAMPLES=OFF",
     "-DLLAMA_BUILD_TESTS=OFF",
   ]);
-  await run(["cmake", "--build", build, "--config", "Release", "--parallel", String(availableParallelism())]);
+  await run(["cmake", "--build", build, "--config", "Release", "--parallel", String(navigator.hardwareConcurrency)]);
 
   await rm(stage, { recursive: true, force: true });
   await mkdir(join(stage, "include"), { recursive: true });

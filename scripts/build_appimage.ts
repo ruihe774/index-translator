@@ -14,7 +14,7 @@
 // Needs nothing installed besides Bun and git: appimagetool and the AppImage runtime are
 // downloaded, by version and checksum, into vendor/.build/appimage and kept there.
 
-import { chmod, cp, mkdir, readdir, rm, stat } from "node:fs/promises";
+import { chmod, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
@@ -151,5 +151,5 @@ await run(
 
 // The result starts: its own Bun runs from inside it and reads the packed files.
 await run([out, "--appimage-extract-and-run", "--version"]);
-const megabytes = Math.round((await stat(out)).size / 1e6);
+const megabytes = Math.round(Bun.file(out).size / 1e6);
 console.log(`ok ${out} (${megabytes} MB)`);

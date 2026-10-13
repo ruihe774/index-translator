@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import assert from "node:assert";
 import { type PlayerState, SpeechPlayer, type SpeechSettings, UPDATE_SETTLE_MS } from "../public/speech";
 import type { Segment } from "../public/speech-text";
 
@@ -141,7 +140,9 @@ describe("audio that arrives decoded (QOA)", () => {
     const player = new SpeechPlayer(synthesize, {
       onState() {},
       onSegment() {},
-      onError: (e) => assert.fail(String(e)),
+      onError: (e) => {
+        throw new Error(String(e));
+      },
     });
     player.start([seg("a1", 0)], SETTINGS);
     await flush();

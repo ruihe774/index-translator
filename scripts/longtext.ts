@@ -79,8 +79,8 @@ export async function runPass(
 }
 
 if (import.meta.main) {
-  const base = (process.argv[2] ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
-  const outDir = process.argv[3];
+  const base = (Bun.argv[2] ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
+  const outDir = Bun.argv[3];
 
   const model = Bun.env.MODEL ? { model: Bun.env.MODEL } : {};
   const english = await englishEssays();

@@ -1,7 +1,7 @@
 // DEV_RELOAD=1: the reload stream, the injected client script, and nothing of it without the flag.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { type App, startApp } from "../src/app";
@@ -10,10 +10,10 @@ import { config, launcher } from "./helpers/mock-engine";
 let dir: string;
 let app: App | undefined;
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), "dev-reload-test-"));
   mkdirSync(dir, { recursive: true });
-  writeFileSync(join(dir, "index.html"), "<!doctype html><title>t</title><body><p>hi</p></body>");
+  await Bun.write(join(dir, "index.html"), "<!doctype html><title>t</title><body><p>hi</p></body>");
 });
 
 afterEach(async () => {
@@ -52,7 +52,7 @@ describe("with DEV_RELOAD", () => {
     const decoder = new TextDecoder();
     let seen = decoder.decode((await reader.read()).value);
     expect(seen).toContain("event: hello");
-    writeFileSync(join(dir, "app.ts"), "export {};\n");
+    await Bun.write(join(dir, "app.ts"), "export {};\n");
     const deadline = Date.now() + 3000;
     while (!seen.includes("event: reload") && Date.now() < deadline) {
       const next = await Promise.race([reader.read(), Bun.sleep(3000).then(() => undefined)]);

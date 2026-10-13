@@ -20,7 +20,6 @@
 // libraries cannot be loaded into the process that has libllama.
 
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
-import { availableParallelism } from "node:os";
 import { join, resolve } from "node:path";
 import { libraryPath, libraryVersion } from "../src/audiocpp-ffi";
 import { COMPILERS, checkout, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
@@ -108,7 +107,7 @@ try {
     "--target",
     "audiocpp",
     "--parallel",
-    String(availableParallelism()),
+    String(navigator.hardwareConcurrency),
   ]);
 } catch (e) {
   console.error(`the build failed; if a tool or a header is missing, ${TOOLS_HINT}`);

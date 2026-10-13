@@ -8,11 +8,10 @@
 // (when its model is installed), which takes the voice out of music and background noise; the
 // speech model is unloaded while that runs, so the two never share the GPU.
 
-import { randomUUID } from "node:crypto";
-import { existsSync, readdirSync } from "node:fs";
-import { mkdir, readdir, rm } from "node:fs/promises";
+import { existsSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
-import { basename, extname, join } from "node:path";
+import { basename, join } from "node:path";
 import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
 import { fetchCommand } from "./preflight";
@@ -175,14 +174,13 @@ export class NativeSpeech implements Speech {
 
   async voices(): Promise<Voice[]> {
     // A missing voices directory still leaves the uploads.
-    const files = await readdir(this.cfg.voicesDir).catch(() => [] as string[]);
-    const installed = files
-      .filter((f) => extname(f) === ".wav")
-      .sort()
-      .map((f) => {
-        const id = basename(f, ".wav");
-        return { id, name: id.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase()) };
-      });
+    const files = await Array.fromAsync(new Bun.Glob("*.wav").scan({ cwd: this.cfg.voicesDir, onlyFiles: true })).catch(
+      () => [] as string[],
+    );
+    const installed = files.sort().map((f) => {
+      const id = basename(f, ".wav");
+      return { id, name: id.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase()) };
+    });
     return [...installed, ...[...this.uploads].map(([id, u]) => ({ id, name: u.name }))];
   }
 
@@ -194,9 +192,9 @@ export class NativeSpeech implements Speech {
     const voice = this.separationInstalled() ? await this.separate(wav) : wav;
     // Uploads that finished while this one was being separated may have filled the slots.
     if (this.uploads.size >= MAX_UPLOADED_VOICES) throw tooMany();
-    const id = `upload-${randomUUID()}`;
+    const id = `upload-${crypto.randomUUID()}`;
     const path = join(this.uploadDir, `${id}.wav`);
-    await mkdir(this.uploadDir, { recursive: true });
+    // Bun.write creates the upload directory too.
     await Bun.write(path, voice);
     this.uploads.set(id, { name, path });
     return { id, name };
@@ -206,7 +204,9 @@ export class NativeSpeech implements Speech {
   private separationModel(): string | undefined {
     if (this.missing()) return undefined;
     const dir = this.cfg.separationModelDir;
-    const file = existsSync(dir) ? readdirSync(dir).find((f) => f.endsWith(".gguf")) : undefined;
+    const file = existsSync(dir)
+      ? new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().value
+      : undefined;
     return file ? join(dir, file) : undefined;
   }
 

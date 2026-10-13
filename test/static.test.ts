@@ -2,7 +2,7 @@
 // The app-level behaviour of the real public/ directory is in api-requests.test.ts ("static files").
 
 import { afterAll, beforeAll, beforeEach, describe, expect, onTestFinished, spyOn, test } from "bun:test";
-import { cpSync, mkdirSync, mkdtempSync, rmSync, utimesSync, writeFileSync } from "node:fs";
+import { cpSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 import { createStaticServer } from "../src/static";
@@ -11,10 +11,10 @@ let dir: string;
 // One server per test, as in src/app.ts, so the transpile cache is shared between requests.
 let serve: ReturnType<typeof createStaticServer>;
 
-function write(rel: string, content: string) {
+async function write(rel: string, content: string) {
   const path = join(dir, rel);
   mkdirSync(join(path, ".."), { recursive: true });
-  writeFileSync(path, content);
+  await Bun.write(path, content);
   return path;
 }
 
@@ -32,14 +32,14 @@ afterAll(() => {
   rmSync(dir, { recursive: true, force: true });
 });
 
-beforeEach(() => {
+beforeEach(async () => {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
-  write("index.html", "<!doctype html><title>t</title>");
-  write("style.css", "body { color: black; }");
-  write("app.ts", "export const answer: number = 42;\n");
-  write("broken.ts", "export const = ;\n");
-  write("sub/index.html", "<p>sub</p>");
+  await write("index.html", "<!doctype html><title>t</title>");
+  await write("style.css", "body { color: black; }");
+  await write("app.ts", "export const answer: number = 42;\n");
+  await write("broken.ts", "export const = ;\n");
+  await write("sub/index.html", "<p>sub</p>");
   serve = createStaticServer(dir);
 });
 
@@ -65,7 +65,7 @@ describe("transpiled .js", () => {
     expect(await first.text()).toContain("42");
 
     // Different size: the ETag changes, so the old one no longer validates.
-    writeFileSync(path, "export const answer: number = 4242424242;\n");
+    await Bun.write(path, "export const answer: number = 4242424242;\n");
     const grown = await get("/app.js", { headers: { "if-none-match": firstEtag } });
     expect(grown.status).toBe(200);
     expect(grown.headers.get("etag")).not.toBe(firstEtag);
@@ -73,7 +73,7 @@ describe("transpiled .js", () => {
 
     // Same size, different content: only the mtime tells the cache the file changed.
     const before = (await get("/app.js")).headers.get("etag")!;
-    writeFileSync(path, "export const answer: number = 9999999999;\n");
+    await Bun.write(path, "export const answer: number = 9999999999;\n");
     utimesSync(path, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
     const touched = await get("/app.js");
     expect(touched.headers.get("etag")).not.toBe(before);
@@ -99,7 +99,7 @@ describe("transpiled .js", () => {
     const spy = spyOn(console, "error").mockImplementation(() => {});
     try {
       expect((await get("/broken.js")).status).toBe(500);
-      writeFileSync(path, "export const fixed: number = 1;\n");
+      await Bun.write(path, "export const fixed: number = 1;\n");
       utimesSync(path, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
       const res = await get("/broken.js");
       expect(res.status).toBe(200);
@@ -193,9 +193,9 @@ describe("headers", () => {
   // With nosniff a browser runs a module only as JavaScript and compiles a streamed .wasm only
   // as application/wasm: what the PDF libraries in public/vendor/ are served as.
   test("library files get the media types a browser insists on", async () => {
-    write("vendor/lib/pdf.min.mjs", "export const a = 1;\n");
-    write("vendor/lib/lib_bg.wasm", "\0asm");
-    write("vendor/lib/VERSION", "1.0.0 abc\n");
+    await write("vendor/lib/pdf.min.mjs", "export const a = 1;\n");
+    await write("vendor/lib/lib_bg.wasm", "\0asm");
+    await write("vendor/lib/VERSION", "1.0.0 abc\n");
     const module = await get("/vendor/lib/pdf.min.mjs");
     expect(module.headers.get("content-type")).toStartWith("text/javascript");
     expect(await module.text()).toBe("export const a = 1;\n");

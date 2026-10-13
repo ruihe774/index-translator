@@ -3,8 +3,6 @@
 // is written to disk. A request for /x.js is answered from x.ts when no real x.js exists.
 // The .ts sources themselves are never served.
 
-import type { Stats } from "node:fs";
-import { stat } from "node:fs/promises";
 import { join, normalize, resolve, sep } from "node:path";
 
 /** The page loads only same-origin scripts and styles, and nothing can frame it. */
@@ -43,13 +41,8 @@ export function createStaticServer(publicDir: string) {
   async function plainFile(path: string, req: Request): Promise<Response | undefined> {
     // Constructed before the stat: a path with a null byte throws here, and the caller answers that as a 500.
     const file = Bun.file(path);
-    let info: Stats;
-    try {
-      info = await stat(path);
-    } catch {
-      return undefined;
-    }
-    if (!info.isFile()) return undefined;
+    const info = await file.stat().catch(() => undefined);
+    if (!info?.isFile()) return undefined;
 
     const etag = `W/"${info.mtimeMs}-${info.size}"`;
     const headers = { etag, "cache-control": "no-cache" };
@@ -58,13 +51,10 @@ export function createStaticServer(publicDir: string) {
   }
 
   async function transpiled(path: string, req: Request): Promise<Response | undefined> {
-    let info: Stats;
-    try {
-      info = await stat(path);
-    } catch {
-      return undefined;
-    }
-    if (!info.isFile()) return undefined;
+    const info = await Bun.file(path)
+      .stat()
+      .catch(() => undefined);
+    if (!info?.isFile()) return undefined;
 
     let entry = cache.get(path);
     if (!entry || entry.mtimeMs !== info.mtimeMs || entry.size !== info.size) {

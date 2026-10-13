@@ -15,7 +15,7 @@ import type { Pcm } from "./wav";
 /** The major version of the C API these declarations were written against (`audiocpp.h`, 0.2). */
 const ABI_MAJOR = 0;
 
-const cstr = (s: string) => Buffer.from(`${s}\0`, "utf8");
+const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
 
 export const libraryPath = (dir: string) =>
   join(dir, process.platform === "win32" ? `audiocpp.${suffix}` : `libaudiocpp.${suffix}`);
@@ -86,11 +86,11 @@ function check(lib: Lib, status: number, what: string): void {
  * A zeroed C struct of `size` bytes whose first field is a `const char *` to `text`. The string
  * follows the struct in the same buffer, so it lives as long as the struct does.
  */
-function structWithString(text: string, size: number): Buffer {
+function structWithString(text: string, size: number): Uint8Array {
   const bytes = cstr(text);
-  const struct = Buffer.alloc(size + bytes.length);
-  bytes.copy(struct, size);
-  struct.writeBigUInt64LE(BigInt(ptr(struct)) + BigInt(size), 0);
+  const struct = new Uint8Array(size + bytes.length);
+  struct.set(bytes, size);
+  new DataView(struct.buffer).setBigUint64(0, BigInt(ptr(struct)) + BigInt(size), true);
   return struct;
 }
 
@@ -138,8 +138,9 @@ class Loaded {
 
       // struct audiocpp_backend_config { const char * backend; int device; int threads; }
       const backend = structWithString(opts.backend, 16);
-      backend.writeInt32LE(0, 8);
-      backend.writeInt32LE(opts.threads, 12);
+      const fields = new DataView(backend.buffer);
+      fields.setInt32(8, 0, true);
+      fields.setInt32(12, opts.threads, true);
       check(
         lib,
         lib.audiocpp_session_create(model, cstr(task), cstr("offline"), backend, null, out),

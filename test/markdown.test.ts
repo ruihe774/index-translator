@@ -1,5 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import {
   type Block,
   looksLikeMarkdown,
@@ -26,10 +25,10 @@ describe("looksLikeMarkdown", () => {
     expect(looksLikeMarkdown("> quoted\n\n1. first")).toBe(true);
   });
 
-  test("plain prose is not Markdown", () => {
+  test("plain prose is not Markdown", async () => {
     expect(looksLikeMarkdown("Hello, world")).toBe(false);
     expect(looksLikeMarkdown("#hashtag and 5 * 3 = 15, 2023. A year.")).toBe(false);
-    expect(looksLikeMarkdown(readFileSync(new URL("./fixtures/essays.en.txt", import.meta.url), "utf8"))).toBe(false);
+    expect(looksLikeMarkdown(await Bun.file(new URL("./fixtures/essays.en.txt", import.meta.url)).text())).toBe(false);
   });
 });
 

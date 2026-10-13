@@ -11,7 +11,7 @@ const BATCH_SIZE = 512;
 /** Prompt tokens per decode without a GPU, where a full batch would block the thread for seconds. */
 const CPU_PROMPT_STEP = 64;
 
-const cstr = (s: string) => Buffer.from(`${s}\0`, "utf8");
+const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
 
 const libName = (name: string) => (process.platform === "win32" ? `${name}.${suffix}` : `lib${name}.${suffix}`);
 
@@ -77,9 +77,13 @@ export interface Device {
  * of its own.
  */
 export function devices(dir: string): Device[] {
-  const text = Buffer.alloc(8192);
+  const text = new Uint8Array(8192);
   open(dir).shim_devices(text, text.length);
-  const lines = text.toString("utf8", 0, text.indexOf(0)).split("\n").filter(Boolean);
+  const end = text.indexOf(0);
+  const lines = new TextDecoder()
+    .decode(text.subarray(0, Math.max(end, 0)))
+    .split("\n")
+    .filter(Boolean);
   return lines.map((line) => {
     const space = line.indexOf(" ");
     return { type: line.slice(0, space) as Device["type"], label: line.slice(space + 1) };
@@ -154,7 +158,7 @@ export class Model {
 
   /** Tokens of the whole prompt for a user message with this content. Special tokens written out in the content are parsed as such. */
   tokenize(content: string): Int32Array {
-    const text = Buffer.from(chatPrompt(content, this.emptyThink), "utf8");
+    const text = new TextEncoder().encode(chatPrompt(content, this.emptyThink));
     // A token covers at least one byte; the slack is for special tokens the vocabulary may add.
     const tokens = new Int32Array(text.length + 8);
     const n = this.lib.llama_tokenize(this.vocab, text, text.length, tokens, tokens.length, true, true);

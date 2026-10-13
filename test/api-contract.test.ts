@@ -4,14 +4,13 @@
 // JSON Schema this spec uses; it has its own negative cases so it cannot pass vacuously.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { type App, startApp } from "../src/app";
 import { MODELS } from "../src/models";
 import { MAX_SPEECH_CHARS, MAX_SPEED, MIN_SPEED, SPEECH_LANGUAGES } from "../src/speech";
 import { CHAT, config, launcher, mock, postTo, readSse, resetMock, root, waitReady } from "./helpers/mock-engine";
 
-const spec = Bun.YAML.parse(readFileSync(join(root, "docs", "openapi.yaml"), "utf8")) as any;
+const spec = Bun.YAML.parse(await Bun.file(join(root, "docs", "openapi.yaml")).text()) as any;
 
 // ---------------------------------------------------------------------------------------------
 // A minimal OpenAPI 3.1 schema validator: local $ref, type (including arrays such as [string, "null"]),

@@ -2,7 +2,6 @@
 // counting and streamed generation. Switching models frees the loaded one and loads the other.
 // The library runs on a worker thread (src/llama-worker.ts); this file is the server-thread side.
 
-import { availableParallelism } from "node:os";
 import { join } from "node:path";
 import type { Config } from "./config";
 import type { WorkerReply, WorkerRequest } from "./llama-worker";
@@ -101,7 +100,7 @@ class NativeWorker {
         gpuLayers: cfg.gpuLayers,
         ctxSize: cfg.ctxSize,
         // Physical cores, roughly: hyperthreads do not help llama.cpp.
-        threads: cfg.threads || Math.max(1, Math.floor(availableParallelism() / 2)),
+        threads: cfg.threads || Math.max(1, Math.floor(navigator.hardwareConcurrency / 2)),
       },
     });
 
