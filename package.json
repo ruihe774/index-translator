@@ -6,12 +6,12 @@
   "scripts": {
     "dev": "OPEN_BROWSER=0 DEV_RELOAD=1 bun --watch src/server.ts",
     "test": "bun test",
-    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p public/tsconfig.json && tsc --noEmit -p e2e/tsconfig.json",
+    "typecheck": "bun check -p tsconfig.json && bun check -p public/tsconfig.json && bun check -p e2e/tsconfig.json",
     "e2e": "playwright test",
     "lint:css": "bun scripts/lint_css.ts",
     "lint": "biome lint .",
     "format": "biome format --write .",
-    "check": "biome check ."
+    "lint:biome": "biome check ."
   },
   "devDependencies": {
     "@axe-core/playwright": "^4.13.0",
@@ -20,7 +20,6 @@
     "@types/bun": "^1.4.2",
     "browserslist": "^4.29.3",
     "doiuse": "^6.0.6",
-    "postcss": "^8.5.29",
-    "typescript": "^7.0.2"
+    "postcss": "^8.5.29"
   }
 }

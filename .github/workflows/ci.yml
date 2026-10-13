@@ -15,7 +15,7 @@ concurrency:
 
 env:
   # Runs the checks, and is the Bun that gets packed into the AppImage.
-  BUN_VERSION: "1.4.2"
+  BUN_VERSION: "1.4.3"
 
 jobs:
   test:
@@ -33,7 +33,7 @@ jobs:
         run: bun install --frozen-lockfile
 
       - name: Lint and format
-        run: bun run check
+        run: bun run lint:biome
 
       - name: Typecheck
         run: bun run typecheck
