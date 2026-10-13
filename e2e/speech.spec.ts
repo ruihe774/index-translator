@@ -1,6 +1,7 @@
 // Reading aloud, with the mock speech engine: it answers every utterance with a tenth of a second
 // of silence and records what it was asked to say.
 
+import type { Page } from "@playwright/test";
 import { expect, test } from "./fixtures";
 
 const MARKDOWN = `# Release notes
@@ -334,6 +335,77 @@ test("a speech_error in the middle of a reading is shown the same way", async ({
   await mock.set({ speech: { failWith: "out of memory" } });
   await expect(app.meta).toHaveText("Reading aloud failed: out of memory.");
   await expect(listen).toHaveAttribute("data-state", "idle");
+});
+
+/** What each speech request asked for and was answered with, in order. */
+function watchSpeech(page: Page) {
+  const seen: { accept: string | undefined; type: string | undefined }[] = [];
+  page.on("response", (res) => {
+    if (!res.url().endsWith("/api/v1/speech")) return;
+    seen.push({ accept: res.request().headers().accept, type: res.headers()["content-type"] });
+  });
+  return seen;
+}
+
+test("speech arrives as a QOA stream, decoded in the worker, and plays to its end", async ({ app, mock }) => {
+  // Longer than a QOA frame (5,120 samples is 0.23 s), so the stream has several.
+  await mock.set({ speech: { audioSeconds: 1.5 } });
+  const seen = watchSpeech(app.page);
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill("Hello there. Goodbye now.");
+  const listen = app.page.locator("#listen-source");
+  await listen.click();
+  await expect(listen).toHaveAttribute("data-state", "playing");
+  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  expect(seen.length).toBeGreaterThan(0);
+  for (const s of seen) {
+    expect(s.accept).toContain("audio/qoa");
+    expect(s.type).toBe("audio/qoa");
+  }
+  await expect(app.meta).toHaveText("");
+});
+
+test("without the QOA codec the page reads from WAV", async ({ app, mock }) => {
+  await app.page.context().route("**/vendor/qoa/**", (route) => route.abort());
+  const seen = watchSpeech(app.page);
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill("Hello there.");
+  const listen = app.page.locator("#listen-source");
+  await listen.click();
+  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  expect((await mock.state()).speech.requests).toHaveLength(1);
+  expect(seen).toHaveLength(1);
+  expect(seen[0]!.accept).not.toContain("qoa");
+  expect(seen[0]!.type).toBe("audio/wav");
+  await expect(app.meta).toHaveText("");
+});
+
+test("a QOA stream that cannot be decoded is asked for again as WAV, and QOA is given up", async ({ app, mock }) => {
+  let calls = 0;
+  await app.page.route("**/api/v1/speech", (route) => {
+    if (calls++ > 0) return route.continue();
+    return route.fulfill({
+      status: 200,
+      contentType: "audio/qoa",
+      body: Buffer.from("qoaf\0\0\0\0not a frame at all"),
+    });
+  });
+  const seen = watchSpeech(app.page);
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(MARKDOWN);
+  const listen = app.page.locator("#listen-source");
+  await listen.click();
+  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  // The broken answer never reached the engine, so every piece was made once; the page asked for
+  // the first one again, and nothing after it named QOA.
+  expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(SPOKEN);
+  expect(seen.length).toBe(SPOKEN.length + 1);
+  expect(seen[0]).toMatchObject({ type: "audio/qoa" });
+  expect(seen.slice(1).every((s) => s.type === "audio/wav" && !s.accept?.includes("qoa"))).toBe(true);
+  await expect(app.meta).toHaveText("");
 });
 
 test("with no voice Listen says so, and a recorded voice is not needed to see the settings", async ({ app, mock }) => {

@@ -2,7 +2,7 @@
 // package are kept.
 
 import { describe, expect, test } from "bun:test";
-import { LIBRARIES, untar } from "../scripts/fetch_web_libs";
+import { FILE_LIBRARIES, LIBRARIES, untar } from "../scripts/fetch_web_libs";
 
 /** A ustar archive, gzipped, as npm packs one: a 512-byte header and the padded content per entry. */
 function tgz(entries: { name: string; prefix?: string; type?: string; content?: string }[]): Uint8Array {
@@ -81,5 +81,24 @@ describe("the pinned libraries", () => {
     }
     expect(lib("pdf-inspector").place("pdf_inspector_wasm_bg.wasm")).toBe("pdf_inspector_wasm_bg.wasm");
     expect(lib("pdf-inspector").place("pdf_inspector_wasm.d.ts")).toBeUndefined();
+  });
+});
+
+describe("the pinned files of a commit", () => {
+  const qoa = FILE_LIBRARIES.find((l) => l.dir === "qoa")!;
+
+  test("every file is pinned to the commit by checksum, and the license is among them", () => {
+    expect(qoa.version).toMatch(/^[0-9a-f]{40}$/);
+    for (const file of qoa.files) {
+      expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(file.url).toContain(`/${qoa.version}/`);
+    }
+    expect(qoa.files.map((f) => f.to)).toEqual(["qoa.ts", "qoa_wasm.ts", "LICENSE"]);
+  });
+
+  test("qoa.ts names its sibling as the page does, .js, which the server answers from the .ts", () => {
+    const edit = qoa.files[0]!.edit!;
+    expect(edit('import { A } from "./qoa_wasm.ts";\n')).toBe('import { A } from "./qoa_wasm.js";\n');
+    expect(() => edit("nothing to change\n")).toThrow("no longer imports");
   });
 });

@@ -59,6 +59,16 @@ paths:
         text is spoken as it is given: the server does not strip Markdown or split long input.
         Closing the connection gives up the request's place in the queue. An utterance that is
         already being synthesized is finished and thrown away, and the next request waits for it.
+
+        A client that names `audio/qoa` in `Accept` gets the same audio as a
+        [QOA](https://qoaformat.org) stream instead: lossy, about a fifth of the size, sent in
+        chunks of whole frames (a streaming file, sample count 0 in its header) so that the
+        client can decode while it receives. The engine still returns the utterance whole, so the
+        first byte is sent when the synthesis is over. Only a header that names `audio/qoa` with
+        a weight above 0 selects it; `*/*`, `audio/*` and no header give WAV, and so does a
+        server whose QOA codec is not installed (`public/vendor/qoa`), so a client must go by
+        the `Content-Type` of the answer. The web app asks for QOA and uses WAV only when its
+        browser cannot run WebAssembly or the codec fails.
       requestBody:
         required: true
         content:
@@ -79,8 +89,17 @@ paths:
       responses:
         "200":
           description: The spoken text.
+          headers:
+            Vary:
+              description: Always `accept`, since the format depends on it.
+              schema:
+                type: string
           content:
             audio/wav:
+              schema:
+                type: string
+                format: binary
+            audio/qoa:
               schema:
                 type: string
                 format: binary

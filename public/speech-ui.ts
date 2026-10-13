@@ -16,7 +16,9 @@ import type { MetaLine } from "./elements/meta-line.js";
 import type { SpeechControls } from "./elements/speech-controls.js";
 import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.js";
 import type { ApiErrorBody } from "./errors.js";
+import { giveUpQoa, QOA_TYPE, QoaError, qoaDecoder } from "./qoa.js";
 import { SpeechPlayer, type SpeechSettings } from "./speech.js";
+import type { SpeechAudio } from "./speech-audio.js";
 import { canSpeak, speechSegments } from "./speech-text.js";
 import { type Side, setState, state } from "./state.js";
 import { store, stored } from "./storage.js";
@@ -55,10 +57,16 @@ export interface SpeechUi {
   recheck(): void;
 }
 
-async function synthesize(text: string, settings: SpeechSettings, signal: AbortSignal): Promise<ArrayBuffer> {
+/** One request for a piece; a QOA stream is asked for with `Accept`, WAV is what a request without it gets. */
+async function requestSpeech(
+  text: string,
+  settings: SpeechSettings,
+  signal: AbortSignal,
+  accept: string | undefined,
+): Promise<Response> {
   const res = await fetch(`${API}/speech`, {
     method: "POST",
-    headers: { "content-type": "application/json" },
+    headers: accept ? { "content-type": "application/json", accept } : { "content-type": "application/json" },
     body: JSON.stringify({ text, lang: settings.lang, voice: settings.voice || undefined, speed: settings.speed }),
     signal,
   });
@@ -66,7 +74,30 @@ async function synthesize(text: string, settings: SpeechSettings, signal: AbortS
     const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
     throw new ApiFailure(payload?.error ?? {}, res.status);
   }
-  return res.arrayBuffer();
+  return res;
+}
+
+/**
+ * The audio of a piece. QOA is the default: the response is decoded in a worker as it arrives.
+ * WAV when the browser cannot run the codec, when the server answers with WAV (it has no codec),
+ * and for the rest of the page's life once the codec has failed on a stream.
+ */
+async function synthesize(text: string, settings: SpeechSettings, signal: AbortSignal): Promise<SpeechAudio> {
+  const decoder = await qoaDecoder();
+  if (decoder) {
+    try {
+      const res = await requestSpeech(text, settings, signal, `${QOA_TYPE}, audio/wav;q=0.5`);
+      if (res.body && res.headers.get("content-type")?.startsWith(QOA_TYPE))
+        return await decoder.decode(res.body, signal);
+      return await res.arrayBuffer();
+    } catch (e) {
+      if (!(e instanceof QoaError)) throw e;
+      // The codec, not the network or the engine, failed: ask again in a form the browser decodes itself.
+      console.error(e);
+      giveUpQoa();
+    }
+  }
+  return (await requestSpeech(text, settings, signal, undefined)).arrayBuffer();
 }
 
 export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {

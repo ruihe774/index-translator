@@ -14,6 +14,9 @@
   `test/fixtures/sample.pdf` (three pages, written by `make_sample_pdf.py` beside it) with the real
   libraries from `public/vendor/`, so run `bun scripts/fetch_web_libs.ts` once before them. One
   test serves `/vendor/` as 404 to check that the page does without the libraries.
+- `speech.spec.ts` also runs the QOA stream (the default way speech reaches the page) against the
+  real codec in `public/vendor/qoa/`, and the fallbacks to WAV (codec files not served; a stream
+  that cannot be decoded).
 - `integration.spec.ts`: real page, API stubbed with `page.route`, for error codes and SSE framing.
 
 Setup: `bun install`, then `bunx playwright install chromium`, or set `CHROMIUM_PATH` to an

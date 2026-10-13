@@ -41,6 +41,11 @@ jobs:
       - name: CSS browser support
         run: bun run lint:css
 
+      # The PDF tests run the two PDF libraries in the browser, and the speech tests the QOA codec, in
+      # the browser and on the server; all are pinned by checksum in the script.
+      - name: Fetch the web app's libraries
+        run: bun scripts/fetch_web_libs.ts
+
       # Both use the mock engines: no GPU, no models.
       - name: Unit and API integration tests
         run: bun test
@@ -50,10 +55,6 @@ jobs:
 
       - name: Install Chromium
         run: bunx playwright install --with-deps chromium
-
-      # The PDF tests run the two libraries in the browser; they are pinned by checksum in the script.
-      - name: Fetch the web app's PDF libraries
-        run: bun scripts/fetch_web_libs.ts
 
       - name: Browser tests (end to end, integration, accessibility)
         run: bun run e2e
@@ -126,7 +127,7 @@ jobs:
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
         run: bun scripts/build_audiocpp.ts
 
-      - name: Fetch the web app's PDF libraries
+      - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
       - name: Build the AppImage
@@ -307,7 +308,7 @@ jobs:
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
         run: bun scripts/build_audiocpp.ts
 
-      - name: Fetch the web app's PDF libraries
+      - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
       - name: Build the installer

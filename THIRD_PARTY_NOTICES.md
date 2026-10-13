@@ -18,6 +18,7 @@ names them and says where the full texts are. The AppImage carries this file in
 | [pdf-inspector](https://github.com/firecrawl/pdf-inspector), its WebAssembly build (`@firecrawl/pdf-inspector-wasm`), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: the text of a PDF page as Markdown | MIT, Copyright (c) 2026 Firecrawl; the binary embeds CMaps derived from Adobe's CMap resources (BSD 3-Clause, Copyright 1990-2009 Adobe Systems Incorporated) | `public/vendor/pdf-inspector/LICENSE` |
 | [pdf.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`, the legacy build), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: the page thumbnails of a PDF | Apache-2.0, Copyright Mozilla Foundation | `public/vendor/pdfjs/LICENSE` |
 | Data and decoders that come with pdf.js: Adobe's CMaps (`cmaps/`), the Foxit and Liberation fonts (`standard_fonts/`), the OpenJPEG, JBIG2 (PDFium) and qcms decoders compiled to WebAssembly (`wasm/`), an ICC profile (`iccs/`) | Used by pdf.js for PDFs that need them | Each under its own license: BSD 3-Clause (CMaps, Foxit fonts, JBIG2), the Liberation font license (GPL-2.0 with a font exception), BSD 2-Clause (OpenJPEG), MIT (qcms), CC0 (the profile), and Apache-2.0, BSD and MIT for Mozilla's glue code | The `LICENSE*` files in those four directories under `public/vendor/pdfjs/` |
+| qoa-wasm (the `qoa` branch of this app's repository, pinned by commit in `scripts/fetch_web_libs.ts`): an encoder and decoder for [QOA](https://qoaformat.org), the audio format designed by Dominic Szablewski | Runs on the server (encoding) and in the browser (decoding): the speech stream | Public domain (the Unlicense) | `public/vendor/qoa/LICENSE` |
 
 `libaudiocpp.so` is built from audio.cpp's source with one change of ours,
 `scripts/patches/audiocpp-abort.patch` in this app's repository: a function that lets the app stop
@@ -31,7 +32,7 @@ Not included in the AppImage and taken from the system: the C and C++ runtime li
 the Vulkan loader and the GPU driver, `curl` (used by `fetch`).
 
 The web app (`public/`) loads no fonts or scripts from the network. Its only third-party code is the
-two PDF libraries above, in `public/vendor/`: files of this app's own server, downloaded by
+two PDF libraries and the QOA codec above, in `public/vendor/`: files of this app's own server, downloaded by
 `scripts/fetch_web_libs.ts` (they are not in the repository) and packed into the AppImage.
 `prompts/` holds the four NativeLong prompt templates of
 [bilibili/Index-Translate](https://github.com/bilibili/Index-Translate) (Apache-2.0).

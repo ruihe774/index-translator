@@ -6,7 +6,7 @@
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
 // since the engines are packed as built, and bun scripts/fetch_web_libs.ts (the web app's PDF
-// libraries, packed with public/). The Bun that is packed is the one running this script.
+// libraries and the QOA codec of the speech stream, packed with public/). The Bun that is packed is the one running this script.
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
 // for `fetch`. Layout and start script: packaging/appimage/.
@@ -69,7 +69,7 @@ for (const [file, script] of [
 ] as const) {
   if (!(await Bun.file(file).exists())) throw new Error(`${file} is missing; run: bun scripts/${script}`);
 }
-// The web app's PDF libraries are packed with public/; an AppImage without them could not open PDFs.
+// The web app's libraries are packed with public/; an AppImage without them could not open PDFs, and would send speech as WAV.
 await requireWebLibs(join(root, "public", "vendor"));
 
 /** The file at `path` as pinned, downloaded unless a copy with the right checksum is already there. */

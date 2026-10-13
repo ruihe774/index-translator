@@ -3,6 +3,7 @@
 
 interface AudioBuffer {
   readonly duration: number;
+  copyToChannel(source: Float32Array, channelNumber: number): void;
 }
 
 interface AudioBufferSourceNode {
@@ -21,5 +22,6 @@ declare class AudioContext {
   resume(): Promise<void>;
   suspend(): Promise<void>;
   decodeAudioData(data: ArrayBuffer): Promise<AudioBuffer>;
+  createBuffer(channels: number, length: number, sampleRate: number): AudioBuffer;
   createBufferSource(): AudioBufferSourceNode;
 }

@@ -60,8 +60,8 @@ esac
 cat >&2 <<EOF
 Index Translator bundles third-party software: llama.cpp and ggml (MIT), audio.cpp (Apache-2.0,
 with cJSON, SentencePiece and Abseil), Bun (MIT, with JavaScriptCore under the LGPL and other
-components) and, for PDF files in the browser, pdf-inspector (MIT) and pdf.js (Apache-2.0, with
-fonts and decoders under their own licenses). Models are not bundled; \`fetch\` shows their licenses before it downloads them.
+components) and, in the browser, pdf-inspector (MIT) and pdf.js (Apache-2.0, with fonts and
+decoders under their own licenses) for PDF files and the QOA codec (public domain) for speech. Models are not bundled; \`fetch\` shows their licenses before it downloads them.
 Full notices: $self notices
 EOF
 exec "$bun" --no-env-file "$app/src/server.ts" "$@"

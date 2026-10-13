@@ -15,6 +15,7 @@ import {
 } from "./llama";
 import { findModel, MODELS, type ModelSpec } from "./models";
 import { buildDocumentPrompt, buildPrompt, DOCUMENT_DIRECTIONS, LANGUAGES, type PromptInput } from "./prompt";
+import { acceptsQoa, qoaLoader, qoaResponse } from "./qoa-stream";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 import {
   MAX_SAMPLE_BYTES,
@@ -34,6 +35,7 @@ import {
   type SpeechRequest,
 } from "./speech";
 import { createStaticServer } from "./static";
+import { readWav } from "./wav";
 
 const API = "/api/v1";
 const DEFAULT_OUTPUT_RATIO = 4;
@@ -631,7 +633,24 @@ export async function startApp(
     }
   }
 
-  async function speak(input: SpeechRequest, signal: AbortSignal): Promise<Response> {
+  const qoaCodec = qoaLoader(cfg.publicDir);
+
+  /** The engine's WAV as the client asked for it: a QOA stream when it names audio/qoa and the codec runs here, else the WAV. */
+  async function speechResponse(wav: ArrayBuffer, accept: string | null): Promise<Response> {
+    if (acceptsQoa(accept)) {
+      const codec = await qoaCodec();
+      try {
+        const pcm = readWav(new Uint8Array(wav));
+        if (codec && pcm.samples.length > 0) return qoaResponse(codec, pcm);
+      } catch (e) {
+        console.error(`[speech] the utterance could not be encoded as QOA, sending WAV: ${e}`);
+      }
+    }
+    return new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store", vary: "accept" } });
+  }
+
+  async function speak(input: SpeechRequest, req: Request): Promise<Response> {
+    const signal = req.signal;
     const ticket = enterQueue(undefined, speechQueue);
     // Aborted while waiting: leave the line. Once the utterance is handed to the engine the slot is
     // kept until the engine's `done`: the engine stops an abandoned utterance within one step of
@@ -645,7 +664,7 @@ export async function startApp(
       if (!(await ticket.ready) || signal.aborted) throw cancelled();
       handed = true;
       const wav = await speech.synthesize(input, signal, () => ticket.leave());
-      return new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store" } });
+      return await speechResponse(wav, req.headers.get("accept"));
     } catch (e) {
       if (!handed) ticket.leave();
       throw signal.aborted ? cancelled() : e;
@@ -729,7 +748,7 @@ export async function startApp(
             const input = await parseSpeechRequest(await parseBody(req));
             // The first request starts the engine and loads the model.
             server.timeout(req, 0);
-            return await speak(input, req.signal);
+            return await speak(input, req);
           }
           case "/openapi.yaml": {
             if (req.method !== "GET") return methodNotAllowed("GET");

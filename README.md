@@ -121,11 +121,12 @@ Before the first start, build the engines and get the models once (about 17.7 Gi
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, example voices
-bun scripts/fetch_web_libs.ts   # the libraries that open PDF files in the browser (12 MB), into public/vendor/
+bun scripts/fetch_web_libs.ts   # the libraries that open PDF files and compress speech in the browser (12 MB), into public/vendor/
 ```
 
 Opening PDF files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
-Markdown files, and says that PDF support is not installed.
+Markdown files, and says that PDF support is not installed. Reading aloud then sends its audio
+as WAV instead of the smaller QOA.
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and download only the
 translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.

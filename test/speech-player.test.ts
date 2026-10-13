@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import assert from "node:assert";
 import { type PlayerState, SpeechPlayer, type SpeechSettings, UPDATE_SETTLE_MS } from "../public/speech";
 import type { Segment } from "../public/speech-text";
 
@@ -49,6 +50,19 @@ class FakeAudioContext {
   }
   async decodeAudioData(wav: ArrayBuffer) {
     return { wav, duration: 1 };
+  }
+  createBuffer(channels: number, length: number, sampleRate: number) {
+    const data: Float32Array[] = [];
+    return {
+      channels,
+      length,
+      sampleRate,
+      duration: length / sampleRate,
+      data,
+      copyToChannel(source: Float32Array, c: number) {
+        data[c] = source;
+      },
+    };
   }
   createBufferSource() {
     const s = new FakeSource();
@@ -116,6 +130,30 @@ afterEach(() => {
 });
 
 // ---- tests -----------------------------------------------------------------------------------
+
+describe("audio that arrives decoded (QOA)", () => {
+  test("is put into a buffer of its own, one array per channel, and played like a decoded WAV", async () => {
+    const synthesize = async () => ({
+      sampleRate: 22050,
+      channels: 2,
+      samples: Int16Array.of(0x4000, -0x8000, 0, 0x7fff),
+    });
+    const player = new SpeechPlayer(synthesize, {
+      onState() {},
+      onSegment() {},
+      onError: (e) => assert.fail(String(e)),
+    });
+    player.start([seg("a1", 0)], SETTINGS);
+    await flush();
+    expect(player.state).toBe("playing");
+    const buffer = FakeAudioContext.last.sources[0]!.buffer as ReturnType<FakeAudioContext["createBuffer"]>;
+    expect(buffer).toMatchObject({ channels: 2, length: 2, sampleRate: 22050 });
+    expect(buffer.data.map((c) => [...c])).toEqual([
+      [0.5, 0],
+      [-1, 0x7fff / 0x8000],
+    ]);
+  });
+});
 
 describe("interruption by the system", () => {
   test("an interrupted context shows as paused, and Resume resumes it", async () => {

@@ -9,6 +9,7 @@
 // playback, so a change of speed or voice is heard from the start of the current piece, and all
 // audio is made again.
 
+import { type SpeechAudio, splitChannels } from "./speech-audio.js";
 import { blockStarts, SpeechBuffer, type SpeechSettings, type Synthesize } from "./speech-buffer.js";
 import type { Segment } from "./speech-text.js";
 
@@ -50,7 +51,19 @@ export class SpeechPlayer {
     synthesize: Synthesize,
     private hooks: PlayerHooks,
   ) {
-    this.buffer = new SpeechBuffer(synthesize, (wav) => this.ctx!.decodeAudioData(wav));
+    this.buffer = new SpeechBuffer(synthesize, (audio) => this.decode(audio));
+  }
+
+  /** A WAV file is decoded by the browser; samples that arrived decoded (QOA) only need a buffer to sit in. */
+  private async decode(audio: SpeechAudio): Promise<AudioBuffer> {
+    const ctx = this.ctx!;
+    if (audio instanceof ArrayBuffer) return ctx.decodeAudioData(audio);
+    const channels = splitChannels(audio);
+    const buffer = ctx.createBuffer(audio.channels, channels[0]!.length, audio.sampleRate);
+    channels.forEach((data, c) => {
+      buffer.copyToChannel(data, c);
+    });
+    return buffer;
   }
 
   /** Must be called from a click (or key) handler: browsers only let a page start audio then. */
