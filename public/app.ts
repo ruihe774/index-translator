@@ -450,7 +450,8 @@ async function translate() {
     stopped = true;
     controller.abort();
     // The server keeps a resumable translation running without a reader, so it is told to stop.
-    if (translationId) void fetch(`${API}/translations/${translationId}`, { method: "DELETE", keepalive: true }).catch(() => {});
+    if (translationId)
+      void fetch(`${API}/translations/${translationId}`, { method: "DELETE", keepalive: true }).catch(() => {});
   };
 
   try {

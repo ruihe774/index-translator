@@ -8,6 +8,8 @@ separation) on uploaded voice samples. User docs: README.md. On Windows read `WI
 
 ## Commands
 
+Use Bun canary (`bun --revision` must end in `-canary…`; `lint:ts` needs its builtins). In a cloud session where it is not installed, install it first: `curl -fsSL -o /tmp/bun.zip https://github.com/oven-sh/bun/releases/download/canary/bun-linux-x64.zip && unzip -qo /tmp/bun.zip -d /tmp/bun && install -m755 /tmp/bun/bun-linux-x64/bun ~/.bun/bin/bun`.
+
 Run `bun install` before `lint:ts`, `lint:css` or `e2e` when `node_modules` is missing or stale
 (`bun --install` does not fetch dev tools for `bun run` scripts).
 
