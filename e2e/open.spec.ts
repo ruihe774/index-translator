@@ -120,6 +120,32 @@ test.describe("images", () => {
     await expect(app.text).toHaveValue("Some text");
   });
 
+  test("a pasted image switches to image input", async ({ app }) => {
+    await app.open();
+    const bytes = [...(await png(app.page, 40, 40))];
+    await app.text.focus();
+    await app.page.evaluate((data) => {
+      const t = new DataTransfer();
+      t.items.add(new File([new Uint8Array(data)], "menu.png", { type: "image/png" }));
+      document
+        .getElementById("text")!
+        .dispatchEvent(new ClipboardEvent("paste", { clipboardData: t, bubbles: true, cancelable: true }));
+    }, bytes);
+    await expect(picture(app.page)).toBeVisible();
+  });
+
+  test("a pasted text file is opened like a picked one", async ({ app }) => {
+    await app.open();
+    await app.page.evaluate(() => {
+      const t = new DataTransfer();
+      t.items.add(new File(["Pasted text\n"], "paste.txt", { type: "text/plain" }));
+      document
+        .getElementById("text")!
+        .dispatchEvent(new ClipboardEvent("paste", { clipboardData: t, bubbles: true, cancelable: true }));
+    });
+    await expect(app.text).toHaveValue("Pasted text\n");
+  });
+
   test("a dropped image is opened like a picked one, whole inside the pane", async ({ app }) => {
     await app.open();
     const bytes = [...(await png(app.page, 200, 3000))];

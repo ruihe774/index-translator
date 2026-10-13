@@ -260,6 +260,24 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     e.preventDefault();
     pick(e.dataTransfer?.files[0]);
   });
+  // Pasting a file (a screenshot, or one copied in a file manager) opens it like a dropped one. A
+  // picture that comes with text (a copied spreadsheet range brings its rendering) is not taken: the
+  // text pastes as usual.
+  window.addEventListener("paste", (e) => {
+    const data = e.clipboardData;
+    if (!data || busy || pdf) {
+      return;
+    }
+    const hasText = data.types.includes("text/plain");
+    const file = [...data.files].find((f) => {
+      const kind = fileKind(f.name, f.type);
+      return kind !== null && !(kind === "image" && hasText);
+    });
+    if (file) {
+      e.preventDefault();
+      pick(file);
+    }
+  });
   d.pages.addEventListener("page", (e) => void takePage((e as CustomEvent<number>).detail));
 
   // Without the libraries the picker offers no PDFs, and one that is picked anyway is refused by openPdf.

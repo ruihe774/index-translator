@@ -170,7 +170,7 @@ links and are not loaded.
 
 ### Open a file
 
-**Open**, next to the **From** language, takes the text from a file on your computer; dropping a
+**Open**, next to the **From** language, takes the text from a file on your computer; dropping or pasting a
 file anywhere on the page does the same. A text or PDF file is read by your browser and stays
 there: nothing is uploaded, and the server only receives the text you then send with
 **Translate**. An image is different: it is what gets translated, so **Translate** sends the image
@@ -199,7 +199,7 @@ opened it. **Open** and the page pictures have not been through the accessibilit
 
 ### Translate an image
 
-Open or drop a JPEG, PNG or WebP image (a screenshot, a photo of a sign or a menu, a diagram) and
+Open, drop or paste (Ctrl+V) a JPEG, PNG or WebP image (a screenshot, a photo of a sign or a menu, a diagram) and
 it is shown where the text box was. Choose the **To** language and click **Translate**: the image
 is sent to the server on your machine, and Index-Translate-9B reads the text in it and writes the
 translation. **From** can stay on **Detect language**; choosing the language helps when the picture
