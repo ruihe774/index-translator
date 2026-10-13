@@ -5,8 +5,9 @@ WebAssembly text format ([`src/qoa.wat`](src/qoa.wat)), with a small runtime-agn
 TypeScript wrapper ([`src/qoa.ts`](src/qoa.ts)).
 
 - **No runtime dependencies.** The glue uses only standard ECMAScript and the WebAssembly
-  JS API. It works in browsers, workers, Node, Deno and Bun. The compiled module (~7 KB) is
-  embedded as base64.
+  JS API. It works in browsers, workers, Node, Deno and Bun. The compiled modules (~7 KB
+  each) ship as `dist/*.wasm` and are loaded relative to `src/qoa.ts` with
+  `new URL("../dist/qoa.wasm", import.meta.url)`, which bundlers pick up as an asset.
 - **Bit-exact with the reference encoder.** The output is byte-for-byte identical to
   [`qoa.h`](https://github.com/phoboslab/qoa). It even matches `qoa.h`'s 32-bit
   wrap-around in its quantizer for extreme residuals. The one deliberate difference is
@@ -19,7 +20,7 @@ TypeScript wrapper ([`src/qoa.ts`](src/qoa.ts)).
 ```ts
 import { Qoa } from "./src/qoa.ts";
 
-const qoa = await Qoa.create();              // or Qoa.createSync()
+const qoa = await Qoa.create();
 
 // interleaved int16 PCM -> QOA file
 const file: Uint8Array = qoa.encode(pcm, /* channels */ 2, /* sampleRate */ 44100);
@@ -37,7 +38,8 @@ Other entry points:
 | `qoa.decodeFrames(file)` | Decode frame by frame. Needed for streams whose channel count or samplerate changes |
 | `Qoa.probe(file)` | Parse and validate the headers without decoding |
 | `qoaEncodedSize(samples, ch)` | Exact encoded size in bytes |
-| `Qoa.create(bytesOrModule)` | Use your own copy of `dist/qoa.wasm` / `dist/qoa-simd.wasm` |
+| `Qoa.create(bytes \| module \| url)` | Use your own copy of `dist/qoa.wasm` / `dist/qoa-simd.wasm`, e.g. when the default location is not served |
+| `Qoa.createSync(bytes \| module)` | Synchronous instantiation. Nothing is fetched, so a source is required |
 
 Malformed input and invalid arguments throw `QoaError`. Each `Qoa` instance owns one wasm
 instance and is not reentrant. Incremental encoders keep their own state, so several
@@ -81,7 +83,7 @@ of native gcc, and its time includes copying data in and out of wasm memory.
 
 ```sh
 npm install          # dev dependencies only: wabt, typescript, @types/node
-npm run build        # src/qoa.wat -> dist/qoa.wasm, dist/qoa-simd.wasm, src/qoa_wasm.ts
+npm run build        # src/qoa.wat -> dist/qoa.wasm, dist/qoa-simd.wasm
 npm test             # node --test   (or: npm run test:bun)
 npm run typecheck    # src/ is checked without Node types
 npm run bench

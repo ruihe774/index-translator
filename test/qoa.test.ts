@@ -1,11 +1,11 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { Qoa, QoaError, qoaEncodedSize } from "../src/qoa.ts";
-import { QOA_WASM_RELAXED, QOA_WASM_SIMD } from "../src/qoa_wasm.ts";
+import { readFileSync } from "node:fs";
 import { SCALEFACTOR_TAB, dequant, refDecode, refEncode } from "./reference.ts";
 
 const qoa = await Qoa.create();
-const fromB64 = (s: string) => Uint8Array.from(atob(s), (c) => c.charCodeAt(0));
+const dist = (name: string) => readFileSync(new URL(`../dist/${name}`, import.meta.url));
 
 function rng(seed: number) {
   let s = seed >>> 0 || 1;
@@ -244,13 +244,16 @@ test("31 channels round trip", () => {
 
 test("SIMD fallback build and sync instantiation behave identically", async () => {
   const pcm = signal("noise", 7000, 2, 77);
-  const relaxed = Qoa.createSync(fromB64(QOA_WASM_RELAXED));
-  const simd = await Qoa.create(fromB64(QOA_WASM_SIMD));
-  const mod = new WebAssembly.Module(fromB64(QOA_WASM_SIMD));
+  const relaxed = Qoa.createSync(dist("qoa.wasm"));
+  const simd = await Qoa.create(dist("qoa-simd.wasm"));
+  const mod = new WebAssembly.Module(dist("qoa-simd.wasm"));
   const fromModule = await Qoa.create(mod);
+  const fromUrl = await Qoa.create(new URL("../dist/qoa-simd.wasm", import.meta.url));
+  assert.equal(qoa.backend, "relaxed-simd");
   const e1 = relaxed.encode(pcm, 2, 44100);
   assert.deepEqual(simd.encode(pcm, 2, 44100), e1);
   assert.deepEqual(fromModule.encode(pcm, 2, 44100), e1);
+  assert.deepEqual(fromUrl.encode(pcm, 2, 44100), e1);
   assert.deepEqual(simd.decode(e1).samples, relaxed.decode(e1).samples);
 });
 

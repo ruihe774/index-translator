@@ -1,10 +1,9 @@
 // TypeScript glue for the WebAssembly QOA codec (src/qoa.wat).
 //
 // Runtime-agnostic: only uses the WebAssembly JS API and standard ECMAScript,
-// so it runs in browsers, workers, Node, Deno and Bun. The wasm binaries are
-// embedded (base64) by scripts/build.ts, or can be supplied by the caller.
-
-import { QOA_WASM_RELAXED, QOA_WASM_SIMD } from "./qoa_wasm.ts";
+// so it runs in browsers, workers, Node, Deno and Bun. The wasm binaries
+// (dist/qoa.wasm, dist/qoa-simd.wasm) are fetched relative to this module, or
+// can be supplied by the caller.
 
 /** Samples per channel in a full frame (256 slices x 20 samples). */
 export const QOA_FRAME_LEN = 5120;
@@ -49,7 +48,8 @@ interface QoaExports {
 /** Which wasm build a {@link Qoa} instance runs. */
 export type QoaBackend = "relaxed-simd" | "simd" | "custom";
 
-export type QoaSource = BufferSource | WebAssembly.Module;
+/** A wasm binary, a compiled module, or a URL to fetch the binary from. */
+export type QoaSource = BufferSource | WebAssembly.Module | URL | string;
 
 const DECODE_ERRORS: Record<number, string> = {
   [-1]: "truncated frame header",
@@ -58,29 +58,25 @@ const DECODE_ERRORS: Record<number, string> = {
   [-4]: "truncated frame",
 };
 
-function base64ToBytes(b64: string): Uint8Array<ArrayBuffer> {
-  const fromBase64 = (Uint8Array as unknown as { fromBase64?: (s: string) => Uint8Array<ArrayBuffer> }).fromBase64;
-  if (fromBase64) return fromBase64(b64);
-  const bin = atob(b64);
-  const out = new Uint8Array(bin.length);
-  for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
-  return out;
+async function fetchBytes(url: URL): Promise<Uint8Array<ArrayBuffer>> {
+  // Node's fetch does not support file: URLs.
+  if (url.protocol === "file:" && typeof globalThis.fetch === "function") {
+    const nodeFs = (globalThis as { process?: { getBuiltinModule?(id: string): any } }).process?.getBuiltinModule?.("node:fs/promises");
+    if (nodeFs) return new Uint8Array(await nodeFs.readFile(url));
+  }
+  const res = await fetch(url);
+  if (!res.ok) throw new QoaError(`failed to fetch ${url}: ${res.status} ${res.statusText}`);
+  return new Uint8Array(await res.arrayBuffer());
 }
 
-let builtin: { bytes: Uint8Array<ArrayBuffer>; backend: QoaBackend } | undefined;
-
-function builtinBinary(): { bytes: Uint8Array<ArrayBuffer>; backend: QoaBackend } {
-  if (!builtin) {
-    const relaxed = base64ToBytes(QOA_WASM_RELAXED);
-    if (WebAssembly.validate(relaxed)) {
-      builtin = { bytes: relaxed, backend: "relaxed-simd" };
-    } else {
-      const simd = base64ToBytes(QOA_WASM_SIMD);
-      if (!WebAssembly.validate(simd)) throw new QoaError("this WebAssembly engine does not support SIMD");
-      builtin = { bytes: simd, backend: "simd" };
-    }
-  }
-  return builtin;
+/** Load the default binary (relaxed SIMD, falling back to plain SIMD) relative to this module. */
+async function loadBuiltin(): Promise<{ bytes: Uint8Array<ArrayBuffer>; backend: QoaBackend }> {
+  // The URL literals must stay inline so bundlers can detect and emit the assets.
+  const relaxed = await fetchBytes(new URL("../dist/qoa.wasm", import.meta.url));
+  if (WebAssembly.validate(relaxed)) return { bytes: relaxed, backend: "relaxed-simd" };
+  const simd = await fetchBytes(new URL("../dist/qoa-simd.wasm", import.meta.url));
+  if (!WebAssembly.validate(simd)) throw new QoaError("this WebAssembly engine does not support SIMD");
+  return { bytes: simd, backend: "simd" };
 }
 
 function frameCount(samples: number): number {
@@ -131,25 +127,29 @@ export class Qoa {
   }
 
   /**
-   * Instantiate the codec. Without `source` the embedded binary is used
-   * (relaxed SIMD if the engine supports it, plain SIMD otherwise).
+   * Instantiate the codec. Without `source` the binaries are fetched from
+   * `../dist/` relative to this module (relaxed SIMD if the engine supports
+   * it, plain SIMD otherwise). `source` may be wasm bytes, a compiled
+   * `WebAssembly.Module`, or a URL (string or `URL`) to fetch the binary from.
    */
   static async create(source?: QoaSource): Promise<Qoa> {
+    if (source === undefined) {
+      const { bytes, backend } = await loadBuiltin();
+      return new Qoa((await WebAssembly.instantiate(bytes)).instance, backend);
+    }
     if (source instanceof WebAssembly.Module) return new Qoa(await WebAssembly.instantiate(source), "custom");
-    if (source) return new Qoa((await WebAssembly.instantiate(source)).instance, "custom");
-    const { bytes, backend } = builtinBinary();
-    return new Qoa((await WebAssembly.instantiate(bytes)).instance, backend);
+    if (typeof source === "string" || source instanceof URL) source = await fetchBytes(new URL(source, import.meta.url));
+    return new Qoa((await WebAssembly.instantiate(source)).instance, "custom");
   }
 
   /**
-   * Synchronous variant of {@link Qoa.create}. Note that some browsers refuse
-   * to compile wasm synchronously on the main thread.
+   * Synchronous variant of {@link Qoa.create}. Nothing can be fetched
+   * synchronously, so `source` is required and must be bytes or a module.
+   * Note that some browsers refuse to compile wasm synchronously on the main thread.
    */
-  static createSync(source?: QoaSource): Qoa {
-    if (source instanceof WebAssembly.Module) return new Qoa(new WebAssembly.Instance(source), "custom");
-    if (source) return new Qoa(new WebAssembly.Instance(new WebAssembly.Module(source)), "custom");
-    const { bytes, backend } = builtinBinary();
-    return new Qoa(new WebAssembly.Instance(new WebAssembly.Module(bytes)), backend);
+  static createSync(source: BufferSource | WebAssembly.Module): Qoa {
+    const module = source instanceof WebAssembly.Module ? source : new WebAssembly.Module(source);
+    return new Qoa(new WebAssembly.Instance(module), "custom");
   }
 
   /** Make room for `bytes` bytes at the heap base. */
