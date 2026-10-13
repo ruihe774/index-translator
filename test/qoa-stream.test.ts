@@ -30,7 +30,7 @@ interface Decoder extends QoaCodec {
 
 /** Loaded the way the page's worker does, from the same file. */
 async function codec(): Promise<Decoder> {
-  const { Qoa } = await import(join(publicDir, "vendor", "qoa", "qoa.ts"));
+  const { Qoa } = await import(join(publicDir, "vendor", "qoa", "src", "qoa.ts"));
   return Qoa.create();
 }
 

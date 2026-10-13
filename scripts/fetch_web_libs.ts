@@ -1,7 +1,7 @@
 // Fetch the libraries the web app runs in the browser, into public/vendor/: for PDF support,
 // pdf-inspector's WebAssembly build (page text as Markdown) and pdf.js (page thumbnails), both npm
 // packages downloaded from the registry by version and checksum, of which only the files the page
-// loads are unpacked, plus the licenses; and the QOA codec of the speech stream, three files of a
+// loads are unpacked, plus the licenses; and the QOA codec of the speech stream, a few files of a
 // git commit. Nothing is installed with a package manager, and the page never loads them from the
 // network: the server serves public/vendor/ like the rest of public/. Without the PDF libraries
 // opening a PDF is refused with a message; without the codec speech arrives as WAV.
@@ -89,13 +89,13 @@ interface FileLibrary {
   }[];
 }
 
-const QOA_COMMIT = "b35f802c62759e4c30594a609cc98377a8c014e3";
+const QOA_COMMIT = "fda1fbaeab222d8c95b11b956fdbc22d05a1825e";
 const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${QOA_COMMIT}`;
 
 /**
  * qoa-wasm (the `qoa` branch of this project's repository): the QOA audio codec the speech stream
- * uses, with its WebAssembly embedded in qoa_wasm.ts as base64 (dist/ is not needed). Its modules
- * import each other as `.ts`, which the server answers as JavaScript, so the files are used as they are.
+ * uses. src/qoa.ts fetches its two WebAssembly builds from `../dist/` relative to itself, so the
+ * files keep the repository's layout. The server answers `.ts` as JavaScript, so they are used as they are.
  */
 export const FILE_LIBRARIES: FileLibrary[] = [
   {
@@ -103,14 +103,19 @@ export const FILE_LIBRARIES: FileLibrary[] = [
     version: QOA_COMMIT,
     files: [
       {
-        to: "qoa.ts",
+        to: "src/qoa.ts",
         url: `${QOA_RAW}/src/qoa.ts`,
-        sha256: "43ca450102618e760b3bc4e12dbf00e22ed75c297c97496360b3530fd7c45489",
+        sha256: "c0a681fb533b2426bfaf2fd5fbba50efa10d11bc2cf68c36330bdc98be40308d",
       },
       {
-        to: "qoa_wasm.ts",
-        url: `${QOA_RAW}/src/qoa_wasm.ts`,
-        sha256: "7cec47e5115753214b88e966004ea9a1666fec654351129e3e66d9f8080211b3",
+        to: "dist/qoa.wasm",
+        url: `${QOA_RAW}/dist/qoa.wasm`,
+        sha256: "b85500e4886c6078a1d2ef8e88e16d1b2b7270e1d3c3d717f0a88dbc05254c3c",
+      },
+      {
+        to: "dist/qoa-simd.wasm",
+        url: `${QOA_RAW}/dist/qoa-simd.wasm`,
+        sha256: "0b38111cff7e58543dfe48c44ddfd481b3c75382554c79559c0a0b944447a894",
       },
       {
         to: "LICENSE",
@@ -175,15 +180,14 @@ async function fetchFileLibrary(lib: FileLibrary, vendor: string): Promise<void>
     return;
   }
   // Everything is downloaded and checked before the directory is touched.
-  const texts = await Promise.all(
-    lib.files.map(async (f) => new TextDecoder().decode(await download(f.url, f.sha256))),
-  );
+  const contents = await Promise.all(lib.files.map((f) => download(f.url, f.sha256)));
   await rm(dir, { recursive: true, force: true });
   await mkdir(dir, { recursive: true });
   let bytes = 0;
   for (const [i, f] of lib.files.entries()) {
-    await Bun.write(join(dir, f.to), texts[i]!);
-    bytes += texts[i]!.length;
+    await mkdir(dirname(join(dir, f.to)), { recursive: true });
+    await Bun.write(join(dir, f.to), contents[i]!);
+    bytes += contents[i]!.length;
   }
   await Bun.write(join(dir, STAMP), stampOf(lib));
   console.log(`ok ${lib.dir} ${lib.version.slice(0, 7)} (${lib.files.length} files, ${(bytes / 1024).toFixed(0)} KiB)`);

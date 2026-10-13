@@ -47,7 +47,7 @@ export function acceptsQoa(accept: string | null): boolean {
 export function qoaLoader(publicDir: string): () => Promise<QoaCodec | undefined> {
   let loading: Promise<QoaCodec | undefined> | undefined;
   return async () => {
-    const file = join(publicDir, "vendor", "qoa", "qoa.ts");
+    const file = join(publicDir, "vendor", "qoa", "src", "qoa.ts");
     // Not remembered while the file is missing, so installing it needs no restart.
     if (!loading && !existsSync(file)) {
       return;

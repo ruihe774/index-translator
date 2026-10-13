@@ -94,6 +94,6 @@ describe("the pinned files of a commit", () => {
       expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(file.url).toContain(`/${qoa.version}/`);
     }
-    expect(qoa.files.map((f) => f.to)).toStrictEqual(["qoa.ts", "qoa_wasm.ts", "LICENSE"]);
+    expect(qoa.files.map((f) => f.to)).toStrictEqual(["src/qoa.ts", "dist/qoa.wasm", "dist/qoa-simd.wasm", "LICENSE"]);
   });
 });

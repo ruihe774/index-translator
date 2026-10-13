@@ -122,8 +122,8 @@ function handle(request: QoaRequest): QoaReply | undefined {
 
 async function start(): Promise<void> {
   try {
-    const module = (await import(`${DIR}/qoa.ts`)) as { Qoa: { create(): Promise<Codec> } };
-    codec = await module.Qoa.create();
+    const loaded = (await import(`${DIR}/src/qoa.ts`)) as { Qoa: { create(): Promise<Codec> } };
+    codec = await loaded.Qoa.create();
     self.postMessage({ type: "ready" } satisfies QoaReply);
   } catch (e) {
     const message = e instanceof Error ? e.message : String(e);
