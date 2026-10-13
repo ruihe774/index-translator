@@ -89,7 +89,7 @@ interface FileLibrary {
   }[];
 }
 
-const QOA_COMMIT = "fda1fbaeab222d8c95b11b956fdbc22d05a1825e";
+const QOA_COMMIT = "3c85bd84595d56cb13bef779add463246e0908b7";
 const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${QOA_COMMIT}`;
 
 /**
@@ -110,12 +110,12 @@ export const FILE_LIBRARIES: FileLibrary[] = [
       {
         to: "dist/qoa.wasm",
         url: `${QOA_RAW}/dist/qoa.wasm`,
-        sha256: "b85500e4886c6078a1d2ef8e88e16d1b2b7270e1d3c3d717f0a88dbc05254c3c",
+        sha256: "02fae25eecaa72631bf4557f275d09ea9b7dafc289ea83fefd0884a3200f4cc9",
       },
       {
         to: "dist/qoa-simd.wasm",
         url: `${QOA_RAW}/dist/qoa-simd.wasm`,
-        sha256: "0b38111cff7e58543dfe48c44ddfd481b3c75382554c79559c0a0b944447a894",
+        sha256: "98f669d58a70b7d93642e6e979257f781f43fc4cccf6d060506dcb1a219adc4e",
       },
       {
         to: "LICENSE",
