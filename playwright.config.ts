@@ -1,21 +1,25 @@
+import { availableParallelism } from "node:os";
 import { defineConfig, devices } from "@playwright/test";
 
+// One mock server (app port + control port) per worker, so tests keep their private mock state while
+// files run side by side. `E2E_WORKERS=1` gives the old serial run.
+const WORKERS = Number(process.env.E2E_WORKERS ?? Math.min(6, Math.max(1, Math.floor(availableParallelism() / 3))));
 const PORT = Number(process.env.E2E_PORT ?? 3100);
-const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? 3101);
+const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
 
 // Browser: Playwright's own download if present, else $CHROMIUM_PATH (e.g. a preinstalled Chromium).
 const executablePath = process.env.CHROMIUM_PATH || undefined;
 
 export default defineConfig({
   testDir: "e2e",
-  // Every test shares one server and one mock engine, so they run one at a time.
-  fullyParallel: false,
-  workers: 1,
+  // Each worker has its own server and mock engine (`parallelIndex`, see `e2e/fixtures.ts`), so the tests
+  // of one worker run one at a time; tests are spread over the workers.
+  fullyParallel: true,
+  workers: WORKERS,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["list"], ["html", { open: "never" }]] : "list",
   use: {
-    baseURL: `http://127.0.0.1:${PORT}`,
     trace: "retain-on-failure",
     // The page keeps language choices in localStorage; each test gets a fresh context.
     locale: "en-US",
@@ -33,12 +37,12 @@ export default defineConfig({
       },
     },
   ],
-  webServer: {
+  webServer: Array.from({ length: WORKERS }, (_, i) => ({
     command: "bun e2e/mock-server.ts",
-    url: `http://127.0.0.1:${PORT}/api/v1/health`,
+    url: `http://127.0.0.1:${PORT + 2 * i}/api/v1/health`,
     reuseExistingServer: !process.env.CI,
     timeout: 30_000,
-    env: { E2E_PORT: String(PORT), E2E_CONTROL_PORT: String(CONTROL_PORT) },
-    stderr: "pipe",
-  },
+    env: { E2E_PORT: String(PORT + 2 * i), E2E_CONTROL_PORT: String(CONTROL_PORT + 2 * i) },
+    stderr: "pipe" as const,
+  })),
 });

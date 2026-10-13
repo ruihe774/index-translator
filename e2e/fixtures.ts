@@ -3,7 +3,8 @@
 
 import { test as base, expect, type Locator, type Page } from "@playwright/test";
 
-const CONTROL = `http://127.0.0.1:${process.env.E2E_CONTROL_PORT ?? 3101}/mock`;
+const PORT = Number(process.env.E2E_PORT ?? 3100);
+const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
 
 export interface MockKnobs {
   chunks?: string[];
@@ -43,8 +44,14 @@ export const CHAT = "index-translate-9b";
 export const DOCUMENT = "index-nailong-9b";
 
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
+  // Worker n talks to the n-th server of `playwright.config.ts` (ports step by 2).
   // eslint-disable-next-line no-empty-pattern -- Playwright reads the fixture's dependencies from this parameter
-  mock: async ({}, use) => {
+  baseURL: async ({}, use, testInfo) => {
+    await use(`http://127.0.0.1:${PORT + 2 * testInfo.parallelIndex}`);
+  },
+  // eslint-disable-next-line no-empty-pattern -- as above
+  mock: async ({}, use, testInfo) => {
+    const CONTROL = `http://127.0.0.1:${CONTROL_PORT + 2 * testInfo.parallelIndex}/mock`;
     const call = (method: string, body?: unknown, path = ""): Promise<any> =>
       fetch(CONTROL + path, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) =>
         r.json(),

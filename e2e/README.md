@@ -20,5 +20,7 @@
 - `integration.spec.ts`: real page, API stubbed with `page.route`, for error codes and SSE framing.
 
 Setup: `bun install`, then `bunx playwright install chromium`, or set `CHROMIUM_PATH` to an
-existing Chromium. Env: `E2E_PORT` (3100), `E2E_CONTROL_PORT` (3101). `bun test` ignores this
-directory (see `bunfig.toml`).
+existing Chromium. Env: `E2E_PORT` (3100), `E2E_CONTROL_PORT` (3101), `E2E_WORKERS` (a third of
+the CPUs, at most 6; `1` runs serially). Each worker has its own mock server, app and control ports
+stepping by 2 from those two (worker n: `E2E_PORT + 2n`), so tests run in parallel; a test that needs
+state outside its `mock` fixture would break that. `bun test` ignores this directory (see `bunfig.toml`).
