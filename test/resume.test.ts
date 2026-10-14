@@ -47,8 +47,8 @@ async function run(connect: (last: number, signal: AbortSignal) => Promise<Respo
 describe("resumableEvents", () => {
   test("a stream that ends with done is passed through", async () => {
     const r = await run(() => Promise.resolve(response([frame(1, "start", {}), frame(2, "done", {})])));
-    expect(r.events).toEqual(["start:1", "done:2"]);
-    expect(r.notes).toEqual([]);
+    expect(r.events).toStrictEqual(["start:1", "done:2"]);
+    expect(r.notes).toStrictEqual([]);
   });
 
   test("a cut connection is resumed after the last event seen, without repeats", async () => {
@@ -61,9 +61,9 @@ describe("resumableEvents", () => {
           : response([frame(3, "delta", { text: "b" }), frame(4, "done", {})]),
       );
     });
-    expect(asked).toEqual([0, 2]);
-    expect(r.events).toEqual(["start:1", "delta:2", "delta:3", "done:4"]);
-    expect(r.notes).toEqual(["lost", "back"]);
+    expect(asked).toStrictEqual([0, 2]);
+    expect(r.events).toStrictEqual(["start:1", "delta:2", "delta:3", "done:4"]);
+    expect(r.notes).toStrictEqual(["lost", "back"]);
   });
 
   test("a failed reconnect is retried, then given up", async () => {
@@ -98,8 +98,8 @@ describe("resumableEvents", () => {
         },
       },
     );
-    expect(asked).toEqual([0, 1]);
-    expect(r.events).toEqual(["start:1", "done:2"]);
+    expect(asked).toStrictEqual([0, 1]);
+    expect(r.events).toStrictEqual(["start:1", "done:2"]);
   });
 
   test("a server that cannot resume ends the stream with the failure", async () => {

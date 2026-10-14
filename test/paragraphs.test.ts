@@ -43,7 +43,7 @@ describe("countBlocks", () => {
 describe("paragraphMismatch", () => {
   test("single-newline CJK source: a dropped line is found", () => {
     const source = "第一段。\n第二段。\n第三段。\n第四段。";
-    expect(paragraphMismatch(source, "One.\nTwo.\nFour.")).toEqual({ unit: "lines", source: 4, output: 3 });
+    expect(paragraphMismatch(source, "One.\nTwo.\nFour.")).toStrictEqual({ unit: "lines", source: 4, output: 3 });
   });
 
   test("single-newline source: blank lines added by the model do not matter", () => {
@@ -53,11 +53,11 @@ describe("paragraphMismatch", () => {
   test("blank-line source: matching counts are fine, a merged paragraph is found", () => {
     const source = "A one.\n\nB two.\n\nC three.";
     expect(paragraphMismatch(source, "A.\n\nB.\n\nC.")).toBeNull();
-    expect(paragraphMismatch(source, "A.\n\nB. C.")).toEqual({ unit: "paragraphs", source: 3, output: 2 });
+    expect(paragraphMismatch(source, "A.\n\nB. C.")).toStrictEqual({ unit: "paragraphs", source: 3, output: 2 });
   });
 
   test("blank-line source: a flattened output is found", () => {
-    expect(paragraphMismatch("A\n\nB\n\nC", "A\nB\nC")).toEqual({ unit: "paragraphs", source: 3, output: 1 });
+    expect(paragraphMismatch("A\n\nB\n\nC", "A\nB\nC")).toStrictEqual({ unit: "paragraphs", source: 3, output: 1 });
   });
 
   test("hard-wrapped paragraphs are counted as paragraphs, not lines", () => {
@@ -93,11 +93,11 @@ describe("mismatchMessage", () => {
 
 describe("blockStarts", () => {
   test("paragraphs: the first line after each run of blank lines", () => {
-    expect(blockStarts("\n\nA\na\n\n \t\nB\r\n\r\nC\n", "paragraphs")).toEqual([2, 6, 8]);
+    expect(blockStarts("\n\nA\na\n\n \t\nB\r\n\r\nC\n", "paragraphs")).toStrictEqual([2, 6, 8]);
   });
 
   test("lines: every non-blank line", () => {
-    expect(blockStarts("A\n\nB\nC", "lines")).toEqual([0, 2, 3]);
+    expect(blockStarts("A\n\nB\nC", "lines")).toStrictEqual([0, 2, 3]);
   });
 
   test("counts as many blocks as countBlocks", () => {
@@ -111,12 +111,12 @@ describe("blockStarts", () => {
 
 describe("alignBlocks", () => {
   test("pairs blocks by index when the counts match, in the source's unit", () => {
-    expect(alignBlocks("A\n\nB\nb\n\nC", "甲\n\n\n乙\n\n丙\n丙")).toEqual({
+    expect(alignBlocks("A\n\nB\nb\n\nC", "甲\n\n\n乙\n\n丙\n丙")).toStrictEqual({
       unit: "paragraphs",
       source: [0, 2, 5],
       output: [0, 3, 5],
     });
-    expect(alignBlocks("A\nB", "甲\n\n乙")).toEqual({ unit: "lines", source: [0, 1], output: [0, 2] });
+    expect(alignBlocks("A\nB", "甲\n\n乙")).toStrictEqual({ unit: "lines", source: [0, 1], output: [0, 2] });
   });
 
   test("null when the counts differ or there is nothing", () => {

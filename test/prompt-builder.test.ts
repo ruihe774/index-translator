@@ -15,12 +15,12 @@ function constraintBlock(prompt: string): string[] {
 describe("constraint lines", () => {
   test("a hard constraint already tagged 【硬性要求】 is not tagged twice", () => {
     const prompt = buildPrompt({ text: "x", targetLang: "en", hardConstraints: ["【硬性要求】保留占位符"] });
-    expect(constraintBlock(prompt)).toEqual(["1. 【硬性要求】保留占位符"]);
+    expect(constraintBlock(prompt)).toStrictEqual(["1. 【硬性要求】保留占位符"]);
   });
 
   test("soft constraints keep an existing 【注意】 or 【软性要求】 tag", () => {
     const prompt = buildPrompt({ text: "x", targetLang: "en", softConstraints: ["【注意】简洁", "【软性要求】准确"] });
-    expect(constraintBlock(prompt)).toEqual(["1. 【注意】简洁", "2. 【软性要求】准确"]);
+    expect(constraintBlock(prompt)).toStrictEqual(["1. 【注意】简洁", "2. 【软性要求】准确"]);
   });
 
   test("a hard constraint only recognises its own tag, so a soft tag inside it is kept and tagged again", () => {
@@ -30,7 +30,10 @@ describe("constraint lines", () => {
       targetLang: "en",
       hardConstraints: ["【注意】保持简洁", "【软性要求】保持准确"],
     });
-    expect(constraintBlock(prompt)).toEqual(["1. 【硬性要求】【注意】保持简洁", "2. 【硬性要求】【软性要求】保持准确"]);
+    expect(constraintBlock(prompt)).toStrictEqual([
+      "1. 【硬性要求】【注意】保持简洁",
+      "2. 【硬性要求】【软性要求】保持准确",
+    ]);
   });
 
   test("a multi-line item becomes one numbered line per non-blank line", () => {
@@ -40,7 +43,7 @@ describe("constraint lines", () => {
       hardConstraints: ["第一条\n\n   第二条  \n   "],
       softConstraints: ["甲\n乙"],
     });
-    expect(constraintBlock(prompt)).toEqual([
+    expect(constraintBlock(prompt)).toStrictEqual([
       "1. 【硬性要求】第一条",
       "2. 【硬性要求】第二条",
       "3. 【注意】甲",
@@ -73,7 +76,7 @@ describe("constraint lines", () => {
       hardConstraints: ["1. 甲", "2.乙", "10. 丙", "  3 丁", "0.戊"],
       softConstraints: ["4. 【注意】己"],
     });
-    expect(constraintBlock(prompt)).toEqual([
+    expect(constraintBlock(prompt)).toStrictEqual([
       "1. 【硬性要求】甲",
       "2. 【硬性要求】乙",
       "3. 【硬性要求】丙",
@@ -90,7 +93,7 @@ describe("constraint lines", () => {
       targetLang: "en",
       hardConstraints: ["2024年的日期保持不变", "保留 2024 年份", "1.2026年不变"],
     });
-    expect(constraintBlock(prompt)).toEqual([
+    expect(constraintBlock(prompt)).toStrictEqual([
       "1. 【硬性要求】2024年的日期保持不变",
       "2. 【硬性要求】保留 2024 年份",
       "3. 【硬性要求】2026年不变",
@@ -101,7 +104,7 @@ describe("constraint lines", () => {
 describe("glossary constraints", () => {
   test("keys and values are trimmed", () => {
     const prompt = buildPrompt({ text: "x", targetLang: "en", glossary: { " 碳纤维 ": "  carbon fiber " } });
-    expect(constraintBlock(prompt)).toEqual(["1. 【硬性要求】专名/术语对照: 碳纤维→carbon fiber"]);
+    expect(constraintBlock(prompt)).toStrictEqual(["1. 【硬性要求】专名/术语对照: 碳纤维→carbon fiber"]);
   });
 
   test("an empty glossary adds nothing", () => {
@@ -112,7 +115,7 @@ describe("glossary constraints", () => {
 
   test("multiple terms are joined with 、 in insertion order", () => {
     const prompt = buildPrompt({ text: "x", targetLang: "en", glossary: { b: "B", a: "A", c: "C" } });
-    expect(constraintBlock(prompt)).toEqual(["1. 【硬性要求】专名/术语对照: b→B、a→A、c→C"]);
+    expect(constraintBlock(prompt)).toStrictEqual(["1. 【硬性要求】专名/术语对照: b→B、a→A、c→C"]);
   });
 
   test("a glossary alone uses the constrained layout", () => {
@@ -133,7 +136,7 @@ describe("glossary constraints", () => {
       glossary: { k: "v" },
       softConstraints: ["s1\ns2"],
     });
-    expect(constraintBlock(prompt)).toEqual([
+    expect(constraintBlock(prompt)).toStrictEqual([
       "1. 【硬性要求】h1",
       "2. 【硬性要求】h2",
       "3. 【硬性要求】专名/术语对照: k→v",
@@ -287,7 +290,7 @@ describe("models", () => {
   test("the document model's directions match DOCUMENT_DIRECTIONS in order", () => {
     const doc = MODELS.filter((m) => m.kind === "document");
     expect(doc).toHaveLength(1);
-    expect(doc[0]!.directions).toEqual(DOCUMENT_DIRECTIONS);
+    expect(doc[0]!.directions).toStrictEqual(DOCUMENT_DIRECTIONS);
   });
 
   test("every advertised document direction has a template", () => {

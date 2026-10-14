@@ -29,10 +29,6 @@ beforeAll(() => {
   dir = mkdtempSync(join(tmpdir(), "static-test-"));
 });
 
-afterAll(() => {
-  rmSync(dir, { recursive: true, force: true });
-});
-
 beforeEach(async () => {
   rmSync(dir, { recursive: true, force: true });
   mkdirSync(dir, { recursive: true });
@@ -44,6 +40,10 @@ beforeEach(async () => {
   serve = createStaticServer(dir);
 });
 
+afterAll(() => {
+  rmSync(dir, { recursive: true, force: true });
+});
+
 describe("HTML whitespace", () => {
   test("whitespace between tags is dropped, text keeps one space, literal elements are untouched", async () => {
     await write(
@@ -52,7 +52,7 @@ describe("HTML whitespace", () => {
     );
     const res = await get("/ws.html");
     expect(res.headers.get("content-type")).toStartWith("text/html");
-    expect(await res.text()).toBe(
+    await expect(res.text()).resolves.toBe(
       "<!doctype html><p> a <b>b</b><i>c</i></p><textarea>\n  x  </textarea><pre>  y\n  z</pre><script>let  a = 1;\n</script>",
     );
   });
@@ -81,27 +81,27 @@ describe("transpiled .ts", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toStartWith("text/javascript");
     expect(res.headers.get("cache-control")).toBe("no-cache");
-    expect(await res.text()).not.toContain(": number");
+    await expect(res.text()).resolves.not.toContain(": number");
 
     const etag = res.headers.get("etag")!;
     const again = await get("/app.ts", { headers: { "if-none-match": etag } });
     expect(again.status).toBe(304);
     expect(again.headers.get("etag")).toBe(etag);
-    expect(await again.text()).toBe("");
+    await expect(again.text()).resolves.toBe("");
   });
 
   test("a changed file is served again: new size, and a same-size edit with a newer mtime", async () => {
     const path = join(dir, "app.ts");
     const first = await get("/app.ts");
     const firstEtag = first.headers.get("etag")!;
-    expect(await first.text()).toContain("42");
+    await expect(first.text()).resolves.toContain("42");
 
     // Different size: the ETag changes, so the old one no longer validates.
     await Bun.write(path, "export const answer: number = 4242424242;\n");
     const grown = await get("/app.ts", { headers: { "if-none-match": firstEtag } });
     expect(grown.status).toBe(200);
     expect(grown.headers.get("etag")).not.toBe(firstEtag);
-    expect(await grown.text()).toContain("4242424242");
+    await expect(grown.text()).resolves.toContain("4242424242");
 
     // Same size, different content: only the mtime tells the cache the file changed.
     const before = (await get("/app.ts")).headers.get("etag")!;
@@ -109,7 +109,7 @@ describe("transpiled .ts", () => {
     utimesSync(path, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
     const touched = await get("/app.ts");
     expect(touched.headers.get("etag")).not.toBe(before);
-    expect(await touched.text()).toContain("9999999999");
+    await expect(touched.text()).resolves.toContain("9999999999");
   });
 
   test("a syntax error is a 500 that is logged, and the server keeps serving other files", async () => {
@@ -117,7 +117,7 @@ describe("transpiled .ts", () => {
     try {
       const res = await get("/broken.ts");
       expect(res.status).toBe(500);
-      expect(await res.text()).toBe("Internal Server Error");
+      await expect(res.text()).resolves.toBe("Internal Server Error");
       expect(spy).toHaveBeenCalled();
     } finally {
       spy.mockRestore();
@@ -135,7 +135,7 @@ describe("transpiled .ts", () => {
       utimesSync(path, new Date(Date.now() + 60_000), new Date(Date.now() + 60_000));
       const res = await get("/broken.ts");
       expect(res.status).toBe(200);
-      expect(await res.text()).toContain("fixed");
+      await expect(res.text()).resolves.toContain("fixed");
     } finally {
       spy.mockRestore();
     }
@@ -147,7 +147,7 @@ describe("paths", () => {
     expect((await get("/sub")).status).toBe(404);
     const index = await get("/sub/");
     expect(index.status).toBe(200);
-    expect(await index.text()).toBe("<p>sub</p>");
+    await expect(index.text()).resolves.toBe("<p>sub</p>");
   });
 
   test("a directory named like a module is not transpiled", async () => {
@@ -158,25 +158,25 @@ describe("paths", () => {
   test("a .ts request is the transpiled module, never its source, and a missing one is a 404", async () => {
     const res = await get("/app.ts");
     expect(res.status).toBe(200);
-    expect(await res.text()).not.toContain(": number");
+    await expect(res.text()).resolves.not.toContain(": number");
     expect((await get("/sub/../app.ts")).status).toBe(200);
     const missing = await get("/missing.ts");
     expect(missing.status).toBe(404);
-    expect(await missing.text()).toBe("Not Found");
+    await expect(missing.text()).resolves.toBe("Not Found");
   });
 
   test("a .js request for a module is answered from its .ts, as pages and workers installed earlier still ask", async () => {
     const res = await get("/app.js");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toStartWith("text/javascript");
-    expect(await res.text()).not.toContain(": number");
+    await expect(res.text()).resolves.not.toContain(": number");
     expect((await get("/nothing.js")).status).toBe(404);
   });
 
   test("a trailing slash on the public directory serves the same files", async () => {
     const res = await get("/index.html", {}, dir + "/");
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("<title>");
+    await expect(res.text()).resolves.toContain("<title>");
     expect((await get("/app.ts", {}, dir + "/")).status).toBe(200);
     expect((await get("/", {}, dir + "/")).status).toBe(200);
     expect((await get("/../etc/passwd", {}, dir + "/")).status).toBe(404);
@@ -194,7 +194,7 @@ describe("paths", () => {
     for (const publicDir of [rel, "./" + rel, rel + "/"]) {
       const res = await get("/style.css", {}, publicDir);
       expect(res.status).toBe(200);
-      expect(await res.text()).toContain("color");
+      await expect(res.text()).resolves.toContain("color");
       expect((await get("/app.ts", {}, publicDir)).status).toBe(200);
     }
     expect((await get("/../package.json", {}, rel)).status).toBe(404);
@@ -202,6 +202,7 @@ describe("paths", () => {
 
   // "/" is the root of the current drive on Windows, so the temp directory must be on it.
   test("a public directory of / is not doubled into // and still serves", async () => {
+    // eslint-disable-next-line @typescript-eslint/prefer-string-starts-ends-with -- exact comparison with nonempty strings
     if (process.platform === "win32" && resolve(dir)[0] !== resolve("/")[0]) {
       return;
     }
@@ -226,7 +227,7 @@ describe("headers", () => {
       await get("/app.js", { headers: { "if-none-match": (await get("/app.js")).headers.get("etag")! } }),
       await get("/style.css", { method: "POST", body: "x" }),
     ];
-    expect(responses.map((r) => r.status)).toEqual([200, 200, 200, 404, 200, 304, 405]);
+    expect(responses.map((r) => r.status)).toStrictEqual([200, 200, 200, 404, 200, 304, 405]);
     for (const res of responses) {
       expect(res.headers.get("x-content-type-options")).toBe("nosniff");
       await res.text();
@@ -241,7 +242,7 @@ describe("headers", () => {
     await write("vendor/lib/VERSION", "1.0.0 abc\n");
     const module = await get("/vendor/lib/pdf.min.mjs");
     expect(module.headers.get("content-type")).toStartWith("text/javascript");
-    expect(await module.text()).toBe("export const a = 1;\n");
+    await expect(module.text()).resolves.toBe("export const a = 1;\n");
     const wasm = await get("/vendor/lib/lib_bg.wasm");
     expect(wasm.headers.get("content-type")).toBe("application/wasm");
     await wasm.arrayBuffer();
@@ -269,7 +270,7 @@ describe("headers", () => {
 
       const again = await get(path, { headers: { "if-none-match": etag } });
       expect(again.status).toBe(304);
-      expect(await again.text()).toBe("");
+      await expect(again.text()).resolves.toBe("");
     }
   });
 

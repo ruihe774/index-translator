@@ -60,8 +60,6 @@ beforeAll(() => {
   endpoint = `http://127.0.0.1:${server.port}`;
 });
 
-afterAll(() => server.stop(true));
-
 beforeEach(() => {
   if (dir) {
     rmSync(dir, { recursive: true, force: true });
@@ -69,6 +67,8 @@ beforeEach(() => {
   dir = mkdtempSync(join(tmpdir(), "fetch-models-"));
   ranges = [];
 });
+
+afterAll(() => server.stop(true));
 
 afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
@@ -94,11 +94,11 @@ async function run(download: Download): Promise<{ error?: FetchError; log: strin
 
 describe("parseArgs", () => {
   test("no --model means every model", () => {
-    expect(parseArgs([])).toEqual({ ids: MODEL_IDS, rest: [] });
+    expect(parseArgs([])).toStrictEqual({ ids: MODEL_IDS, rest: [] });
   });
 
   test("--model is repeatable, in both spellings, and the rest is left for the server's settings", () => {
-    expect(parseArgs(["--model", "index-nailong-9b", "--models-dir", "/m", "--model=index-tts-2.5"])).toEqual({
+    expect(parseArgs(["--model", "index-nailong-9b", "--models-dir", "/m", "--model=index-tts-2.5"])).toStrictEqual({
       ids: ["index-nailong-9b", "index-tts-2.5"],
       rest: ["--models-dir", "/m"],
     });
@@ -173,8 +173,8 @@ describe.skipIf(!curl)("fetchFile", () => {
     const download = file();
     mkdirSync(join(dir, "sub"));
     await Bun.write(download.dest, CONTENT);
-    expect((await run(download)).log).toEqual([`ok ${download.dest}`]);
-    expect(ranges).toEqual([]);
+    expect((await run(download)).log).toStrictEqual([`ok ${download.dest}`]);
+    expect(ranges).toStrictEqual([]);
   });
 
   test("a wrong file under the name is reported and left alone", async () => {
@@ -184,8 +184,8 @@ describe.skipIf(!curl)("fetchFile", () => {
     const { error } = await run(download);
     expect(error?.message).toContain("is not the expected file");
     expect(error?.message).toContain("delete it");
-    expect(await Bun.file(download.dest).text()).toBe("something else");
-    expect(ranges).toEqual([]);
+    await expect(Bun.file(download.dest).text()).resolves.toBe("something else");
+    expect(ranges).toStrictEqual([]);
   });
 
   test("a file of the user's under a voice's name is kept", async () => {
@@ -195,7 +195,7 @@ describe.skipIf(!curl)("fetchFile", () => {
     const { error, log } = await run(download);
     expect(error).toBeUndefined();
     expect(log[0]).toStartWith("kept ");
-    expect(await Bun.file(download.dest).text()).toBe("my own voice");
+    await expect(Bun.file(download.dest).text()).resolves.toBe("my own voice");
   });
 
   test("an interrupted download continues where it stopped", async () => {
@@ -203,7 +203,7 @@ describe.skipIf(!curl)("fetchFile", () => {
     mkdirSync(join(dir, "sub"));
     await Bun.write(`${download.dest}.part`, CONTENT.subarray(0, 100_000));
     expect((await run(download)).error).toBeUndefined();
-    expect(ranges).toEqual(["bytes=100000-"]);
+    expect(ranges).toStrictEqual(["bytes=100000-"]);
     expect(sha256(await Bun.file(download.dest).bytes())).toBe(download.sha256);
   });
 
@@ -303,7 +303,7 @@ describe("notices", () => {
       (l) => log.push(l),
       () => Promise.reject(new Error("asked")),
     );
-    expect(log).toEqual([]);
+    expect(log).toStrictEqual([]);
   });
 
   test("fetchModels asks before it writes anything", async () => {

@@ -32,7 +32,7 @@ function expectEveryPartition(text: string, expected: string) {
       bad.push(JSON.stringify(chunks));
     }
   }
-  expect(bad.slice(0, 3)).toEqual([]);
+  expect(bad.slice(0, 3)).toStrictEqual([]);
 }
 
 describe("OutputCleaner across chunk boundaries", () => {

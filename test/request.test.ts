@@ -38,8 +38,8 @@ describe("hasOptions", () => {
 
 describe("lines", () => {
   test("trims and drops blank lines", () => {
-    expect(lines(" a \n\n  \nb\n")).toEqual(["a", "b"]);
-    expect(lines("")).toEqual([]);
+    expect(lines(" a \n\n  \nb\n")).toStrictEqual(["a", "b"]);
+    expect(lines("")).toStrictEqual([]);
   });
 });
 
@@ -47,7 +47,7 @@ describe("buildImageRequest", () => {
   const image = "data:image/png;base64,AAAA";
 
   test("the image goes to the chat model in place of a text", () => {
-    expect(bodyOf(buildImageRequest(image, undefined, form()))).toEqual({
+    expect(bodyOf(buildImageRequest(image, undefined, form()))).toStrictEqual({
       model: CHAT_MODEL,
       image,
       target_lang: "zh",
@@ -72,7 +72,7 @@ describe("buildImageRequest", () => {
 
 describe("buildRequest", () => {
   test("the minimal chat request streams and has no options", () => {
-    expect(bodyOf(buildRequest(CHAT_MODEL, undefined, form()))).toEqual({
+    expect(bodyOf(buildRequest(CHAT_MODEL, undefined, form()))).toStrictEqual({
       model: CHAT_MODEL,
       text: "hello",
       target_lang: "zh",
@@ -101,7 +101,7 @@ describe("buildRequest", () => {
         form({ glossary: "cat = 猫\n dog=犬", hard: "keep names\n", soft: " formal \n\nshort", genre: " novel " }),
       ),
     );
-    expect(JSON.parse(JSON.stringify(body))).toEqual({
+    expect(JSON.parse(JSON.stringify(body))).toStrictEqual({
       model: CHAT_MODEL,
       text: "hello",
       target_lang: "zh",
@@ -133,7 +133,7 @@ describe("buildRequest", () => {
       "zh",
       form({ targetLang: "en", glossary: "broken", hard: "x", soft: "y", genre: "z" }),
     );
-    expect(bodyOf(r)).toEqual({
+    expect(bodyOf(r)).toStrictEqual({
       model: DOCUMENT_MODEL,
       text: "hello",
       target_lang: "en",
@@ -143,18 +143,18 @@ describe("buildRequest", () => {
   });
 
   test("a malformed glossary stops the request and reports the line", () => {
-    expect(buildRequest(CHAT_MODEL, undefined, form({ glossary: "a=b\nno equals" }))).toEqual({
+    expect(buildRequest(CHAT_MODEL, undefined, form({ glossary: "a=b\nno equals" }))).toStrictEqual({
       glossaryProblem: { line: 2, kind: "format" },
     });
-    expect(buildRequest(CHAT_MODEL, undefined, form({ glossary: "a=b\na=c" }))).toEqual({
+    expect(buildRequest(CHAT_MODEL, undefined, form({ glossary: "a=b\na=c" }))).toStrictEqual({
       glossaryProblem: { line: 2, kind: "duplicate", term: "a" },
     });
   });
 
   test("__proto__ stays a glossary term in the serialized body", () => {
     const body = bodyOf(buildRequest(CHAT_MODEL, undefined, form({ glossary: "__proto__ = x" })));
-    expect(JSON.parse(JSON.stringify(body)).glossary).toEqual(JSON.parse('{"__proto__":"x"}'));
-    expect(Object.keys(JSON.parse(JSON.stringify(body)).glossary)).toEqual(["__proto__"]);
+    expect(JSON.parse(JSON.stringify(body)).glossary).toStrictEqual(JSON.parse('{"__proto__":"x"}'));
+    expect(Object.keys(JSON.parse(JSON.stringify(body)).glossary)).toStrictEqual(["__proto__"]);
   });
 });
 

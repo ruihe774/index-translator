@@ -33,27 +33,29 @@ async function collect(chunks: (string | Uint8Array)[]): Promise<SseEvent[]> {
 
 describe("sseEvents", () => {
   test("parses a simple event into { event, data }", async () => {
-    expect(await collect(['event: delta\ndata: {"text":"hi"}\n\n'])).toEqual([
+    await expect(collect(['event: delta\ndata: {"text":"hi"}\n\n'])).resolves.toStrictEqual([
       { event: "delta", data: { text: "hi" } },
     ]);
   });
 
   test("defaults the event name to message", async () => {
-    expect(await collect(['data: {"a":1}\n\n'])).toEqual([{ event: "message", data: { a: 1 } }]);
+    await expect(collect(['data: {"a":1}\n\n'])).resolves.toStrictEqual([{ event: "message", data: { a: 1 } }]);
   });
 
   test("accepts data: without a space after the colon", async () => {
-    expect(await collect(['event:delta\ndata:{"text":"x"}\n\n'])).toEqual([{ event: "delta", data: { text: "x" } }]);
+    await expect(collect(['event:delta\ndata:{"text":"x"}\n\n'])).resolves.toStrictEqual([
+      { event: "delta", data: { text: "x" } },
+    ]);
   });
 
   test("joins multi-line data with newlines before parsing", async () => {
-    expect(await collect(['data: {"text":\ndata: "a\\nb"}\n\n'])).toEqual([
+    await expect(collect(['data: {"text":\ndata: "a\\nb"}\n\n'])).resolves.toStrictEqual([
       { event: "message", data: { text: "a\nb" } },
     ]);
   });
 
   test("reassembles an event split across chunks", async () => {
-    expect(await collect(["event: del", 'ta\ndata: {"te', 'xt":"hi"}', "\n\n"])).toEqual([
+    await expect(collect(["event: del", 'ta\ndata: {"te', 'xt":"hi"}', "\n\n"])).resolves.toStrictEqual([
       { event: "delta", data: { text: "hi" } },
     ]);
   });
@@ -63,28 +65,30 @@ describe("sseEvents", () => {
     // Cut inside the 3-byte encoding of 译 (U+8BD1).
     const cut = bytes.indexOf(0xe8) + 1;
     const events = await collect([bytes.slice(0, cut), bytes.slice(cut)]);
-    expect(events).toEqual([{ event: "delta", data: { text: "译文" } }]);
+    expect(events).toStrictEqual([{ event: "delta", data: { text: "译文" } }]);
   });
 
   test(String.raw`handles a \n\n separator that falls on a chunk boundary`, async () => {
-    expect(await collect(['data: {"a":1}\n', '\ndata: {"a":2}\n', "\n"])).toEqual([
+    await expect(collect(['data: {"a":1}\n', '\ndata: {"a":2}\n', "\n"])).resolves.toStrictEqual([
       { event: "message", data: { a: 1 } },
       { event: "message", data: { a: 2 } },
     ]);
   });
 
   test("ignores comment and keepalive lines", async () => {
-    expect(
-      await collect([": keepalive\n\n", ': ping\n: another\n\nevent: delta\ndata: {"text":"x"}\n\n: keepalive\n\n']),
-    ).toEqual([{ event: "delta", data: { text: "x" } }]);
+    await expect(
+      collect([": keepalive\n\n", ': ping\n: another\n\nevent: delta\ndata: {"text":"x"}\n\n: keepalive\n\n']),
+    ).resolves.toStrictEqual([{ event: "delta", data: { text: "x" } }]);
   });
 
   test("a block with only comments yields nothing", async () => {
-    expect(await collect([": just a comment\n\n"])).toEqual([]);
+    await expect(collect([": just a comment\n\n"])).resolves.toStrictEqual([]);
   });
 
   test("accepts CRLF line endings", async () => {
-    expect(await collect(['event: delta\r\ndata: {"text":"x"}\r\n\r\nevent: done\r\ndata: {"n":2}\r\n\r\n'])).toEqual([
+    await expect(
+      collect(['event: delta\r\ndata: {"text":"x"}\r\n\r\nevent: done\r\ndata: {"n":2}\r\n\r\n']),
+    ).resolves.toStrictEqual([
       { event: "delta", data: { text: "x" } },
       { event: "done", data: { n: 2 } },
     ]);
@@ -92,14 +96,14 @@ describe("sseEvents", () => {
 
   test("a CR at the end of a chunk pairs with an LF at the start of the next", async () => {
     // Without normalising after appending, "\r" + "\n\r\n" would look like an extra blank line.
-    expect(await collect(['data: {"a":1}\r', "\n\r\n", 'data: {"a":2}\r\n\r\n'])).toEqual([
+    await expect(collect(['data: {"a":1}\r', "\n\r\n", 'data: {"a":2}\r\n\r\n'])).resolves.toStrictEqual([
       { event: "message", data: { a: 1 } },
       { event: "message", data: { a: 2 } },
     ]);
   });
 
   test("yields a trailing event that has no blank line at the end", async () => {
-    expect(await collect(['event: delta\ndata: {"text":"a"}\n\nevent: done\ndata: {"n":1}\n'])).toEqual([
+    await expect(collect(['event: delta\ndata: {"text":"a"}\n\nevent: done\ndata: {"n":1}\n'])).resolves.toStrictEqual([
       { event: "delta", data: { text: "a" } },
       { event: "done", data: { n: 1 } },
     ]);
@@ -109,11 +113,11 @@ describe("sseEvents", () => {
     const bytes = encoder.encode('data: {"text":"译"}');
     const cut = bytes.indexOf(0xe8) + 1;
     const events = await collect([bytes.slice(0, cut), bytes.slice(cut)]);
-    expect(events).toEqual([{ event: "message", data: { text: "译" } }]);
+    expect(events).toStrictEqual([{ event: "message", data: { text: "译" } }]);
   });
 
   test("ignores trailing whitespace after the last event", async () => {
-    expect(await collect(['data: {"a":1}\n\n\n  \n'])).toEqual([{ event: "message", data: { a: 1 } }]);
+    await expect(collect(['data: {"a":1}\n\n\n  \n'])).resolves.toStrictEqual([{ event: "message", data: { a: 1 } }]);
   });
 
   test("throws a clear error for invalid JSON in data", async () => {
@@ -133,13 +137,13 @@ describe("sseEvents", () => {
       }
     })();
     await expect(run).rejects.toThrow("the server sent an unreadable event");
-    expect(seen).toEqual([{ event: "message", data: { a: 1 } }]);
+    expect(seen).toStrictEqual([{ event: "message", data: { a: 1 } }]);
   });
 
   test("cancels the reader when the consumer stops early", async () => {
     const { stream, state } = body(['data: {"a":1}\n\n', 'data: {"a":2}\n\n', 'data: {"a":3}\n\n']);
     for await (const ev of sseEvents(stream)) {
-      expect(ev.data).toEqual({ a: 1 });
+      expect(ev.data).toStrictEqual({ a: 1 });
       break;
     }
     expect(state.cancelled).toBe(1);
@@ -176,7 +180,7 @@ describe("sseEvents", () => {
         }
       })(),
     ).rejects.toThrow("connection reset");
-    expect(seen).toEqual([{ event: "message", data: { a: 1 } }]);
+    expect(seen).toStrictEqual([{ event: "message", data: { a: 1 } }]);
   });
 
   test("a normal end of stream completes without error", async () => {
@@ -186,6 +190,6 @@ describe("sseEvents", () => {
     for await (const ev of sseEvents(stream)) {
       seen.push(ev);
     }
-    expect(seen).toEqual([{ event: "message", data: { a: 1 } }]);
+    expect(seen).toStrictEqual([{ event: "message", data: { a: 1 } }]);
   });
 });

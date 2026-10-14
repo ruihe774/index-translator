@@ -251,7 +251,7 @@ function blockUtterances(b: Block, lang: string): Utterance[] {
     case "list": {
       return b.items.flatMap((item, k) => {
         const inner = item.children.flatMap((c) => blockUtterances(c, lang)).filter((u) => SPOKEN.test(u.text));
-        const first = inner[0];
+        const [first] = inner;
         if (!first) {
           return [];
         }

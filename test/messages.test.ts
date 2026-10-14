@@ -53,11 +53,11 @@ describe("selectionMessage", () => {
     const over = LONG_THRESHOLD_LETTERS + 1;
     expect(selectionMessage(selection(CHAT_MODEL, "manual", over))).toMatchObject({ warn: true });
     expect(selectionMessage(selection(CHAT_MODEL, "manual", over)).text).toContain("you chose Index-Translate-9B");
-    expect(selectionMessage(selection(CHAT_MODEL, "manual", LONG_THRESHOLD_LETTERS))).toEqual({
+    expect(selectionMessage(selection(CHAT_MODEL, "manual", LONG_THRESHOLD_LETTERS))).toStrictEqual({
       text: "Model: Index-Translate-9B, as you chose.",
       warn: false,
     });
-    expect(selectionMessage(selection(DOCUMENT_MODEL, "manual", over))).toEqual({
+    expect(selectionMessage(selection(DOCUMENT_MODEL, "manual", over))).toStrictEqual({
       text: "Model: Index-NativeLong-9B, as you chose.",
       warn: false,
     });
@@ -114,7 +114,10 @@ describe("healthMessage", () => {
   const queue = { running: false, waiting: 0 };
 
   test("ready with and without a model, and with a queue", () => {
-    expect(healthMessage({ status: "ready", model: null, queue })).toEqual({ text: "Engine ready.", loading: false });
+    expect(healthMessage({ status: "ready", model: null, queue })).toStrictEqual({
+      text: "Engine ready.",
+      loading: false,
+    });
     expect(healthMessage({ status: "ready", model: CHAT_MODEL, queue }).text).toBe(
       "Engine ready, Index-Translate-9B loaded.",
     );
@@ -124,15 +127,18 @@ describe("healthMessage", () => {
   });
 
   test("loading is the only state that keeps polling", () => {
-    expect(healthMessage({ status: "loading", model: null, queue })).toEqual({
+    expect(healthMessage({ status: "loading", model: null, queue })).toStrictEqual({
       text: "Engine loading a model…",
       loading: true,
     });
-    expect(healthMessage({ status: "error", error: "bad file", model: null, queue })).toEqual({
+    expect(healthMessage({ status: "error", error: "bad file", model: null, queue })).toStrictEqual({
       text: "Engine error: bad file.",
       loading: false,
     });
-    expect(healthMessage({ status: "idle", model: null, queue })).toEqual({ text: "Engine idle.", loading: false });
+    expect(healthMessage({ status: "idle", model: null, queue })).toStrictEqual({
+      text: "Engine idle.",
+      loading: false,
+    });
   });
 });
 
@@ -157,7 +163,7 @@ describe("resultNotes", () => {
   } as const;
 
   test("a clean result has no notes", () => {
-    expect(resultNotes({ finish_reason: "stop" }, ctx)).toEqual([]);
+    expect(resultNotes({ finish_reason: "stop" }, ctx)).toStrictEqual([]);
   });
 
   test("finish_reason length is reported first", () => {
@@ -175,9 +181,9 @@ describe("resultNotes", () => {
   test("the Chinese to English document-model warning needs all three conditions", () => {
     const doc = { ...ctx, model: DOCUMENT_MODEL, sourceLang: "zh" } as const;
     expect(resultNotes({ finish_reason: "stop" }, doc)[0]).toContain("Long Chinese-to-English output");
-    expect(resultNotes({ finish_reason: "stop" }, { ...doc, model: CHAT_MODEL })).toEqual([]);
-    expect(resultNotes({ finish_reason: "stop" }, { ...doc, sourceLang: "ja" })).toEqual([]);
-    expect(resultNotes({ finish_reason: "stop" }, { ...doc, targetLang: "ja" })).toEqual([]);
+    expect(resultNotes({ finish_reason: "stop" }, { ...doc, model: CHAT_MODEL })).toStrictEqual([]);
+    expect(resultNotes({ finish_reason: "stop" }, { ...doc, sourceLang: "ja" })).toStrictEqual([]);
+    expect(resultNotes({ finish_reason: "stop" }, { ...doc, targetLang: "ja" })).toStrictEqual([]);
   });
 
   test("all three together keep their order", () => {
@@ -201,7 +207,7 @@ describe("resultNotes for an image", () => {
       sourceLang: undefined,
       targetLang: "en",
     };
-    expect(resultNotes({ finish_reason: "stop" }, ctx)).toEqual([]);
+    expect(resultNotes({ finish_reason: "stop" }, ctx)).toStrictEqual([]);
     expect(resultNotes({ finish_reason: "length" }, ctx)).toHaveLength(1);
   });
 });
@@ -219,13 +225,13 @@ describe("metaLine", () => {
 
 describe("interruption", () => {
   test("nothing was received: no note, no Copy button", () => {
-    expect(interruption("", true)).toEqual({ note: null, showCopy: false });
-    expect(interruption("", false)).toEqual({ note: null, showCopy: false });
+    expect(interruption("", true)).toStrictEqual({ note: null, showCopy: false });
+    expect(interruption("", false)).toStrictEqual({ note: null, showCopy: false });
   });
 
   test("partial text is kept with Copy and a note that says why", () => {
-    expect(interruption("partial", true)).toEqual({ note: STOPPED_NOTE, showCopy: true });
-    expect(interruption("partial", false)).toEqual({ note: INTERRUPTED_NOTE, showCopy: true });
+    expect(interruption("partial", true)).toStrictEqual({ note: STOPPED_NOTE, showCopy: true });
+    expect(interruption("partial", false)).toStrictEqual({ note: INTERRUPTED_NOTE, showCopy: true });
   });
 });
 

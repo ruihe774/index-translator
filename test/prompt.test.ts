@@ -4,7 +4,7 @@ import { buildDocumentPrompt, DOCUMENT_DIRECTIONS } from "../src/prompt";
 
 describe("buildDocumentPrompt", () => {
   test("has a template for each supported direction", () => {
-    expect(DOCUMENT_DIRECTIONS).toEqual(["zh-en", "en-zh", "zh-ja", "ja-zh"]);
+    expect(DOCUMENT_DIRECTIONS).toStrictEqual(["zh-en", "en-zh", "zh-ja", "ja-zh"]);
     for (const direction of DOCUMENT_DIRECTIONS) {
       const prompt = buildDocumentPrompt(direction, "text");
       expect(prompt).toEndWith("【源文】\n\ntext");

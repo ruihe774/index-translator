@@ -100,7 +100,7 @@ async function synthesize(text: string, settings: SpeechSettings, signal: AbortS
       giveUpQoa();
     }
   }
-  return (await requestSpeech(text, settings, signal)).arrayBuffer();
+  return (await requestSpeech(text, settings, signal, undefined)).arrayBuffer();
 }
 
 export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
@@ -173,7 +173,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     if (!speaking) {
       scrolledTo = null;
     }
-    if (!speaking || speaking.line === null) {
+    if (speaking?.line == null) {
       return;
     }
     const { view, area } = panes[speaking.side];
@@ -228,7 +228,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     }
     player.stop();
     setState({ speaking: { side, line: null } });
-    player.start(segments, { lang: lang!, voice: voiceSettings.voice, speed: voiceSettings.speed });
+    player.start(segments, { lang: lang!, voice: voiceSettings.voice, speed: Number(voiceSettings.speed) });
   }
 
   /** Jumps a block back or forward and says where that is, since the shaded block may be out of view. */
@@ -339,8 +339,8 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     }
   });
   voiceSettings.addEventListener("speedchange", () => {
-    store("speed", String(voiceSettings.speed));
-    player.update({ speed: voiceSettings.speed });
+    store("speed", voiceSettings.speed);
+    player.update({ speed: Number(voiceSettings.speed) });
     if (state.speechProblem || state.voicesStale) {
       void recheckNow(false);
     }

@@ -34,7 +34,7 @@ describe("preflight", () => {
       asked.push(llamaDir);
       return GPU;
     });
-    expect(asked).toEqual(["/opt/llama"]);
+    expect(asked).toStrictEqual(["/opt/llama"]);
   });
 
   test("no Vulkan device is a problem that names the driver and the way out", () => {
@@ -108,7 +108,7 @@ describe("fetchCommand", () => {
 describe("runProbe", () => {
   test("a directory without the engine is an error with the build hint, from a process of its own", () => {
     const probe = runProbe(join(dir, "empty"));
-    expect(probe).toEqual({
+    expect(probe).toStrictEqual({
       error: `libllama and its shim not found in ${join(dir, "empty")}; run: bun scripts/build_llama.ts`,
     });
   });

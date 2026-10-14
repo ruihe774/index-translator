@@ -47,7 +47,7 @@ describe("prepareImage", () => {
     for (const file of [PNG, jpeg, webp]) {
       const png = await prepareImage(file);
       expect(isPng(png)).toBe(true);
-      expect(await new Bun.Image(png).metadata()).toEqual({ width: 96, height: 96, format: "png" });
+      await expect(new Bun.Image(png).metadata()).resolves.toStrictEqual({ width: 96, height: 96, format: "png" });
     }
   });
 
@@ -56,23 +56,30 @@ describe("prepareImage", () => {
     const padded = Buffer.concat([PNG, Buffer.from("not part of the image")]);
     const png = await prepareImage(padded);
     expect(isPng(png)).toBe(true);
+    // eslint-disable-next-line bun:test/prefer-to-contain -- toContain does not suport string searching in ArrayBuffer
     expect(Buffer.from(png).includes("not part of the image")).toBe(false);
   });
 
   test("a picture is resized once, to the size the encoder would make of it", async () => {
     const big = await new Bun.Image(PNG).resize(6000, 4000).jpeg().bytes();
     const scaled = await new Bun.Image(await prepareImage(big)).metadata();
-    expect({ width: scaled.width, height: scaled.height }).toEqual({ width: 2496, height: 1664 });
+    expect({ width: scaled.width, height: scaled.height }).toStrictEqual({ width: 2496, height: 1664 });
     expect(scaled.width * scaled.height).toBeLessThanOrEqual(4096 * 32 * 32);
     expect(scaled.width / scaled.height).toBeCloseTo(1.5, 1);
 
     // A long screenshot: many pixels on one side, few in all. Only rounded to the grid of 32.
     const long = await new Bun.Image(PNG).resize(400, 9000).png().bytes();
-    expect(await new Bun.Image(await prepareImage(long)).metadata()).toMatchObject({ width: 416, height: 8992 });
+    await expect(new Bun.Image(await prepareImage(long)).metadata()).resolves.toMatchObject({
+      width: 416,
+      height: 8992,
+    });
 
     // A picture that has the encoder's size already is not touched.
     const exact = await new Bun.Image(PNG).resize(128, 96).png().bytes();
-    expect(await new Bun.Image(await prepareImage(exact)).metadata()).toMatchObject({ width: 128, height: 96 });
+    await expect(new Bun.Image(await prepareImage(exact)).metadata()).resolves.toMatchObject({
+      width: 128,
+      height: 96,
+    });
   });
 
   test("the size follows the picture as EXIF turns it", async () => {
@@ -82,9 +89,15 @@ describe("prepareImage", () => {
     const exif = Buffer.concat([Buffer.from("Exif\0\0"), Buffer.from(tiff)]);
     const segment = Buffer.from([0xff, 0xe1, (exif.length + 2) >> 8, (exif.length + 2) & 255]);
     const turned = Buffer.concat([plain.subarray(0, 2), segment, exif, plain.subarray(2)]);
-    expect(await new Bun.Image(turned).metadata()).toMatchObject({ width: 100, height: 200 });
-    expect(await new Bun.Image(await prepareImage(plain)).metadata()).toMatchObject({ width: 192, height: 96 });
-    expect(await new Bun.Image(await prepareImage(turned)).metadata()).toMatchObject({ width: 96, height: 192 });
+    await expect(new Bun.Image(turned).metadata()).resolves.toMatchObject({ width: 100, height: 200 });
+    await expect(new Bun.Image(await prepareImage(plain)).metadata()).resolves.toMatchObject({
+      width: 192,
+      height: 96,
+    });
+    await expect(new Bun.Image(await prepareImage(turned)).metadata()).resolves.toMatchObject({
+      width: 96,
+      height: 192,
+    });
   });
 
   test("engineSize is libmtmd's calc_size_preserved_ratio for the Qwen3-VL encoder", () => {
@@ -99,29 +112,34 @@ describe("prepareImage", () => {
       [50, 20_000, 64, 20_000],
     ];
     for (const [w, h, rw, rh] of cases) {
-      expect(engineSize(w, h)).toEqual({ width: rw, height: rh });
+      expect(engineSize(w, h)).toStrictEqual({ width: rw, height: rh });
     }
   });
 
   test("what is not a JPEG, PNG or WebP image is refused as invalid", async () => {
-    expect(await rejection(Buffer.from("hello world, this is text"))).toMatchObject({ code: "invalid_request" });
+    await expect(rejection(Buffer.from("hello world, this is text"))).resolves.toMatchObject({
+      code: "invalid_request",
+    });
     const gif = await rejection(GIF);
     expect(gif.code).toBe("invalid_request");
     expect(gif.message).toContain("gif");
   });
 
   test("a file over the size limit is refused before it is decoded", async () => {
-    expect(await rejection(new Uint8Array(MAX_IMAGE_BYTES + 1))).toMatchObject({ code: "image_too_large" });
+    await expect(rejection(new Uint8Array(MAX_IMAGE_BYTES + 1))).resolves.toMatchObject({ code: "image_too_large" });
   });
 });
 
 describe("imageChatPrompt", () => {
   test("splits the chat prompt where the image stands: after the content, before the end of the turn", () => {
-    expect(imageChatPrompt("  translate this ", true)).toEqual([
+    expect(imageChatPrompt("  translate this ", true)).toStrictEqual([
       "<|im_start|>user\ntranslate this ",
       "<|im_end|>\n<|im_start|>assistant\n<think>\n\n</think>\n\n",
     ]);
-    expect(imageChatPrompt("a\0b", false)).toEqual(["<|im_start|>user\na\0b", "<|im_end|>\n<|im_start|>assistant\n"]);
+    expect(imageChatPrompt("a\0b", false)).toStrictEqual([
+      "<|im_start|>user\na\0b",
+      "<|im_end|>\n<|im_start|>assistant\n",
+    ]);
   });
 });
 
@@ -250,11 +268,11 @@ describe("POST /translate with an image", () => {
       models: { id: string; image: boolean }[];
       image: unknown;
     };
-    expect(models.models.map((m) => [m.id, m.image])).toEqual([
+    expect(models.models.map((m) => [m.id, m.image])).toStrictEqual([
       [CHAT, true],
       [DOCUMENT, false],
     ]);
-    expect(models.image).toEqual({
+    expect(models.image).toStrictEqual({
       formats: ["image/jpeg", "image/png", "image/webp"],
       max_bytes: MAX_IMAGE_BYTES,
       max_pixels: 50_000_000,

@@ -106,8 +106,8 @@ describe("SlotQueue", () => {
     await c.ready;
     c.leave();
 
-    expect(order).toEqual(["b", "c"]);
-    expect(positions).toEqual([1, 20, 10]);
+    expect(order).toStrictEqual(["b", "c"]);
+    expect(positions).toStrictEqual([1, 20, 10]);
     expect(q.running).toBe(false);
   });
 
@@ -128,10 +128,10 @@ describe("SlotQueue", () => {
     const q = new SlotQueue(2);
     const a = q.enter();
     const b = q.enter();
-    expect(await a.ready).toBe(true);
+    await expect(a.ready).resolves.toBe(true);
 
     b.leave();
-    expect(await b.ready).toBe(false);
+    await expect(b.ready).resolves.toBe(false);
     expect(q.depth).toBe(0);
 
     a.leave();
@@ -147,7 +147,7 @@ describe("SlotQueue", () => {
     const d = q.enter((p) => positions.d.push(p));
 
     b.leave();
-    expect(positions).toEqual({ b: [1], c: [2, 1], d: [3, 2] });
+    expect(positions).toStrictEqual({ b: [1], c: [2, 1], d: [3, 2] });
     expect(q.depth).toBe(2);
 
     a.leave();
@@ -169,12 +169,12 @@ describe("fixtures", () => {
   test("omissions and repetitions are detected", async () => {
     const en = await englishEssays();
     const paragraphs = en.text.split("\n\n");
-    expect(missingParagraphs(en, en.text)).toEqual([]);
-    expect(repeatedMarkers(en, en.text)).toEqual([]);
+    expect(missingParagraphs(en, en.text)).toStrictEqual([]);
+    expect(repeatedMarkers(en, en.text)).toStrictEqual([]);
 
-    expect(missingParagraphs(en, paragraphs.slice(0, -1).join("\n\n"))).toEqual([paragraphs.length]);
-    expect(missingParagraphs(en, en.text.replace("38750", "38,750"))).toEqual([]);
-    expect(missingParagraphs(en, en.text.replace("38750", "138750"))).toEqual([1]);
-    expect(repeatedMarkers(en, en.text + "\n\n" + paragraphs[0])).toEqual(en.markers[0]!);
+    expect(missingParagraphs(en, paragraphs.slice(0, -1).join("\n\n"))).toStrictEqual([paragraphs.length]);
+    expect(missingParagraphs(en, en.text.replace("38750", "38,750"))).toStrictEqual([]);
+    expect(missingParagraphs(en, en.text.replace("38750", "138750"))).toStrictEqual([1]);
+    expect(repeatedMarkers(en, en.text + "\n\n" + paragraphs[0])).toStrictEqual(en.markers[0]!);
   });
 });

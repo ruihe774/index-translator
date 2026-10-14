@@ -81,22 +81,24 @@ describe("readWav", () => {
     const pcm = readWav(wav(bytesOf(new Int16Array([0, 16_384, -32_768, 32_767])), { format: 1, bits: 16 }));
     expect(pcm.sampleRate).toBe(16_000);
     expect(pcm.channels).toBe(1);
-    expect([...pcm.samples]).toEqual([0, 0.5, -1, 32_767 / 32_768]);
+    expect([...pcm.samples]).toStrictEqual([0, 0.5, -1, 32_767 / 32_768]);
   });
 
   test("8-, 24- and 32-bit PCM", () => {
-    expect([...readWav(wav(new Uint8Array([128, 0, 192]), { format: 1, bits: 8 })).samples]).toEqual([0, -1, 0.5]);
+    expect([...readWav(wav(new Uint8Array([128, 0, 192]), { format: 1, bits: 8 })).samples]).toStrictEqual([
+      0, -1, 0.5,
+    ]);
     const s24 = new Uint8Array([0x00, 0x00, 0x40, 0x00, 0x00, 0x80, 0xff, 0xff, 0xff]);
-    expect([...readWav(wav(s24, { format: 1, bits: 24 })).samples]).toEqual([0.5, -1, -1 / 0x80_00_00]);
+    expect([...readWav(wav(s24, { format: 1, bits: 24 })).samples]).toStrictEqual([0.5, -1, -1 / 0x80_00_00]);
     const s32 = bytesOf(new Int32Array([0x40_00_00_00, -0x80_00_00_00]));
-    expect([...readWav(wav(s32, { format: 1, bits: 32 })).samples]).toEqual([0.5, -1]);
+    expect([...readWav(wav(s32, { format: 1, bits: 32 })).samples]).toStrictEqual([0.5, -1]);
   });
 
   test("32- and 64-bit float, as the example voices are", () => {
     const f32 = readWav(wav(bytesOf(new Float32Array([0.25, -0.75])), { format: 3, bits: 32, rate: 48_000 }));
     expect(f32.sampleRate).toBe(48_000);
-    expect([...f32.samples]).toEqual([0.25, -0.75]);
-    expect([...readWav(wav(bytesOf(new Float64Array([0.25, -0.75])), { format: 3, bits: 64 })).samples]).toEqual([
+    expect([...f32.samples]).toStrictEqual([0.25, -0.75]);
+    expect([...readWav(wav(bytesOf(new Float64Array([0.25, -0.75])), { format: 3, bits: 64 })).samples]).toStrictEqual([
       0.25, -0.75,
     ]);
   });
@@ -110,20 +112,20 @@ describe("readWav", () => {
       }),
     );
     expect(pcm.channels).toBe(2);
-    expect([...pcm.samples]).toEqual([0.5, -0.5, 0.25, -0.25]);
+    expect([...pcm.samples]).toStrictEqual([0.5, -0.5, 0.25, -0.25]);
   });
 
   test("the extensible format and chunks before the audio", () => {
     // An odd-sized chunk is followed by a padding byte.
     const list = new Uint8Array([0x4c, 0x49, 0x53, 0x54, 3, 0, 0, 0, 1, 2, 3, 0]);
     const pcm = readWav(wav(bytesOf(new Int16Array([16_384])), { format: 1, bits: 16, extensible: true, extra: list }));
-    expect([...pcm.samples]).toEqual([0.5]);
+    expect([...pcm.samples]).toStrictEqual([0.5]);
   });
 
   test("a data size the recorder never filled in means the rest of the file", () => {
     const data = bytesOf(new Int16Array([16_384, -16_384]));
     for (const declaredSize of [0xff_ff_ff_ff, data.length + 100]) {
-      expect([...readWav(wav(data, { format: 1, bits: 16, declaredSize })).samples]).toEqual([0.5, -0.5]);
+      expect([...readWav(wav(data, { format: 1, bits: 16, declaredSize })).samples]).toStrictEqual([0.5, -0.5]);
     }
   });
 
@@ -151,7 +153,7 @@ describe("writeWav", () => {
     const back = readWav(new Uint8Array(file));
     expect(back.sampleRate).toBe(22_050);
     expect(back.channels).toBe(1);
-    expect([...back.samples].map((s) => Math.round(s * 1000) / 1000)).toEqual([0, 0.5, -0.5, 1, -1]);
+    expect([...back.samples].map((s) => Math.round(s * 1000) / 1000)).toStrictEqual([0, 0.5, -0.5, 1, -1]);
   });
 });
 

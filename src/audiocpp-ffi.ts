@@ -77,7 +77,7 @@ export function libraryVersion(dir: string): { abi: string; build: string } {
   const lib = open(dir);
   const abi = lib.audiocpp_abi_version();
   const build = lib.audiocpp_build_version();
-  return { abi: `${abi >> 16}.${(abi >> 8) & 0xff}.${abi & 0xff}`, build: build ? new CString(build).toString() : "" };
+  return { abi: `${abi >> 16}.${(abi >> 8) & 0xff}.${abi & 0xff}`, build: build ? new CString(build) : "" };
 }
 
 /** Status codes are `audiocpp_status`; anything but 0 leaves its detail in `audiocpp_last_error()`. */
@@ -86,7 +86,7 @@ function check(lib: Lib, status: number, what: string): void {
     return;
   }
   const detail = lib.audiocpp_last_error();
-  throw new Error((detail ? new CString(detail).toString() : "") || `${what} failed with status ${status}`);
+  throw new Error((detail ? new CString(detail) : "") || `${what} failed with status ${status}`);
 }
 
 /**
@@ -294,7 +294,7 @@ export class VoiceSeparator extends Loaded {
           lib.audiocpp_result_named_audio(result, i, id, samples, frames, sampleRate, channels),
           "audiocpp_result_named_audio",
         );
-        if (new CString(handle(id)).toString() !== "vocals") {
+        if (new CString(handle(id)) !== "vocals") {
           continue;
         }
         const length = Number(frames[0]) * channels[0]!;

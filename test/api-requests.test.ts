@@ -30,12 +30,12 @@ beforeAll(async () => {
   await waitReady(app);
 });
 
-afterAll(async () => {
-  await app.stop();
-});
-
 afterEach(() => {
   resetMock();
+});
+
+afterAll(async () => {
+  await app.stop();
 });
 
 const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
@@ -60,13 +60,13 @@ describe("max_output_tokens", () => {
     expect(res.status).toBe(400);
     const { error } = await json(res);
     expect(error.code).toBe("invalid_request");
-    expect(error.details).toEqual({ field: "max_output_tokens" });
+    expect(error.details).toStrictEqual({ field: "max_output_tokens" });
   });
 
   test("1e400 parses to Infinity in JSON and is rejected like any non-integer", async () => {
     const res = await post("/api/v1/translate", '{"text":"Hi","target_lang":"zh","max_output_tokens":1e400}');
     expect(res.status).toBe(400);
-    expect((await json(res)).error.details).toEqual({ field: "max_output_tokens" });
+    expect((await json(res)).error.details).toStrictEqual({ field: "max_output_tokens" });
   });
 
   test("null is allowed and means the default budget", async () => {
@@ -102,7 +102,7 @@ describe("string length limits", () => {
     const long = await post("/api/v1/translate", { text: "Hi", target_lang: chars(65) });
     expect(long.status).toBe(400);
     const { error } = await json(long);
-    expect(error.details).toEqual({ field: "target_lang" });
+    expect(error.details).toStrictEqual({ field: "target_lang" });
     expect(error.message).toContain("at most 64");
   });
 
@@ -113,7 +113,7 @@ describe("string length limits", () => {
 
     const long = await post("/api/v1/translate", { ...plain, source_lang: chars(65) });
     expect(long.status).toBe(400);
-    expect((await json(long)).error.details).toEqual({ field: "source_lang" });
+    expect((await json(long)).error.details).toStrictEqual({ field: "source_lang" });
   });
 
   test("genre of 64 characters is accepted, 65 is refused even without constraints", async () => {
@@ -123,21 +123,21 @@ describe("string length limits", () => {
 
     const long = await post("/api/v1/translate", { ...plain, genre: chars(65) });
     expect(long.status).toBe(400);
-    expect((await json(long)).error.details).toEqual({ field: "genre" });
+    expect((await json(long)).error.details).toStrictEqual({ field: "genre" });
   });
 
   test("model of 65 characters is refused with the field; 64 characters gets past the length check", async () => {
     const long = await post("/api/v1/translate", { ...plain, model: chars(65) });
     expect(long.status).toBe(400);
     const longBody = await json(long);
-    expect(longBody.error.details).toEqual({ field: "model" });
+    expect(longBody.error.details).toStrictEqual({ field: "model" });
     expect(longBody.error.message).toContain("at most 64");
 
     // 64 characters is the right shape but no such model exists, so the failure is the unknown-model one.
     const shaped = await post("/api/v1/translate", { ...plain, model: chars(64) });
     expect(shaped.status).toBe(400);
     const shapedBody = await json(shaped);
-    expect(shapedBody.error.details).toEqual({ field: "model" });
+    expect(shapedBody.error.details).toStrictEqual({ field: "model" });
     expect(shapedBody.error.message).toContain("unknown model");
   });
 
@@ -160,13 +160,13 @@ describe("type validation of scalar fields", () => {
     expect(res.status).toBe(400);
     const { error } = await json(res);
     expect(error.code).toBe("invalid_request");
-    expect(error.details).toEqual({ field: "target_lang" });
+    expect(error.details).toStrictEqual({ field: "target_lang" });
   });
 
   test("a whitespace-only target_lang is refused as empty", async () => {
     const res = await post("/api/v1/translate", { text: "Hi", target_lang: "   " });
     expect(res.status).toBe(400);
-    expect((await json(res)).error.details).toEqual({ field: "target_lang" });
+    expect((await json(res)).error.details).toStrictEqual({ field: "target_lang" });
   });
 
   test("model: null uses the default model", async () => {
@@ -200,7 +200,7 @@ describe("document model field rules", () => {
     const res = await post("/api/v1/translate", { ...doc, source_lang: source });
     expect(res.status).toBe(400);
     const { error } = await json(res);
-    expect(error.details).toEqual({ field: "source_lang" });
+    expect(error.details).toStrictEqual({ field: "source_lang" });
   });
 
   test("padded and upper-case codes are accepted and select the en-zh template", async () => {
@@ -448,7 +448,7 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
     expect(res.status).toBe(413);
     const { error } = await json(res);
     expect(error.code).toBe("input_too_long");
-    expect(error.details).toEqual({ prompt_tokens: 401, max_input_tokens: 400 });
+    expect(error.details).toStrictEqual({ prompt_tokens: 401, max_input_tokens: 400 });
     expect(mock.requests).toHaveLength(before);
   });
 
@@ -461,7 +461,7 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
     );
     expect(withIgnored.status).toBe(200);
     expect(withIgnored.headers.get("content-type")).toStartWith("application/json");
-    expect(await json(withIgnored)).toEqual(plainBody);
+    await expect(json(withIgnored)).resolves.toStrictEqual(plainBody);
   });
 
   test.each([
@@ -492,13 +492,13 @@ describe("static files", () => {
     const res = await fetch(base + "/", { method: "HEAD" });
     expect(res.status).toBe(200);
     // Bun sends no Content-Type on a HEAD answer, so only the status and the empty body are pinned.
-    expect(await res.text()).toBe("");
+    await expect(res.text()).resolves.toBe("");
   });
 
   test("POST / is refused with 405 and plain text", async () => {
     const res = await fetch(base + "/", { method: "POST", body: "x" });
     expect(res.status).toBe(405);
-    expect(await res.text()).toBe("Method Not Allowed");
+    await expect(res.text()).resolves.toBe("Method Not Allowed");
   });
 
   test("/index.html is served", async () => {
@@ -520,20 +520,20 @@ describe("static files", () => {
     const etag = res.headers.get("etag")!;
     const again = await fetch(base + "/app.ts", { headers: { "if-none-match": etag } });
     expect(again.status).toBe(304);
-    expect(await again.text()).toBe("");
+    await expect(again.text()).resolves.toBe("");
   });
 
   test("/select-model.ts is served so the browser and bun test share one module", async () => {
     const res = await fetch(base + "/select-model.ts");
     expect(res.status).toBe(200);
-    expect(await res.text()).toContain("LONG_THRESHOLD_LETTERS");
+    await expect(res.text()).resolves.toContain("LONG_THRESHOLD_LETTERS");
   });
 
   test("a .js request with no .ts behind it is a 404, including traversal to src/*.ts", async () => {
     for (const path of ["/nothing.js", "/..%2fsrc%2fapp.js", "/%2e%2e%2fsrc%2fapp.js"]) {
       const res = await fetch(base + path);
       expect(res.status).toBe(404);
-      expect(await res.text()).not.toContain("startApp");
+      await expect(res.text()).resolves.not.toContain("startApp");
     }
   });
 
@@ -550,7 +550,7 @@ describe("static files", () => {
   test("an undecodable path is a 400, not a server error", async () => {
     const res = await fetch(base + "/%ff");
     expect(res.status).toBe(400);
-    expect(await res.text()).toBe("Bad Request");
+    await expect(res.text()).resolves.toBe("Bad Request");
   });
 
   test("a trailing slash on a file name is a 404", async () => {
@@ -595,7 +595,7 @@ describe("static files", () => {
       const res = await fetch(base + "/%00");
       expect(res.status).toBe(500);
       expect(res.headers.get("content-type")).toStartWith("application/json");
-      expect((await json(res)).error).toEqual({ code: "internal_error", message: "internal server error" });
+      expect((await json(res)).error).toStrictEqual({ code: "internal_error", message: "internal server error" });
     } finally {
       spy.mockRestore();
     }
@@ -607,7 +607,7 @@ describe("static files", () => {
 
 describe("error envelope", () => {
   function expectEnvelope(body: any, code: string): void {
-    expect(Object.keys(body)).toEqual(["error"]);
+    expect(Object.keys(body)).toStrictEqual(["error"]);
     expect(body.error.code).toBeTypeOf("string");
     expect(body.error.code).toBe(code);
     expect(body.error.message).toBeTypeOf("string");
@@ -651,7 +651,7 @@ describe("error envelope", () => {
     ];
     for (const [label, pending, code, status] of cases) {
       const res = await pending;
-      expect({ label, status: res.status }).toEqual({ label, status });
+      expect({ label, status: res.status }).toStrictEqual({ label, status });
       expect(res.headers.get("content-type")).toStartWith("application/json");
       expectEnvelope(await json(res), code);
     }
@@ -700,12 +700,12 @@ describe("resumable streams", () => {
     const id = res.headers.get("x-translation-id")!;
     expect(id).toMatch(/^[0-9a-f-]{36}$/);
     const text = await res.text();
-    expect([...text.matchAll(/^id: (\d+)$/gm)].map((m) => m[1])).toEqual(["1", "2", "3", "4", "5"]);
+    expect([...text.matchAll(/^id: (\d+)$/gm)].map((m) => m[1])).toStrictEqual(["1", "2", "3", "4", "5"]);
 
     const rest = await fetch(`${base}/api/v1/translations/${id}/events`, { headers: { "last-event-id": "3" } });
-    expect((await readSse(rest)).map((e) => e.event)).toEqual(["delta", "done"]);
+    expect((await readSse(rest)).map((e) => e.event)).toStrictEqual(["delta", "done"]);
     const all = await fetch(`${base}/api/v1/translations/${id}/events`);
-    expect((await readSse(all)).map((e) => e.event)).toEqual(["start", "delta", "delta", "delta", "done"]);
+    expect((await readSse(all)).map((e) => e.event)).toStrictEqual(["start", "delta", "delta", "delta", "done"]);
   });
 
   test("keeps running when the reader leaves, and the next reader gets the whole translation", async () => {
@@ -741,7 +741,7 @@ describe("resumable streams", () => {
           break;
         }
       }
-      expect(events).toEqual([]);
+      expect(events).toStrictEqual([]);
       const plain = await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true });
       expect(plain.headers.get("x-translation-id")).toBeNull();
       await plain.text();

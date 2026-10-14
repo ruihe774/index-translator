@@ -29,7 +29,7 @@ describe("without DEV_RELOAD", () => {
     const base = app.server.url.href;
     expect((await fetch(`${base}__dev/reload`)).status).toBe(404);
     expect((await fetch(`${base}__dev/reload.js`)).status).toBe(404);
-    expect(await (await fetch(base)).text()).not.toContain("__dev");
+    await expect((await fetch(base)).text()).resolves.not.toContain("__dev");
   });
 });
 
@@ -38,11 +38,11 @@ describe("with DEV_RELOAD", () => {
     app = await startApp(config({ publicDir: dir, devReload: true }), launcher);
     const base = app.server.url.href;
     const page = await fetch(base);
-    expect(await page.text()).toContain('<script src="/__dev/reload.js"></script></body>');
+    await expect(page.text()).resolves.toContain('<script src="/__dev/reload.js"></script></body>');
     expect(page.headers.get("cache-control")).toBe("no-store");
     const script = await fetch(`${base}__dev/reload.js`);
     expect(script.headers.get("content-type")).toContain("text/javascript");
-    expect(await script.text()).toContain("EventSource");
+    await expect(script.text()).resolves.toContain("EventSource");
   });
 
   test("a change in the public directory sends a reload event", async () => {

@@ -39,7 +39,9 @@ const launcher: Launcher = async (model) => {
 
 function gate(): { promise: Promise<void>; open(): void } {
   let open!: () => void;
-  const promise = new Promise<void>((resolve) => (open = resolve));
+  const promise = new Promise<void>((resolve) => {
+    open = resolve;
+  });
   return { promise, open };
 }
 
@@ -117,7 +119,7 @@ describe("Engine lifecycle", () => {
     expect(engine.state).toBe("ready");
     expect(engine.loaded).toBe(MODELS[0]);
     expect(engine.error).toBeUndefined();
-    expect(fake.launches).toEqual([MODELS[0]!.id]);
+    expect(fake.launches).toStrictEqual([MODELS[0]!.id]);
   });
 
   test("the engine is loading until the launcher returns", async () => {
@@ -150,8 +152,8 @@ describe("Engine lifecycle", () => {
     });
     await engine.load(MODELS[0]!);
     await engine.load(MODELS[1]!);
-    expect(freedAtLaunch).toEqual([[], [true]]);
-    expect(fake.launches).toEqual([MODELS[0]!.id, MODELS[1]!.id]);
+    expect(freedAtLaunch).toStrictEqual([[], [true]]);
+    expect(fake.launches).toStrictEqual([MODELS[0]!.id, MODELS[1]!.id]);
     expect(stopped()).toBe(1);
     expect(engine.state).toBe("ready");
     expect(engine.loaded).toBe(MODELS[1]);
@@ -199,7 +201,7 @@ describe("Engine lifecycle", () => {
     expect(engine.state).toBe("ready");
     expect(engine.loaded).toBe(MODELS[1]);
     // Launch order is [first, second]; models are pushed as they finish loading: [second, first].
-    expect(fake.models.map((m) => m.stopped)).toEqual([false, true]);
+    expect(fake.models.map((m) => m.stopped)).toStrictEqual([false, true]);
   });
 
   test("unload during a load frees the model once it arrives", async () => {
@@ -212,7 +214,7 @@ describe("Engine lifecycle", () => {
     hold.open();
     expect((await loading).message).toBe("the model load was superseded by a newer one");
     expect(engine.state).toBe("stopped");
-    expect(fake.models.map((m) => m.stopped)).toEqual([true]);
+    expect(fake.models.map((m) => m.stopped)).toStrictEqual([true]);
   });
 
   test("losing the model while ready marks the engine error and the next load recovers", async () => {
@@ -269,7 +271,7 @@ describe("countPromptTokens", () => {
 
     hold.open();
     await loading;
-    expect(await engine.countPromptTokens("hi")).toBe(2 + TEMPLATE.length);
+    await expect(engine.countPromptTokens("hi")).resolves.toBe(2 + TEMPLATE.length);
   });
 
   test("throws EngineError after unload", async () => {
@@ -291,8 +293,8 @@ describe("countPromptTokens", () => {
 
   test("returns what the loaded model counts", async () => {
     const engine = await readyEngine();
-    expect(await engine.countPromptTokens("hello")).toBe(5 + TEMPLATE.length);
-    expect(await engine.countPromptTokens("你好")).toBe(2 + TEMPLATE.length);
+    await expect(engine.countPromptTokens("hello")).resolves.toBe(5 + TEMPLATE.length);
+    await expect(engine.countPromptTokens("你好")).resolves.toBe(2 + TEMPLATE.length);
   });
 
   test("is answered while a generation is running", async () => {
@@ -300,7 +302,7 @@ describe("countPromptTokens", () => {
     fake.generationGate = hold.promise;
     const engine = await readyEngine();
     const generating = collect(engine.generate("hi", 16));
-    expect(await engine.countPromptTokens("hello")).toBe(5 + TEMPLATE.length);
+    await expect(engine.countPromptTokens("hello")).resolves.toBe(5 + TEMPLATE.length);
     hold.open();
     expect((await generating).at(-1)).toMatchObject({ type: "done" });
   });
@@ -312,7 +314,7 @@ describe("generate", () => {
   test("streams the model's deltas, then its done event", async () => {
     mock.chunks = ["Hel", "lo"];
     const engine = await readyEngine();
-    expect(await collect(engine.generate("hi", 16))).toEqual([
+    await expect(collect(engine.generate("hi", 16))).resolves.toStrictEqual([
       { type: "delta", text: "Hel" },
       { type: "delta", text: "lo" },
       {
@@ -345,7 +347,7 @@ describe("generate", () => {
     const generating = errorOf(collect(engine.generate("hi", 16)));
     await Bun.sleep(10);
     fake.models[0]!.kill();
-    expect(await generating).toBeInstanceOf(EngineError);
+    await expect(generating).resolves.toBeInstanceOf(EngineError);
     await until(() => engine.state === "error", "the loss to be noticed");
   });
 
@@ -355,7 +357,7 @@ describe("generate", () => {
     const engine = await readyEngine();
     const ac = new AbortController();
     const it = engine.generate("hi", 16, ac.signal)[Symbol.asyncIterator]();
-    expect((await it.next()).value).toEqual({ type: "delta", text: "Hel" });
+    expect((await it.next()).value).toStrictEqual({ type: "delta", text: "Hel" });
     ac.abort();
     const err = await errorOf(it.next());
     expect(err.name).toBe("AbortError");

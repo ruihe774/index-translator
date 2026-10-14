@@ -35,7 +35,7 @@ describe("looksLikeMarkdown", () => {
 
 describe("parseMarkdown blocks", () => {
   test("headings, ATX and setext", () => {
-    expect(parseMarkdown("## Two ##\nTitle\n===\nSub\n---")).toEqual([
+    expect(parseMarkdown("## Two ##\nTitle\n===\nSub\n---")).toStrictEqual([
       { type: "heading", level: 2, children: [{ type: "text", text: "Two" }] },
       { type: "heading", level: 1, children: [{ type: "text", text: "Title" }] },
       { type: "heading", level: 2, children: [{ type: "text", text: "Sub" }] },
@@ -43,22 +43,22 @@ describe("parseMarkdown blocks", () => {
   });
 
   test("paragraph lines keep their breaks; blank lines separate paragraphs", () => {
-    expect(parseMarkdown("a  \nb\n\nc")).toEqual([
+    expect(parseMarkdown("a  \nb\n\nc")).toStrictEqual([
       { type: "paragraph", children: [{ type: "text", text: "a" }, { type: "br" }, { type: "text", text: "b" }] },
       { type: "paragraph", children: [{ type: "text", text: "c" }] },
     ]);
   });
 
   test("fenced code keeps its text verbatim, open fences run to the end", () => {
-    expect(parseMarkdown("```js\nlet a = *b*;\n\n```\nafter")).toEqual([
+    expect(parseMarkdown("```js\nlet a = *b*;\n\n```\nafter")).toStrictEqual([
       { type: "code", lang: "js", text: "let a = *b*;\n" },
       { type: "paragraph", children: [{ type: "text", text: "after" }] },
     ]);
-    expect(parseMarkdown("~~~\nopen")).toEqual([{ type: "code", lang: "", text: "open" }]);
+    expect(parseMarkdown("~~~\nopen")).toStrictEqual([{ type: "code", lang: "", text: "open" }]);
   });
 
   test("thematic breaks and block quotes", () => {
-    expect(parseMarkdown("* * *\n> # Q\n> line\nlazy")).toEqual([
+    expect(parseMarkdown("* * *\n> # Q\n> line\nlazy")).toStrictEqual([
       { type: "hr" },
       {
         type: "quote",
@@ -89,13 +89,13 @@ describe("parseMarkdown blocks", () => {
       items: [{}, {}],
     });
     // A different marker starts a new list; a paragraph line after the list ends it.
-    expect(parseMarkdown("- a\n+ b").map((b) => b.type)).toEqual(["list", "list"]);
-    expect(parseMarkdown("- a\n\nafter").map((b) => b.type)).toEqual(["list", "paragraph"]);
+    expect(parseMarkdown("- a\n+ b").map((b) => b.type)).toStrictEqual(["list", "list"]);
+    expect(parseMarkdown("- a\n\nafter").map((b) => b.type)).toStrictEqual(["list", "paragraph"]);
   });
 
   test("list edge cases: breaks, other markers, looseness and lazy lines", () => {
-    expect(parseMarkdown("* a\n* * *\n* b").map((b) => b.type)).toEqual(["list", "hr", "list"]);
-    expect(parseMarkdown("1. a\n2. b\n3) c").map((b) => b.type)).toEqual(["list", "list"]);
+    expect(parseMarkdown("* a\n* * *\n* b").map((b) => b.type)).toStrictEqual(["list", "hr", "list"]);
+    expect(parseMarkdown("1. a\n2. b\n3) c").map((b) => b.type)).toStrictEqual(["list", "list"]);
     // Blank lines inside a code block or a nested list do not make the outer list loose.
     expect(parseMarkdown("- a\n- ```\n  b\n\n  ```\n- c")[0]).toMatchObject({ tight: true });
     expect(parseMarkdown("- a\n  - b\n\n    c\n- d")[0]).toMatchObject({
@@ -103,7 +103,7 @@ describe("parseMarkdown blocks", () => {
       items: [{ children: [{}, { tight: false }] }, {}],
     });
     // A lazy line is paragraph text, even when it looks like a block start.
-    expect(parseMarkdown("> foo\nbar\n===")).toEqual([
+    expect(parseMarkdown("> foo\nbar\n===")).toStrictEqual([
       {
         type: "quote",
         children: [
@@ -120,16 +120,16 @@ describe("parseMarkdown blocks", () => {
         ],
       },
     ]);
-    expect(parseMarkdown("> ```\nfoo\n```").map((b) => b.type)).toEqual(["quote", "paragraph", "code"]);
+    expect(parseMarkdown("> ```\nfoo\n```").map((b) => b.type)).toStrictEqual(["quote", "paragraph", "code"]);
   });
 
   test("an ordered item other than 1 does not interrupt a paragraph", () => {
-    expect(parseMarkdown("In\n2023. A year.").map((b) => b.type)).toEqual(["paragraph"]);
-    expect(parseMarkdown("Steps:\n1. one").map((b) => b.type)).toEqual(["paragraph", "list"]);
+    expect(parseMarkdown("In\n2023. A year.").map((b) => b.type)).toStrictEqual(["paragraph"]);
+    expect(parseMarkdown("Steps:\n1. one").map((b) => b.type)).toStrictEqual(["paragraph", "list"]);
   });
 
   test("GFM tables with alignment", () => {
-    expect(parseMarkdown("| a | b | c |\n|:--|:-:|--:|\n| 1 | `|` |\n")).toEqual([
+    expect(parseMarkdown("| a | b | c |\n|:--|:-:|--:|\n| 1 | `|` |\n")).toStrictEqual([
       {
         type: "table",
         align: ["left", "center", "right"],
@@ -142,7 +142,7 @@ describe("parseMarkdown blocks", () => {
 
 describe("parseInline", () => {
   test("emphasis, strong, both and strikethrough", () => {
-    expect(parseInline("*a* **b** ***c*** ~~d~~")).toEqual([
+    expect(parseInline("*a* **b** ***c*** ~~d~~")).toStrictEqual([
       { type: "em", children: [{ type: "text", text: "a" }] },
       { type: "text", text: " " },
       { type: "strong", children: [{ type: "text", text: "b" }] },
@@ -151,7 +151,7 @@ describe("parseInline", () => {
       { type: "text", text: " " },
       { type: "del", children: [{ type: "text", text: "d" }] },
     ]);
-    expect(parseInline("**a *b* c**")).toEqual([
+    expect(parseInline("**a *b* c**")).toStrictEqual([
       {
         type: "strong",
         children: [
@@ -186,36 +186,36 @@ describe("parseInline", () => {
   });
 
   test("a link binds tighter than emphasis, and links do not nest", () => {
-    expect(parseInline("*[foo*](/u)")).toEqual([
+    expect(parseInline("*[foo*](/u)")).toStrictEqual([
       { type: "text", text: "*" },
       { type: "link", href: "/u", title: "", children: [{ type: "text", text: "foo*" }] },
     ]);
-    expect(parseInline("[a [b](/x)](/y)")).toEqual([
+    expect(parseInline("[a [b](/x)](/y)")).toStrictEqual([
       { type: "text", text: "[a " },
       { type: "link", href: "/x", title: "", children: [{ type: "text", text: "b" }] },
       { type: "text", text: "](/y)" },
     ]);
-    expect(parseInline("[https://x.org](https://x.org)")).toEqual([
+    expect(parseInline("[https://x.org](https://x.org)")).toStrictEqual([
       { type: "link", href: "https://x.org", title: "", children: [{ type: "text", text: "https://x.org" }] },
     ]);
   });
 
   test("unmatched or spaced delimiters stay literal", () => {
-    expect(parseInline("5 * 3 * 2")).toEqual([{ type: "text", text: "5 * 3 * 2" }]);
-    expect(parseInline("**open")).toEqual([{ type: "text", text: "**open" }]);
-    expect(parseInline("snake_case_name")).toEqual([{ type: "text", text: "snake_case_name" }]);
+    expect(parseInline("5 * 3 * 2")).toStrictEqual([{ type: "text", text: "5 * 3 * 2" }]);
+    expect(parseInline("**open")).toStrictEqual([{ type: "text", text: "**open" }]);
+    expect(parseInline("snake_case_name")).toStrictEqual([{ type: "text", text: "snake_case_name" }]);
   });
 
   test("code spans win over emphasis, escapes are literal", () => {
-    expect(parseInline("`*x*` \\*y\\*")).toEqual([
+    expect(parseInline("`*x*` \\*y\\*")).toStrictEqual([
       { type: "code", text: "*x*" },
       { type: "text", text: " *y*" },
     ]);
-    expect(parseInline("`` a`b ``")).toEqual([{ type: "code", text: "a`b" }]);
+    expect(parseInline("`` a`b ``")).toStrictEqual([{ type: "code", text: "a`b" }]);
   });
 
   test("links, images, autolinks and bare URLs", () => {
-    expect(parseInline('[**x**](https://a.b/c_(d) "T")')).toEqual([
+    expect(parseInline('[**x**](https://a.b/c_(d) "T")')).toStrictEqual([
       {
         type: "link",
         href: "https://a.b/c_(d)",
@@ -223,23 +223,25 @@ describe("parseInline", () => {
         children: [{ type: "strong", children: [{ type: "text", text: "x" }] }],
       },
     ]);
-    expect(parseInline("![alt *t*](/i.png)")).toEqual([{ type: "image", href: "/i.png", title: "", alt: "alt t" }]);
-    expect(parseInline("<mailto:a@b.c>")).toEqual([
+    expect(parseInline("![alt *t*](/i.png)")).toStrictEqual([
+      { type: "image", href: "/i.png", title: "", alt: "alt t" },
+    ]);
+    expect(parseInline("<mailto:a@b.c>")).toStrictEqual([
       { type: "link", href: "mailto:a@b.c", title: "", children: [{ type: "text", text: "mailto:a@b.c" }] },
     ]);
-    expect(parseInline("<a@b.c>")).toEqual([
+    expect(parseInline("<a@b.c>")).toStrictEqual([
       { type: "link", href: "mailto:a@b.c", title: "", children: [{ type: "text", text: "a@b.c" }] },
     ]);
-    expect(parseInline("see https://x.org/a.")).toEqual([
+    expect(parseInline("see https://x.org/a.")).toStrictEqual([
       { type: "text", text: "see " },
       { type: "link", href: "https://x.org/a", title: "", children: [{ type: "text", text: "https://x.org/a" }] },
       { type: "text", text: "." },
     ]);
-    expect(parseInline("[not a link] (x)")).toEqual([{ type: "text", text: "[not a link] (x)" }]);
+    expect(parseInline("[not a link] (x)")).toStrictEqual([{ type: "text", text: "[not a link] (x)" }]);
   });
 
   test("raw HTML is text", () => {
-    expect(parseInline("<b>x</b>")).toEqual([{ type: "text", text: "<b>x</b>" }]);
+    expect(parseInline("<b>x</b>")).toStrictEqual([{ type: "text", text: "<b>x</b>" }]);
   });
 });
 
@@ -288,15 +290,16 @@ describe("MarkdownStream", () => {
       for (const _ of r.done) {
         doneAt.push(k);
       }
-      tail = r.tail;
+      ({ tail } = r);
     });
     return { blocks: [...blocks, ...tail], doneAt };
   }
 
   test("any chunking ends in the same blocks as one parse of the whole text", () => {
     const whole = parseMarkdown(DOC);
-    expect(streamed([DOC]).blocks).toEqual(whole);
-    expect(streamed([...DOC]).blocks).toEqual(whole);
+    expect(streamed([DOC]).blocks).toStrictEqual(whole);
+    // eslint-disable-next-line @typescript-eslint/no-misused-spread -- the stream is cut by code point, which is what this checks
+    expect(streamed([...DOC]).blocks).toStrictEqual(whole);
     let seed = 7;
     for (let round = 0; round < 50; round++) {
       const chunks: string[] = [];
@@ -306,19 +309,22 @@ describe("MarkdownStream", () => {
         chunks.push(DOC.slice(i, i + len));
         i += len;
       }
-      expect(streamed(chunks).blocks).toEqual(whole);
+      expect(streamed(chunks).blocks).toStrictEqual(whole);
     }
   });
 
   test("a block is handed out once a later complete line starts another", () => {
     const s = new MarkdownStream();
     s.push("Para\n");
-    expect(s.take()).toEqual({ done: [], tail: [{ type: "paragraph", children: [{ type: "text", text: "Para" }] }] });
+    expect(s.take()).toStrictEqual({
+      done: [],
+      tail: [{ type: "paragraph", children: [{ type: "text", text: "Para" }] }],
+    });
     // A partial "---" might be a setext underline, so nothing is final yet.
     s.push("--");
-    expect(s.take().done).toEqual([]);
+    expect(s.take().done).toStrictEqual([]);
     s.push("-\n\nNext");
-    expect(s.take()).toEqual({
+    expect(s.take()).toStrictEqual({
       done: [],
       tail: [
         { type: "heading", level: 2, children: [{ type: "text", text: "Para" }] },
@@ -327,8 +333,8 @@ describe("MarkdownStream", () => {
     });
     s.push("\n");
     const r = s.take();
-    expect(r.done).toEqual([{ type: "heading", level: 2, children: [{ type: "text", text: "Para" }] }]);
-    expect(r.tail).toEqual([{ type: "paragraph", children: [{ type: "text", text: "Next" }] }]);
+    expect(r.done).toStrictEqual([{ type: "heading", level: 2, children: [{ type: "text", text: "Para" }] }]);
+    expect(r.tail).toStrictEqual([{ type: "paragraph", children: [{ type: "text", text: "Next" }] }]);
   });
 
   test("takeParsed numbers each block by its first line in the whole text, for any chunking", () => {
@@ -341,9 +347,9 @@ describe("MarkdownStream", () => {
         s.push(DOC.slice(i, i + size));
         const r = s.takeParsed();
         got.push(...r.done);
-        tail = r.tail;
+        ({ tail } = r);
       }
-      expect([...got, ...tail]).toEqual(whole);
+      expect([...got, ...tail]).toStrictEqual(whole);
     }
   });
 

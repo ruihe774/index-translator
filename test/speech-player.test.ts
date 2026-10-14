@@ -159,7 +159,7 @@ describe("audio that arrives decoded (QOA)", () => {
     expect(player.state).toBe("playing");
     const buffer = FakeAudioContext.last.sources[0]!.buffer as ReturnType<FakeAudioContext["createBuffer"]>;
     expect(buffer).toMatchObject({ channels: 2, length: 2, sampleRate: 22_050 });
-    expect(buffer.data.map((c) => [...c])).toEqual([
+    expect(buffer.data.map((c) => [...c])).toStrictEqual([
       [0.5, 0],
       [-1, 0x7f_ff / 0x80_00],
     ]);
@@ -190,15 +190,15 @@ describe("starting and the state", () => {
     expect(t.player.state).toBe("loading");
     expect(t.ctx().calls).toContain("resume");
     await flush();
-    expect(t.requests.map((r) => r.text)).toEqual(["a1"]);
-    expect(t.requests[0]!.settings).toEqual(SETTINGS);
+    expect(t.requests.map((r) => r.text)).toStrictEqual(["a1"]);
+    expect(t.requests[0]!.settings).toStrictEqual(SETTINGS);
     t.requests[0]!.resolve();
     await flush();
     expect(t.player.state).toBe("playing");
-    expect(t.states).toEqual(["loading", "playing"]);
-    expect(t.segments).toEqual([SEGMENTS[0]]);
+    expect(t.states).toStrictEqual(["loading", "playing"]);
+    expect(t.segments).toStrictEqual([SEGMENTS[0]]);
     // The next piece is fetched while this one plays.
-    expect(t.requests.map((r) => r.text)).toEqual(["a1", "a2"]);
+    expect(t.requests.map((r) => r.text)).toStrictEqual(["a1", "a2"]);
   });
 
   test("an empty list starts nothing", () => {
@@ -206,7 +206,7 @@ describe("starting and the state", () => {
     t.player.start([], SETTINGS);
     expect(t.player.state).toBe("idle");
     expect(t.player.position()).toBeNull();
-    expect(t.requests).toEqual([]);
+    expect(t.requests).toStrictEqual([]);
   });
 
   test("stop clears the segment and goes idle; a second stop is silent", async () => {
@@ -282,10 +282,10 @@ describe("the play state between pieces", () => {
     expect(a1!.startedAt).toBe(0);
     expect(a2!.startedAt).toBeCloseTo(1, 5); // no event needed: 0 + 1 s, no pause
     // It becomes the current piece only once the first has ended.
-    expect(t.segments).toEqual([SEGMENTS[0]]);
+    expect(t.segments).toStrictEqual([SEGMENTS[0]]);
     a1!.end();
     await flush();
-    expect(t.segments).toEqual([SEGMENTS[0], SEGMENTS[1]]);
+    expect(t.segments).toStrictEqual([SEGMENTS[0], SEGMENTS[1]]);
     expect(t.ctx().sources[1]).toBe(a2); // not created again
     expect(t.ctx().sources[2]!.startedAt).toBeCloseTo(2, 5);
   });
@@ -336,9 +336,9 @@ describe("stale work after a cancel", () => {
     expect(first.signal.aborted).toBe(true);
     first.resolve(); // too late: its promise was already rejected by the abort
     await flush();
-    expect(t.ctx().sources).toEqual([]);
+    expect(t.ctx().sources).toStrictEqual([]);
     expect(t.player.state).toBe("idle");
-    expect(t.errors).toEqual([]);
+    expect(t.errors).toStrictEqual([]);
   });
 
   test("the end of a cancelled piece does not start the next one", async () => {
@@ -365,7 +365,7 @@ describe("stale work after a cancel", () => {
     t.requests[1]!.resolve();
     await flush();
     expect(t.ctx().sources).toHaveLength(1);
-    expect(t.segments.filter(Boolean).map((s) => s!.text)).toEqual(["new"]);
+    expect(t.segments.filter(Boolean).map((s) => s!.text)).toStrictEqual(["new"]);
   });
 
   test("a failure of an abandoned request is not reported", async () => {
@@ -374,7 +374,7 @@ describe("stale work after a cancel", () => {
     await flush();
     t.player.stop();
     await flush();
-    expect(t.errors).toEqual([]);
+    expect(t.errors).toStrictEqual([]);
   });
 });
 
@@ -384,11 +384,11 @@ describe("jumping", () => {
     t.player.start(SEGMENTS, SETTINGS);
     await flush();
     // Everything was made ahead while a1 played.
-    expect(t.requests.map((r) => r.text)).toEqual(["a1", "a2", "b1", "c1"]);
+    expect(t.requests.map((r) => r.text)).toStrictEqual(["a1", "a2", "b1", "c1"]);
     const states = t.states.length;
     expect(t.player.jump(1)).toBe(true);
     expect(t.segments.at(-1)).toBe(SEGMENTS[2]);
-    expect(t.player.position()).toEqual({ block: 2, blocks: 3 });
+    expect(t.player.position()).toStrictEqual({ block: 2, blocks: 3 });
     await flush();
     expect(t.player.state).toBe("playing");
     expect(t.states).toHaveLength(states);
@@ -432,8 +432,8 @@ describe("jumping", () => {
     t.player.jump(-1);
     await flush();
     const live = t.requests.filter((r) => !r.signal.aborted).map((r) => r.text);
-    expect(live).toEqual(["a1", "b1"]);
-    expect(t.errors).toEqual([]);
+    expect(live).toStrictEqual(["a1", "b1"]);
+    expect(t.errors).toStrictEqual([]);
   });
 
   test("a jump with nowhere to go returns false and changes nothing", async () => {
@@ -470,7 +470,7 @@ describe("jumping", () => {
     expect(t.requests.every((r) => r.signal.aborted)).toBe(true);
     expect(t.requests).toHaveLength(asked);
     expect(t.player.state).toBe("idle");
-    expect(t.errors).toEqual([]);
+    expect(t.errors).toStrictEqual([]);
   });
 });
 
@@ -481,7 +481,7 @@ describe("blockStart, position and canJump", () => {
     await flush();
     t.ctx().sources[0]!.end(); // now at a2, the second piece of block A
     await flush();
-    expect(t.player.position()).toEqual({ block: 1, blocks: 3 });
+    expect(t.player.position()).toStrictEqual({ block: 1, blocks: 3 });
     expect(t.player.canJump(-1)).toBe(true); // back to a1
     t.player.jump(-1);
     expect(t.segments.at(-1)).toBe(SEGMENTS[0]);
@@ -497,7 +497,7 @@ describe("blockStart, position and canJump", () => {
     expect(t.segments.at(-1)).toBe(SEGMENTS[2]);
     t.player.jump(1);
     expect(t.segments.at(-1)).toBe(SEGMENTS[3]);
-    expect(t.player.position()).toEqual({ block: 3, blocks: 3 });
+    expect(t.player.position()).toStrictEqual({ block: 3, blocks: 3 });
     expect(t.player.canJump(1)).toBe(false);
     expect(t.player.jump(1)).toBe(false);
   });
@@ -530,7 +530,7 @@ describe("update (voice or speed)", () => {
     await sleep(UPDATE_SETTLE_MS);
     const fresh = t.requests.slice(asked).filter((r) => r.text === "a1");
     expect(fresh).toHaveLength(1);
-    expect(fresh[0]!.settings).toEqual({ ...SETTINGS, speed: 1.5 });
+    expect(fresh[0]!.settings).toStrictEqual({ ...SETTINGS, speed: 1.5 });
   });
 
   test("a voice change keeps the current piece", async () => {
@@ -550,7 +550,7 @@ describe("update (voice or speed)", () => {
     const t = setup(true);
     t.player.update({ voice: "v9" });
     await sleep(UPDATE_SETTLE_MS + 50);
-    expect(t.requests).toEqual([]);
+    expect(t.requests).toStrictEqual([]);
     t.player.start(SEGMENTS, { ...SETTINGS, voice: "v1" });
     await flush();
     expect(t.requests[0]!.settings.voice).toBe("v1"); // start brings its own
@@ -604,7 +604,7 @@ describe("pause and resume", () => {
     const t = setup();
     t.player.pause();
     t.player.resume();
-    expect(t.states).toEqual([]);
+    expect(t.states).toStrictEqual([]);
   });
 });
 
@@ -616,7 +616,7 @@ describe("errors", () => {
     const boom = new Error("boom");
     t.requests[0]!.reject(boom);
     await flush();
-    expect(t.errors).toEqual([boom]);
+    expect(t.errors).toStrictEqual([boom]);
     expect(t.player.state).toBe("idle");
     expect(t.segments.at(-1)).toBeNull();
   });
@@ -630,11 +630,11 @@ describe("errors", () => {
     const boom = new Error("second");
     t.requests[1]!.reject(boom);
     await flush();
-    expect(t.errors).toEqual([]); // still playing the first
+    expect(t.errors).toStrictEqual([]); // still playing the first
     expect(t.player.state).toBe("playing");
     t.ctx().sources[0]!.end();
     await flush();
-    expect(t.errors).toEqual([boom]);
+    expect(t.errors).toStrictEqual([boom]);
     expect(t.player.state).toBe("idle");
   });
 
@@ -673,7 +673,7 @@ describe("stop during loading", () => {
     expect(t.requests[0]!.signal.aborted).toBe(true);
     expect(t.player.state).toBe("idle");
     await flush();
-    expect(t.ctx().sources).toEqual([]);
-    expect(t.errors).toEqual([]);
+    expect(t.ctx().sources).toStrictEqual([]);
+    expect(t.errors).toStrictEqual([]);
   });
 });

@@ -224,7 +224,7 @@ export class Model {
     this.vocab = lib.llama_model_get_vocab(model)!;
     this.sampler = lib.llama_sampler_init_greedy()!;
     const template = lib.llama_model_chat_template(model, null);
-    const text = template ? new CString(template).toString() : "";
+    const text = template ? new CString(template) : "";
     if (!text.includes("<|im_start|>")) {
       this.free();
       throw new Error("the model's chat template is not ChatML, which is the only format this engine writes");

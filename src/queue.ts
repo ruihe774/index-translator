@@ -42,7 +42,9 @@ export class SlotQueue {
     }
 
     let settle!: (granted: boolean) => void;
-    const ready = new Promise<boolean>((resolve) => (settle = resolve));
+    const ready = new Promise<boolean>((resolve) => {
+      settle = resolve;
+    });
     const entry: Entry = { settle, onPosition };
 
     if (!this.active) {

@@ -46,7 +46,7 @@ test("Markdown is read from what is rendered, piece by piece, and reading ends b
   await expect(app.page.locator("#pause-source")).toBeHidden();
 
   const { speech } = await mock.state();
-  expect(speech.requests.map((r) => r.text)).toEqual(SPOKEN);
+  expect(speech.requests.map((r) => r.text)).toStrictEqual(SPOKEN);
   expect(speech.requests.every((r) => r.lang === "en" && r.voice === "voice_01" && r.speed === 1)).toBe(true);
 });
 
@@ -73,7 +73,7 @@ test("the translation is read in the target language and the block being read is
   await expect(app.output.locator(".speaking")).toHaveCount(0);
 
   const { speech } = await mock.state();
-  expect(speech.requests.map((r) => [r.lang, r.text])).toEqual([
+  expect(speech.requests.map((r) => [r.lang, r.text])).toStrictEqual([
     ["zh", "发布说明。"],
     ["zh", "我们修复了三个错误。"],
     ["zh", "安装。"],
@@ -164,7 +164,7 @@ test("Previous and Next jump between blocks, say where, and hand focus back when
   await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   await expect(next).toBeHidden();
   // Every piece was made once: no jump asked for audio again or threw away a request.
-  expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(SPOKEN);
+  expect((await mock.state()).speech.requests.map((r) => r.text)).toStrictEqual(SPOKEN);
 });
 
 test("Next while paused resumes the reading at the next block", async ({ app, mock }) => {
@@ -210,7 +210,7 @@ test("voice and speed apply from the piece being read, and are remembered", asyn
   const changed = requests.filter((r) => r.voice === "voice_02" && r.speed === 1.5).map((r) => r.text);
   // Nothing is skipped: the piece that was current at the change is asked for again.
   expect(changed.at(-1)).toBe(SPOKEN.at(-1));
-  expect(SPOKEN.slice(-changed.length)).toEqual(changed);
+  expect(SPOKEN.slice(-changed.length)).toStrictEqual(changed);
 
   await app.page.reload();
   await app.page.getByText("Reading aloud", { exact: true }).click();
@@ -259,7 +259,7 @@ test("without the speech engine Listen says why and the speech settings stay hid
   await listen.click({ force: true });
   await expect(listen).toHaveAttribute("data-state", "idle");
   await expect(app.page.locator("#speech-settings")).toBeHidden();
-  expect((await mock.state()).speech.requests).toEqual([]);
+  expect((await mock.state()).speech.requests).toStrictEqual([]);
 });
 
 test("the rendered source is read from Preview, and the shade follows in it", async ({ app, mock }) => {
@@ -275,7 +275,7 @@ test("the rendered source is read from Preview, and the shade follows in it", as
   await expect(view.locator(".speaking")).toHaveText("Release notes");
   await expect(view.locator(".speaking")).toHaveAttribute("aria-current", "true");
   await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
-  expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(SPOKEN);
+  expect((await mock.state()).speech.requests.map((r) => r.text)).toStrictEqual(SPOKEN);
 });
 
 test("switching Raw and Preview while reading keeps the reading and the shade", async ({ app, mock }) => {
@@ -298,7 +298,7 @@ test("switching Raw and Preview while reading keeps the reading and the shade", 
   await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   await expect(app.page.locator("#source-view .speaking")).toHaveCount(0);
   // The same reading all the way: nothing was asked twice or skipped.
-  expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(SPOKEN);
+  expect((await mock.state()).speech.requests.map((r) => r.text)).toStrictEqual(SPOKEN);
 });
 
 test("a 429 in the middle of a reading is explained and the buttons return to Listen", async ({ app, mock }) => {
@@ -408,7 +408,7 @@ test("a QOA stream that cannot be decoded is asked for again as WAV, and QOA is 
   await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   // The broken answer never reached the engine, so every piece was made once; the page asked for
   // the first one again, and nothing after it named QOA.
-  expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(SPOKEN);
+  expect((await mock.state()).speech.requests.map((r) => r.text)).toStrictEqual(SPOKEN);
   expect(seen.length).toBe(SPOKEN.length + 1);
   expect(seen[0]).toMatchObject({ type: "audio/qoa" });
   expect(seen.slice(1).every((s) => s.type === "audio/wav" && !s.accept?.includes("qoa"))).toBe(true);
@@ -429,7 +429,7 @@ test("with no voice Listen says so, and a recorded voice is not needed to see th
   await app.page.getByText("Reading aloud", { exact: true }).click();
   await expect(app.page.getByLabel("Voice for reading aloud").locator("option")).toHaveCount(0);
   await expect(app.page.locator("#voice-record")).toBeVisible();
-  expect((await mock.state()).speech.requests).toEqual([]);
+  expect((await mock.state()).speech.requests).toStrictEqual([]);
 });
 
 test("a saved voice that the server no longer has gives way to the first one", async ({ app, mock }) => {
@@ -443,7 +443,7 @@ test("a saved voice that the server no longer has gives way to the first one", a
   await expect(listen).toHaveAttribute("aria-disabled", "false");
   await listen.click();
   await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
-  expect((await mock.state()).speech.requests.map((r) => r.voice)).toEqual(["voice_01"]);
+  expect((await mock.state()).speech.requests.map((r) => r.voice)).toStrictEqual(["voice_01"]);
 });
 
 test.describe("reading aloud that becomes available later", () => {
@@ -466,7 +466,7 @@ test.describe("reading aloud that becomes available later", () => {
     await expect(app.page.locator("#speech-settings")).toBeVisible();
     await listen.click();
     await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
-    expect((await mock.state()).speech.requests.map((r) => r.text)).toEqual(["Hello there."]);
+    expect((await mock.state()).speech.requests.map((r) => r.text)).toStrictEqual(["Hello there."]);
   });
 
   test("regaining focus looks again once, without polling", async ({ app, mock }) => {
@@ -591,7 +591,7 @@ test.describe("recording a voice sample", () => {
       const live = streams.flatMap((s) => s.getTracks()).filter((t) => t.readyState === "live");
       return { streams: streams.length, live: live.length };
     });
-    expect(result).toEqual({ streams: 1, live: 0 });
+    expect(result).toStrictEqual({ streams: 1, live: 0 });
   });
 
   test("a denied microphone is explained and Record works again", async ({ app }) => {

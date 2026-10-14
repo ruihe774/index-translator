@@ -140,7 +140,7 @@ function optionalString(body: Record<string, unknown>, field: string, maxLength:
     throw invalid(`${field} must be a string`, field);
   }
   // JSON Schema counts code points; String.length counts UTF-16 units, so only spread when that could matter.
-  if (v.length > maxLength && [...v].length > maxLength) {
+  if (v.length > maxLength && Array.from(v).length > maxLength) {
     throw invalid(`${field} must be at most ${maxLength} characters`, field);
   }
   return v;
@@ -290,10 +290,12 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
   }
 
   const maxOutputTokens = body.max_output_tokens;
-  if (maxOutputTokens !== undefined && maxOutputTokens !== null) {
-    if (!Number.isInteger(maxOutputTokens) || (maxOutputTokens as number) < 1) {
-      throw invalid("max_output_tokens must be a positive integer", "max_output_tokens");
-    }
+  if (
+    maxOutputTokens !== undefined &&
+    maxOutputTokens !== null &&
+    (!Number.isInteger(maxOutputTokens) || (maxOutputTokens as number) < 1)
+  ) {
+    throw invalid("max_output_tokens must be a positive integer", "max_output_tokens");
   }
   if (body.stream !== undefined && typeof body.stream !== "boolean") {
     throw invalid("stream must be a boolean", "stream");
@@ -707,7 +709,7 @@ export async function startApp(
         "content-type": "text/event-stream; charset=utf-8",
         "cache-control": "no-cache, no-transform",
         "x-accel-buffering": "no",
-        ...(job.resumable ? { "x-translation-id": job.id } : {}),
+        ...(job.resumable && { "x-translation-id": job.id }),
       },
     });
   }
@@ -1001,7 +1003,7 @@ export async function startApp(
                 label: m.label,
                 kind: m.kind,
                 image: m.mmproj !== undefined,
-                ...(m.directions ? { directions: m.directions } : {}),
+                ...(m.directions && { directions: m.directions }),
               })),
               image: {
                 formats: IMAGE_FORMATS.map((f) => `image/${f}`),

@@ -51,7 +51,9 @@ function stripWhitespace(html: Response): Response {
     .on("pre, textarea, script, style", {
       element(el) {
         literal++;
-        el.onEndTag(() => void literal--);
+        el.onEndTag(() => {
+          literal--;
+        });
       },
     })
     .onDocument({
@@ -114,7 +116,7 @@ export function createStaticServer(publicDir: string) {
     }
 
     let entry = cache.get(path);
-    if (!entry || entry.mtimeMs !== info.mtimeMs || entry.size !== info.size) {
+    if (entry?.mtimeMs !== info.mtimeMs || entry.size !== info.size) {
       let code: string;
       try {
         code = transpiler.transformSync(await Bun.file(path).text());

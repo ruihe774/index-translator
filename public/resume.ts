@@ -27,7 +27,8 @@ export const TRANSLATION_ID_HEADER = "x-translation-id";
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     if (signal.aborted) {
-      return resolve();
+      resolve();
+      return;
     }
     const timer = setTimeout(done, ms);
     function done() {

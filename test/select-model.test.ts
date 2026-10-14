@@ -28,7 +28,7 @@ describe("countLetters", () => {
 
 describe("selectModel", () => {
   test("the document model's directions match the backend's", () => {
-    expect(CLIENT_DIRECTIONS).toEqual(DOCUMENT_DIRECTIONS);
+    expect(CLIENT_DIRECTIONS).toStrictEqual(DOCUMENT_DIRECTIONS);
   });
 
   test("the threshold itself is still the chat model; one letter more switches", () => {

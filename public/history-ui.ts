@@ -26,6 +26,7 @@ const SNIPPET = 120;
 
 function snippet(text: string): string {
   const flat = text.replaceAll(/\s+/g, " ").trim();
+  // eslint-disable-next-line @typescript-eslint/no-misused-spread -- splitting by code point is the point here
   return flat.length > SNIPPET ? `${[...flat].slice(0, SNIPPET).join("")}…` : flat;
 }
 

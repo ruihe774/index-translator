@@ -38,11 +38,11 @@ beforeAll(async () => {
   await waitReady(app);
 });
 
+afterEach(resetMockSpeech);
+
 afterAll(async () => {
   await app.stop();
 });
-
-afterEach(resetMockSpeech);
 
 const speak = (body: unknown, init: RequestInit = {}) => postTo(base, "/api/v1/speech", body, init);
 
@@ -51,13 +51,13 @@ describe("POST /speech", () => {
     const res = await speak({ text: "Hello there.", lang: "en" });
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toBe("audio/wav");
-    expect(new Uint8Array(await res.arrayBuffer())).toEqual(new Uint8Array(silentWav()));
-    expect(mockSpeech.requests).toEqual([{ text: "Hello there.", lang: "en", voice: "voice_01", speed: 1 }]);
+    expect(new Uint8Array(await res.arrayBuffer())).toStrictEqual(new Uint8Array(silentWav()));
+    expect(mockSpeech.requests).toStrictEqual([{ text: "Hello there.", lang: "en", voice: "voice_01", speed: 1 }]);
   });
 
   test("passes the chosen voice and speed on", async () => {
     await speak({ text: "你好。", lang: "ZH", voice: "voice_02", speed: 1.5 });
-    expect(mockSpeech.requests).toEqual([{ text: "你好。", lang: "zh", voice: "voice_02", speed: 1.5 }]);
+    expect(mockSpeech.requests).toStrictEqual([{ text: "你好。", lang: "zh", voice: "voice_02", speed: 1.5 }]);
   });
 
   test.each([
@@ -75,7 +75,7 @@ describe("POST /speech", () => {
     const { error } = (await res.json()) as any;
     expect(error.code).toBe("invalid_request");
     expect(error.details.field).toBe(field);
-    expect(mockSpeech.requests).toEqual([]);
+    expect(mockSpeech.requests).toStrictEqual([]);
   });
 
   test("a text of exactly 1,000 code points is accepted", async () => {
@@ -86,7 +86,7 @@ describe("POST /speech", () => {
     mockSpeech.state = "unavailable";
     const res = await speak({ text: "Hello", lang: "en" });
     expect(res.status).toBe(503);
-    expect(((await res.json()) as any).error).toEqual({
+    expect(((await res.json()) as any).error).toStrictEqual({
       code: "speech_unavailable",
       message: "the speech engine is not installed",
     });
@@ -108,7 +108,7 @@ describe("POST /speech", () => {
     mockSpeech.failWith = "out of memory";
     const res = await speak({ text: "Hello", lang: "en" });
     expect(res.status).toBe(502);
-    expect(((await res.json()) as any).error).toEqual({ code: "speech_error", message: "out of memory" });
+    expect(((await res.json()) as any).error).toStrictEqual({ code: "speech_error", message: "out of memory" });
   });
 
   test("one utterance at a time; beyond the queue it is 429", async () => {
@@ -119,8 +119,8 @@ describe("POST /speech", () => {
     const third = await speak({ text: "three", lang: "en" });
     expect(third.status).toBe(429);
     expect(((await third.json()) as any).error.code).toBe("queue_full");
-    expect((await Promise.all([first, second])).map((r) => r.status)).toEqual([200, 200]);
-    expect(mockSpeech.requests.map((r) => r.text)).toEqual(["one", "two"]);
+    expect((await Promise.all([first, second])).map((r) => r.status)).toStrictEqual([200, 200]);
+    expect(mockSpeech.requests.map((r) => r.text)).toStrictEqual(["one", "two"]);
   });
 
   test("a client that goes away gives up its request", async () => {
@@ -152,7 +152,7 @@ describe("POST /speech", () => {
     expect(refused.status).toBe(429);
     expect((await waiting).status).toBe(200);
     expect(mockSpeech.running).toBe(0);
-    expect(mockSpeech.requests.map((r) => r.text)).toEqual(["abandoned", "waits"]);
+    expect(mockSpeech.requests.map((r) => r.text)).toStrictEqual(["abandoned", "waits"]);
   });
 
   test("a request aborted while waiting in line is never sent to the engine", async () => {
@@ -165,7 +165,7 @@ describe("POST /speech", () => {
     await queued;
     expect((await first).status).toBe(200);
     expect((await speak({ text: "after", lang: "en" })).status).toBe(200);
-    expect(mockSpeech.requests.map((r) => r.text)).toEqual(["first", "after"]);
+    expect(mockSpeech.requests.map((r) => r.text)).toStrictEqual(["first", "after"]);
   });
 
   test("does not hold the translation queue", async () => {
@@ -187,7 +187,7 @@ describe("POST /speech", () => {
 describe("GET /voices and health", () => {
   test("lists voices, languages and limits", async () => {
     const body = await (await fetch(base + "/api/v1/voices")).json();
-    expect(body).toEqual({
+    expect(body).toStrictEqual({
       status: "stopped",
       languages: ["zh", "en", "ja", "es", "ar"],
       speed: { min: 0.5, max: 2 },
@@ -202,7 +202,7 @@ describe("GET /voices and health", () => {
   test("health carries the speech engine's state", async () => {
     await speak({ text: "Hello", lang: "en" });
     const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
-    expect(health.speech).toEqual({ status: "ready" });
+    expect(health.speech).toStrictEqual({ status: "ready" });
   });
 
   test("no voices are listed while speech is unavailable", async () => {
@@ -210,7 +210,7 @@ describe("GET /voices and health", () => {
     const body = (await (await fetch(base + "/api/v1/voices")).json()) as any;
     expect(body.status).toBe("unavailable");
     expect(body.error).toBe("the speech engine is not installed");
-    expect(body.voices).toEqual([]);
+    expect(body.voices).toStrictEqual([]);
   });
 });
 
@@ -234,11 +234,11 @@ describe("the native speech engine without audio.cpp", () => {
       for (const name of ["narrator_two.wav", "alice.wav", "notes.txt", "clip.mp3"]) {
         await Bun.write(join(dir, name), "");
       }
-      expect(await nativeSpeech(config({ voicesDir: dir })).voices()).toEqual([
+      await expect(nativeSpeech(config({ voicesDir: dir })).voices()).resolves.toStrictEqual([
         { id: "alice", name: "Alice" },
         { id: "narrator_two", name: "Narrator two" },
       ]);
-      expect(await nativeSpeech(config({ voicesDir: join(dir, "missing") })).voices()).toEqual([]);
+      await expect(nativeSpeech(config({ voicesDir: join(dir, "missing") })).voices()).resolves.toStrictEqual([]);
     } finally {
       await rm(dir, { recursive: true });
     }
@@ -283,13 +283,13 @@ describe("NativeSpeech with a fake worker", () => {
         (e) => e,
       );
       await tick();
-      expect(kinds(worker)).toEqual(["load"]);
+      expect(kinds(worker)).toStrictEqual(["load"]);
       gone.abort();
-      expect(await rejected).toBe(gone.signal.reason);
+      await expect(rejected).resolves.toBe(gone.signal.reason);
       expect(released).toBe(1);
       worker.reply(worker.posted[0].req, { type: "ok" });
       await tick();
-      expect(kinds(worker)).toEqual(["load"]);
+      expect(kinds(worker)).toStrictEqual(["load"]);
       expect(released).toBe(1);
     } finally {
       await rm(dir, { recursive: true });
@@ -309,14 +309,14 @@ describe("NativeSpeech with a fake worker", () => {
       await tick();
       worker.reply(worker.posted[0].req, { type: "ok" });
       await tick();
-      expect(kinds(worker)).toEqual(["load", "synthesize"]);
+      expect(kinds(worker)).toStrictEqual(["load", "synthesize"]);
       // The flag the worker thread and the library read while no message can reach them.
       expect(worker.posted[1].abort).toBeInstanceOf(SharedArrayBuffer);
       const flag = new Int32Array(worker.posted[1].abort);
       expect(flag[0]).toBe(0);
       gone.abort();
       expect(flag[0]).toBe(1);
-      expect(await rejected).toBe(gone.signal.reason);
+      await expect(rejected).resolves.toBe(gone.signal.reason);
       expect(released).toBe(0);
       worker.reply(worker.posted[1].req, { type: "aborted" });
       await tick();
@@ -342,7 +342,7 @@ describe("NativeSpeech with a fake worker", () => {
       worker.reply(worker.posted[0].req, { type: "ok" });
       await tick();
       gone.abort();
-      expect(await rejected).toBe(gone.signal.reason);
+      await expect(rejected).resolves.toBe(gone.signal.reason);
       worker.reply(worker.posted[1].req, { type: "audio", wav: new ArrayBuffer(4) });
       await tick();
       expect(released).toBe(1);
@@ -366,7 +366,7 @@ describe("NativeSpeech with a fake worker", () => {
       expect(new Int32Array(worker.posted[2].abort)[0]).toBe(0);
       worker.reply(worker.posted[1].req, { type: "aborted" });
       worker.reply(worker.posted[2].req, { type: "audio", wav: new ArrayBuffer(4) });
-      expect(await kept).toBeInstanceOf(ArrayBuffer);
+      await expect(kept).resolves.toBeInstanceOf(ArrayBuffer);
     } finally {
       await rm(dir, { recursive: true });
     }
@@ -452,11 +452,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       expect(workers).toHaveLength(0);
       const result = say(speech);
       expect(speech.state).toBe("starting");
-      expect(await result).toBeInstanceOf(ArrayBuffer);
+      await expect(result).resolves.toBeInstanceOf(ArrayBuffer);
       expect(speech.state).toBe("ready");
       expect(speech.error).toBeUndefined();
       await say(speech);
-      expect(kinds(workers[0])).toEqual(["load", "synthesize", "synthesize"]);
+      expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "synthesize"]);
       expect(workers).toHaveLength(1);
     } finally {
       log.mockRestore();
@@ -478,7 +478,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       await say(speech);
       expect(speech.state).toBe("ready");
       expect(speech.error).toBeUndefined();
-      expect(kinds(workers[0])).toEqual(["load", "load", "synthesize"]);
+      expect(kinds(workers[0])).toStrictEqual(["load", "load", "synthesize"]);
     } finally {
       log.mockRestore();
       await cleanup();
@@ -492,11 +492,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       await say(speech);
       expect(speech.state).toBe("ready");
       await Bun.sleep(120);
-      expect(kinds(workers[0])).toEqual(["load", "synthesize", "unload"]);
+      expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "unload"]);
       expect(speech.state).toBe("stopped");
       await say(speech);
       expect(speech.state).toBe("ready");
-      expect(kinds(workers[0])).toEqual(["load", "synthesize", "unload", "load", "synthesize"]);
+      expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "unload", "load", "synthesize"]);
       expect(workers).toHaveLength(1);
     } finally {
       log.mockRestore();
@@ -513,7 +513,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       workers[0].manual = true;
       const slow = say(speech);
       await Bun.sleep(100);
-      expect(kinds(workers[0])).toEqual(["load", "synthesize", "synthesize"]);
+      expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "synthesize"]);
       workers[0].answer(workers[0].posted[2]);
       await slow;
       workers[0].manual = false;
@@ -549,7 +549,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
 
       await say(speech);
       expect(workers).toHaveLength(2);
-      expect(kinds(workers[1])).toEqual(["load", "synthesize"]);
+      expect(kinds(workers[1])).toStrictEqual(["load", "synthesize"]);
       expect(speech.state).toBe("ready");
       // The dead worker's late close does not take the new one down.
       workers[0].listeners.close();
@@ -591,7 +591,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       expect(kinds(workers[0]).at(-1)).toBe("unload");
       expect(workers[0].terminated).toBe(true);
       expect(existsSync(uploadDir)).toBe(false);
-      expect(await speech.voices()).toEqual([]);
+      await expect(speech.voices()).resolves.toStrictEqual([]);
       expect(speech.state).toBe("stopped");
     } finally {
       log.mockRestore();
@@ -606,7 +606,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         await speech.addVoice(`v${i}`, wav());
       }
       await expect(speech.addVoice("one more", wav())).rejects.toThrow("too many uploaded voices");
-      expect(await speech.voices()).toHaveLength(MAX_UPLOADED_VOICES);
+      await expect(speech.voices()).resolves.toHaveLength(MAX_UPLOADED_VOICES);
       await speech.stop();
       await speech.addVoice("again", wav());
     } finally {
@@ -621,7 +621,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       await expect(speech.addVoice("x", silentWav(0.5, 16_000))).rejects.toThrow("too short");
       await expect(speech.addVoice("x", silentWav(1.5, 4000))).rejects.toThrow("sample rate");
       await expect(speech.addVoice("x", new ArrayBuffer(100))).rejects.toThrow(SpeechError);
-      expect(await speech.voices()).toEqual([]);
+      await expect(speech.voices()).resolves.toStrictEqual([]);
     } finally {
       await cleanup();
     }
@@ -636,7 +636,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         const kept = await Bun.file(
           join(tmpdir(), `index-translator-voices-${process.pid}`, `${voice.id}.wav`),
         ).bytes();
-        expect(kept).toEqual(new Uint8Array(wav()));
+        expect(kept).toStrictEqual(new Uint8Array(wav()));
         expect(dir).toBeTruthy();
       } finally {
         await speech.stop();
@@ -660,16 +660,16 @@ describe("NativeSpeech state machine with a scripted worker", () => {
           backend: "cpu",
         });
         // The recording as uploaded goes to the worker, which does the rest on the speech thread.
-        expect(new Uint8Array(separation.wav)).toEqual(new Uint8Array(wav()));
+        expect(new Uint8Array(separation.wav)).toStrictEqual(new Uint8Array(wav()));
         expect(speech.state).toBe("stopped");
         const kept = await Bun.file(
           join(tmpdir(), `index-translator-voices-${process.pid}`, `${voice.id}.wav`),
         ).bytes();
-        expect(kept).toEqual(new Uint8Array(separated()));
+        expect(kept).toStrictEqual(new Uint8Array(separated()));
 
         await say(speech);
         expect(speech.state).toBe("ready");
-        expect(kinds(workers[0])).toEqual(["load", "synthesize", "separate", "load", "synthesize"]);
+        expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "separate", "load", "synthesize"]);
       } finally {
         log.mockRestore();
         await speech.stop();
@@ -688,16 +688,16 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         const waiting = say(speech);
         await Bun.sleep(20);
         // Nothing but the separation is with the worker: the utterance does not find the model gone.
-        expect(kinds(workers[0])).toEqual(["load", "synthesize", "separate"]);
+        expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "separate"]);
 
         workers[0].answer(workers[0].posted[2]);
         await upload;
         await Bun.sleep(5);
-        expect(kinds(workers[0])).toEqual(["load", "synthesize", "separate", "load"]);
+        expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "separate", "load"]);
         workers[0].manual = false;
         workers[0].answer(workers[0].posted[3]);
-        expect(await waiting).toBeInstanceOf(ArrayBuffer);
-        expect(kinds(workers[0])).toEqual(["load", "synthesize", "separate", "load", "synthesize"]);
+        await expect(waiting).resolves.toBeInstanceOf(ArrayBuffer);
+        expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "separate", "load", "synthesize"]);
       } finally {
         log.mockRestore();
         await speech.stop();
@@ -715,7 +715,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         await Bun.sleep(5);
         const upload = speech.addVoice("Mine", wav());
         await Bun.sleep(5);
-        expect(kinds(workers[0])).toEqual(["load", "synthesize", "synthesize", "separate"]);
+        expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "synthesize", "separate"]);
         workers[0].answer(workers[0].posted[2]);
         await speaking;
         workers[0].answer(workers[0].posted[3]);
@@ -738,14 +738,14 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         const first = speech.addVoice("One", wav());
         const second = speech.addVoice("Two", wav());
         await Bun.sleep(10);
-        expect(kinds(workers[0])).toEqual(["load"]);
+        expect(kinds(workers[0])).toStrictEqual(["load"]);
         // The utterance was first, but a separation was asked for before its model finished loading,
         // so the model goes again and the utterance is made after both separations.
         holdLoads = false;
         workers[0].answer(workers[0].posted[0]);
         await Promise.all([first, second]);
         await loading;
-        expect(kinds(workers[0])).toEqual(["load", "separate", "separate", "load", "synthesize"]);
+        expect(kinds(workers[0])).toStrictEqual(["load", "separate", "separate", "load", "synthesize"]);
       } finally {
         holdLoads = false;
         log.mockRestore();
@@ -767,14 +767,14 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         expect(error).toBeInstanceOf(SeparationError);
         expect(error).toBeInstanceOf(SpeechError);
         expect(error.message).toBe("separating the voice failed: out of memory");
-        expect(await speech.voices()).toEqual([]);
+        await expect(speech.voices()).resolves.toStrictEqual([]);
 
         await say(speech);
         expect(speech.state).toBe("ready");
         // The next upload separates again, and a later separation does not wait for the failed one.
         workers[0].failSeparation = undefined;
         await speech.addVoice("Mine", wav());
-        expect(await speech.voices()).toHaveLength(1);
+        await expect(speech.voices()).resolves.toHaveLength(1);
       } finally {
         log.mockRestore();
         await speech.stop();
@@ -815,7 +815,7 @@ describe("POST /voices", () => {
     mockSpeech.separationFailWith = "separating the voice failed: out of memory";
     const res = await upload(sample());
     expect(res.status).toBe(502);
-    expect(await errorOf(res)).toEqual({
+    await expect(errorOf(res)).resolves.toStrictEqual({
       code: "speech_error",
       message: "separating the voice failed: out of memory",
     });
@@ -862,11 +862,11 @@ describe("POST /voices", () => {
   test("the name is trimmed, whitespace is collapsed, and it is cut at 60 characters", async () => {
     const named = async (name: string | null) =>
       ((await (await upload(sample(), "audio/wav", name)).json()) as any).name;
-    expect(await named("  My \n  new\t voice  ")).toBe("My new voice");
-    expect(await named("a".repeat(80))).toBe("a".repeat(60));
-    expect(await named("   ")).toBe("Uploaded voice");
-    expect(await named("")).toBe("Uploaded voice");
-    expect(await named(null)).toBe("Uploaded voice");
+    await expect(named("  My \n  new\t voice  ")).resolves.toBe("My new voice");
+    await expect(named("a".repeat(80))).resolves.toBe("a".repeat(60));
+    await expect(named("   ")).resolves.toBe("Uploaded voice");
+    await expect(named("")).resolves.toBe("Uploaded voice");
+    await expect(named(null)).resolves.toBe("Uploaded voice");
   });
 
   test.each([
@@ -900,7 +900,7 @@ describe("POST /speech speed range", () => {
     const res = await speak({ text: "Hi", lang: "en", speed });
     expect(res.status).toBe(400);
     expect(((await res.json()) as any).error.details.field).toBe("speed");
-    expect(mockSpeech.requests).toEqual([]);
+    expect(mockSpeech.requests).toStrictEqual([]);
   });
 });
 

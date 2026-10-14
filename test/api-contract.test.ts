@@ -89,7 +89,8 @@ function problems(schemaNode: any, value: unknown, at = "$", out: string[] = [])
     out.push(`${at}: ${value} is below the minimum ${schema.minimum}`);
   }
   if (typeof value === "string") {
-    const { length } = [...value]; // JSON Schema counts code points
+    // eslint-disable-next-line @typescript-eslint/no-misused-spread -- JSON Schema counts code points
+    const { length } = [...value];
     if (typeof schema.minLength === "number" && length < schema.minLength) {
       out.push(`${at}: shorter than ${schema.minLength}`);
     }
@@ -151,19 +152,19 @@ beforeAll(async () => {
   await waitReady(app);
 });
 
-afterAll(async () => {
-  await app.stop();
-});
-
 afterEach(() => {
   resetMock();
+});
+
+afterAll(async () => {
+  await app.stop();
 });
 
 const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
 const plain = { text: "Hi", target_lang: "zh" };
 
 /** Starts a second app whose engine is still loading, then runs `fn` against it. */
-async function withLoadingApp(fn: (origin: string) => Promise<void>): Promise<void> {
+async function withLoadingApp<T>(fn: (origin: string) => Promise<T>): Promise<T> {
   mock.ready = false;
   const loading = await startApp(config(), launcher);
   try {
@@ -171,7 +172,7 @@ async function withLoadingApp(fn: (origin: string) => Promise<void>): Promise<vo
       await Bun.sleep(10);
     }
     expect(loading.engine.state).toBe("loading");
-    await fn(loading.server.url.origin);
+    return await fn(loading.server.url.origin);
   } finally {
     mock.ready = true;
     await waitReady(loading);
@@ -181,8 +182,8 @@ async function withLoadingApp(fn: (origin: string) => Promise<void>): Promise<vo
 
 describe("validator", () => {
   test("accepts a conforming body, including null where the type allows it", () => {
-    expect(check("ModelList", { default: CHAT, loaded: null, models: [] })).toEqual([]);
-    expect(check("ModelList", { default: CHAT, loaded: CHAT, models: [] })).toEqual([]);
+    expect(check("ModelList", { default: CHAT, loaded: null, models: [] })).toStrictEqual([]);
+    expect(check("ModelList", { default: CHAT, loaded: CHAT, models: [] })).toStrictEqual([]);
   });
 
   test("rejects a body that breaks the schema, so passing tests mean something", () => {
@@ -192,7 +193,7 @@ describe("validator", () => {
     // The spec sets additionalProperties: false nowhere, so the rule is exercised with an inline schema.
     const closed = { type: "object", additionalProperties: false, properties: { a: { type: "string" } } };
     expect(problems(closed, { a: "x", b: 1 }).join("\n")).toContain('unexpected property "b"');
-    expect(problems(closed, { a: "x" })).toEqual([]);
+    expect(problems(closed, { a: "x" })).toStrictEqual([]);
   });
 
   test("rejects wrong types, and accepts null only where the type list includes it", () => {
@@ -226,7 +227,7 @@ describe("GET responses", () => {
     const res = await fetch(base + "/api/v1/health");
     expect(res.status).toBe(200);
     const body: any = await res.json();
-    expect(check("Health", body)).toEqual([]);
+    expect(check("Health", body)).toStrictEqual([]);
     expect(body.status).toBe("ready");
   });
 
@@ -235,7 +236,7 @@ describe("GET responses", () => {
       const res = await fetch(origin + "/api/v1/health");
       expect(res.status).toBe(503);
       const body: any = await res.json();
-      expect(check("Health", body)).toEqual([]);
+      expect(check("Health", body)).toStrictEqual([]);
       // Actual behaviour: `model` already names the model being loaded (the engine sets it before the
       // launch), although the spec says null when none is loaded. Documented, not failed; see the report.
       expect(body).toMatchObject({ status: "loading", model: CHAT });
@@ -252,7 +253,7 @@ describe("GET responses", () => {
       const res = await fetch(broken.server.url.origin + "/api/v1/health");
       expect(res.status).toBe(503);
       const body: any = await res.json();
-      expect(check("Health", body)).toEqual([]);
+      expect(check("Health", body)).toStrictEqual([]);
       expect(body).toMatchObject({ status: "error", model: null });
       expect(body.error).toContain("model file is corrupt");
     } finally {
@@ -263,38 +264,38 @@ describe("GET responses", () => {
 
   test("GET /models matches ModelList, with one ModelInfo per model", async () => {
     const body: any = await (await fetch(base + "/api/v1/models")).json();
-    expect(check("ModelList", body)).toEqual([]);
-    expect(body.models.map((m: any) => m.id)).toEqual(MODELS.map((m) => m.id));
+    expect(check("ModelList", body)).toStrictEqual([]);
+    expect(body.models.map((m: any) => m.id)).toStrictEqual(MODELS.map((m) => m.id));
     for (const m of MODELS) {
-      expect(body.models.find((x: any) => x.id === m.id).directions).toEqual(m.directions);
+      expect(body.models.find((x: any) => x.id === m.id).directions).toStrictEqual(m.directions);
     }
   });
 
   test("GET /voices matches VoiceList; POST /speech without an engine is a 503 that matches Error", async () => {
     const voices = await (await fetch(base + "/api/v1/voices")).json();
-    expect(check("VoiceList", voices)).toEqual([]);
+    expect(check("VoiceList", voices)).toStrictEqual([]);
     const res = await post("/api/v1/speech", { text: "Hello", lang: "en" });
     expect(res.status).toBe(503);
-    expect(check("Error", await res.json())).toEqual([]);
+    expect(check("Error", await res.json())).toStrictEqual([]);
   });
 
   test("the speech languages and limits in the spec are the server's", () => {
     const request = spec.components.schemas.SpeechRequest.properties;
-    expect(request.lang.enum).toEqual(SPEECH_LANGUAGES);
+    expect(request.lang.enum).toStrictEqual(SPEECH_LANGUAGES);
     expect(request.text.maxLength).toBe(MAX_SPEECH_CHARS);
-    expect([request.speed.minimum, request.speed.maximum]).toEqual([MIN_SPEED, MAX_SPEED]);
+    expect([request.speed.minimum, request.speed.maximum]).toStrictEqual([MIN_SPEED, MAX_SPEED]);
   });
 
   test("GET /languages matches the inline response schema of the spec", async () => {
     const body = await (await fetch(base + "/api/v1/languages")).json();
-    expect(problems(documented("/languages", "get", "200"), body)).toEqual([]);
+    expect(problems(documented("/languages", "get", "200"), body)).toStrictEqual([]);
   });
 
   test("GET /openapi.yaml is served as YAML", async () => {
     const res = await fetch(base + "/api/v1/openapi.yaml");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toStartWith("application/yaml");
-    expect(Bun.YAML.parse(await res.text())).toEqual(spec);
+    expect(Bun.YAML.parse(await res.text())).toStrictEqual(spec);
   });
 });
 
@@ -303,7 +304,7 @@ describe("POST success responses", () => {
     const res = await post("/api/v1/translate", { text: "你好", target_lang: "en" });
     expect(res.status).toBe(200);
     const body: any = await res.json();
-    expect(check("TranslateResponse", body)).toEqual([]);
+    expect(check("TranslateResponse", body)).toStrictEqual([]);
     expect(body.finish_reason).toBe("stop");
   });
 
@@ -311,20 +312,20 @@ describe("POST success responses", () => {
     const res = await post("/api/v1/tokenize", plain);
     expect(res.status).toBe(200);
     const body: any = await res.json();
-    expect(check("TokenizeResponse", body)).toEqual([]);
+    expect(check("TokenizeResponse", body)).toStrictEqual([]);
     expect(body.fits).toBe(true);
   });
 
   test("the SSE stream's events match their documented schemas, in order", async () => {
     const events = await readSse(await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true }));
-    expect(events.map((e) => e.event)).toEqual(["start", "delta", "delta", "delta", "done"]);
+    expect(events.map((e) => e.event)).toStrictEqual(["start", "delta", "delta", "delta", "done"]);
     const schemaFor: Record<string, string> = {
       start: "StartEvent",
       delta: "DeltaEvent",
       done: "DoneEvent",
     };
     for (const event of events) {
-      expect({ event: event.event, problems: check(schemaFor[event.event]!, event.data) }).toEqual({
+      expect({ event: event.event, problems: check(schemaFor[event.event]!, event.data) }).toStrictEqual({
         event: event.event,
         problems: [],
       });
@@ -337,8 +338,8 @@ describe("POST success responses", () => {
       const first = post("/api/v1/translate", { text: "one", target_lang: "en" });
       await Bun.sleep(20);
       const events = await readSse(await post("/api/v1/translate", { text: "two", target_lang: "en", stream: true }));
-      expect(events.map((e) => e.event)).toEqual(["queued", "start", "delta", "delta", "delta", "done"]);
-      expect(check("QueuedEvent", events[0]!.data)).toEqual([]);
+      expect(events.map((e) => e.event)).toStrictEqual(["queued", "start", "delta", "delta", "delta", "done"]);
+      expect(check("QueuedEvent", events[0]!.data)).toStrictEqual([]);
       expect(events[0]!.data.position).toBe(1);
       await (await first).text();
     } finally {
@@ -350,7 +351,7 @@ describe("POST success responses", () => {
     mock.failWith = "device lost";
     const events = await readSse(await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true }));
     expect(events.at(-1)!.event).toBe("error");
-    expect(check("ErrorEvent", events.at(-1)!.data)).toEqual([]);
+    expect(check("ErrorEvent", events.at(-1)!.data)).toStrictEqual([]);
     expect(events.at(-1)!.data.code).toBe("engine_error");
   });
 
@@ -358,8 +359,8 @@ describe("POST success responses", () => {
     const events = await readSse(
       await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh", stream: true }),
     );
-    expect(events.map((e) => e.event)).toEqual(["error"]);
-    expect(check("ErrorEvent", events[0]!.data)).toEqual([]);
+    expect(events.map((e) => e.event)).toStrictEqual(["error"]);
+    expect(check("ErrorEvent", events[0]!.data)).toStrictEqual([]);
     expect(events[0]!.data.code).toBe("input_too_long");
   });
 
@@ -372,8 +373,8 @@ describe("POST success responses", () => {
       mock[knob] = "no";
       const events = await readSse(await post("/api/v1/translate", body));
       mock[knob] = undefined;
-      expect(events.map((e) => e.event)).toEqual(["error"]);
-      expect(check("ErrorEvent", events[0]!.data)).toEqual([]);
+      expect(events.map((e) => e.event)).toStrictEqual(["error"]);
+      expect(check("ErrorEvent", events[0]!.data)).toStrictEqual([]);
       expect(events[0]!.data.code).toBe(code);
     }
   });
@@ -383,39 +384,39 @@ describe("error responses match components/schemas/Error", () => {
   test("400 invalid_request", async () => {
     const res = await post("/api/v1/translate", { text: "", target_lang: "en" });
     expect(res.status).toBe(400);
-    expect(check("Error", await res.json())).toEqual([]);
+    expect(check("Error", await res.json())).toStrictEqual([]);
   });
 
   test("404 not_found", async () => {
     const res = await fetch(base + "/api/v1/nope");
     expect(res.status).toBe(404);
-    expect(check("Error", await res.json())).toEqual([]);
+    expect(check("Error", await res.json())).toStrictEqual([]);
   });
 
   test("405 method_not_allowed", async () => {
     const res = await fetch(base + "/api/v1/translate");
     expect(res.status).toBe(405);
-    expect(check("Error", await res.json())).toEqual([]);
+    expect(check("Error", await res.json())).toStrictEqual([]);
   });
 
   test("413 input_too_long", async () => {
     const res = await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh" });
     expect(res.status).toBe(413);
     const body: any = await res.json();
-    expect(check("Error", body)).toEqual([]);
+    expect(check("Error", body)).toStrictEqual([]);
     expect(body.error.details).toMatchObject({ max_input_tokens: 400 });
   });
 
   test("415 unsupported_media_type", async () => {
     const res = await post("/api/v1/translate", JSON.stringify(plain), { headers: { "content-type": "text/plain" } });
     expect(res.status).toBe(415);
-    expect(check("Error", await res.json())).toEqual([]);
+    expect(check("Error", await res.json())).toStrictEqual([]);
   });
 
   test("403 forbidden_origin", async () => {
     const res = await post("/api/v1/translate", plain, { headers: { origin: "https://evil.example" } });
     expect(res.status).toBe(403);
-    expect(check("Error", await res.json())).toEqual([]);
+    expect(check("Error", await res.json())).toStrictEqual([]);
   });
 
   test("429 queue_full", async () => {
@@ -427,7 +428,7 @@ describe("error responses match components/schemas/Error", () => {
       const res = await post("/api/v1/translate", { text: "three", target_lang: "en" });
       expect(res.status).toBe(429);
       expect(res.headers.get("retry-after")).toBe("10");
-      expect(check("Error", await res.json())).toEqual([]);
+      expect(check("Error", await res.json())).toStrictEqual([]);
     } finally {
       await Promise.allSettled([first.then((r) => r.text()), second.then((r) => r.text())]);
       mock.delayMs = 0;
@@ -439,14 +440,14 @@ describe("error responses match components/schemas/Error", () => {
     const res = await post("/api/v1/translate", plain);
     mock.failWith = undefined;
     expect(res.status).toBe(502);
-    expect(check("Error", await res.json())).toEqual([]);
+    expect(check("Error", await res.json())).toStrictEqual([]);
   });
 
   test("503 engine_unavailable from /tokenize while loading", async () => {
     await withLoadingApp(async (origin) => {
       const res = await postTo(origin, "/api/v1/tokenize", plain);
       expect(res.status).toBe(503);
-      expect(check("Error", await res.json())).toEqual([]);
+      expect(check("Error", await res.json())).toStrictEqual([]);
     });
   });
 });
@@ -465,7 +466,7 @@ describe("the spec against the server", () => {
       await res.text();
       answers[`${method.toUpperCase()} ${template}`] = res.status;
     }
-    expect(Object.keys(answers).sort()).toEqual(
+    expect(Object.keys(answers).sort()).toStrictEqual(
       [
         "GET /health",
         "GET /languages",
@@ -483,16 +484,18 @@ describe("the spec against the server", () => {
     for (const [op, status] of Object.entries(answers)) {
       // A translation that does not exist answers 404 from its own route, as an error with a message.
       const served = ![404, 405].includes(status) || op.includes("/translations/");
-      expect({ op, served }).toEqual({ op, served: true });
+      expect({ op, served }).toStrictEqual({ op, served: true });
     }
   });
 
   test("the model enums in the spec match the server's MODELS", () => {
     const ids = MODELS.map((m) => m.id).sort();
     const { schemas } = spec.components;
-    expect([...schemas.TranslateRequest.properties.model.enum].sort()).toEqual(ids);
-    expect([...schemas.ModelInfo.properties.id.enum].sort()).toEqual(ids);
-    expect([...schemas.ModelInfo.properties.kind.enum].sort()).toEqual([...new Set(MODELS.map((m) => m.kind))].sort());
+    expect(([...schemas.TranslateRequest.properties.model.enum] as string[]).sort()).toStrictEqual(ids);
+    expect(([...schemas.ModelInfo.properties.id.enum] as string[]).sort()).toStrictEqual(ids);
+    expect(([...schemas.ModelInfo.properties.kind.enum] as string[]).sort()).toStrictEqual(
+      [...new Set(MODELS.map((m) => m.kind))].sort(),
+    );
   });
 
   test("the spec's default model is the server's default", () => {
@@ -502,7 +505,7 @@ describe("the spec against the server", () => {
   test("the error responses documented for /translate all point at the Error schema", () => {
     const errorSchema = spec.components.schemas.Error;
     for (const status of ["400", "403", "413", "415", "429", "502", "503"]) {
-      expect({ status, schema: deref(documented("/translate", "post", status)) }).toEqual({
+      expect({ status, schema: deref(documented("/translate", "post", status)) }).toStrictEqual({
         status,
         schema: errorSchema,
       });
@@ -548,37 +551,34 @@ describe("the spec against the server", () => {
       },
     };
     const documentedStatuses = Object.keys(spec.paths["/translate"].post.responses).sort();
-    expect(Object.keys(triggers).sort()).toEqual(documentedStatuses);
+    expect(Object.keys(triggers).sort()).toStrictEqual(documentedStatuses);
     for (const [status, trigger] of Object.entries(triggers)) {
       const actual = await trigger();
-      expect({ status, actual }).toEqual({ status, actual: Number(status) });
+      expect({ status, actual }).toStrictEqual({ status, actual: Number(status) });
     }
   });
 
   test("every status documented for /tokenize can be produced by the server", async () => {
     const documentedStatuses = Object.keys(spec.paths["/tokenize"].post.responses).sort();
-    expect(documentedStatuses).toEqual(["200", "400", "403", "413", "415", "503"]);
+    expect(documentedStatuses).toStrictEqual(["200", "400", "403", "413", "415", "503"]);
 
-    const seen: Record<string, number> = {};
-    seen["200"] = (await post("/api/v1/tokenize", plain)).status;
-    seen["400"] = (await post("/api/v1/tokenize", { text: "", target_lang: "en" })).status;
-    seen["403"] = (await post("/api/v1/tokenize", plain, { headers: { origin: "https://evil.example" } })).status;
-    seen["415"] = (
-      await post("/api/v1/tokenize", JSON.stringify(plain), { headers: { "content-type": "text/plain" } })
-    ).status;
-    const padded = JSON.stringify(plain) + " ".repeat(4 * 1024 * 1024);
-    seen["413"] = (await post("/api/v1/tokenize", padded)).status;
-    await withLoadingApp(async (origin) => {
-      seen["503"] = (await postTo(origin, "/api/v1/tokenize", plain)).status;
-    });
+    const seen: Record<string, number> = {
+      "200": (await post("/api/v1/tokenize", plain)).status,
+      "400": (await post("/api/v1/tokenize", { text: "", target_lang: "en" })).status,
+      "403": (await post("/api/v1/tokenize", plain, { headers: { origin: "https://evil.example" } })).status,
+      "415": (await post("/api/v1/tokenize", JSON.stringify(plain), { headers: { "content-type": "text/plain" } }))
+        .status,
+      "413": (await post("/api/v1/tokenize", JSON.stringify(plain) + " ".repeat(4 * 1024 * 1024))).status,
+      "503": await withLoadingApp(async (origin) => (await postTo(origin, "/api/v1/tokenize", plain)).status),
+    };
     for (const status of documentedStatuses) {
-      expect({ status, actual: seen[status] }).toEqual({ status, actual: Number(status) });
+      expect({ status, actual: seen[status] }).toStrictEqual({ status, actual: Number(status) });
     }
   });
 
   test("the 503 and 413 bodies documented for /tokenize match Error", async () => {
     const res = await post("/api/v1/tokenize", JSON.stringify(plain) + " ".repeat(4 * 1024 * 1024));
     expect(res.status).toBe(413);
-    expect(check("Error", await res.json())).toEqual([]);
+    expect(check("Error", await res.json())).toStrictEqual([]);
   });
 });

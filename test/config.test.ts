@@ -8,7 +8,7 @@ const root = resolve(import.meta.dir, "..");
 
 describe("loadConfig defaults", () => {
   test("empty environment yields the documented defaults", () => {
-    expect(loadConfig({})).toEqual({
+    expect(loadConfig({})).toStrictEqual({
       host: "127.0.0.1",
       port: 3000,
       publicDir: join(root, "public"),
@@ -93,7 +93,7 @@ describe("loadConfig defaults", () => {
 
 describe("command-line flags", () => {
   test("parseArgs accepts `--flag value` and `--flag=value`", () => {
-    expect(parseArgs(["--port", "8080", "--default-model=index-nailong-9b", "--speech", "0"])).toEqual({
+    expect(parseArgs(["--port", "8080", "--default-model=index-nailong-9b", "--speech", "0"])).toStrictEqual({
       PORT: "8080",
       DEFAULT_MODEL: "index-nailong-9b",
       SPEECH: "0",
@@ -107,7 +107,9 @@ describe("command-line flags", () => {
   });
 
   test("a flag with an empty value still overrides", () => {
-    expect(loadConfig({ ALLOWED_ORIGINS: "https://a.example" }, ["--allowed-origins="]).allowedOrigins).toEqual([]);
+    expect(loadConfig({ ALLOWED_ORIGINS: "https://a.example" }, ["--allowed-origins="]).allowedOrigins).toStrictEqual(
+      [],
+    );
   });
 
   test("unknown arguments and missing values are errors", () => {
@@ -217,7 +219,7 @@ describe("--help", () => {
 
   test("the server prints it and exits 0 without starting", async () => {
     const p = Bun.spawn([process.execPath, "src/server.ts", "--help"], { stdout: "pipe", stderr: "pipe" });
-    expect(await p.exited).toBe(0);
-    expect(await new Response(p.stdout).text()).toContain("Usage:");
+    await expect(p.exited).resolves.toBe(0);
+    await expect(new Response(p.stdout).text()).resolves.toContain("Usage:");
   });
 });

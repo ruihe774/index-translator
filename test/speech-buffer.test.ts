@@ -54,27 +54,27 @@ const blocks = (count: number) => Array.from({ length: count }, (_, i) => i);
 describe("blockStarts", () => {
   test("a block is a run of pieces with the same line", () => {
     const seg = (line: number): Segment => ({ text: "x", line, pause: 0 });
-    expect(blockStarts([seg(0), seg(0), seg(2), seg(4), seg(4)])).toEqual([0, 2, 3]);
-    expect(blockStarts([])).toEqual([]);
+    expect(blockStarts([seg(0), seg(0), seg(2), seg(4), seg(4)])).toStrictEqual([0, 2, 3]);
+    expect(blockStarts([])).toStrictEqual([]);
   });
 });
 
 describe("keeping the engine busy", () => {
   test("nothing is asked for until the reader is somewhere", () => {
     const t = setup(blocks(5));
-    expect(t.requests).toEqual([]);
+    expect(t.requests).toStrictEqual([]);
   });
 
   test("one request at a time, the next the moment one arrives, with nobody playing", async () => {
     const t = setup(blocks(30));
     t.buffer.aim(0);
-    expect(t.asked()).toEqual([0]);
+    expect(t.asked()).toStrictEqual([0]);
     await t.answer();
     expect(t.live()).toHaveLength(1);
     expect(t.requests).toHaveLength(2);
     await t.answer(40);
     // It stops by itself once the stretch ahead of the reader is there.
-    expect(t.live()).toEqual([]);
+    expect(t.live()).toStrictEqual([]);
     expect(t.requests.every((r) => !r.signal.aborted)).toBe(true);
     expect(t.requests).toHaveLength(Math.ceil(AHEAD_SECONDS / 10));
   });
@@ -84,7 +84,7 @@ describe("keeping the engine busy", () => {
     t.buffer.aim(0);
     await t.answer();
     expect(t.buffer.has(0)).toBe(true);
-    expect(t.live().map(t.index)).toEqual([1]);
+    expect(t.live().map(t.index)).toStrictEqual([1]);
   });
 
   test("it goes on when the reader moves into the audio that is there", async () => {
@@ -106,7 +106,7 @@ describe("the order", () => {
     await t.answer(40);
     const near = Math.ceil(NEAR_SECONDS / 10);
     expect(near).toBe(2);
-    expect(t.asked().slice(0, 6)).toEqual([
+    expect(t.asked().slice(0, 6)).toStrictEqual([
       3, // where the reader is
       4, // NEAR_SECONDS from there
       5, // Next: the next block
@@ -125,7 +125,7 @@ describe("the order", () => {
     t.buffer.aim(0);
     await t.flush();
     expect(t.requests).toHaveLength(before);
-    expect(await t.buffer.take(0)).toEqual({ duration: 10 } as AudioBuffer);
+    await expect(t.buffer.take(0)).resolves.toStrictEqual({ duration: 10 } as AudioBuffer);
   });
 });
 
@@ -137,7 +137,7 @@ describe("stale requests", () => {
     const flight = t.live()[0]!;
     t.buffer.aim(40);
     expect(flight.signal.aborted).toBe(true);
-    expect(t.live().map(t.index)).toEqual([40]);
+    expect(t.live().map(t.index)).toStrictEqual([40]);
   });
 
   test("a request that is still wanted gives way when the reader waits for another piece", async () => {
@@ -149,7 +149,7 @@ describe("stale requests", () => {
     t.buffer.aim(7);
     // 4 is no jump target from 7 any more.
     expect(flight.signal.aborted).toBe(true);
-    expect(t.live().map(t.index)).toEqual([7]);
+    expect(t.live().map(t.index)).toStrictEqual([7]);
     // 8 is wanted from 6 as well as from 7, but the reader at 6 has its audio: it stays.
     await t.answer();
     const eight = t.live()[0]!;
@@ -159,7 +159,7 @@ describe("stale requests", () => {
     // The reader at 3 has none, and 8 is not it.
     t.buffer.aim(3);
     expect(eight.signal.aborted).toBe(true);
-    expect(t.live().map(t.index)).toEqual([3]);
+    expect(t.live().map(t.index)).toStrictEqual([3]);
   });
 
   test("the request for the piece the reader waits for is never aborted by aiming at it again", () => {
@@ -189,7 +189,7 @@ describe("stale requests", () => {
     t.buffer.open(t.segments, { lang: "en", voice: "other", speed: 1 });
     expect(flight.signal.aborted).toBe(true);
     expect(t.buffer.has(0)).toBe(false);
-    expect(t.live()).toEqual([]);
+    expect(t.live()).toStrictEqual([]);
   });
 });
 
@@ -251,6 +251,6 @@ describe("what is kept", () => {
     expect(held.length * seconds).toBeLessThanOrEqual(KEEP_SECONDS);
     expect(held).not.toContain(0);
     // Previous from 11 leads to 10; reading on needs 11 and 12; Next leads to 12.
-    expect(held).toEqual(expect.arrayContaining([10, 11, 12]));
+    expect(held).toStrictEqual(expect.arrayContaining([10, 11, 12]));
   });
 });

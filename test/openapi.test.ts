@@ -25,7 +25,7 @@ describe("docs/openapi.yaml", () => {
   });
 
   test("has no 3.0-only nullable keyword", () => {
-    expect(keysNamed(spec, "nullable")).toEqual([]);
+    expect(keysNamed(spec, "nullable")).toStrictEqual([]);
     expect(specText).not.toContain("nullable:");
   });
 
@@ -38,6 +38,6 @@ describe("docs/openapi.yaml", () => {
       used.add("invalid_request");
     }
     expect(used.size).toBeGreaterThan(0);
-    expect([...used].filter((code) => !enumCodes.has(code))).toEqual([]);
+    expect([...used].filter((code) => !enumCodes.has(code))).toStrictEqual([]);
   });
 });

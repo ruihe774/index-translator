@@ -62,7 +62,9 @@ class Control {
 
   private hold(field: "launchGate" | "generationGate"): () => void {
     let open!: () => void;
-    const gate = new Promise<void>((resolve) => (open = resolve));
+    const gate = new Promise<void>((resolve) => {
+      open = resolve;
+    });
     this[field] = gate;
     const release = () => {
       if (this[field] === gate) {
@@ -77,7 +79,7 @@ class Control {
 
   /** Opens every gate still held, so a failed test cannot leave a launch or generation hanging. */
   reset(): void {
-    for (const open of [...this.openers]) {
+    for (const open of this.openers) {
       open();
     }
     this.zeroPromptUsage = false;
@@ -292,7 +294,7 @@ describe("engine thread dies", () => {
     const next = await translate(h.origin, { text: "你好", target_lang: "en" });
     expect(next.status).toBe(200);
     expect(((await next.json()) as any).model).toBe(CHAT);
-    expect(h.ctl.launches.slice(launchesBefore)).toEqual([CHAT]);
+    expect(h.ctl.launches.slice(launchesBefore)).toStrictEqual([CHAT]);
     expect((await getHealth(h.origin)).status).toBe(200);
   }
 
@@ -307,7 +309,7 @@ describe("engine thread dies", () => {
     const res = await killMidStreamJson();
     await until(() => h.app.engine.state === "error", "engine to report the error");
     expect(res.status).toBe(502);
-    expect(await res.json()).toMatchObject({ error: { code: "engine_error" } });
+    await expect(res.json()).resolves.toMatchObject({ error: { code: "engine_error" } });
   });
 
   test("dying mid-stream in SSE mode ends the stream with an error event; health then reports the error and the next request reloads", async () => {
@@ -333,8 +335,8 @@ describe("engine thread dies", () => {
     expect(health.body.error).toBe(KILLED);
 
     await warm(h.origin, CHAT);
-    expect(h.ctl.launches.slice(launchesBefore)).toEqual([CHAT]);
-    expect(await getHealth(h.origin)).toMatchObject({ status: 200, body: { status: "ready", model: CHAT } });
+    expect(h.ctl.launches.slice(launchesBefore)).toStrictEqual([CHAT]);
+    await expect(getHealth(h.origin)).resolves.toMatchObject({ status: 200, body: { status: "ready", model: CHAT } });
   });
 });
 
@@ -356,7 +358,9 @@ describe("default model fails to load at startup", () => {
 
       const failed = await translate(origin, chatBody);
       expect(failed.status).toBe(502);
-      expect(await failed.json()).toMatchObject({ error: { code: "engine_error", message: "model file is corrupt" } });
+      await expect(failed.json()).resolves.toMatchObject({
+        error: { code: "engine_error", message: "model file is corrupt" },
+      });
 
       mock.failLaunch = undefined;
       const ok = await translate(origin, chatBody);
@@ -388,7 +392,7 @@ describe("model swaps", () => {
     const health = await getHealth(h.origin);
     expect(health.status).toBe(503);
     expect(health.body).toMatchObject({ status: "loading", model: DOCUMENT });
-    expect(await getJson(h.origin, "/api/v1/models")).toMatchObject({ default: CHAT, loaded: DOCUMENT });
+    await expect(getJson(h.origin, "/api/v1/models")).resolves.toMatchObject({ default: CHAT, loaded: DOCUMENT });
 
     const busy = await tokenize(h.origin, chatBody);
     expect(busy.status).toBe(503);
@@ -397,7 +401,10 @@ describe("model swaps", () => {
 
     release();
     expect((await pending).model).toBe(DOCUMENT);
-    expect(await getHealth(h.origin)).toMatchObject({ status: 200, body: { status: "ready", model: DOCUMENT } });
+    await expect(getHealth(h.origin)).resolves.toMatchObject({
+      status: 200,
+      body: { status: "ready", model: DOCUMENT },
+    });
   });
 
   test("a request waiting behind a swap that disconnects leaves the queue, and the swap still completes", async () => {
@@ -413,15 +420,15 @@ describe("model swaps", () => {
     ac.abort();
     await expect(waiting).rejects.toThrow();
     await until(async () => (await queueOf(h.origin)).waiting === 0, "second request to leave");
-    expect(await queueOf(h.origin)).toMatchObject({ running: true, waiting: 0 });
+    await expect(queueOf(h.origin)).resolves.toMatchObject({ running: true, waiting: 0 });
 
     release();
     expect((await swap).model).toBe(DOCUMENT);
-    expect(await queueOf(h.origin)).toMatchObject({ running: false, waiting: 0 });
+    await expect(queueOf(h.origin)).resolves.toMatchObject({ running: false, waiting: 0 });
 
     const next = await translate(h.origin, { text: "你好", target_lang: "en" });
     expect(next.status).toBe(200);
-    expect(h.ctl.launches.slice(before)).toEqual([DOCUMENT, CHAT]);
+    expect(h.ctl.launches.slice(before)).toStrictEqual([DOCUMENT, CHAT]);
   });
 
   test("a client that disconnects during its own model load: the load finishes, the queue is freed, and the next request works", async () => {
@@ -439,12 +446,12 @@ describe("model swaps", () => {
     release();
     await until(async () => (await getHealth(h.origin)).status === 200, "document engine to be ready");
     expect((await getHealth(h.origin)).body.model).toBe(DOCUMENT);
-    expect(await queueOf(h.origin)).toMatchObject({ running: false, waiting: 0 });
+    await expect(queueOf(h.origin)).resolves.toMatchObject({ running: false, waiting: 0 });
 
     const next = await translate(h.origin, { text: "你好", target_lang: "en" });
     expect(next.status).toBe(200);
     expect(((await next.json()) as any).model).toBe(CHAT);
-    expect(h.ctl.launches.slice(before)).toEqual([DOCUMENT, CHAT]);
+    expect(h.ctl.launches.slice(before)).toStrictEqual([DOCUMENT, CHAT]);
   });
 
   // Abandoning a request frees the queue slot while its engine load is still in flight, so the next
@@ -475,7 +482,7 @@ describe("model swaps", () => {
       expect((await next).model).toBe(CHAT);
 
       // Only one engine may run at a time (see src/models.ts).
-      expect(h.ctl.upstreams.filter((u) => !u.stopped).map((u) => u.model)).toEqual([CHAT]);
+      expect(h.ctl.upstreams.filter((u) => !u.stopped).map((u) => u.model)).toStrictEqual([CHAT]);
     } finally {
       h.ctl.stopAll();
     }
@@ -504,9 +511,9 @@ describe("queue order across models", () => {
     open();
 
     const [ra, rb, rc] = await Promise.all([a, b, c]);
-    expect([ra.model, rb.model, rc.model]).toEqual([CHAT, DOCUMENT, CHAT]);
-    expect(h.ctl.launches.slice(launchesBefore)).toEqual([DOCUMENT, CHAT]);
-    expect(h.ctl.generations.slice(generationsBefore).map((g) => g.model)).toEqual([CHAT, DOCUMENT, CHAT]);
+    expect([ra.model, rb.model, rc.model]).toStrictEqual([CHAT, DOCUMENT, CHAT]);
+    expect(h.ctl.launches.slice(launchesBefore)).toStrictEqual([DOCUMENT, CHAT]);
+    expect(h.ctl.generations.slice(generationsBefore).map((g) => g.model)).toStrictEqual([CHAT, DOCUMENT, CHAT]);
     expect(h.ctl.maxInFlight).toBe(1);
   });
 });
@@ -521,14 +528,14 @@ describe("queued events", () => {
     const a = sseEvents(await translate(h.origin, { text: "one", target_lang: "en", stream: true }));
     expect((await nextEvent(a)).event).toBe("start");
     const b = sseEvents(await translate(h.origin, { text: "two", target_lang: "en", stream: true }));
-    expect(await nextEvent(b)).toEqual({ event: "queued", data: { position: 1 } });
+    await expect(nextEvent(b)).resolves.toStrictEqual({ event: "queued", data: { position: 1 } });
     const c = sseEvents(await translate(h.origin, { text: "three", target_lang: "en", stream: true }));
-    expect(await nextEvent(c)).toEqual({ event: "queued", data: { position: 2 } });
+    await expect(nextEvent(c)).resolves.toStrictEqual({ event: "queued", data: { position: 2 } });
 
     open();
     const [, , cRest] = await Promise.all([collect(a), collect(b), collect(c)]);
-    expect(queuedPositions(cRest)).toEqual([1]);
-    expect(cRest.map((e) => e.event)).toEqual(["queued", "start", "delta", "delta", "delta", "done"]);
+    expect(queuedPositions(cRest)).toStrictEqual([1]);
+    expect(cRest.map((e) => e.event)).toStrictEqual(["queued", "start", "delta", "delta", "delta", "done"]);
   });
 
   test("when a request in the middle disconnects, the one behind moves up and the one ahead keeps its place", async () => {
@@ -536,25 +543,25 @@ describe("queued events", () => {
     const a = sseEvents(await translate(h.origin, { text: "one", target_lang: "en", stream: true }));
     expect((await nextEvent(a)).event).toBe("start");
     const b = sseEvents(await translate(h.origin, { text: "two", target_lang: "en", stream: true }));
-    expect(await nextEvent(b)).toEqual({ event: "queued", data: { position: 1 } });
+    await expect(nextEvent(b)).resolves.toStrictEqual({ event: "queued", data: { position: 1 } });
     const cAbort = new AbortController();
     const c = sseEvents(
       await translate(h.origin, { text: "three", target_lang: "en", stream: true }, { signal: cAbort.signal }),
     );
-    expect(await nextEvent(c)).toEqual({ event: "queued", data: { position: 2 } });
+    await expect(nextEvent(c)).resolves.toStrictEqual({ event: "queued", data: { position: 2 } });
     const d = sseEvents(await translate(h.origin, { text: "four", target_lang: "en", stream: true }));
-    expect(await nextEvent(d)).toEqual({ event: "queued", data: { position: 3 } });
+    await expect(nextEvent(d)).resolves.toStrictEqual({ event: "queued", data: { position: 3 } });
 
     cAbort.abort();
     await until(async () => (await queueOf(h.origin)).waiting === 2, "middle request to leave");
-    expect(await nextEvent(d)).toEqual({ event: "queued", data: { position: 2 } });
+    await expect(nextEvent(d)).resolves.toStrictEqual({ event: "queued", data: { position: 2 } });
 
     open();
     const [, bRest, dRest] = await Promise.all([collect(a), collect(b), collect(d)]);
     // B was first in line and never moved; the repeated position is harmless.
     expect(queuedPositions(bRest).every((p) => p === 1)).toBe(true);
     expect(bRest.at(-1)!.event).toBe("done");
-    expect(queuedPositions(dRest)).toEqual([1]);
+    expect(queuedPositions(dRest)).toStrictEqual([1]);
     expect(dRest.at(-1)!.event).toBe("done");
   });
 });
@@ -620,23 +627,26 @@ describe("streaming and output details", () => {
 
   test("a model that emits only an empty think block gives an empty translation, with no delta events", async () => {
     mock.chunks = ["<think>\n\n</think>\n\n"];
-    expect(await jsonOf(translate(h.origin, chatBody))).toMatchObject({ translation: "", finish_reason: "stop" });
+    await expect(jsonOf(translate(h.origin, chatBody))).resolves.toMatchObject({
+      translation: "",
+      finish_reason: "stop",
+    });
 
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
-    expect(events.map((e) => e.event)).toEqual(["start", "done"]);
+    expect(events.map((e) => e.event)).toStrictEqual(["start", "done"]);
   });
 
   test("whitespace-only output is also an empty translation", async () => {
     mock.chunks = ["  ", "\n", "\t\n"];
-    expect(await jsonOf(translate(h.origin, chatBody))).toMatchObject({ translation: "" });
+    await expect(jsonOf(translate(h.origin, chatBody))).resolves.toMatchObject({ translation: "" });
 
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
-    expect(events.map((e) => e.event)).toEqual(["start", "done"]);
+    expect(events.map((e) => e.event)).toStrictEqual(["start", "done"]);
   });
 
   test("a think block with content is dropped from the translation", async () => {
     mock.chunks = ["<think>", "let me work this out", "</think>", "Hi there"];
-    expect(await jsonOf(translate(h.origin, chatBody))).toMatchObject({ translation: "Hi there" });
+    await expect(jsonOf(translate(h.origin, chatBody))).resolves.toMatchObject({ translation: "Hi there" });
 
     mock.chunks = ["<think>plan</think>Hello"];
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
@@ -650,7 +660,7 @@ describe("streaming and output details", () => {
   test("an engine error after some deltas delivers those deltas first, then an error event", async () => {
     mock.failWith = "boom";
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
-    expect(events.map((e) => e.event)).toEqual(["start", "delta", "delta", "delta", "error"]);
+    expect(events.map((e) => e.event)).toStrictEqual(["start", "delta", "delta", "delta", "error"]);
     expect(
       events
         .filter((e) => e.event === "delta")
@@ -680,7 +690,7 @@ describe("streaming and output details", () => {
     expect(counted).toBeGreaterThan(0);
 
     const json = await jsonOf(translate(h.origin, chatBody));
-    expect(json.usage).toEqual({ prompt_tokens: counted, completion_tokens: mock.chunks.length });
+    expect(json.usage).toStrictEqual({ prompt_tokens: counted, completion_tokens: mock.chunks.length });
 
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
     expect(events.at(-1)!.data.usage.prompt_tokens).toBe(counted);
@@ -692,7 +702,7 @@ describe("streaming and output details", () => {
     mock.failWith = undefined;
     expect(failed.status).toBe(502);
     await failed.text();
-    expect(await queueOf(h.origin)).toMatchObject({ running: false, waiting: 0 });
+    await expect(queueOf(h.origin)).resolves.toMatchObject({ running: false, waiting: 0 });
 
     const next = await translate(h.origin, chatBody);
     expect(next.status).toBe(200);
@@ -704,7 +714,7 @@ describe("streaming and output details", () => {
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
     mock.failWith = undefined;
     expect(events.at(-1)!.event).toBe("error");
-    expect(await queueOf(h.origin)).toMatchObject({ running: false, waiting: 0 });
+    await expect(queueOf(h.origin)).resolves.toMatchObject({ running: false, waiting: 0 });
 
     expect((await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })))).at(-1)!.event).toBe(
       "done",
@@ -722,13 +732,13 @@ describe("queue full over SSE", () => {
     const first = jsonOf(translate(h.origin, { text: "one", target_lang: "en" }));
     await until(async () => (await queueOf(h.origin)).running, "first request to run");
     const queued = sseEvents(await translate(h.origin, { text: "two", target_lang: "en", stream: true }));
-    expect(await nextEvent(queued)).toEqual({ event: "queued", data: { position: 1 } });
+    await expect(nextEvent(queued)).resolves.toStrictEqual({ event: "queued", data: { position: 1 } });
 
     const full = await translate(h.origin, { text: "three", target_lang: "en", stream: true });
     expect(full.status).toBe(429);
     expect(full.headers.get("content-type")).toStartWith("application/json");
     expect(full.headers.get("retry-after")).toBe("10");
-    expect(await full.json()).toMatchObject({ error: { code: "queue_full", details: { max_queue: 1 } } });
+    await expect(full.json()).resolves.toMatchObject({ error: { code: "queue_full", details: { max_queue: 1 } } });
 
     open();
     await first;

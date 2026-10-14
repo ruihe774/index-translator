@@ -4,7 +4,7 @@ import { parseGlossary } from "../public/glossary";
 
 describe("parseGlossary", () => {
   test("parses valid lines into a source-to-target object", () => {
-    expect(parseGlossary("apple = 苹果\nbanana = 香蕉")).toEqual({
+    expect(parseGlossary("apple = 苹果\nbanana = 香蕉")).toStrictEqual({
       glossary: { apple: "苹果", banana: "香蕉" },
     });
   });
@@ -12,35 +12,35 @@ describe("parseGlossary", () => {
   test("skips blank and whitespace-only lines and trims terms", () => {
     const { glossary, error } = parseGlossary("\n   \n  apple   =   苹果  \n\n\t\nbanana=香蕉\n");
     expect(error).toBeUndefined();
-    expect(glossary).toEqual({ apple: "苹果", banana: "香蕉" });
+    expect(glossary).toStrictEqual({ apple: "苹果", banana: "香蕉" });
   });
 
   test("accepts CRLF line endings", () => {
-    expect(parseGlossary("apple = 苹果\r\nbanana = 香蕉\r\n")).toEqual({
+    expect(parseGlossary("apple = 苹果\r\nbanana = 香蕉\r\n")).toStrictEqual({
       glossary: { apple: "苹果", banana: "香蕉" },
     });
   });
 
   test("splits on the first '=' so the target may contain '='", () => {
-    expect(parseGlossary("a = b = c")).toEqual({ glossary: { a: "b = c" } });
+    expect(parseGlossary("a = b = c")).toStrictEqual({ glossary: { a: "b = c" } });
   });
 
   test("reports a line without '=' with its 1-based line number", () => {
-    expect(parseGlossary("apple = 苹果\n\nbanana 香蕉")).toEqual({
+    expect(parseGlossary("apple = 苹果\n\nbanana 香蕉")).toStrictEqual({
       glossary: { apple: "苹果" },
       error: { line: 3, kind: "format" },
     });
   });
 
   test("reports an empty source term", () => {
-    expect(parseGlossary("apple = 苹果\n = 香蕉")).toEqual({
+    expect(parseGlossary("apple = 苹果\n = 香蕉")).toStrictEqual({
       glossary: { apple: "苹果" },
       error: { line: 2, kind: "format" },
     });
   });
 
   test("reports an empty target term", () => {
-    expect(parseGlossary("apple =   ")).toEqual({
+    expect(parseGlossary("apple =   ")).toStrictEqual({
       glossary: {},
       error: { line: 1, kind: "format" },
     });
@@ -48,8 +48,8 @@ describe("parseGlossary", () => {
 
   test("stops at the first bad line and keeps the entries before it", () => {
     const { glossary, error } = parseGlossary("a = 1\nbad\nc = 3\nd");
-    expect(glossary).toEqual({ a: "1" });
-    expect(error).toEqual({ line: 2, kind: "format" });
+    expect(glossary).toStrictEqual({ a: "1" });
+    expect(error).toStrictEqual({ line: 2, kind: "format" });
   });
 
   test("keeps __proto__ as an ordinary key", () => {
@@ -63,7 +63,7 @@ describe("parseGlossary", () => {
   test("does not treat constructor or toString as existing entries", () => {
     const { glossary, error } = parseGlossary("constructor = 构造\ntoString = 字符串");
     expect(error).toBeUndefined();
-    expect(glossary).toEqual({ constructor: "构造", toString: "字符串" });
+    expect(glossary).toStrictEqual({ constructor: "构造", toString: "字符串" });
   });
 
   test("a null-prototype glossary survives JSON serialization with __proto__ intact", () => {
@@ -76,7 +76,7 @@ describe("parseGlossary", () => {
   });
 
   test("reports a repeated source term as a duplicate on the later line", () => {
-    expect(parseGlossary("apple = 苹果\nbanana = 香蕉\napple = 苹果果")).toEqual({
+    expect(parseGlossary("apple = 苹果\nbanana = 香蕉\napple = 苹果果")).toStrictEqual({
       glossary: { apple: "苹果", banana: "香蕉" },
       error: { line: 3, kind: "duplicate", term: "apple" },
     });
@@ -84,15 +84,15 @@ describe("parseGlossary", () => {
 
   test("treats terms that differ only by surrounding spaces as duplicates", () => {
     const { error } = parseGlossary("apple = 苹果\n  apple  = 苹果");
-    expect(error).toEqual({ line: 2, kind: "duplicate", term: "apple" });
+    expect(error).toStrictEqual({ line: 2, kind: "duplicate", term: "apple" });
   });
 
   test("a repeated __proto__ is a duplicate, not a silent overwrite", () => {
     const { error } = parseGlossary("__proto__ = 一\n__proto__ = 二");
-    expect(error).toEqual({ line: 2, kind: "duplicate", term: "__proto__" });
+    expect(error).toStrictEqual({ line: 2, kind: "duplicate", term: "__proto__" });
   });
 
   test("an empty value gives an empty glossary", () => {
-    expect(parseGlossary("")).toEqual({ glossary: {} });
+    expect(parseGlossary("")).toStrictEqual({ glossary: {} });
   });
 });

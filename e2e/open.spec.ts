@@ -77,7 +77,7 @@ test.describe("images", () => {
       "aria-disabled",
       "true",
     );
-    expect(api.filter((r) => r.method !== "GET")).toEqual([]);
+    expect(api.filter((r) => r.method !== "GET")).toStrictEqual([]);
 
     await app.to.selectOption("zh");
     await app.translate.click();
@@ -188,7 +188,7 @@ test.describe("text and Markdown", () => {
     await expect(app.page.locator("#count")).toHaveText("19 letters");
     await expect(app.page.locator("#pdf-pages")).toBeHidden();
     expect((await mock.state()).requests).toHaveLength(0);
-    expect(api.filter((r) => r.method !== "GET")).toEqual([]);
+    expect(api.filter((r) => r.method !== "GET")).toStrictEqual([]);
   });
 
   test("a file dropped anywhere on the page is opened like a picked one", async ({ app }) => {
@@ -323,7 +323,7 @@ test.describe("PDF", () => {
     expect(strip.x + strip.width).toBeLessThanOrEqual(box.x);
 
     expect((await mock.state()).requests).toHaveLength(0);
-    expect(api.filter((r) => r.method !== "GET")).toEqual([]);
+    expect(api.filter((r) => r.method !== "GET")).toStrictEqual([]);
   });
 
   test("a clicked page goes into the box as Markdown, without translating", async ({ app, mock }) => {
@@ -351,14 +351,14 @@ test.describe("PDF", () => {
     await expect(thumbnail(app.page, 2)).not.toHaveAttribute("aria-current");
 
     expect((await mock.state()).requests).toHaveLength(0);
-    expect(api.filter((r) => r.method !== "GET")).toEqual([]);
+    expect(api.filter((r) => r.method !== "GET")).toStrictEqual([]);
 
     // Translating is the user's step, and sends the page's text only.
     await mock.set({ chunks: [THINK, "# 北方的河流"] });
     await app.translate.click();
     await expect(app.output).toContainText("北方的河流");
     const posts = api.filter((r) => r.method !== "GET");
-    expect(posts.map((r) => r.path)).toEqual(["/api/v1/translate"]);
+    expect(posts.map((r) => r.path)).toStrictEqual(["/api/v1/translate"]);
     expect(posts[0]!.body).toContain("Rivers of the North");
     expect(posts[0]!.body).not.toContain("sample.pdf");
     expect(posts[0]!.body).not.toContain("Mountains");
@@ -386,7 +386,7 @@ test.describe("PDF", () => {
         note: document.getElementById("file-note")?.textContent,
       };
     });
-    expect(during).toEqual({ busy: "true", spinner: '""', note: "sample.pdf: reading page 1…" });
+    expect(during).toStrictEqual({ busy: "true", spinner: '""', note: "sample.pdf: reading page 1…" });
     await expect(thumbnail(app.page, 1)).toHaveAttribute("aria-current", "true");
     await expect(thumbnail(app.page, 1)).not.toHaveAttribute("aria-busy");
     expect(
@@ -426,7 +426,7 @@ test.describe("PDF", () => {
       const field = document.getElementById("source-field") as HTMLElement;
       return { busy: field.getAttribute("aria-busy"), spinner: getComputedStyle(field, "::after").content };
     });
-    expect(during).toEqual({ busy: "true", spinner: '""' });
+    expect(during).toStrictEqual({ busy: "true", spinner: '""' });
     await expect(field).not.toHaveAttribute("aria-busy");
   });
 
@@ -526,6 +526,6 @@ test.describe("PDF", () => {
     await pick(app.page, "notes.txt", "still works");
     await expect(app.text).toHaveValue("still works");
     await expect(app.translate).toHaveAttribute("aria-disabled", "false");
-    expect(errors).toEqual([]);
+    expect(errors).toStrictEqual([]);
   });
 });

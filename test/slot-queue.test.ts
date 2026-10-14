@@ -3,16 +3,18 @@ import { describe, expect, test } from "bun:test";
 import { QueueFullError, SlotQueue } from "../src/queue";
 
 /** Lets every pending promise callback run (a macrotask, so all microtasks drain first). */
-const flush = () => new Promise<void>((resolve) => setTimeout(resolve, 0));
+const flush = () => Bun.sleep(0);
 
 describe("SlotQueue admission", () => {
   test("with no waiting room the first request runs and the second is refused", () => {
     const q = new SlotQueue(0);
     const calls: number[] = [];
-    const a = q.enter((p) => calls.push(p));
+    const a = q.enter((p) => {
+      calls.push(p);
+    });
     expect(q.running).toBe(true);
     expect(q.depth).toBe(0);
-    expect(calls).toEqual([]);
+    expect(calls).toStrictEqual([]);
 
     expect(() => q.enter()).toThrow(QueueFullError);
     expect(q.running).toBe(true);
@@ -27,7 +29,7 @@ describe("SlotQueue admission", () => {
     const a = q.enter();
     a.leave();
     const b = q.enter();
-    expect(await b.ready).toBe(true);
+    await expect(b.ready).resolves.toBe(true);
     expect(q.running).toBe(true);
     b.leave();
     expect(q.running).toBe(false);
@@ -79,13 +81,13 @@ describe("SlotQueue leave", () => {
     b.leave();
     b.leave();
     expect(q.depth).toBe(2);
-    expect(await b.ready).toBe(false);
+    await expect(b.ready).resolves.toBe(false);
 
     a.leave();
-    expect(await c.ready).toBe(true);
+    await expect(c.ready).resolves.toBe(true);
     expect(q.depth).toBe(1);
     c.leave();
-    expect(await d.ready).toBe(true);
+    await expect(d.ready).resolves.toBe(true);
     d.leave();
     expect(q.running).toBe(false);
   });
@@ -97,7 +99,7 @@ describe("SlotQueue leave", () => {
     const c = q.enter();
     a.leave();
     a.leave();
-    expect(await b.ready).toBe(true);
+    await expect(b.ready).resolves.toBe(true);
     expect(q.depth).toBe(1);
 
     let cGranted = false;
@@ -106,7 +108,7 @@ describe("SlotQueue leave", () => {
     expect(cGranted).toBe(false);
 
     b.leave();
-    expect(await c.ready).toBe(true);
+    await expect(c.ready).resolves.toBe(true);
     c.leave();
     expect(q.running).toBe(false);
   });
@@ -119,12 +121,12 @@ describe("SlotQueue leave", () => {
     const d = q.enter();
 
     b.leave();
-    expect(await b.ready).toBe(false);
+    await expect(b.ready).resolves.toBe(false);
 
     a.leave();
-    expect(await c.ready).toBe(true);
+    await expect(c.ready).resolves.toBe(true);
     c.leave();
-    expect(await d.ready).toBe(true);
+    await expect(d.ready).resolves.toBe(true);
     d.leave();
     expect(q.running).toBe(false);
     expect(q.depth).toBe(0);
@@ -141,7 +143,7 @@ describe("SlotQueue ordering", () => {
     const log: string[] = [];
     await Promise.all(
       tickets.map(async (t, i) => {
-        expect(await t.ready).toBe(true);
+        await expect(t.ready).resolves.toBe(true);
         expect(q.running).toBe(true);
         log.push(`start ${i}`);
         await flush();
@@ -151,7 +153,7 @@ describe("SlotQueue ordering", () => {
     );
 
     const expected = Array.from({ length: 20 }, (_, i) => [`start ${i}`, `end ${i}`]).flat();
-    expect(log).toEqual(expected);
+    expect(log).toStrictEqual(expected);
     expect(q.running).toBe(false);
     expect(q.depth).toBe(0);
   });
@@ -165,7 +167,7 @@ describe("SlotQueue onPosition", () => {
     q.enter((p) => pos.b.push(p));
     q.enter((p) => pos.c.push(p));
     q.enter((p) => pos.d.push(p));
-    expect(pos).toEqual({ a: [], b: [1], c: [2], d: [3] });
+    expect(pos).toStrictEqual({ a: [], b: [1], c: [2], d: [3] });
   });
 
   test("positions update when someone ahead leaves, whether waiting or active", () => {
@@ -177,10 +179,10 @@ describe("SlotQueue onPosition", () => {
     q.enter((p) => pos.d.push(p));
 
     b.leave();
-    expect(pos).toEqual({ a: [], b: [1], c: [2, 1], d: [3, 2] });
+    expect(pos).toStrictEqual({ a: [], b: [1], c: [2, 1], d: [3, 2] });
 
     a.leave(); // the active ticket leaves: c is granted and d moves up to 1
-    expect(pos).toEqual({ a: [], b: [1], c: [2, 1], d: [3, 2, 1] });
+    expect(pos).toStrictEqual({ a: [], b: [1], c: [2, 1], d: [3, 2, 1] });
   });
 
   test("a ticket that has left or been granted gets no further callbacks", () => {
@@ -193,10 +195,10 @@ describe("SlotQueue onPosition", () => {
 
     b.leave();
     a.leave(); // c is granted; d moves up to 1
-    expect(pos).toEqual({ b: [1], c: [2, 1], d: [3, 2, 1] });
+    expect(pos).toStrictEqual({ b: [1], c: [2, 1], d: [3, 2, 1] });
 
     c.leave(); // granted ticket leaves: d is granted, no callbacks for c or b
-    expect(pos).toEqual({ b: [1], c: [2, 1], d: [3, 2, 1] });
+    expect(pos).toStrictEqual({ b: [1], c: [2, 1], d: [3, 2, 1] });
     expect(q.depth).toBe(0);
   });
 });

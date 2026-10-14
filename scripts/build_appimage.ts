@@ -80,10 +80,8 @@ await requireWebLibs(join(root, "public", "vendor"));
 /** The file at `path` as pinned, downloaded unless a copy with the right checksum is already there. */
 async function tool(pin: { url: string; sha256: string }, path: string): Promise<void> {
   const file = Bun.file(path);
-  if (await file.exists()) {
-    if (new Bun.CryptoHasher("sha256").update(await file.bytes()).digest("hex") === pin.sha256) {
-      return;
-    }
+  if ((await file.exists()) && new Bun.CryptoHasher("sha256").update(await file.bytes()).digest("hex") === pin.sha256) {
+    return;
   }
   await Bun.write(path, await download(pin.url, pin.sha256));
 }

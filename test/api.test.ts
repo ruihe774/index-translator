@@ -28,7 +28,7 @@ describe("metadata endpoints", () => {
   test("health reports engine state, the loaded model, limits and queue", async () => {
     const res = await fetch(base + "/api/v1/health");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
+    await expect(res.json()).resolves.toStrictEqual({
       status: "ready",
       model: CHAT,
       limits: { context_tokens: 1000, max_input_tokens: 400 },
@@ -42,8 +42,8 @@ describe("metadata endpoints", () => {
     const body = (await (await fetch(base + "/api/v1/models")).json()) as any;
     expect(body.default).toBe(CHAT);
     expect(body.loaded).toBe(CHAT);
-    expect(body.models.map((m: any) => m.id)).toEqual([CHAT, DOCUMENT]);
-    expect(body.models[1]).toEqual({
+    expect(body.models.map((m: any) => m.id)).toStrictEqual([CHAT, DOCUMENT]);
+    expect(body.models[1]).toStrictEqual({
       id: DOCUMENT,
       label: expect.any(String),
       kind: "document",
@@ -61,7 +61,7 @@ describe("metadata endpoints", () => {
   test("the OpenAPI document is served", async () => {
     const res = await fetch(base + "/api/v1/openapi.yaml");
     expect(res.status).toBe(200);
-    expect(await res.text()).toStartWith("openapi: 3.1");
+    await expect(res.text()).resolves.toStartWith("openapi: 3.1");
   });
 
   test("unknown endpoints and wrong methods use the error envelope", async () => {
@@ -81,7 +81,7 @@ describe("POST /tokenize", () => {
     const res = await post("/api/v1/tokenize", { text: "Hello", target_lang: "zh" });
     expect(res.status).toBe(200);
     const promptChars = "请将以下文本翻译为中文，直接输出翻译结果，不要进行任何解释。\n\nHello".length;
-    expect(await res.json()).toEqual({
+    await expect(res.json()).resolves.toStrictEqual({
       model: CHAT,
       counted_with: CHAT,
       prompt_tokens: promptChars + TEMPLATE.length,
@@ -144,13 +144,13 @@ describe("POST /tokenize", () => {
     await Bun.sleep(30);
 
     const before = (await (await fetch(base + "/api/v1/health")).json()) as any;
-    expect(before.queue).toEqual({ running: true, waiting: 1, max_waiting: 1 });
+    expect(before.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     const res = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" });
     expect(res.status).toBe(200);
 
     const after = (await (await fetch(base + "/api/v1/health")).json()) as any;
-    expect(after.queue).toEqual({ running: true, waiting: 1, max_waiting: 1 });
+    expect(after.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     await Promise.all([first.then(readSse), second.then(readSse)]);
     mock.delayMs = 0;
@@ -162,7 +162,7 @@ describe("POST /translate (JSON)", () => {
     mock.requests.length = 0;
     const res = await post("/api/v1/translate", { text: "你好，世界", target_lang: "en", max_output_tokens: 50 });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
+    await expect(res.json()).resolves.toStrictEqual({
       translation: "Hello, world",
       finish_reason: "stop",
       model: CHAT,
@@ -170,7 +170,7 @@ describe("POST /translate (JSON)", () => {
       timings: { queue_ms: expect.any(Number), prompt_ms: 12, generation_ms: 100, tokens_per_second: 70.12 },
     });
 
-    expect(mock.requests[0]).toEqual({
+    expect(mock.requests[0]).toStrictEqual({
       prompt: "请将以下文本翻译为英语，直接输出翻译结果，不要进行任何解释。\n\n你好，世界",
       maxTokens: 50,
     });
@@ -253,8 +253,8 @@ describe("POST /translate (SSE)", () => {
     expect(res.headers.get("content-type")).toStartWith("text/event-stream");
 
     const events = await readSse(res);
-    expect(events.map((e) => e.event)).toEqual(["start", "delta", "delta", "delta", "done"]);
-    expect(events[0]!.data).toEqual({
+    expect(events.map((e) => e.event)).toStrictEqual(["start", "delta", "delta", "delta", "done"]);
+    expect(events[0]!.data).toStrictEqual({
       model: CHAT,
       prompt_tokens: expect.any(Number),
       max_output_tokens: expect.any(Number),
@@ -266,7 +266,7 @@ describe("POST /translate (SSE)", () => {
         .map((e) => e.data.text)
         .join(""),
     ).toBe("Hello, world");
-    expect(events.at(-1)!.data).toEqual({
+    expect(events.at(-1)!.data).toStrictEqual({
       finish_reason: "stop",
       usage: { prompt_tokens: 42, completion_tokens: 5 },
       timings: { queue_ms: expect.any(Number), prompt_ms: 12, generation_ms: 100, tokens_per_second: 70.12 },
@@ -293,7 +293,7 @@ describe("POST /translate (SSE)", () => {
     const events = await readSse(
       await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh", stream: true }),
     );
-    expect(events.map((e) => e.event)).toEqual(["error"]);
+    expect(events.map((e) => e.event)).toStrictEqual(["error"]);
     expect(events[0]!.data.code).toBe("input_too_long");
     expect(events[0]!.data.details.max_input_tokens).toBe(400);
   });
@@ -302,7 +302,7 @@ describe("POST /translate (SSE)", () => {
     mock.failWith = "device lost";
     const events = await readSse(await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true }));
     mock.failWith = undefined;
-    expect(events.at(-1)).toEqual({
+    expect(events.at(-1)).toStrictEqual({
       event: "error",
       data: { code: "engine_error", message: expect.stringContaining("device lost") },
     });
@@ -320,17 +320,17 @@ describe("model selection", () => {
     });
     expect(res.status).toBe(200);
     expect(((await res.json()) as any).model).toBe(DOCUMENT);
-    expect(mock.launches.slice(before)).toEqual([DOCUMENT]);
+    expect(mock.launches.slice(before)).toStrictEqual([DOCUMENT]);
 
     const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
     expect(health.model).toBe(DOCUMENT);
 
     // A request already on the loaded model does not reload it.
     await post("/api/v1/translate", { text: "Again.", source_lang: "en", target_lang: "zh", model: DOCUMENT });
-    expect(mock.launches.slice(before)).toEqual([DOCUMENT]);
+    expect(mock.launches.slice(before)).toStrictEqual([DOCUMENT]);
 
     await post("/api/v1/translate", { text: "你好", target_lang: "en" });
-    expect(mock.launches.slice(before)).toEqual([DOCUMENT, CHAT]);
+    expect(mock.launches.slice(before)).toStrictEqual([DOCUMENT, CHAT]);
   });
 
   test("the document model gets its fixed template with the whole text in place", async () => {
@@ -357,7 +357,7 @@ describe("model selection", () => {
     expect(pair.status).toBe(400);
     const { error } = (await pair.json()) as any;
     expect(error.code).toBe("unsupported_language_pair");
-    expect(error.details.supported).toEqual(["zh-en", "en-zh", "zh-ja", "ja-zh"]);
+    expect(error.details.supported).toStrictEqual(["zh-en", "en-zh", "zh-ja", "ja-zh"]);
   });
 
   test("the document model rejects options its fixed template cannot express", async () => {
@@ -412,7 +412,7 @@ describe("queueing and cancellation", () => {
     await Bun.sleep(30);
 
     const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
-    expect(health.queue).toEqual({ running: true, waiting: 1, max_waiting: 1 });
+    expect(health.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     const third = await post("/api/v1/translate", { text: "three", target_lang: "en" });
     expect(third.status).toBe(429);
@@ -421,9 +421,9 @@ describe("queueing and cancellation", () => {
 
     const [a, b] = await Promise.all([first.then(readSse), second.then(readSse)]);
     mock.delayMs = 0;
-    expect(a.map((e) => e.event)).toEqual(["start", "delta", "delta", "delta", "done"]);
-    expect(b.map((e) => e.event)).toEqual(["queued", "start", "delta", "delta", "delta", "done"]);
-    expect(b[0]!.data).toEqual({ position: 1 });
+    expect(a.map((e) => e.event)).toStrictEqual(["start", "delta", "delta", "delta", "done"]);
+    expect(b.map((e) => e.event)).toStrictEqual(["queued", "start", "delta", "delta", "delta", "done"]);
+    expect(b[0]!.data).toStrictEqual({ position: 1 });
     expect(b[1]!.data.queue_ms).toBeGreaterThan(0);
   });
 
@@ -480,10 +480,10 @@ describe("queueing and cancellation", () => {
       ac.abort();
       await expect(second).rejects.toThrow();
       await waitForWaiting(0);
-      expect(await queueState()).toEqual({ running: true, waiting: 0 });
+      await expect(queueState()).resolves.toStrictEqual({ running: true, waiting: 0 });
 
       expect((await first).status).toBe(200);
-      expect(await queueState()).toEqual({ running: false, waiting: 0 });
+      await expect(queueState()).resolves.toStrictEqual({ running: false, waiting: 0 });
       expect(log).not.toHaveBeenCalled();
 
       const next = await post("/api/v1/translate", { text: "next", target_lang: "en" });
@@ -511,7 +511,7 @@ describe("queueing and cancellation", () => {
       await waitForWaiting(0);
       await Bun.sleep(50);
       expect(mock.aborted).toBe(abortedBefore + 1);
-      expect(await queueState()).toEqual({ running: false, waiting: 0 });
+      await expect(queueState()).resolves.toStrictEqual({ running: false, waiting: 0 });
       expect(log).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
@@ -557,7 +557,7 @@ describe("queueing and cancellation", () => {
 
       const next = await post("/api/v1/translate", { text: "next", target_lang: "en", stream: true });
       expect((await readSse(next)).at(-1)!.event).toBe("done");
-      expect(await queueState()).toEqual({ running: false, waiting: 0 });
+      await expect(queueState()).resolves.toStrictEqual({ running: false, waiting: 0 });
     } finally {
       g.setInterval = realSetInterval;
       g.clearInterval = realClearInterval;
@@ -836,7 +836,7 @@ describe("output budget", () => {
 
     beforeAll(async () => {
       app = await startApp(config({ ctxSize: 300, maxInputTokens: 200 }), launcher);
-      origin = app.server.url.origin;
+      ({ origin } = app.server.url);
       await waitReady(app);
     });
 
@@ -846,7 +846,7 @@ describe("output budget", () => {
 
     test("a prompt at the input limit gets the remaining context as its budget", async () => {
       const text = await textWithPromptTokens(origin, 200);
-      expect(await tokenCount(origin, text)).toBe(200);
+      await expect(tokenCount(origin, text)).resolves.toBe(200);
       const events = await readSse(await translate(origin, { text, target_lang: "en", stream: true }));
       expect(events.find((e) => e.event === "start")?.data).toMatchObject({
         prompt_tokens: 200,
@@ -866,7 +866,7 @@ describe("output budget", () => {
       const text = await textWithPromptTokens(origin, 201);
       const res = await translate(origin, { text, target_lang: "en" });
       expect(res.status).toBe(413);
-      expect(await res.json()).toEqual({
+      await expect(res.json()).resolves.toStrictEqual({
         error: {
           code: "input_too_long",
           message: "the input exceeds the token limit for a single translation",
@@ -893,7 +893,7 @@ describe("output budget", () => {
       const requests = mock.requests.length;
       const res = await translate(origin, { text: tooLong, target_lang: "en" });
       expect(res.status).toBe(413);
-      expect(await res.json()).toEqual({
+      await expect(res.json()).resolves.toStrictEqual({
         error: {
           code: "input_too_long",
           message: "the input leaves no room for a translation in the context window",

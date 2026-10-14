@@ -70,8 +70,8 @@ export class VoiceSettings extends HTMLElement {
   }
 
   /** Reading speed, 1 for normal. */
-  get speed(): number {
-    return Number(this.#speed.value);
+  get speed(): string {
+    return this.#speed.value;
   }
 
   /** Selects a speed from the list, as stored; anything not offered is ignored. */

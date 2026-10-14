@@ -81,7 +81,7 @@ describe("pageNote", () => {
   const note = (result: PageText) => pageNote("paper.pdf", 2, 14, result);
 
   test("a page with text is named", () => {
-    expect(note({ markdown: "# Title\n", needsOcr: false })).toEqual({
+    expect(note({ markdown: "# Title\n", needsOcr: false })).toStrictEqual({
       text: "paper.pdf, page 2 of 14.",
       failed: false,
       warning: false,

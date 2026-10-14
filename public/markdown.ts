@@ -91,7 +91,7 @@ const isBlank = (line: string) => !/\S/.test(line);
 
 /** Leading tabs count as four columns; the result has them expanded. */
 function expandIndent(line: string): string {
-  const m = /^[ \t]*/.exec(line)![0];
+  const [m] = /^[ \t]*/.exec(line)!;
   if (!m.includes("\t")) {
     return line;
   }
@@ -852,7 +852,7 @@ function linkBareUrls(nodes: Inline[]): Inline[] {
     const parts: Inline[] = [];
     let last = 0;
     for (const m of n.text.matchAll(BARE_URL)) {
-      let url = m[0];
+      let [url] = m;
       // A closing parenthesis belongs to the URL only if it has an opening one.
       while (url.endsWith(")") && (url.match(/\)/g)?.length ?? 0) > (url.match(/\(/g)?.length ?? 0)) {
         url = url.slice(0, -1);

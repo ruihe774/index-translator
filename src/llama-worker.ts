@@ -26,7 +26,10 @@ export type WorkerReply =
 declare var self: Worker;
 
 const post = (reply: WorkerReply) => self.postMessage(reply);
-const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
+const tick = () =>
+  new Promise<void>((resolve) => {
+    setImmediate(resolve);
+  });
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 let model: Model | undefined;
@@ -41,7 +44,7 @@ const active = new Set<number>();
 const cancelled = new Set<number>();
 
 const postError = (req: number, e: unknown) =>
-  post({ type: "error", req, message: messageOf(e), ...(e instanceof ImageError ? { image: true } : {}) });
+  post({ type: "error", req, message: messageOf(e), ...(e instanceof ImageError && { image: true }) });
 
 function exclusive(req: number, fn: () => void | Promise<void>): void {
   chain = chain.then(fn).catch((e) => postError(req, e));

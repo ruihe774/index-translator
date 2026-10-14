@@ -130,8 +130,8 @@ describe("the loader", () => {
     const dir = await mkdtemp(join(tmpdir(), "qoa-loader-"));
     try {
       const load = qoaLoader(dir);
-      expect(await load()).toBeUndefined();
-      expect(await load()).toBeUndefined();
+      await expect(load()).resolves.toBeUndefined();
+      await expect(load()).resolves.toBeUndefined();
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -201,7 +201,7 @@ describe("POST /speech", () => {
     mockSpeech.failWith = "out of memory";
     const res = await speak(base, "audio/qoa");
     expect(res.status).toBe(502);
-    expect(((await res.json()) as any).error).toEqual({ code: "speech_error", message: "out of memory" });
+    expect(((await res.json()) as any).error).toStrictEqual({ code: "speech_error", message: "out of memory" });
     resetMockSpeech();
   });
 });

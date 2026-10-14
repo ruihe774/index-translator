@@ -92,7 +92,7 @@ export async function runPass(
 
 if (import.meta.main) {
   const base = (Bun.argv[2] ?? "http://127.0.0.1:3000").replace(/\/+$/, "");
-  const outDir = Bun.argv[3];
+  const [, , , outDir] = Bun.argv;
 
   const model = Bun.env.MODEL ? { model: Bun.env.MODEL } : {};
   const english = await englishEssays();

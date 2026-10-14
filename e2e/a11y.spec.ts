@@ -14,7 +14,7 @@ for (const scheme of ["light", "dark"] as const) {
     await app.open();
     await app.openAdvanced();
     let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations).toEqual([]);
+    expect(results.violations).toStrictEqual([]);
 
     await app.text.fill("Hello, world");
     await app.translate.click();
@@ -22,7 +22,7 @@ for (const scheme of ["light", "dark"] as const) {
     // Buttons fade their background; axe would read the blended colours mid-transition.
     await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations).toEqual([]);
+    expect(results.violations).toStrictEqual([]);
   });
 
   test(`an image as the source passes axe in ${scheme} mode and is named for assistive technology`, async ({
@@ -47,13 +47,13 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(picture).toHaveAccessibleDescription("sign.png, 320 × 200 pixels");
     await expect(app.page.locator("#file-note")).toHaveAttribute("role", "status");
     let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations).toEqual([]);
+    expect(results.violations).toStrictEqual([]);
 
     await app.translate.click();
     await expect(app.meta).toContainText("generated");
     await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations).toEqual([]);
+    expect(results.violations).toStrictEqual([]);
     // At 320 px the picture still fits its pane: no horizontal scrolling.
     await app.page.setViewportSize({ width: 320, height: 640 });
     expect(await app.page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
@@ -86,7 +86,7 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(app.page.locator("#pause-output")).toHaveAccessibleName("Resume reading");
     await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     const results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations).toEqual([]);
+    expect(results.violations).toStrictEqual([]);
 
     // Every speech control is a 44 px target and, like the rest, needs no horizontal scrolling.
     for (const id of ["listen-output", "prev-output", "pause-output", "next-output"]) {
@@ -122,7 +122,7 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(status).toContainText("Microphone access was denied");
     await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations).toEqual([]);
+    expect(results.violations).toStrictEqual([]);
 
     // Upload refused: a file that is not audio.
     await app.page
@@ -131,7 +131,7 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(status).not.toContainText("Microphone access was denied");
     await expect(status).toHaveText(/\S/);
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations).toEqual([]);
+    expect(results.violations).toStrictEqual([]);
 
     // The group keeps 44 px targets and fits 320 px with the error showing.
     for (const name of ["Record", "Upload audio…"]) {
@@ -160,7 +160,7 @@ test("the speech controls are reached in order and focus does not get lost when 
     await app.page.keyboard.press("Tab");
     order.push(await app.page.evaluate(() => document.activeElement?.id ?? ""));
   }
-  expect(order).toEqual(["prev-source", "pause-source", "next-source", "clear"]);
+  expect(order).toStrictEqual(["prev-source", "pause-source", "next-source", "clear"]);
   await app.page.locator("#pause-source").focus();
   await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   expect(await app.page.evaluate(() => document.activeElement?.id)).toBe("listen-source");
@@ -203,7 +203,7 @@ test("text spacing overrides clip nothing", async ({ app }) => {
       )
       .map((el) => el.id || el.textContent),
   );
-  expect(clipped).toEqual([]);
+  expect(clipped).toStrictEqual([]);
 });
 
 test("skip link is first in the tab order and the whole form is reachable in reading order", async ({ app }) => {
@@ -215,7 +215,7 @@ test("skip link is first in the tab order and the whole form is reachable in rea
       await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""),
     );
   }
-  expect(names.slice(0, 10)).toEqual([
+  expect(names.slice(0, 10)).toStrictEqual([
     "Skip to main content",
     "engine",
     "from",
@@ -250,7 +250,7 @@ test("pointer targets are at least 24 px", async ({ app }) => {
       .filter((r) => r.width < 24 || r.height < 24)
       .map((r) => r.id),
   );
-  expect(small).toEqual([]);
+  expect(small).toStrictEqual([]);
 });
 
 for (const scheme of ["light", "dark"] as const) {
@@ -300,13 +300,13 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(app.output.locator('a[data-link-problem="mismatch"]')).toHaveCount(1);
     await expect(app.output.locator('a[data-link-problem="missing"][aria-disabled="true"]')).toHaveCount(1);
     let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-    expect(results.violations).toEqual([]);
+    expect(results.violations).toStrictEqual([]);
 
     for (const name of ["甲", "乙"]) {
       await app.output.getByRole("link", { name }).click();
       await expect(app.page.locator("dialog.link-dialog")).toBeVisible();
       results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
-      expect(results.violations).toEqual([]);
+      expect(results.violations).toStrictEqual([]);
       await app.page.keyboard.press("Escape");
     }
   });

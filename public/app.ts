@@ -366,7 +366,7 @@ outputEl.addEventListener("auxclick", onOutputLink);
 let linkCheck: { translation: string; ref: LinkReference } | null = null;
 
 function applyLinkCheck() {
-  if (linkCheck && linkCheck.translation === state.translation && outputEl.classList.contains("markdown")) {
+  if (linkCheck?.translation === state.translation && outputEl.classList.contains("markdown")) {
     checkLinks(outputEl, linkCheck.ref);
   }
 }
@@ -387,9 +387,7 @@ function wireSwitch(el: ViewSwitch, side: keyof typeof views, show: () => void) 
 let synced: { source: string; translation: string; alignment: Alignment } | null = null;
 
 function syncActive(): Alignment | null {
-  return synced && synced.source === textInput.value && synced.translation === state.translation
-    ? synced.alignment
-    : null;
+  return synced?.source === textInput.value && synced.translation === state.translation ? synced.alignment : null;
 }
 
 function refreshSync() {
@@ -554,7 +552,7 @@ async function translate() {
   try {
     const body = JSON.stringify({
       ...built.body,
-      ...(image ? { image: await readDataUrl(image) } : {}),
+      ...(image && { image: await readDataUrl(image) }),
       resumable: true,
     });
     controller.signal.throwIfAborted();

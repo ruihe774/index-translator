@@ -106,7 +106,7 @@ describe("loadConfig validates the lists", () => {
 
   test("patterns pass through unchanged", () => {
     const cfg = loadConfig({ ALLOWED_HOSTS: "*.example.com, a:80", ALLOWED_ORIGINS: "https://*.example.com" }, []);
-    expect(cfg.allowedHosts).toEqual(["*.example.com", "a:80"]);
-    expect(cfg.allowedOrigins).toEqual(["https://*.example.com"]);
+    expect(cfg.allowedHosts).toStrictEqual(["*.example.com", "a:80"]);
+    expect(cfg.allowedOrigins).toStrictEqual(["https://*.example.com"]);
   });
 });

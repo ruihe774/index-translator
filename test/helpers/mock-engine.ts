@@ -98,7 +98,9 @@ export interface FakeModel extends Running {
 /** A loaded model that plays `mock.chunks`. Stopping or killing it fails the generations in flight. */
 export function fakeModel(hooks: FakeHooks = {}): FakeModel {
   let finish!: (reason: string | undefined) => void;
-  const exited = new Promise<string | undefined>((resolve) => (finish = resolve));
+  const exited = new Promise<string | undefined>((resolve) => {
+    finish = resolve;
+  });
   const gone = new AbortController();
   const end = (reason: string | undefined) => {
     if (model.stopped) {
@@ -113,7 +115,9 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
   async function alive(p: Promise<void> | undefined, signal: AbortSignal): Promise<void> {
     if (p && !signal.aborted) {
       let wake!: () => void;
-      const aborted = new Promise<void>((resolve) => (wake = resolve));
+      const aborted = new Promise<void>((resolve) => {
+        wake = resolve;
+      });
       signal.addEventListener("abort", wake);
       await Promise.race([p, aborted]).finally(() => signal.removeEventListener("abort", wake));
     }
@@ -126,7 +130,7 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
   const model: FakeModel = {
     exited,
     stopped: false,
-    stop: () => end(),
+    stop: () => end(undefined),
     kill: (reason = "the engine thread exited") => end(reason),
     // eslint-disable-next-line @typescript-eslint/require-await -- a refusal rejects, as the real engine does, rather than throwing
     async countTokens(content, image) {
@@ -183,7 +187,7 @@ export const launcher: Launcher = async (model) => {
     await Bun.sleep(10);
   }
   return fakeModel({
-    onStart: (prompt, maxTokens, image) => mock.requests.push({ prompt, maxTokens, ...(image ? { image } : {}) }),
+    onStart: (prompt, maxTokens, image) => mock.requests.push({ prompt, maxTokens, ...(image && { image }) }),
     onAbort: () => mock.aborted++,
   });
 };
@@ -283,7 +287,9 @@ export const speechLauncher: SpeechLauncher = () => ({
         if (mockSpeech.delayMs) {
           const abort = mockSpeech.ignoreAbort
             ? new Promise(() => {})
-            : new Promise((wake) => signal.addEventListener("abort", wake));
+            : new Promise((wake) => {
+                signal.addEventListener("abort", wake);
+              });
           await Promise.race([Bun.sleep(mockSpeech.delayMs), abort]);
         }
         if (signal.aborted && !mockSpeech.ignoreAbort) {

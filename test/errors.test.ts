@@ -156,7 +156,7 @@ describe("describeError: fallbacks", () => {
   });
 
   test("with no body and no status, says something went wrong", () => {
-    expect(describeError()).toBe("Something went wrong.");
+    expect(describeError(undefined)).toBe("Something went wrong.");
     expect(describeError({})).toBe("Something went wrong.");
   });
 

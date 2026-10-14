@@ -89,7 +89,7 @@ function rig(limitMs = 60_000): Rig {
 }
 
 const stopped = (s: FakeStream) => s.tracks.every((t) => t.stopped > 0);
-const tick = () => new Promise((r) => setTimeout(r, 0));
+const tick = () => Bun.sleep(0);
 
 describe("MicRecorder", () => {
   test("records, then stop returns the bytes and releases the microphone", async () => {
@@ -102,7 +102,7 @@ describe("MicRecorder", () => {
     expect(r.mic.starting).toBe(false);
     expect(r.mic.recording).toBe(true);
     const bytes = await r.mic.stop();
-    expect(new Uint8Array(bytes)).toEqual(new Uint8Array([1, 2, 3]));
+    expect(new Uint8Array(bytes)).toStrictEqual(new Uint8Array([1, 2, 3]));
     expect(stopped(r.streams[0]!)).toBe(true);
     expect(r.mic.recording).toBe(false);
     expect(r.mic.stopping).toBe(false);
@@ -216,7 +216,7 @@ describe("MicRecorder", () => {
     const started = r.mic.start(() => limits++);
     r.gum[0]!.resolve();
     await started;
-    await new Promise((res) => setTimeout(res, 40));
+    await Bun.sleep(40);
     expect(limits).toBe(1);
     await r.mic.stop();
 
@@ -226,7 +226,7 @@ describe("MicRecorder", () => {
     r2.gum[0]!.resolve();
     await s2;
     await r2.mic.stop();
-    await new Promise((res) => setTimeout(res, 40));
+    await Bun.sleep(40);
     expect(limits2).toBe(0);
     await tick();
   });

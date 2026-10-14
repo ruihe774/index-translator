@@ -59,19 +59,21 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
       );
     await call("DELETE");
     await use({
-      set: async (knobs) =>
-        void (await call("POST", {
+      set: async (knobs) => {
+        await call("POST", {
           ...knobs,
           failWith: knobs.failWith ?? undefined,
           failLaunch: knobs.failLaunch ?? undefined,
-        })),
+        });
+      },
       state: () => call("GET"),
-      unload: async () => void (await call("POST", undefined, "/restart")),
+      unload: async () => {
+        await call("POST", undefined, "/restart");
+      },
     });
     await call("DELETE");
   },
-  app: async ({ page, mock }, use) => {
-    mock; // reset before the page loads
+  app: async ({ page }, use) => {
     await use(new AppPage(page));
   },
 });

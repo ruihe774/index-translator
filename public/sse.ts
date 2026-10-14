@@ -71,7 +71,11 @@ function parseBlock(block: string): SseEvent | null {
     return null;
   }
   try {
-    return { event, data: JSON.parse(data.join("\n")), id };
+    const eventObj: SseEvent = { event, data: JSON.parse(data.join("\n")) };
+    if (id !== undefined) {
+      eventObj.id = id;
+    }
+    return eventObj;
   } catch {
     throw new Error("the server sent an unreadable event");
   }

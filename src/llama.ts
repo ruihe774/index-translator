@@ -141,11 +141,13 @@ class NativeWorker {
     });
 
     let finish!: (reason: string | undefined) => void;
-    const exited = new Promise<string | undefined>((resolve) => (finish = resolve));
+    const exited = new Promise<string | undefined>((resolve) => {
+      finish = resolve;
+    });
     void this.lost.then(finish);
     return {
       exited,
-      stop: () => void this.call({ type: "unload", model: no }).then(() => finish(), finish),
+      stop: () => void this.call({ type: "unload", model: no }).then(() => finish(undefined), finish),
       countTokens: async (content, image) => {
         await checkImage(image);
         const reply = await this.call({ type: "count", model: no, content, image });
@@ -181,7 +183,9 @@ class NativeWorker {
     try {
       for (;;) {
         while (replies.length === 0 && !signal?.aborted) {
-          await new Promise<void>((resolve) => (wake = resolve));
+          await new Promise<void>((resolve) => {
+            wake = resolve;
+          });
         }
         signal?.throwIfAborted();
         const reply = replies.shift()!;

@@ -167,7 +167,8 @@ export class MicRecorder {
       recorder.onstop = () => finish();
       recorder.onerror = () => finish(new Error("The recording failed."));
       if (recorder.state === "inactive") {
-        return finish();
+        finish();
+        return;
       } // the browser already ended it
       try {
         recorder.stop();

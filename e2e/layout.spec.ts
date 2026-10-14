@@ -23,8 +23,8 @@ test("source and translation areas line up, before and after a translation", asy
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
   const done = { source: await box(app, "#text"), output: await box(app, "#output-area") };
-  expect(done.source).toEqual(idle.source);
-  expect(done.output).toEqual(idle.output);
+  expect(done.source).toStrictEqual(idle.source);
+  expect(done.output).toStrictEqual(idle.output);
 });
 
 test("long text and a long translation do not change the pane size", async ({ app, mock }) => {
@@ -35,7 +35,7 @@ test("long text and a long translation do not change the pane size", async ({ ap
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
   const after = await box(app, "#text");
-  expect({ ...after, y: 0 }).toEqual({ ...before, y: 0 }); // the page may scroll, the size must not change
+  expect({ ...after, y: 0 }).toStrictEqual({ ...before, y: 0 }); // the page may scroll, the size must not change
   expect((await box(app, "#output-area")).height).toBe(before.height);
 });
 
@@ -48,15 +48,15 @@ test("Raw and Preview of the source, and of the translation, have one size and p
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
 
-  expect(await box(app, "#source-area")).toEqual(raw);
+  expect(await box(app, "#source-area")).toStrictEqual(raw);
   const outputPreview = await box(app, "#output-area");
-  expect(outputPreview).toEqual({ ...outputPreview, y: raw.y, height: raw.height });
+  expect(outputPreview).toStrictEqual({ ...outputPreview, y: raw.y, height: raw.height });
 
   await app.page.locator("#source-switch").getByRole("button", { name: "Raw" }).click();
   await expect(app.text).toBeVisible();
-  expect(await box(app, "#text")).toEqual(raw);
+  expect(await box(app, "#text")).toStrictEqual(raw);
   await app.page.locator("#output-switch").getByRole("button", { name: "Raw" }).click();
-  expect(await box(app, "#output-area")).toEqual(outputPreview);
+  expect(await box(app, "#output-area")).toStrictEqual(outputPreview);
 });
 
 test("the text box cannot be resized", async ({ app }) => {
@@ -130,9 +130,9 @@ test("Model is a switch on the same line as Model and options", async ({ app }) 
   await expect(group.getByRole("button")).toHaveCount(3);
   // innerText is what is rendered: the long names here, the short ones below 32rem.
   const names = () => group.getByRole("button").evaluateAll((els) => els.map((el) => (el as HTMLElement).innerText));
-  expect(await names()).toEqual(["Automatic", "Index-Translate-9B", "Index-NativeLong-9B"]);
+  expect(await names()).toStrictEqual(["Automatic", "Index-Translate-9B", "Index-NativeLong-9B"]);
   await app.page.setViewportSize({ width: 320, height: 700 });
-  expect(await names()).toEqual(["Auto", "Index-Translate", "Nailong"]);
+  expect(await names()).toStrictEqual(["Auto", "Index-Translate", "Nailong"]);
   // A wider font than the design font, as on the CI runner: the switch must still fit.
   await app.page.evaluate(() => {
     for (const e of document.querySelectorAll<HTMLElement>("*")) {
@@ -174,7 +174,7 @@ test("the Model switch looks like the Raw / Preview switch", async ({ app }) => 
   await app.text.fill("x");
   await app.page.mouse.move(0, 0);
   const model = await style("#model-switch");
-  await expect.poll(() => style("#source-switch")).toEqual(model);
+  await expect.poll(() => style("#source-switch")).toStrictEqual(model);
 });
 
 test("the engine status is a link to the health endpoint, and the footer links are gone", async ({ app }) => {
@@ -189,7 +189,7 @@ test("the engine status is a link to the health endpoint, and the footer links a
   await expect(app.page.getByText("Engine health (JSON)")).toHaveCount(0);
   await expect(app.page.locator("footer")).toHaveCount(0);
   const hrefs = await app.page.getByRole("link").evaluateAll((els) => els.map((e) => e.getAttribute("href")));
-  expect(hrefs).toEqual(["#main", "/api/v1/health"]);
+  expect(hrefs).toStrictEqual(["#main", "/api/v1/health"]);
 });
 
 test("a warning shows under the source, a plain choice shows nothing", async ({ app }) => {
@@ -229,11 +229,11 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
     STABLE.filter((s) => s !== "#meta"),
   );
   for (const [k, v] of Object.entries(running)) {
-    expect(v, `while running: ${k}`).toEqual(idle[k]);
+    expect(v, `while running: ${k}`).toStrictEqual(idle[k]);
   }
   // Stop sits where Clear was, and Translate has not moved.
-  expect(await box(app, "#stop")).toEqual(buttons["#clear"]);
-  expect(await box(app, "#translate")).toEqual(buttons["#translate"]);
+  expect(await box(app, "#stop")).toStrictEqual(buttons["#clear"]);
+  expect(await box(app, "#translate")).toStrictEqual(buttons["#translate"]);
 
   await expect(app.meta).toContainText("generated");
   await expect(app.copy).toBeVisible();
@@ -243,10 +243,10 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
     STABLE.filter((s) => s !== "#meta"),
   );
   for (const [k, v] of Object.entries(done)) {
-    expect(v, `when done: ${k}`).toEqual(idle[k]);
+    expect(v, `when done: ${k}`).toStrictEqual(idle[k]);
   }
-  expect(await box(app, "#clear")).toEqual(buttons["#clear"]);
-  expect(await box(app, "#translate")).toEqual(buttons["#translate"]);
+  expect(await box(app, "#clear")).toStrictEqual(buttons["#clear"]);
+  expect(await box(app, "#translate")).toStrictEqual(buttons["#translate"]);
 });
 
 test("Clear and Stop are never shown together", async ({ app, mock }) => {

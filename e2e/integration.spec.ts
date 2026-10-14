@@ -163,6 +163,7 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   await stubTranslate(
     app,
     200,
+    // eslint-disable-next-line @typescript-eslint/no-misused-spread -- one event per code point, so no character is split
     sse([...[...md].map((c): [string, unknown] => ["delta", { text: c }]), ["done", done]]),
   );
   await run(app, "# Title\n\n- **one**\n- [link](https://example.com)");
@@ -220,14 +221,14 @@ test("output links ask for confirmation, with other wording for links that do no
   await expect(dialog).toContainText("https://a.example");
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
-  expect(await app.page.evaluate(() => (globalThis as any).opened)).toEqual([]);
+  expect(await app.page.evaluate(() => (globalThis as any).opened)).toStrictEqual([]);
 
   await app.output.getByRole("link", { name: "乙" }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Open this unverified link?");
   await dialog.getByRole("button", { name: "Open anyway" }).click();
   await expect(dialog).toBeHidden();
   // The `close` event that resolves the dialog is queued after the dialog is already hidden.
-  await expect.poll(() => app.page.evaluate(() => (globalThis as any).opened)).toEqual(["https://a.example/"]);
+  await expect.poll(() => app.page.evaluate(() => (globalThis as any).opened)).toStrictEqual(["https://a.example/"]);
 
   // A target absent from the source is disabled and opens nothing.
   await expect(app.output.locator("a[aria-disabled=true]")).toHaveText(/丙/);
