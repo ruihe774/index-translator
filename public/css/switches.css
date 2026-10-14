@@ -48,7 +48,7 @@
   display: none;
 }
 
-@media (max-width: 32rem) {
+@media (max-width: 53.99rem) {
   .long {
     display: none;
   }

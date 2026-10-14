@@ -3,7 +3,7 @@
    there (0 on affected versions, WebKit bug 301994). So fixed room is left at the top (the
    Dynamic Island's 59pt) and the bottom (34pt), and the panes are shorter by that much. Portrait
    only; in landscape the real insets are used (next block). */
-@media (max-width: 45.99rem) and (display-mode: standalone) and (orientation: portrait) {
+@media (max-width: 53.99rem) and (display-mode: standalone) and (orientation: portrait) {
   :root {
     --standalone-top: max(env(safe-area-inset-top, 0px), 2rem);
     --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 4rem);
@@ -34,7 +34,7 @@
     padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
   }
 
-  @media (min-width: 46rem) {
+  @media (min-width: 54rem) {
     :root {
       --pane-height: max(4rem, calc(100svh - 9.75rem - var(--standalone-top) - var(--standalone-bottom)));
     }

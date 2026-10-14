@@ -1,7 +1,7 @@
-/* Phones (one column): compact. Smaller margins and padding, 1rem text, the language select and
+/* Below 54rem (one column): compact. Smaller margins and padding, 1rem text, the language select and
    the Raw/Preview switch share one row, and the panes take the height the chrome leaves, so
    they show about twice the lines. Targets keep --target (WCAG 2.5.8). */
-@media (max-width: 45.99rem) {
+@media (max-width: 53.99rem) {
   :root {
     --gap: 0.5rem;
     --gutter: 0.5rem;

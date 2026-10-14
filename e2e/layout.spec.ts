@@ -128,7 +128,7 @@ test("Model is a switch on the same line as Model and options", async ({ app }) 
   await app.open();
   const group = app.page.getByRole("group", { name: "Model" });
   await expect(group.getByRole("button")).toHaveCount(3);
-  // innerText is what is rendered: the long names here, the short ones below 32rem.
+  // innerText is what is rendered: the long names here, the short ones below 54rem.
   const names = () => group.getByRole("button").evaluateAll((els) => els.map((el) => (el as HTMLElement).innerText));
   expect(await names()).toStrictEqual(["Automatic", "Index-Translate-9B", "Index-NativeLong-9B"]);
   await app.page.setViewportSize({ width: 320, height: 700 });
