@@ -29,11 +29,11 @@ test("source and translation areas line up, before and after a translation", asy
 
 test("the two panes' header rows line up across the desktop widths", async ({ app }) => {
   // The From pane has an extra Open button; the header must still wrap in both panes or in neither.
-  test.setTimeout(180_000); // 105 page loads, slow under coverage on CI
   const misaligned: number[] = [];
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  await app.open(); // one load: reloading 105 times overran the test timeout under coverage
   for (let width = 864; width <= 1280; width += 4) {
     await app.page.setViewportSize({ width, height: 800 });
-    await app.open();
     const source = await box(app, "#text");
     const output = await box(app, "#output-area");
     if (source.y !== output.y || source.height !== output.height) {
