@@ -234,6 +234,8 @@ async function loadLanguages() {
     select.append(o);
   };
   add(fromSelect, "auto", "Detect");
+  // "Detect" is not a language, so a rule separates it from the list.
+  fromSelect.append(document.createElement("hr"));
   for (const l of languages) {
     add(fromSelect, l.code, l.name);
     add(toSelect, l.code, l.name);
