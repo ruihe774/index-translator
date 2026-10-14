@@ -9,10 +9,7 @@ export const MIN_SAMPLE_SECONDS = 1;
 export function encodeWav(samples: Float32Array, rate: number): ArrayBuffer {
   const view = new DataView(new ArrayBuffer(44 + samples.length * 2));
   const ascii = (at: number, text: string) => {
-    for (let i = 0; i < text.length; i++) {
-      // eslint-disable-next-line unicorn/prefer-code-point -- the text is ASCII and each char is one byte of it
-      view.setUint8(at + i, text.charCodeAt(i));
-    }
+    for (let i = 0; i < text.length; i++) view.setUint8(at + i, text.charCodeAt(i));
   };
   ascii(0, "RIFF");
   view.setUint32(4, 36 + samples.length * 2, true);
@@ -28,7 +25,7 @@ export function encodeWav(samples: Float32Array, rate: number): ArrayBuffer {
   view.setUint32(40, samples.length * 2, true);
   for (let i = 0; i < samples.length; i++) {
     const v = Math.max(-1, Math.min(1, samples[i]!));
-    view.setInt16(44 + i * 2, v < 0 ? v * 0x80_00 : v * 0x7f_ff, true);
+    view.setInt16(44 + i * 2, v < 0 ? v * 0x8000 : v * 0x7fff, true);
   }
   return view.buffer;
 }
@@ -67,9 +64,7 @@ function micProblem(e: unknown): Error {
   if (name === "NotAllowedError" || name === "SecurityError") {
     return new Error("Microphone access was denied. Allow it for this page to record.");
   }
-  if (name === "NotFoundError" || name === "OverconstrainedError") {
-    return new Error("No microphone was found.");
-  }
+  if (name === "NotFoundError" || name === "OverconstrainedError") return new Error("No microphone was found.");
   return e instanceof Error ? e : new Error(String(e));
 }
 
@@ -108,31 +103,27 @@ export class MicRecorder {
     if (!getUserMedia || !Recorder) {
       throw new Error("This browser cannot record from a microphone here (it needs a secure page).");
     }
-    if (this.opening || this.recorder || this.pending) {
-      throw new Error("Already recording.");
-    }
+    if (this.opening || this.recorder || this.pending) throw new Error("Already recording.");
     this.opening = true;
     try {
       let stream: MicStream;
       try {
         stream = await getUserMedia({ audio: true });
-      } catch (error) {
-        throw micProblem(error);
+      } catch (e) {
+        throw micProblem(e);
       }
       try {
         const chunks: Blob[] = [];
         this.chunks = chunks;
         const recorder = new Recorder(stream);
         recorder.ondataavailable = (e) => {
-          if (e.data.size > 0) {
-            chunks.push(e.data);
-          }
+          if (e.data.size) chunks.push(e.data);
         };
         recorder.start();
         this.recorder = recorder;
-      } catch (error) {
+      } catch (e) {
         stopTracks(stream); // the microphone indicator must go out
-        throw micProblem(error);
+        throw micProblem(e);
       }
       this.timer = setTimeout(onLimit, this.deps.limitMs ?? MAX_SAMPLE_SECONDS * 1000);
     } finally {
@@ -142,50 +133,34 @@ export class MicRecorder {
 
   /** Ends the recording and returns what was captured. Calling it again meanwhile returns the same result. */
   stop(): Promise<ArrayBuffer> {
-    if (this.pending) {
-      return this.pending;
-    }
+    if (this.pending) return this.pending;
     clearTimeout(this.timer);
-    const { recorder } = this;
-    if (!recorder) {
-      return Promise.reject(new Error("Not recording."));
-    }
+    const recorder = this.recorder;
+    if (!recorder) return Promise.reject(new Error("Not recording."));
     this.recorder = null;
-    const { chunks } = this;
+    const chunks = this.chunks;
     const done = new Promise<ArrayBuffer>((resolve, reject) => {
       let settled = false;
       const finish = (error?: unknown) => {
-        if (settled) {
-          return;
-        }
+        if (settled) return;
         settled = true;
         stopTracks(recorder.stream);
-        if (error) {
-          reject(error instanceof Error ? error : new Error("The recording failed."));
-          return;
-        }
-        // eslint-disable-next-line promise/no-promise-in-callback -- the callback settles the outer promise; there is nothing to return
-        new Blob(chunks, { type: recorder.mimeType }).arrayBuffer().then(resolve).catch(reject);
+        if (error) return reject(error instanceof Error ? error : new Error("The recording failed."));
+        new Blob(chunks, { type: recorder.mimeType }).arrayBuffer().then(resolve, reject);
       };
       recorder.onstop = () => finish();
-      // eslint-disable-next-line unicorn/prefer-add-event-listener -- MicMediaRecorder is typed with the on* handler only; one handler is set here
       recorder.onerror = () => finish(new Error("The recording failed."));
-      if (recorder.state === "inactive") {
-        // the browser already ended it
-        finish();
-        return;
-      }
+      if (recorder.state === "inactive") return finish(); // the browser already ended it
       try {
         recorder.stop();
-      } catch (error) {
-        finish(error);
+      } catch (e) {
+        finish(e);
       }
     });
     const clear = () => {
       this.pending = null;
     };
     this.pending = done;
-    // eslint-disable-next-line promise/prefer-catch -- one handler settles both outcomes in the same tick; a catch would run clear a tick later
     done.then(clear, clear);
     return done;
   }

@@ -12,9 +12,7 @@ function partitions(text: string): string[][] {
   const out: string[][] = [[text], text.split("")];
   for (let i = 0; i <= text.length; i++) {
     out.push([text.slice(0, i), text.slice(i)]);
-    for (let j = i; j <= text.length; j++) {
-      out.push([text.slice(0, i), text.slice(i, j), text.slice(j)]);
-    }
+    for (let j = i; j <= text.length; j++) out.push([text.slice(0, i), text.slice(i, j), text.slice(j)]);
   }
   return out;
 }
@@ -28,9 +26,7 @@ function expectEveryPartition(text: string, expected: string) {
     const tail = c.flush();
     const pushed = outs.join("");
     const ok = pushed + tail === expected && expected.startsWith(pushed) && outs.every((o) => o === o.trimEnd());
-    if (!ok) {
-      bad.push(JSON.stringify(chunks));
-    }
+    if (!ok) bad.push(JSON.stringify(chunks));
   }
   expect(bad.slice(0, 3)).toEqual([]);
 }

@@ -27,9 +27,7 @@ export class MetaLine extends HTMLElement {
     this.#shown = { text, error };
     this.classList.toggle("error", error);
     this.setAttribute("role", error ? "alert" : "status");
-    if (this.textContent !== text) {
-      this.textContent = text;
-    }
+    if (this.textContent !== text) this.textContent = text;
     this.#markScrollable();
   }
 
@@ -40,11 +38,8 @@ export class MetaLine extends HTMLElement {
   }
 
   #markScrollable() {
-    if (this.scrollWidth > this.clientWidth) {
-      this.tabIndex = 0;
-    } else {
-      this.removeAttribute("tabindex");
-    }
+    if (this.scrollWidth > this.clientWidth) this.tabIndex = 0;
+    else this.removeAttribute("tabindex");
   }
 }
 

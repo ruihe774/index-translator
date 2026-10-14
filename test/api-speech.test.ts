@@ -8,8 +8,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { startApp } from "../src/app";
-import type { App } from "../src/app";
+import { type App, startApp } from "../src/app";
 import { libraryPath } from "../src/audiocpp-ffi";
 import {
   MAX_UPLOADED_VOICES,
@@ -94,7 +93,7 @@ describe("POST /speech", () => {
   });
 
   test("503 speech_unavailable when there is no voice", async () => {
-    const { voices } = mockSpeech;
+    const voices = mockSpeech.voices;
     mockSpeech.voices = [];
     try {
       const res = await speak({ text: "Hello", lang: "en" });
@@ -131,9 +130,7 @@ describe("POST /speech", () => {
     await Bun.sleep(30);
     gone.abort();
     await pending;
-    for (let i = 0; i < 50 && mockSpeech.aborted === 0; i++) {
-      await Bun.sleep(10);
-    }
+    for (let i = 0; i < 50 && mockSpeech.aborted === 0; i++) await Bun.sleep(10);
     expect(mockSpeech.aborted).toBe(1);
   });
 
@@ -179,7 +176,7 @@ describe("POST /speech", () => {
   });
 
   test("only POST with a JSON body", async () => {
-    expect((await fetch(`${base}/api/v1/speech`)).status).toBe(405);
+    expect((await fetch(base + "/api/v1/speech")).status).toBe(405);
     const res = await speak(JSON.stringify({ text: "Hi", lang: "en" }), { headers: { "content-type": "text/plain" } });
     expect(res.status).toBe(415);
   });
@@ -187,7 +184,7 @@ describe("POST /speech", () => {
 
 describe("GET /voices and health", () => {
   test("lists voices, languages and limits", async () => {
-    const body = await (await fetch(`${base}/api/v1/voices`)).json();
+    const body = await (await fetch(base + "/api/v1/voices")).json();
     expect(body).toEqual({
       status: "stopped",
       languages: ["zh", "en", "ja", "es", "ar"],
@@ -195,20 +192,20 @@ describe("GET /voices and health", () => {
       max_chars: 1000,
       max_sample_bytes: 8 * 1024 * 1024,
       sample_seconds: { min: 1, max: 60 },
-      sample_rate: { min: 8000, max: 192_000 },
+      sample_rate: { min: 8000, max: 192000 },
       voices: mockSpeech.voices,
     });
   });
 
   test("health carries the speech engine's state", async () => {
     await speak({ text: "Hello", lang: "en" });
-    const health = (await (await fetch(`${base}/api/v1/health`)).json()) as any;
+    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
     expect(health.speech).toEqual({ status: "ready" });
   });
 
   test("no voices are listed while speech is unavailable", async () => {
     mockSpeech.state = "unavailable";
-    const body = (await (await fetch(`${base}/api/v1/voices`)).json()) as any;
+    const body = (await (await fetch(base + "/api/v1/voices")).json()) as any;
     expect(body.status).toBe("unavailable");
     expect(body.error).toBe("the speech engine is not installed");
     expect(body.voices).toEqual([]);
@@ -232,9 +229,8 @@ describe("the native speech engine without audio.cpp", () => {
   test("a voice is a .wav file in the voices directory", async () => {
     const dir = await mkdtemp(join(tmpdir(), "voices-"));
     try {
-      for (const name of ["narrator_two.wav", "alice.wav", "notes.txt", "clip.mp3"]) {
+      for (const name of ["narrator_two.wav", "alice.wav", "notes.txt", "clip.mp3"])
         await Bun.write(join(dir, name), "");
-      }
       expect(await nativeSpeech(config({ voicesDir: dir })).voices()).toEqual([
         { id: "alice", name: "Alice" },
         { id: "narrator_two", name: "Narrator two" },
@@ -252,13 +248,12 @@ describe("NativeSpeech with a fake worker", () => {
     const posted: any[] = [];
     const fake: any = {
       posted,
-      listeners: {} as Record<string, (event: any) => void>,
+      onmessage: null,
+      onerror: null,
       postMessage: (m: any) => posted.push(m),
-      addEventListener(type: string, fn: (event: any) => void) {
-        fake.listeners[type] = fn;
-      },
+      addEventListener() {},
       terminate() {},
-      reply: (req: number, extra: object) => fake.listeners.message({ data: { req, ...extra } }),
+      reply: (req: number, extra: object) => fake.onmessage({ data: { req, ...extra } }),
     };
     return fake;
   }
@@ -282,7 +277,7 @@ describe("NativeSpeech with a fake worker", () => {
       const result = speech.synthesize(request, gone.signal, () => released++);
       const rejected = result.then(
         () => null,
-        (error) => error,
+        (e) => e,
       );
       await tick();
       expect(kinds(worker)).toEqual(["load"]);
@@ -306,7 +301,7 @@ describe("NativeSpeech with a fake worker", () => {
       const result = speech.synthesize(request, gone.signal, () => released++);
       const rejected = result.then(
         () => null,
-        (error) => error,
+        (e) => e,
       );
       await tick();
       worker.reply(worker.posted[0].req, { type: "ok" });
@@ -338,7 +333,7 @@ describe("NativeSpeech with a fake worker", () => {
         .synthesize(request, gone.signal, () => released++)
         .then(
           () => null,
-          (error) => error,
+          (e) => e,
         );
       await tick();
       worker.reply(worker.posted[0].req, { type: "ok" });
@@ -382,33 +377,26 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   function scripted() {
     const w: any = {
       posted: [] as any[],
-      listeners: {} as Record<string, (event: any) => void>,
+      listeners: {} as Record<string, () => void>,
       failLoad: undefined as string | undefined,
       failSeparation: undefined as string | undefined,
       manual: false,
+      onmessage: null,
+      onerror: null,
       terminated: false,
       postMessage(m: any) {
         w.posted.push(m);
-        if (!w.manual && !(holdLoads && m.type === "load")) {
-          setTimeout(() => w.answer(m), 1);
-        }
+        if (!w.manual && !(holdLoads && m.type === "load")) setTimeout(() => w.answer(m), 1);
       },
       answer(m: any) {
-        if (m.type === "load" && w.failLoad) {
-          w.listeners.message({ data: { req: m.req, type: "error", message: w.failLoad } });
-        } else if (m.type === "synthesize") {
-          w.listeners.message({ data: { req: m.req, type: "audio", wav: silentWav() } });
-        } else if (m.type === "separate") {
-          if (w.failSeparation) {
-            w.listeners.message({ data: { req: m.req, type: "error", message: w.failSeparation } });
-          } else {
-            w.listeners.message({ data: { req: m.req, type: "audio", wav: separated() } });
-          }
-        } else {
-          w.listeners.message({ data: { req: m.req, type: "ok" } });
-        }
+        if (m.type === "load" && w.failLoad) w.onmessage({ data: { req: m.req, type: "error", message: w.failLoad } });
+        else if (m.type === "synthesize") w.onmessage({ data: { req: m.req, type: "audio", wav: silentWav() } });
+        else if (m.type === "separate") {
+          if (w.failSeparation) w.onmessage({ data: { req: m.req, type: "error", message: w.failSeparation } });
+          else w.onmessage({ data: { req: m.req, type: "audio", wav: separated() } });
+        } else w.onmessage({ data: { req: m.req, type: "ok" } });
       },
-      addEventListener(type: string, fn: (event: any) => void) {
+      addEventListener(type: string, fn: () => void) {
         w.listeners[type] = fn;
       },
       terminate() {
@@ -420,18 +408,16 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   const kinds = (w: any) => w.posted.map((m: any) => m.type);
   const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
   const say = (speech: NativeSpeech) => speech.synthesize(request, new AbortController().signal, () => {});
-  const wav = () => silentWav(1.5, 16_000);
+  const wav = () => silentWav(1.5, 16000);
   /** What the worker answers a separation with: recognizably not the uploaded sample. */
-  const separated = () => silentWav(2, 44_100);
+  const separated = () => silentWav(2, 44100);
   const quiet = () => spyOn(console, "error").mockImplementation(() => {});
 
   /** `separation`: the separation model is installed (a .gguf file in its directory). */
   async function setup(overrides: object = {}, separation = false) {
     const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
     await Bun.write(libraryPath(dir), "");
-    if (separation) {
-      await Bun.write(join(dir, "bs-roformer.gguf"), "");
-    }
+    if (separation) await Bun.write(join(dir, "bs-roformer.gguf"), "");
     const workers: any[] = [];
     const speech = new NativeSpeech(
       config({ speech: true, audioDir: dir, speechModelDir: dir, separationModelDir: dir, ...overrides }),
@@ -527,7 +513,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   });
 
   test.each([
-    ["error", (w: any) => w.listeners.error({ message: "boom" }), "the speech thread failed: boom"],
+    ["onerror", (w: any) => w.onerror({ message: "boom" }), "the speech thread failed: boom"],
     ["close", (w: any) => w.listeners.close(), "the speech thread exited"],
   ])("a worker crash (%s) rejects waiters, and the next request starts a new worker", async (_n, crash, message) => {
     const { workers, speech, cleanup } = await setup();
@@ -537,7 +523,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       workers[0].manual = true;
       const waiter = say(speech).then(
         () => null,
-        (error) => error,
+        (e) => e,
       );
       await Bun.sleep(5);
       crash(workers[0]);
@@ -566,9 +552,9 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     try {
       const result = say(speech).then(
         () => null,
-        (error) => error,
+        (e) => e,
       );
-      workers[0].listeners.error({ message: "segfault" });
+      workers[0].onerror({ message: "segfault" });
       expect((await result).message).toContain("segfault");
       expect(speech.state).toBe("error");
     } finally {
@@ -602,9 +588,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   test("at most 16 uploads are kept", async () => {
     const { speech, cleanup } = await setup();
     try {
-      for (let i = 0; i < MAX_UPLOADED_VOICES; i++) {
-        await speech.addVoice(`v${i}`, wav());
-      }
+      for (let i = 0; i < MAX_UPLOADED_VOICES; i++) await speech.addVoice(`v${i}`, wav());
       await expect(speech.addVoice("one more", wav())).rejects.toThrow("too many uploaded voices");
       expect(await speech.voices()).toHaveLength(MAX_UPLOADED_VOICES);
       await speech.stop();
@@ -618,7 +602,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   test("addVoice refuses samples outside the limits without keeping them", async () => {
     const { speech, cleanup } = await setup();
     try {
-      await expect(speech.addVoice("x", silentWav(0.5, 16_000))).rejects.toThrow("too short");
+      await expect(speech.addVoice("x", silentWav(0.5, 16000))).rejects.toThrow("too short");
       await expect(speech.addVoice("x", silentWav(1.5, 4000))).rejects.toThrow("sample rate");
       await expect(speech.addVoice("x", new ArrayBuffer(100))).rejects.toThrow(SpeechError);
       expect(await speech.voices()).toEqual([]);
@@ -760,13 +744,13 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       try {
         await say(speech);
         workers[0].failSeparation = "out of memory";
-        const refusal = await speech.addVoice("Mine", wav()).then(
+        const error = await speech.addVoice("Mine", wav()).then(
           () => null,
-          (error) => error,
+          (e) => e,
         );
-        expect(refusal).toBeInstanceOf(SeparationError);
-        expect(refusal).toBeInstanceOf(SpeechError);
-        expect(refusal.message).toBe("separating the voice failed: out of memory");
+        expect(error).toBeInstanceOf(SeparationError);
+        expect(error).toBeInstanceOf(SpeechError);
+        expect(error.message).toBe("separating the voice failed: out of memory");
         expect(await speech.voices()).toEqual([]);
 
         await say(speech);
@@ -785,7 +769,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     test("a sample outside the limits is refused before the speech model is touched", async () => {
       const { workers, speech, cleanup } = await setup({}, true);
       try {
-        await expect(speech.addVoice("x", silentWav(0.5, 16_000))).rejects.toThrow("too short");
+        await expect(speech.addVoice("x", silentWav(0.5, 16000))).rejects.toThrow("too short");
         expect(workers).toHaveLength(0);
       } finally {
         await cleanup();
@@ -801,7 +785,7 @@ describe("POST /voices", () => {
       headers: { "content-type": type },
       body,
     });
-  const sample = (seconds = 1.5, rate = 16_000) => new Uint8Array(silentWav(seconds, rate));
+  const sample = (seconds = 1.5, rate = 16000) => new Uint8Array(silentWav(seconds, rate));
   const errorOf = async (res: Response) => ((await res.json()) as any).error;
 
   test("a WAV sample becomes a voice", async () => {
@@ -873,7 +857,7 @@ describe("POST /voices", () => {
     ["shorter than 1 s", sample(0.5), "too short"],
     ["longer than 60 s", sample(61, 8000), "too long"],
     ["below 8 kHz", sample(1.5, 7999), "sample rate"],
-    ["above 192 kHz", sample(0.2, 192_001), "sample rate"],
+    ["above 192 kHz", sample(0.2, 192001), "sample rate"],
   ])("a sample %s is a 400", async (_what, wav, message) => {
     const res = await upload(wav);
     expect(res.status).toBe(400);
@@ -884,7 +868,7 @@ describe("POST /voices", () => {
   });
 
   test("the limits are inclusive at 1 s, 60 s, 8 kHz and 192 kHz", async () => {
-    for (const wav of [sample(1, 8000), sample(60, 8000), sample(1, 192_000)]) {
+    for (const wav of [sample(1, 8000), sample(60, 8000), sample(1, 192000)]) {
       expect((await upload(wav)).status).toBe(201);
     }
   });

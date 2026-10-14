@@ -5,8 +5,7 @@
 
 import { readFileSync } from "node:fs";
 
-import { AbortedError, SpeechModel, VoiceSeparator } from "./audiocpp-ffi";
-import type { SpeechModelOptions } from "./audiocpp-ffi";
+import { AbortedError, SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
 import { normalizeLoudness, readWav, resample, writeWav } from "./wav";
 
 export type SpeechWorkerRequest =
@@ -34,38 +33,32 @@ export type SpeechWorkerReply =
   | { type: "aborted"; req: number }
   | { type: "error"; req: number; message: string };
 
-// eslint-disable-next-line no-var, vars-on-top -- only `var` declares a global
+// eslint-disable-next-line no-var -- only `var` declares a global
 declare var self: Worker;
 
 /** Sampling is seeded so the same sentence sounds the same when it is played again. */
 const SEED = 42;
 /** The only sample rate BS-RoFormer accepts. */
-const SEPARATOR_RATE = 44_100;
+const SEPARATOR_RATE = 44100;
 
 let model: SpeechModel | undefined;
 
 function handle(msg: SpeechWorkerRequest): SpeechWorkerReply {
   switch (msg.type) {
-    case "load": {
+    case "load":
       model?.free();
       model = undefined;
       model = SpeechModel.load(msg.options);
       return { type: "ok", req: msg.req };
-    }
-    case "unload": {
+    case "unload":
       model?.free();
       model = undefined;
       return { type: "ok", req: msg.req };
-    }
     case "synthesize": {
-      if (!model) {
-        throw new Error("the speech model is not loaded");
-      }
+      if (!model) throw new Error("the speech model is not loaded");
       const abort = new Int32Array(msg.abort);
       // Given up while it waited behind another message.
-      if (Atomics.load(abort, 0) !== 0) {
-        return { type: "aborted", req: msg.req };
-      }
+      if (Atomics.load(abort, 0) !== 0) return { type: "aborted", req: msg.req };
       const voice = readWav(readFileSync(msg.voicePath));
       try {
         // The model's duration control: 2 doubles the duration, so it is the inverse of the speed.
@@ -77,11 +70,9 @@ function handle(msg: SpeechWorkerRequest): SpeechWorkerReply {
           abort,
         );
         return { type: "audio", req: msg.req, wav: writeWav(pcm) };
-      } catch (error) {
-        if (error instanceof AbortedError) {
-          return { type: "aborted", req: msg.req };
-        }
-        throw error;
+      } catch (e) {
+        if (e instanceof AbortedError) return { type: "aborted", req: msg.req };
+        throw e;
       }
     }
     case "separate": {
@@ -98,15 +89,14 @@ function handle(msg: SpeechWorkerRequest): SpeechWorkerReply {
       }
     }
   }
-  throw new Error("unknown message");
 }
 
-self.addEventListener("message", (event: MessageEvent<SpeechWorkerRequest>) => {
+self.onmessage = (event: MessageEvent<SpeechWorkerRequest>) => {
   let reply: SpeechWorkerReply;
   try {
     reply = handle(event.data);
-  } catch (error) {
-    reply = { type: "error", req: event.data.req, message: error instanceof Error ? error.message : String(error) };
+  } catch (e) {
+    reply = { type: "error", req: event.data.req, message: e instanceof Error ? e.message : String(e) };
   }
   self.postMessage(reply, reply.type === "audio" ? [reply.wav] : []);
-});
+};

@@ -160,7 +160,7 @@ describe("SlotQueue", () => {
 describe("fixtures", () => {
   test("the essay document exceeds 16K letters and every paragraph is checkable", async () => {
     const en = await englishEssays();
-    expect(countLetters(en.text)).toBeGreaterThanOrEqual(16_000);
+    expect(countLetters(en.text)).toBeGreaterThanOrEqual(16000);
     expect(en.markers.every((group) => group.length > 0)).toBe(true);
     const all = en.markers.flat();
     expect(new Set(all).size).toBe(all.length);
@@ -175,6 +175,6 @@ describe("fixtures", () => {
     expect(missingParagraphs(en, paragraphs.slice(0, -1).join("\n\n"))).toEqual([paragraphs.length]);
     expect(missingParagraphs(en, en.text.replace("38750", "38,750"))).toEqual([]);
     expect(missingParagraphs(en, en.text.replace("38750", "138750"))).toEqual([1]);
-    expect(repeatedMarkers(en, `${en.text}\n\n${paragraphs[0]}`)).toEqual(en.markers[0]!);
+    expect(repeatedMarkers(en, en.text + "\n\n" + paragraphs[0])).toEqual(en.markers[0]!);
   });
 });

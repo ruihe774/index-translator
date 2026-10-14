@@ -31,9 +31,7 @@ function watchApi(page: Page): { method: string; path: string; body: string }[] 
   const seen: { method: string; path: string; body: string }[] = [];
   page.on("request", (r) => {
     const { pathname } = new URL(r.url());
-    if (pathname.startsWith("/api/")) {
-      seen.push({ method: r.method(), path: pathname, body: r.postData() ?? "" });
-    }
+    if (pathname.startsWith("/api/")) seen.push({ method: r.method(), path: pathname, body: r.postData() ?? "" });
   });
   return seen;
 }
@@ -136,15 +134,10 @@ test.describe("images", () => {
     const pane = (await app.page.locator("#source-image").boundingBox())!;
     const shown = await picture(app.page).evaluate((el) => {
       const canvas = el as HTMLCanvasElement;
-      const rect = canvas.getBoundingClientRect();
+      const box = canvas.getBoundingClientRect();
       // `object-fit: contain` draws the picture inside the box at its own proportions.
-      const scale = Math.min(rect.width / canvas.width, rect.height / canvas.height);
-      return {
-        boxHeight: rect.height,
-        boxWidth: rect.width,
-        height: canvas.height * scale,
-        width: canvas.width * scale,
-      };
+      const scale = Math.min(box.width / canvas.width, box.height / canvas.height);
+      return { boxHeight: box.height, boxWidth: box.width, height: canvas.height * scale, width: canvas.width * scale };
     });
     expect(shown.boxHeight).toBeLessThanOrEqual(pane.height);
     expect(shown.boxWidth).toBeLessThanOrEqual(pane.width);
@@ -312,20 +305,16 @@ test.describe("PDF", () => {
       .evaluate((canvas: HTMLCanvasElement) => {
         const { data } = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height);
         let n = 0;
-        for (let i = 0; i < data.length; i += 4) {
-          if (data[i]! < 128 && data[i + 3]! > 0) {
-            n++;
-          }
-        }
+        for (let i = 0; i < data.length; i += 4) if (data[i]! < 128 && data[i + 3]! > 0) n++;
         return n;
       });
     expect(dark).toBeGreaterThan(20);
 
     // The strip is as tall as the box beside it and inside the panel.
     const strip = (await app.page.locator("#pdf-pages").boundingBox())!;
-    const textBox = (await app.text.boundingBox())!;
-    expect(Math.abs(strip.height - textBox.height)).toBeLessThan(1);
-    expect(strip.x + strip.width).toBeLessThanOrEqual(textBox.x);
+    const box = (await app.text.boundingBox())!;
+    expect(Math.abs(strip.height - box.height)).toBeLessThan(1);
+    expect(strip.x + strip.width).toBeLessThanOrEqual(box.x);
 
     expect((await mock.state()).requests).toHaveLength(0);
     expect(api.filter((r) => r.method !== "GET")).toEqual([]);
@@ -409,10 +398,10 @@ test.describe("PDF", () => {
       button.setAttribute("aria-busy", "true");
       const canvas = button.querySelector("canvas") as HTMLElement;
       const spinner = getComputedStyle(canvas.parentElement as Element, "::after");
-      const rect = canvas.getBoundingClientRect();
+      const box = canvas.getBoundingClientRect();
       const size = Number.parseFloat(spinner.width);
       // ::after is absolutely placed in .picture, which has the canvas's box.
-      return { size, width: rect.width, height: rect.height, left: Number.parseFloat(spinner.marginLeft) };
+      return { size, width: box.width, height: box.height, left: Number.parseFloat(spinner.marginLeft) };
     });
     expect(offsets.size).toBeGreaterThan(0);
     expect(offsets.size).toBeLessThan(offsets.width);
@@ -428,8 +417,8 @@ test.describe("PDF", () => {
       data.items.add(new File(["hello"], "a.txt", { type: "text/plain" }));
       input.files = data.files;
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      const sourceField = document.getElementById("source-field") as HTMLElement;
-      return { busy: sourceField.getAttribute("aria-busy"), spinner: getComputedStyle(sourceField, "::after").content };
+      const field = document.getElementById("source-field") as HTMLElement;
+      return { busy: field.getAttribute("aria-busy"), spinner: getComputedStyle(field, "::after").content };
     });
     expect(during).toEqual({ busy: "true", spinner: '""' });
     await expect(field).not.toHaveAttribute("aria-busy");

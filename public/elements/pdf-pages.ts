@@ -26,9 +26,7 @@ export class PdfPages extends HTMLElement {
     super();
     this.addEventListener("click", (e) => {
       const button = (e.target as Element).closest("button");
-      if (!button || !this.contains(button) || button.getAttribute("aria-disabled") === "true") {
-        return;
-      }
+      if (!button || !this.contains(button) || button.getAttribute("aria-disabled") === "true") return;
       this.dispatchEvent(new CustomEvent("page", { detail: Number(button.dataset.page) }));
     });
   }
@@ -48,9 +46,7 @@ export class PdfPages extends HTMLElement {
     this.observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
-          if (!entry.isIntersecting) {
-            continue;
-          }
+          if (!entry.isIntersecting) continue;
           this.observer?.unobserve(entry.target);
           this.queue.push(entry.target as HTMLCanvasElement);
         }
@@ -97,25 +93,19 @@ export class PdfPages extends HTMLElement {
   }
 
   private async draw() {
-    if (this.drawing) {
-      return;
-    }
+    if (this.drawing) return;
     this.drawing = true;
     try {
       for (let canvas = this.queue.shift(); canvas; canvas = this.queue.shift()) {
-        const { source } = this;
-        if (!source || !canvas.isConnected) {
-          continue;
-        }
+        const source = this.source;
+        if (!source || !canvas.isConnected) continue;
         const page = Number(canvas.closest("button")!.dataset.page);
         try {
           await source.render(page, canvas, canvas.clientWidth);
           canvas.dataset.drawn = "";
-        } catch (error) {
+        } catch (e) {
           // A page that cannot be drawn keeps its blank sheet and can still be extracted.
-          if (this.source === source) {
-            console.warn(`page ${page} was not drawn:`, error);
-          }
+          if (this.source === source) console.warn(`page ${page} was not drawn:`, e);
         }
       }
     } finally {
@@ -129,19 +119,14 @@ export class PdfPages extends HTMLElement {
   }
 
   set selected(page: number | null) {
-    for (const b of this.querySelectorAll('button[aria-current="true"]')) {
-      b.removeAttribute("aria-current");
-    }
+    for (const b of this.querySelectorAll('button[aria-current="true"]')) b.removeAttribute("aria-current");
     const button = this.pageButton(page);
     button?.setAttribute("aria-current", "true");
     button?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
-  // eslint-disable-next-line accessor-pairs -- write-only: the page marks the pages it is working on, never reads them back
   set busy(page: number | null) {
-    for (const b of this.querySelectorAll('button[aria-busy="true"]')) {
-      b.removeAttribute("aria-busy");
-    }
+    for (const b of this.querySelectorAll('button[aria-busy="true"]')) b.removeAttribute("aria-busy");
     this.pageButton(page)?.setAttribute("aria-busy", "true");
   }
 
@@ -153,9 +138,7 @@ export class PdfPages extends HTMLElement {
     this.off = disabled;
     const text = String(disabled);
     for (const b of this.getElementsByTagName("button")) {
-      if (b.getAttribute("aria-disabled") !== text) {
-        b.setAttribute("aria-disabled", text);
-      }
+      if (b.getAttribute("aria-disabled") !== text) b.setAttribute("aria-disabled", text);
     }
   }
 }

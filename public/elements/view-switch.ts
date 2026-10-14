@@ -15,13 +15,9 @@ export class ViewSwitch extends HTMLElement {
     super();
     this.addEventListener("click", (e) => {
       const button = (e.target as Element).closest("button");
-      if (!button || !this.contains(button)) {
-        return;
-      }
-      const { value } = button.dataset;
-      if (value === undefined || this.disabled || value === this.value) {
-        return;
-      }
+      if (!button || !this.contains(button)) return;
+      const value = button.dataset.value;
+      if (value === undefined || this.disabled || value === this.value) return;
       this.value = value;
       this.dispatchEvent(new Event("change"));
     });
@@ -33,20 +29,14 @@ export class ViewSwitch extends HTMLElement {
 
   /** The `data-value` of the pressed button; empty when none is. */
   get value(): string {
-    for (const b of this.buttons) {
-      if (b.getAttribute("aria-pressed") === "true") {
-        return b.dataset.value ?? "";
-      }
-    }
+    for (const b of this.buttons) if (b.getAttribute("aria-pressed") === "true") return b.dataset.value ?? "";
     return "";
   }
 
   set value(value: string) {
     for (const b of this.buttons) {
       const pressed = String(b.dataset.value === value);
-      if (b.getAttribute("aria-pressed") !== pressed) {
-        b.setAttribute("aria-pressed", pressed);
-      }
+      if (b.getAttribute("aria-pressed") !== pressed) b.setAttribute("aria-pressed", pressed);
     }
   }
 
@@ -56,11 +46,7 @@ export class ViewSwitch extends HTMLElement {
 
   set disabled(disabled: boolean) {
     const text = String(disabled);
-    for (const b of this.buttons) {
-      if (b.getAttribute("aria-disabled") !== text) {
-        b.setAttribute("aria-disabled", text);
-      }
-    }
+    for (const b of this.buttons) if (b.getAttribute("aria-disabled") !== text) b.setAttribute("aria-disabled", text);
   }
 }
 

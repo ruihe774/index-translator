@@ -21,9 +21,7 @@ const PLACEHOLDER = /（在这里放入需要翻译的完整[^）]*原文）/;
 /** The NativeLong prompt for one whole document. `direction` is one of DOCUMENT_DIRECTIONS. */
 export function buildDocumentPrompt(direction: string, text: string): string {
   const template = DOCUMENT_TEMPLATES[direction];
-  if (!template) {
-    throw new Error(`no document template for ${direction}`);
-  }
+  if (!template) throw new Error(`no document template for ${direction}`);
   // A function replacement keeps "$" sequences in the document text literal.
   return template.replace(PLACEHOLDER, () => text.trim()).trim();
 }
@@ -96,9 +94,7 @@ function constraintLines(items: string[] | undefined, tag: string, accepted: str
   for (const item of items ?? []) {
     for (const raw of item.split("\n")) {
       const line = raw.trim().replace(/^(?:\d+(?:[.)、]\s*|\s+)|[.\s])+/, "");
-      if (!line) {
-        continue;
-      }
+      if (!line) continue;
       out.push(accepted.some((p) => line.startsWith(p)) ? line : tag + line);
     }
   }
@@ -106,9 +102,7 @@ function constraintLines(items: string[] | undefined, tag: string, accepted: str
 }
 
 function isJsonObject(text: string): boolean {
-  if (!text.startsWith("{") || !text.endsWith("}")) {
-    return false;
-  }
+  if (!text.startsWith("{") || !text.endsWith("}")) return false;
   try {
     const v = JSON.parse(text);
     return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -124,47 +118,36 @@ function isJsonObject(text: string): boolean {
  */
 export function buildImagePrompt(input: Partial<Pick<PromptInput, "text">> & Omit<PromptInput, "text">): string {
   const tgt = languageName(input.targetLang);
-  const { sourceLang } = input;
-  const src = sourceLang && sourceLang.trim().toLowerCase() !== "auto" ? languageName(sourceLang) : "";
+  const hasSource = !!input.sourceLang && input.sourceLang.trim().toLowerCase() !== "auto";
+  const src = hasSource ? languageName(input.sourceLang!) : "";
   const base = `请将图片中的${src}文本翻译为${tgt}，直接输出翻译结果，不要进行任何解释。`;
 
   const extras: string[] = [];
   const text = input.text?.trim();
-  if (text) {
-    extras.push(`【参考文本/关注内容】\n${text}`);
-  }
-  extras.push(
-    ...constraintLines(input.hardConstraints, HARD, [HARD]),
-    ...constraintLines(input.softConstraints, "【软性要求】", [SOFT, "【软性要求】"]),
-  );
+  if (text) extras.push(`【参考文本/关注内容】\n${text}`);
+  extras.push(...constraintLines(input.hardConstraints, HARD, [HARD]));
+  extras.push(...constraintLines(input.softConstraints, "【软性要求】", [SOFT, "【软性要求】"]));
   const terms = Object.entries(input.glossary ?? {}).map(([k, v]) => `${k.trim()}→${v.trim()}`);
-  if (terms.length > 0) {
-    extras.push(`【专名/术语对照】${terms.join("、")}`);
-  }
-  if (extras.length === 0) {
-    return base;
-  }
+  if (terms.length) extras.push(`【专名/术语对照】${terms.join("、")}`);
+  if (!extras.length) return base;
   return `${base}\n\n${extras.join("\n\n")}\n\n只输出翻译结果，不要进行任何解释。`;
 }
 
 export function buildPrompt(input: PromptInput): string {
   const text = input.text.trim();
   const tgt = languageName(input.targetLang);
-  const { sourceLang } = input;
-  const src = sourceLang && sourceLang.trim().toLowerCase() !== "auto" ? languageName(sourceLang) : "";
+  const hasSource = !!input.sourceLang && input.sourceLang.trim().toLowerCase() !== "auto";
+  const src = hasSource ? languageName(input.sourceLang!) : "";
 
   const constraints = constraintLines(input.hardConstraints, HARD, [HARD]);
   const terms = Object.entries(input.glossary ?? {}).map(([k, v]) => `${k.trim()}→${v.trim()}`);
-  if (terms.length > 0) {
-    constraints.push(`${HARD}专名/术语对照: ${terms.join("、")}`);
-  }
+  if (terms.length) constraints.push(`${HARD}专名/术语对照: ${terms.join("、")}`);
   constraints.push(...constraintLines(input.softConstraints, SOFT, [SOFT, "【软性要求】"]));
 
-  if (constraints.length === 0) {
+  if (!constraints.length) {
     return `请将以下${src}文本翻译为${tgt}，直接输出翻译结果，不要进行任何解释。\n\n${text}`;
   }
 
-  // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- a blank genre also falls back
   const genre = input.genre?.trim() || "文本";
   const suffix =
     isJsonObject(text) && constraints.some((c) => /json/i.test(c))
@@ -174,6 +157,7 @@ export function buildPrompt(input: PromptInput): string {
   return (
     `请将以下${src}${genre}翻译成${tgt}，并且严格遵循所有约束要求。\n\n` +
     `【源文】\n${text}\n\n` +
-    `【约束要求】\n${constraints.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n\n${suffix}`
+    `【约束要求】\n${constraints.map((c, i) => `${i + 1}. ${c}`).join("\n")}\n\n` +
+    suffix
   );
 }

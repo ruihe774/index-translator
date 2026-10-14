@@ -4,8 +4,7 @@
 // cancellations are seen.
 
 import type { EngineTimings, FinishReason, Usage } from "./llama";
-import { ImageError, Model } from "./llama-ffi";
-import type { ImagePrompt, ModelOptions } from "./llama-ffi";
+import { ImageError, type ImagePrompt, Model, type ModelOptions } from "./llama-ffi";
 
 export type WorkerRequest =
   | { type: "load"; req: number; model: number; options: ModelOptions }
@@ -23,15 +22,11 @@ export type WorkerReply =
   // `image`: the image itself is at fault, not the engine.
   | { type: "error"; req: number; message: string; image?: boolean };
 
-// eslint-disable-next-line no-var, vars-on-top -- only `var` declares a global
+// eslint-disable-next-line no-var -- only `var` declares a global
 declare var self: Worker;
 
-// eslint-disable-next-line unicorn/require-post-message-target-origin -- Worker.postMessage has no target origin
 const post = (reply: WorkerReply) => self.postMessage(reply);
-const tick = () =>
-  new Promise<void>((resolve) => {
-    setImmediate(resolve);
-  });
+const tick = () => new Promise<void>((resolve) => setImmediate(resolve));
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 let model: Model | undefined;
@@ -49,7 +44,7 @@ const postError = (req: number, e: unknown) =>
   post({ type: "error", req, message: messageOf(e), ...(e instanceof ImageError ? { image: true } : {}) });
 
 function exclusive(req: number, fn: () => void | Promise<void>): void {
-  chain = chain.then(fn).catch((error) => postError(req, error));
+  chain = chain.then(fn).catch((e) => postError(req, e));
 }
 
 function unload(): void {
@@ -118,21 +113,13 @@ async function generate(
       break;
     }
     const text = utf8.decode(m.piece(token), { stream: true });
-    if (text) {
-      post({ type: "delta", req, text });
-    }
-    if (produced >= limit) {
-      break;
-    }
+    if (text) post({ type: "delta", req, text });
+    if (produced >= limit) break;
     m.decodeOne(token);
     await tick();
   }
-  if (cancelled.has(req)) {
-    return;
-  }
-  if (epoch !== started) {
-    throw new Error("the model was unloaded during the generation");
-  }
+  if (cancelled.has(req)) return;
+  if (epoch !== started) throw new Error("the model was unloaded during the generation");
 
   const generationMs = performance.now() - generationStart;
   post({
@@ -148,10 +135,10 @@ async function generate(
   });
 }
 
-self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
+self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data;
   switch (msg.type) {
-    case "load": {
+    case "load":
       epoch++;
       exclusive(msg.req, () => {
         unload();
@@ -160,42 +147,32 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
         post({ type: "ok", req: msg.req });
       });
       break;
-    }
-    case "unload": {
-      if (msg.model === modelNo) {
-        epoch++;
-      }
+    case "unload":
+      if (msg.model === modelNo) epoch++;
       exclusive(msg.req, () => {
-        if (msg.model === modelNo) {
-          unload();
-        }
+        if (msg.model === modelNo) unload();
         post({ type: "ok", req: msg.req });
       });
       break;
-    }
     case "count": {
       const { image } = msg;
       if (image) {
         // Counting an image means decoding and scaling it, and the first one loads the encoder: that
         // waits its turn like a generation, which the caller has the queue slot for anyway.
         exclusive(msg.req, () => {
-          if (!model || msg.model !== modelNo) {
-            throw new Error("the model is not loaded");
-          }
+          if (!model || msg.model !== modelNo) throw new Error("the model is not loaded");
           const prompt = model.imagePrompt(msg.content, image);
-          const { tokens } = prompt;
+          const tokens = prompt.tokens;
           prompt.free();
           post({ type: "count", req: msg.req, tokens });
         });
         break;
       }
       try {
-        if (!model || msg.model !== modelNo) {
-          throw new Error("the model is not loaded");
-        }
+        if (!model || msg.model !== modelNo) throw new Error("the model is not loaded");
         post({ type: "count", req: msg.req, tokens: model.tokenize(msg.content).length });
-      } catch (error) {
-        postError(msg.req, error);
+      } catch (e) {
+        postError(msg.req, e);
       }
       break;
     }
@@ -204,12 +181,8 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
       active.add(msg.req);
       exclusive(msg.req, async () => {
         try {
-          if (cancelled.has(msg.req)) {
-            return;
-          }
-          if (!model || msg.model !== modelNo || epoch !== started) {
-            throw new Error("the model is not loaded");
-          }
+          if (cancelled.has(msg.req)) return;
+          if (!model || msg.model !== modelNo || epoch !== started) throw new Error("the model is not loaded");
           await generate(model, started, msg.req, msg.content, msg.maxTokens, msg.image);
         } finally {
           active.delete(msg.req);
@@ -218,11 +191,8 @@ self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
       });
       break;
     }
-    case "cancel": {
-      if (active.has(msg.req)) {
-        cancelled.add(msg.req);
-      }
+    case "cancel":
+      if (active.has(msg.req)) cancelled.add(msg.req);
       break;
-    }
   }
-});
+};

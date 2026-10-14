@@ -25,9 +25,7 @@ const MAX_PIXELS = MAX_TOKENS * ALIGN * ALIGN;
 export const IMAGE_FORMATS = ["jpeg", "png", "webp"] as const;
 
 /** Why an upload is not taken; `code` is the API's error code. */
-// eslint-disable-next-line unicorn/custom-error-definition -- the name is imported by the tests; renaming it is not part of lint cleanup
 export class ImageRejected extends Error {
-  override name = "ImageRejected";
   constructor(
     public code: "invalid_request" | "image_too_large",
     message: string,
@@ -80,11 +78,9 @@ export async function prepareImage(file: Uint8Array): Promise<Uint8Array> {
     }
     // Not compressed: it is read once, on this machine, a moment later.
     return await image.png({ compressionLevel: 0 }).bytes();
-  } catch (error) {
-    if (error instanceof ImageRejected) {
-      throw error;
-    }
-    const { code } = error as { code?: string };
+  } catch (e) {
+    if (e instanceof ImageRejected) throw e;
+    const code = (e as { code?: string }).code;
     if (code === "ERR_IMAGE_TOO_MANY_PIXELS") {
       throw new ImageRejected("image_too_large", `the image has more than ${MAX_IMAGE_PIXELS} pixels`);
     }
@@ -94,6 +90,6 @@ export async function prepareImage(file: Uint8Array): Promise<Uint8Array> {
     if (code === "ERR_IMAGE_DECODE_FAILED") {
       throw new ImageRejected("invalid_request", "the image could not be decoded; the file may be damaged");
     }
-    throw error;
+    throw e;
   }
 }

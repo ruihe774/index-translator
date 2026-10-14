@@ -9,8 +9,7 @@
 // Each piece carries the `data-line` of the top-level element it comes from, so the page can show
 // which block is being read.
 
-import { parseLines } from "./markdown.ts";
-import type { Block, Inline } from "./markdown.ts";
+import { type Block, type Inline, parseLines } from "./markdown.ts";
 
 /** The languages IndexTTS-2.5 speaks; the same list as SPEECH_LANGUAGES in src/speech.ts. */
 export const SPEECH_LANGS = ["zh", "en", "ja", "es", "ar"];
@@ -52,9 +51,7 @@ function kanjiBelow10000(n: number): string {
   let out = "";
   for (let place = 3; place >= 0; place--) {
     const d = Math.floor(n / 10 ** place) % 10;
-    if (d === 0) {
-      continue;
-    }
+    if (d === 0) continue;
     // 十, 百 and 千 stand alone for one of them: 十五, not 一十五.
     out += (d === 1 && place > 0 ? "" : KANJI_DIGITS[d]!) + KANJI_SMALL[place]!;
   }
@@ -65,7 +62,7 @@ const kanjiDigitByDigit = (digits: string) => Array.from(digits, (d) => KANJI_DI
 
 /** "2026" → "二千二十六", "23.5" → "二十三点五"; a number with a leading zero is read digit by digit. */
 export function kanjiNumber(number: string): string {
-  const [whole = "", fraction] = number.replaceAll(",", "").split(".");
+  const [whole = "", fraction] = number.replace(/,/g, "").split(".");
   let out: string;
   if (whole.length > 20 || (whole.length > 1 && whole.startsWith("0"))) {
     out = kanjiDigitByDigit(whole);
@@ -76,9 +73,7 @@ export function kanjiNumber(number: string): string {
     const groups = whole.padStart(Math.ceil(whole.length / 4) * 4, "0").match(/\d{4}/g)!;
     groups.forEach((g, k) => {
       const part = kanjiBelow10000(Number(g));
-      if (part) {
-        out += part + KANJI_LARGE[groups.length - 1 - k]!;
-      }
+      if (part) out += part + KANJI_LARGE[groups.length - 1 - k]!;
     });
   }
   return fraction ? `${out}点${kanjiDigitByDigit(fraction)}` : out;
@@ -88,7 +83,7 @@ export function kanjiNumber(number: string): string {
 
 const WEB_ADDRESS = /https?:\/\/[^\s<>()[\]]+/g;
 const SPOKEN = /[\p{L}\p{N}]/u;
-const CJK_CHAR = String.raw`[\p{Script=Han}\p{Script=Hiragana}\p{Script=Katakana}、。，！？：；「」『』（）]`;
+const CJK_CHAR = "[\\p{Script=Han}\\p{Script=Hiragana}\\p{Script=Katakana}、。，！？：；「」『』（）]";
 const CJK_GAP = new RegExp(`(?<=${CJK_CHAR}) (?=${CJK_CHAR})`, "gu");
 
 /** A web address is read as its host name; the rest is noise when spoken. */
@@ -103,12 +98,10 @@ function hostOf(url: string): string {
 function clean(text: string, lang: string): string {
   let s = text.replace(WEB_ADDRESS, hostOf);
   // "<" "|" ">" would be taken for the model's inline pronunciation syntax, <word|reading>.
-  s = s.replaceAll(/[<>|]/g, " ");
+  s = s.replace(/[<>|]/g, " ");
   // Commas count as thousands separators only in the strict form 1,234,567; "1,2,3" and "2026, then" keep theirs.
-  if (lang === "ja") {
-    s = s.replaceAll(/\d{1,3}(?:,\d{3})+(?!\d)(?:\.\d+)?|\d+(?:\.\d+)?/g, kanjiNumber);
-  }
-  s = s.replaceAll(/\s+/g, " ").trim();
+  if (lang === "ja") s = s.replace(/\d{1,3}(?:,\d{3})+(?!\d)(?:\.\d+)?|\d+(?:\.\d+)?/g, kanjiNumber);
+  s = s.replace(/\s+/g, " ").trim();
   // Spaces left between Chinese or Japanese characters, as around a link or bold text, are heard as breaks.
   return isCjk(lang) ? s.replace(CJK_GAP, "") : s;
 }
@@ -117,9 +110,7 @@ const SENTENCE_END = /[.!?。！？…:：;；]["'”’)）」』】]*$/;
 
 /** Headings, list items and table rows seldom end in punctuation; without it the voice does not come to rest. */
 function closed(text: string, lang: string): string {
-  if (!text || SENTENCE_END.test(text)) {
-    return text;
-  }
+  if (!text || SENTENCE_END.test(text)) return text;
   return text + (isCjk(lang) ? "。" : ".");
 }
 
@@ -149,20 +140,15 @@ function clauses(sentence: string, hard: number): string[] {
       continue;
     }
     for (const word of clause.split(/(?<=\s)/)) {
-      if (word.length <= hard) {
-        push(word);
-      } else {
+      if (word.length <= hard) push(word);
+      else {
         // By code points: the server's limit counts them, and a slice by UTF-16 units can cut a pair.
         const chars = Array.from(word);
-        for (let i = 0; i < chars.length; i += hard) {
-          push(chars.slice(i, i + hard).join(""));
-        }
+        for (let i = 0; i < chars.length; i += hard) push(chars.slice(i, i + hard).join(""));
       }
     }
   }
-  if (cur) {
-    out.push(cur);
-  }
+  if (cur) out.push(cur);
   return out;
 }
 
@@ -177,9 +163,7 @@ function pieces(text: string, lang: string): string[] {
     }
     cur += sentence;
   }
-  if (cur) {
-    out.push(cur);
-  }
+  if (cur) out.push(cur);
   return out.map((p) => p.trim()).filter((p) => SPOKEN.test(p));
 }
 
@@ -195,25 +179,18 @@ function inlineText(nodes: Inline[], lang: string): string {
     .map((n): string => {
       switch (n.type) {
         case "text":
-        case "code": {
+        case "code":
           return n.text;
-        }
-        case "br": {
+        case "br":
           // Source lines of one paragraph: a wrapped sentence goes on.
           return isCjk(lang) ? "" : " ";
-        }
         case "em":
         case "strong":
         case "del":
-        case "link": {
+        case "link":
           return inlineText(n.children, lang);
-        }
-        case "image": {
+        case "image":
           return n.alt;
-        }
-        default: {
-          throw new Error(`unknown inline node: ${(n satisfies never as { type: string }).type}`);
-        }
       }
     })
     .join("");
@@ -223,9 +200,7 @@ function tableRows(head: Inline[][], rows: Inline[][][], lang: string): string[]
   const titles = head.map((h) => inlineText(h, lang).trim());
   const comma = isCjk(lang) ? "，" : ", ";
   const colon = isCjk(lang) ? "：" : ": ";
-  if (rows.length === 0) {
-    return [titles.filter(Boolean).join(comma)];
-  }
+  if (rows.length === 0) return [titles.filter(Boolean).join(comma)];
   return rows.map((row) =>
     row
       .map((cell, k) => {
@@ -239,37 +214,26 @@ function tableRows(head: Inline[][], rows: Inline[][][], lang: string): string[]
 
 function blockUtterances(b: Block, lang: string): Utterance[] {
   switch (b.type) {
-    case "heading": {
+    case "heading":
       return [{ text: closed(inlineText(b.children, lang).trim(), lang), pause: PAUSE_HEADING }];
-    }
-    case "paragraph": {
+    case "paragraph":
       return [{ text: inlineText(b.children, lang), pause: PAUSE_BLOCK }];
-    }
     case "code":
-    case "hr": {
+    case "hr":
       return [];
-    }
-    case "quote": {
+    case "quote":
       return b.children.flatMap((c) => blockUtterances(c, lang));
-    }
-    case "list": {
+    case "list":
       return b.items.flatMap((item, k) => {
         const inner = item.children.flatMap((c) => blockUtterances(c, lang)).filter((u) => SPOKEN.test(u.text));
-        const [first] = inner;
-        if (!first) {
-          return [];
-        }
+        const first = inner[0];
+        if (!first) return [];
         const number = b.ordered ? `${b.start + k}${isCjk(lang) ? "、" : ". "}` : "";
         inner[0] = { text: number + closed(first.text.trim(), lang), pause: first.pause };
         return inner;
       });
-    }
-    case "table": {
+    case "table":
       return tableRows(b.head, b.rows, lang).map((text) => ({ text: closed(text, lang), pause: PAUSE_BLOCK }));
-    }
-    default: {
-      throw new Error(`unknown block: ${(b satisfies never as { type: string }).type}`);
-    }
   }
 }
 

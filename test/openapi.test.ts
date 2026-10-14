@@ -7,14 +7,12 @@ const spec = Bun.YAML.parse(specText) as any;
 
 /** Paths of every object key called `key`, anywhere in the document. */
 function keysNamed(node: unknown, key: string, path = "$"): string[] {
-  if (Array.isArray(node)) {
-    return node.flatMap((v, i) => keysNamed(v, key, `${path}[${i}]`));
-  }
+  if (Array.isArray(node)) return node.flatMap((v, i) => keysNamed(v, key, `${path}[${i}]`));
   if (node && typeof node === "object") {
-    return Object.entries(node).flatMap(([k, v]) => {
-      const here = k === key ? [`${path}.${k}`] : [];
-      return here.concat(keysNamed(v, key, `${path}.${k}`));
-    });
+    return Object.entries(node).flatMap(([k, v]) => [
+      ...(k === key ? [`${path}.${k}`] : []),
+      ...keysNamed(v, key, `${path}.${k}`),
+    ]);
   }
   return [];
 }
@@ -34,9 +32,7 @@ describe("docs/openapi.yaml", () => {
     const src = await Bun.file(join(root, "src", "app.ts")).text();
     // invalid(...) is the helper for invalid_request; its own definition is excluded.
     const used = new Set([...src.matchAll(/new ApiError\(\s*\d+,\s*"([a-z_]+)"/g)].map((m) => m[1]!));
-    if (/(?<!function )\binvalid\(/.test(src)) {
-      used.add("invalid_request");
-    }
+    if (/(?<!function )\binvalid\(/.test(src)) used.add("invalid_request");
     expect(used.size).toBeGreaterThan(0);
     expect([...used].filter((code) => !enumCodes.has(code))).toEqual([]);
   });

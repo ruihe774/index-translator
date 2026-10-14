@@ -24,12 +24,8 @@ export function viewPane(view: HTMLElement, scroller: HTMLElement): Pane {
     lineTop(line) {
       let best: HTMLElement | null = null;
       for (const child of view.children) {
-        if (!(child instanceof HTMLElement) || child.dataset.line === undefined) {
-          continue;
-        }
-        if (Number(child.dataset.line) > line) {
-          break;
-        }
+        if (!(child instanceof HTMLElement) || child.dataset.line === undefined) continue;
+        if (Number(child.dataset.line) > line) break;
         best = child;
       }
       best ??= view.firstElementChild as HTMLElement | null;
@@ -69,13 +65,11 @@ function textareaOffset(area: HTMLTextAreaElement, line: number): number {
   const lines = area.value.split("\n");
   const before = lines
     .slice(0, Math.min(line, lines.length))
-    .map((l) => `${l}\n`)
+    .map((l) => l + "\n")
     .join("");
   const style = getComputedStyle(area);
   const mirror = document.createElement("div");
-  for (const key of MIRRORED) {
-    mirror.style[key] = style[key];
-  }
+  for (const key of MIRRORED) mirror.style[key] = style[key];
   // The text wraps at the textarea's client width, which excludes a scrollbar.
   mirror.style.inlineSize = `${area.clientWidth + parseFloat(style.borderLeftWidth) + parseFloat(style.borderRightWidth)}px`;
   mirror.style.position = "absolute";
@@ -85,7 +79,7 @@ function textareaOffset(area: HTMLTextAreaElement, line: number): number {
   mirror.style.whiteSpace = "pre-wrap";
   mirror.textContent = before;
   const marker = document.createElement("span");
-  marker.textContent = "\u200B";
+  marker.textContent = "\u200b";
   mirror.append(marker);
   document.body.append(mirror);
   const top = marker.offsetTop;
@@ -98,9 +92,7 @@ export function textareaPane(area: HTMLTextAreaElement): Pane {
   return {
     scroller: area,
     lineAt() {
-      if (area.selectionStart !== area.selectionEnd) {
-        return null;
-      }
+      if (area.selectionStart !== area.selectionEnd) return null;
       return area.value.slice(0, area.selectionStart).split("\n").length - 1;
     },
     lineTop(line) {
@@ -113,9 +105,7 @@ const LINKED = "linked";
 
 /** Removes the linked-block background from `view`. */
 export function clearLinked(view: HTMLElement) {
-  for (const el of view.querySelectorAll(`.${LINKED}`)) {
-    el.classList.remove(LINKED);
-  }
+  for (const el of view.querySelectorAll(`.${LINKED}`)) el.classList.remove(LINKED);
 }
 
 /**
@@ -125,18 +115,12 @@ export function clearLinked(view: HTMLElement) {
 export function markLinked(view: HTMLElement, starts: number[], k: number) {
   clearLinked(view);
   const from = starts[k];
-  if (from === undefined) {
-    return;
-  }
+  if (from === undefined) return;
   const to = starts[k + 1] ?? Infinity;
   for (const child of view.children) {
-    if (!(child instanceof HTMLElement) || child.dataset.line === undefined) {
-      continue;
-    }
+    if (!(child instanceof HTMLElement) || child.dataset.line === undefined) continue;
     const line = Number(child.dataset.line);
-    if (line >= from && line < to) {
-      child.classList.add(LINKED);
-    }
+    if (line >= from && line < to) child.classList.add(LINKED);
   }
 }
 
@@ -152,19 +136,13 @@ export function hoveredBlock(e: Event, view: HTMLElement, starts: number[]): num
  */
 export function syncFrom(e: MouseEvent, from: Pane, fromStarts: number[], to: Pane, toStarts: number[]): boolean {
   const selection = getSelection();
-  if (selection && !selection.isCollapsed && from.scroller.contains(selection.anchorNode)) {
-    return false;
-  }
+  if (selection && !selection.isCollapsed && from.scroller.contains(selection.anchorNode)) return false;
   const line = from.lineAt(e);
-  if (line === null) {
-    return false;
-  }
+  if (line === null) return false;
   const k = blockAt(fromStarts, line);
   const fromTop = from.lineTop(fromStarts[k]!);
   const toTop = to.lineTop(toStarts[k]!);
-  if (fromTop === null || toTop === null) {
-    return false;
-  }
+  if (fromTop === null || toTop === null) return false;
   const anchor = fromTop - from.scroller.getBoundingClientRect().top;
   const target = toTop - to.scroller.getBoundingClientRect().top;
   to.scroller.scrollTop += target - anchor;

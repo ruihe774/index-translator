@@ -7,9 +7,9 @@ import {
   MAX_PDF_BYTES,
   MAX_TEXT_BYTES,
   pageNote,
+  type PageText,
   refusal,
 } from "../public/open-file";
-import type { PageText } from "../public/open-file";
 
 describe("fileKind", () => {
   test("goes by the extension, whatever its case", () => {

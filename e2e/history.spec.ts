@@ -87,9 +87,7 @@ test("the history is not sent to the server", async ({ app, mock, page }) => {
   const api: { path: string; body: string }[] = [];
   page.on("request", (r) => {
     const { pathname } = new URL(r.url());
-    if (pathname.startsWith("/api/")) {
-      api.push({ path: pathname, body: r.postData() ?? "" });
-    }
+    if (pathname.startsWith("/api/")) api.push({ path: pathname, body: r.postData() ?? "" });
   });
   await app.open();
   await app.text.fill("secret-earlier-text");

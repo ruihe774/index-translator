@@ -2,8 +2,7 @@
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
-import { API, ApiFailureError, failureMessage } from "./api.ts";
-// eslint-disable-next-line import/no-unassigned-import -- registers the custom elements
+import { API, ApiFailure, failureMessage } from "./api.ts";
 import "./elements/index.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { PdfPages } from "./elements/pdf-pages.ts";
@@ -12,16 +11,15 @@ import type { ViewSwitch } from "./elements/view-switch.ts";
 import type { VoiceSettings } from "./elements/voice-settings.ts";
 import type { ApiErrorBody } from "./errors.ts";
 import { initHistoryUi } from "./history-ui.ts";
-import { loadHistory, newId, saveHistory, withEntry } from "./history.ts";
-import type { HistoryEntry } from "./history.ts";
+import { type HistoryEntry, loadHistory, newId, saveHistory, withEntry } from "./history.ts";
 import { confirmLink } from "./link-dialog.ts";
-import { linkReference } from "./links.ts";
-import type { LinkReference } from "./links.ts";
-import { checkLinks, createOutput, renderText } from "./markdown-dom.ts";
-import type { OutputView } from "./markdown-dom.ts";
+import { type LinkReference, linkReference } from "./links.ts";
+import { checkLinks, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
 import { looksLikeMarkdown } from "./markdown.ts";
 import {
   adviceMessage,
+  type Done,
+  type Health,
   healthMessage,
   imageAdviceMessage,
   interruption,
@@ -30,34 +28,25 @@ import {
   resultNotes,
   selectionMessage,
 } from "./messages.ts";
-import type { Done, Health } from "./messages.ts";
 import { initOpenUi } from "./open-ui.ts";
-import { alignBlocks } from "./paragraphs.ts";
-import type { Alignment } from "./paragraphs.ts";
+import { alignBlocks, type Alignment } from "./paragraphs.ts";
 import { registerServiceWorker } from "./pwa.ts";
 import { createRender } from "./render.ts";
 import { buildImageRequest, buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.ts";
 import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
-import { CHAT_MODEL, detectSource, DOCUMENT_MODEL, selectModel } from "./select-model.ts";
-import type { Choice, Selection } from "./select-model.ts";
-import { initSpeechUi } from "./speech-ui.ts";
-import type { SpeechUi } from "./speech-ui.ts";
-import { bindRender, setState, state } from "./state.ts";
-import type { Side } from "./state.ts";
+import { CHAT_MODEL, type Choice, detectSource, DOCUMENT_MODEL, type Selection, selectModel } from "./select-model.ts";
+import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
+import { bindRender, setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
-import { clearLinked, hoveredBlock, markLinked, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
-import type { Pane } from "./sync-scroll.ts";
+import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
 
 const HEALTH_LOADING_POLL_MS = 2000;
 let healthTimer: ReturnType<typeof setTimeout> | undefined;
 const number = new Intl.NumberFormat();
 
-// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters -- callers name the element class they expect
 function $<T extends HTMLElement>(id: string): T {
   const el = document.getElementById(id);
-  if (!el) {
-    throw new Error(`missing #${id}`);
-  }
+  if (!el) throw new Error(`missing #${id}`);
   return el as T;
 }
 
@@ -94,19 +83,14 @@ const notesEl = $("notes");
 // ---- small helpers ---------------------------------------------------------------------------
 
 function setText(el: HTMLElement, text: string) {
-  if (el.textContent !== text) {
-    el.textContent = text;
-  }
+  if (el.textContent !== text) el.textContent = text;
 }
 
 function showFieldError(error: HTMLElement, input: HTMLElement, message: string | null) {
   error.hidden = message === null;
   error.textContent = message ?? "";
-  if (message === null) {
-    input.removeAttribute("aria-invalid");
-  } else {
-    input.setAttribute("aria-invalid", "true");
-  }
+  if (message === null) input.removeAttribute("aria-invalid");
+  else input.setAttribute("aria-invalid", "true");
 }
 
 // ---- an image as the source ------------------------------------------------------------------
@@ -141,8 +125,8 @@ function setSourceImage(file: File | null, picture?: ImageBitmap) {
 function readDataUrl(file: File): Promise<string> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
-    reader.addEventListener("load", () => resolve(reader.result as string));
-    reader.addEventListener("error", () => reject(new Error(`${file.name} could not be read`)));
+    reader.onload = () => resolve(reader.result as string);
+    reader.onerror = () => reject(new Error(`${file.name} could not be read`));
     reader.readAsDataURL(file);
   });
 }
@@ -181,11 +165,8 @@ function sourceLangOf(): string | undefined {
 
 /** Sets or clears `lang`, which picks glyph forms and the CJK line-layout rules in style.css. */
 function setLang(el: HTMLElement, lang: string | undefined) {
-  if (lang) {
-    el.lang = lang;
-  } else {
-    el.removeAttribute("lang");
-  }
+  if (lang) el.lang = lang;
+  else el.removeAttribute("lang");
 }
 
 function refreshSelection() {
@@ -224,9 +205,7 @@ async function loadLanguages() {
   try {
     const res = await fetch(`${API}/languages`);
     const body = (await res.json()) as { languages?: unknown };
-    if (!Array.isArray(body.languages)) {
-      throw new TypeError("no language list");
-    }
+    if (!Array.isArray(body.languages)) throw new Error("no language list");
     languages = body.languages as Language[];
   } catch {
     languages = [
@@ -271,9 +250,7 @@ async function pollHealth() {
   clearTimeout(healthTimer);
   healthTimer = undefined;
   const seq = ++healthSeq;
-  if (document.hidden) {
-    return;
-  }
+  if (document.hidden) return;
   let text: string;
   let loading = false;
   try {
@@ -282,14 +259,10 @@ async function pollHealth() {
   } catch {
     text = "The server cannot be reached.";
   }
-  if (seq !== healthSeq) {
-    return;
-  }
+  if (seq !== healthSeq) return;
   // Only a load in progress is followed automatically; otherwise the status is refreshed on
   // page load, on return to the tab and after each translation, so nothing updates by itself.
-  if (loading) {
-    healthTimer = setTimeout(pollHealth, HEALTH_LOADING_POLL_MS);
-  }
+  if (loading) healthTimer = setTimeout(pollHealth, HEALTH_LOADING_POLL_MS);
   setText(engineEl, text);
 }
 
@@ -328,11 +301,8 @@ function showSource() {
   const preview = !image && views.source.view === "preview" && textInput.value.length > 0;
   showSwitch(sourceSwitch, "source");
   setLang(sourceView, sourceLangOf());
-  if (preview) {
-    renderText(sourceView, textInput.value, views.source.available);
-  } else {
-    sourceView.replaceChildren();
-  }
+  if (preview) renderText(sourceView, textInput.value, views.source.available);
+  else sourceView.replaceChildren();
   sourceArea.hidden = !preview;
   imageArea.hidden = !image;
   textInput.hidden = preview || image;
@@ -357,16 +327,11 @@ function showOutput() {
 /** Output links open only after the dialog is confirmed; its wording depends on the link check. */
 function onOutputLink(e: MouseEvent) {
   const a = (e.target as Element).closest<HTMLAnchorElement>("a[href]");
-  if (!a || !outputEl.contains(a) || (e.type === "auxclick" && e.button !== 1)) {
-    return;
-  }
+  if (!a || !outputEl.contains(a) || (e.type === "auxclick" && e.button !== 1)) return;
   e.preventDefault();
   const href = a.getAttribute("href") ?? "";
   void confirmLink(href, a.dataset.linkPaired === "true").then((ok) => {
-    if (ok) {
-      window.open(a.href, "_blank", "noopener,noreferrer");
-    }
-    return undefined;
+    if (ok) window.open(a.href, "_blank", "noopener,noreferrer");
   });
 }
 outputEl.addEventListener("click", onOutputLink);
@@ -383,9 +348,7 @@ function applyLinkCheck() {
 
 function wireSwitch(el: ViewSwitch, side: keyof typeof views, show: () => void) {
   el.addEventListener("change", () => {
-    if (side === "source") {
-      views.source.available = looksLikeMarkdown(textInput.value);
-    }
+    if (side === "source") views.source.available = looksLikeMarkdown(textInput.value);
     views[side].view = el.value as View;
     show();
   });
@@ -404,9 +367,7 @@ function syncActive(): Alignment | null {
 
 function refreshSync() {
   const on = syncActive() !== null;
-  for (const el of [textInput, sourceArea, outputArea]) {
-    el.classList.toggle("synced", on);
-  }
+  for (const el of [textInput, sourceArea, outputArea]) el.classList.toggle("synced", on);
 }
 
 function sourcePane(): Pane {
@@ -415,27 +376,20 @@ function sourcePane(): Pane {
 
 function onSourceClick(e: MouseEvent) {
   const a = syncActive();
-  if (a) {
-    syncFrom(e, sourcePane(), a.source, viewPane(outputEl, outputArea), a.output);
-  }
+  if (a) syncFrom(e, sourcePane(), a.source, viewPane(outputEl, outputArea), a.output);
 }
 
 function onOutputClick(e: MouseEvent) {
   const a = syncActive();
-  if (a) {
-    syncFrom(e, viewPane(outputEl, outputArea), a.output, sourcePane(), a.source);
-  }
+  if (a) syncFrom(e, viewPane(outputEl, outputArea), a.output, sourcePane(), a.source);
 }
 
 /** Hovering a block of one rendered pane shades the block it maps to in the other rendered pane. */
 function onHover(e: MouseEvent, fromView: HTMLElement, toView: HTMLElement, side: "source" | "output") {
   const a = syncActive();
   const k = a ? hoveredBlock(e, fromView, a[side]) : null;
-  if (!a || k === null) {
-    clearLinked(toView);
-  } else {
-    markLinked(toView, a[side === "source" ? "output" : "source"], k);
-  }
+  if (!a || k === null) clearLinked(toView);
+  else markLinked(toView, a[side === "source" ? "output" : "source"], k);
 }
 
 sourceArea.addEventListener("mouseover", (e) => onHover(e, sourceView, outputEl, "source"));
@@ -456,9 +410,7 @@ for (const type of ["wheel", "touchmove", "pointerdown", "keydown"]) {
 // The output element is stretched to the scroller's height, so its size does not change as text
 // arrives; the content does.
 new MutationObserver(() => {
-  if (state.running && following) {
-    outputArea.scrollTop = outputArea.scrollHeight;
-  }
+  if (state.running && following) outputArea.scrollTop = outputArea.scrollHeight;
 }).observe(outputEl, { childList: true, subtree: true, characterData: true });
 
 /** Markdown is rendered when the source looks written in it; the copied text stays the raw output. */
@@ -490,9 +442,7 @@ function fail(message: string) {
 }
 
 async function translate() {
-  if (state.running) {
-    return;
-  }
+  if (state.running) return;
   if (!state.languagesReady) {
     fail("The languages are still loading. Try again in a moment.");
     return;
@@ -552,14 +502,12 @@ async function translate() {
 
   let stopped = false;
   let translationId: string | null = null;
-  // eslint-disable-next-line unicorn/prefer-add-event-listener -- one Stop handler, replaced on each translation
   stopBtn.onclick = () => {
     stopped = true;
     controller.abort();
     // The server keeps a resumable translation running without a reader, so it is told to stop.
-    if (translationId) {
+    if (translationId)
       void fetch(`${API}/translations/${translationId}`, { method: "DELETE", keepalive: true }).catch(() => {});
-    }
   };
 
   try {
@@ -574,10 +522,7 @@ async function translate() {
       visible: () => document.visibilityState === "visible",
       wake: (callback) => {
         const listener = () => {
-          if (document.visibilityState === "visible") {
-            return callback();
-          }
-          return undefined;
+          if (document.visibilityState === "visible") callback();
         };
         document.addEventListener("visibilitychange", listener);
         window.addEventListener("pageshow", listener);
@@ -602,7 +547,7 @@ async function translate() {
             });
         if (!res.ok || !res.body) {
           const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-          throw new ApiFailureError(payload?.error ?? {}, res.status);
+          throw new ApiFailure(payload?.error ?? {}, res.status);
         }
         translationId ??= res.headers.get(TRANSLATION_ID_HEADER);
         return res;
@@ -617,23 +562,18 @@ async function translate() {
         metaEl.show(`Translating with ${modelLabel(data.model)}…`);
       } else if (event === "delta") {
         // Only the first token changes what the controls show; the rest just grows the copied text.
-        if (state.translation.length === 0) {
-          setState({ translation: data.text });
-        } else {
-          state.translation += data.text;
-        }
+        if (state.translation.length === 0) setState({ translation: data.text });
+        else state.translation += data.text;
         output!.append(data.text);
       } else if (event === "done") {
         done = data;
       } else if (event === "error") {
-        throw new ApiFailureError(data, 0);
+        throw new ApiFailure(data, 0);
       }
     }
-    if (!done) {
-      throw new Error("the connection closed before the translation finished");
-    }
+    if (!done) throw new Error("the connection closed before the translation finished");
 
-    const { translation } = state;
+    const translation = state.translation;
     const notes = resultNotes(done, {
       source: image ? null : text,
       translation,
@@ -641,17 +581,11 @@ async function translate() {
       sourceLang: sel.sourceLang,
       targetLang: toSelect.value,
     });
-    for (const n of notes) {
-      addNote(n);
-    }
+    for (const n of notes) addNote(n);
     const alignment = !image && done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
-    if (alignment) {
-      synced = { source: text, translation, alignment };
-    }
+    if (alignment) synced = { source: text, translation, alignment };
     metaEl.show(metaLine(model, done));
-    if (markdown) {
-      linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
-    }
+    if (markdown) linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
     // An image's translation is not kept: the history holds texts, and the picture stays out of local storage.
     if (!image && translation.trim()) {
       addToHistory({
@@ -664,24 +598,21 @@ async function translate() {
         translation,
       });
     }
-  } catch (error) {
+  } catch (e) {
     if (stopped) {
       showInterruption(true);
     } else {
-      showInterruption(false, failureMessage(error));
+      showInterruption(false, failureMessage(e));
     }
   } finally {
     output?.finish();
     // After the last render, which rebuilds the open tail and would drop the marks.
     applyLinkCheck();
-    // eslint-disable-next-line unicorn/prefer-add-event-listener -- clears the handler set in the Stop setup
     stopBtn.onclick = null;
     // Taken before the state changes: Stop is hidden then, and a hidden button loses focus.
     const hadFocus = document.activeElement === stopBtn || document.activeElement === document.body;
     setState({ running: null });
-    if (hadFocus) {
-      translateBtn.focus();
-    }
+    if (hadFocus) translateBtn.focus();
     placeholderEl.hidden = state.translation.length > 0;
     refreshSync();
     void pollHealth();
@@ -717,9 +648,7 @@ function loadImage(file: File, picture: ImageBitmap) {
 
 /** Empties the source and the result and returns the source to the plain textarea. */
 function clearAll() {
-  if (state.running || clearBtn.getAttribute("aria-disabled") === "true") {
-    return;
-  }
+  if (state.running || clearBtn.getAttribute("aria-disabled") === "true") return;
   loadSource("");
   openUi.deselect();
   textInput.focus();
@@ -766,9 +695,7 @@ pauseButton.addEventListener("click", () => {
 showPaused();
 
 function languageName(code: string): string {
-  if (code === "auto") {
-    return "Detected language";
-  }
+  if (code === "auto") return "Detected language";
   return [...toSelect.options].find((o) => o.value === code)?.textContent ?? code;
 }
 
@@ -798,29 +725,21 @@ function setHistory(list: HistoryEntry[]) {
 }
 
 function addToHistory(entry: HistoryEntry) {
-  if (historyPaused) {
-    return;
-  }
+  if (historyPaused) return;
   setHistory(withEntry(history, entry));
 }
 
 /** Puts a kept translation back on the page as if it had just finished. */
 function restoreEntry(entry: HistoryEntry) {
-  if (state.running) {
-    return;
-  }
+  if (state.running) return;
   speech.stop();
   openUi.deselect();
   setSourceImage(null);
   textInput.value = entry.source;
   showFieldError(textError, textInput, null);
   const has = (select: HTMLSelectElement, v: string) => [...select.options].some((o) => o.value === v);
-  if (has(fromSelect, entry.from)) {
-    fromSelect.value = entry.from;
-  }
-  if (has(toSelect, entry.to)) {
-    toSelect.value = entry.to;
-  }
+  if (has(fromSelect, entry.from)) fromSelect.value = entry.from;
+  if (has(toSelect, entry.to)) toSelect.value = entry.to;
   const markdown = looksLikeMarkdown(entry.source);
   clearResult(markdown);
   views.source = { available: markdown, view: markdown ? "preview" : "raw" };
@@ -871,9 +790,7 @@ form.addEventListener("submit", (e) => {
 });
 
 textInput.addEventListener("input", () => {
-  if (!textError.hidden && textInput.value.trim()) {
-    showFieldError(textError, textInput, null);
-  }
+  if (!textError.hidden && textInput.value.trim()) showFieldError(textError, textInput, null);
   speech.stop("source");
   refreshControls();
   refreshSync();
@@ -888,9 +805,7 @@ wireSwitch(outputSwitch, "output", () => {
   refreshSync();
 });
 clearBtn.addEventListener("click", clearAll);
-for (const el of [glossaryInput, hardInput, softInput, genreInput]) {
-  el.addEventListener("input", refreshSoon);
-}
+for (const el of [glossaryInput, hardInput, softInput, genreInput]) el.addEventListener("input", refreshSoon);
 fromSelect.addEventListener("change", () => {
   speech.stop("source");
   refreshSelection();
@@ -904,9 +819,7 @@ modelSwitch.addEventListener("change", () => {
 });
 
 async function copyTranslation(): Promise<void> {
-  if (copyBtn.getAttribute("aria-disabled") === "true") {
-    return;
-  }
+  if (copyBtn.getAttribute("aria-disabled") === "true") return;
   try {
     await navigator.clipboard.writeText(state.translation);
     metaEl.flash("Translation copied to the clipboard.");
@@ -917,9 +830,7 @@ async function copyTranslation(): Promise<void> {
 copyBtn.addEventListener("click", () => void copyTranslation());
 
 const savedModel = stored("model");
-if (CHOICES.includes(savedModel as Choice)) {
-  setModelChoice(savedModel as Choice);
-}
+if (CHOICES.includes(savedModel as Choice)) setModelChoice(savedModel as Choice);
 
 bindRender(
   createRender({
@@ -938,15 +849,12 @@ bindRender(
 );
 refreshControls();
 historyUi.show(history);
-// eslint-disable-next-line unicorn/prefer-top-level-await -- the loads are independent; awaiting one would queue the others behind it
 void loadLanguages();
 void speech.loadVoices();
 registerServiceWorker();
 void pollHealth();
 document.addEventListener("visibilitychange", () => {
   void pollHealth();
-  if (document.visibilityState === "visible") {
-    speech.recheck();
-  }
+  if (document.visibilityState === "visible") speech.recheck();
 });
 window.addEventListener("focus", () => speech.recheck());

@@ -30,29 +30,24 @@ async function answer(request: WorkerRequest): Promise<WorkerReply> {
   try {
     if ("open" in request) {
       if (!inspector) {
-        const loaded = (await import(`${DIR}/pdf_inspector_wasm.js`)) as Inspector;
-        await loaded.default({ module_or_path: `${DIR}/pdf_inspector_wasm_bg.wasm` });
-        inspector = loaded;
+        const module = (await import(`${DIR}/pdf_inspector_wasm.js`)) as Inspector;
+        await module.default({ module_or_path: `${DIR}/pdf_inspector_wasm_bg.wasm` });
+        inspector = module;
       }
       pdf = new Uint8Array(request.open);
       return { id, ok: true };
     }
-    if (!inspector || !pdf) {
-      throw new Error("no document is open");
-    }
+    if (!inspector || !pdf) throw new Error("no document is open");
     const result = inspector.processPdf(pdf, { pages: [request.page] });
-    if (request.page < 1 || request.page > result.pageCount) {
-      throw new Error(`there is no page ${request.page}`);
-    }
+    if (request.page < 1 || request.page > result.pageCount) throw new Error(`there is no page ${request.page}`);
     return { id, markdown: result.markdown ?? "", needsOcr: result.pagesNeedingOcr.includes(request.page) };
-  } catch (error) {
-    return { id, error: error instanceof Error ? error.message : String(error) };
+  } catch (e) {
+    return { id, error: e instanceof Error ? e.message : String(e) };
   }
 }
 
 // Answered in arrival order: `open` is awaited before the pages that follow it.
 let last: Promise<void> = Promise.resolve();
 self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
-  // eslint-disable-next-line unicorn/require-post-message-target-origin -- a dedicated worker answers its one page; there is no origin to name
   last = last.then(async () => self.postMessage(await answer(event.data)));
 });

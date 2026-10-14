@@ -52,9 +52,7 @@ const RUNTIME = {
   url: `https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${ARCH}`,
   sha256: arch.runtime,
 };
-if (Bun.argv.length > 2) {
-  throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
-}
+if (Bun.argv.length > 2) throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
 
 const root = resolve(import.meta.dir, "..");
 const packaging = join(root, "packaging", "appimage");
@@ -70,9 +68,7 @@ for (const [file, script] of [
   [shimPath(llama), "build_llama.ts"],
   [audioLibrary(audio), "build_audiocpp.ts"],
 ] as const) {
-  if (!(await Bun.file(file).exists())) {
-    throw new Error(`${file} is missing; run: bun scripts/${script}`);
-  }
+  if (!(await Bun.file(file).exists())) throw new Error(`${file} is missing; run: bun scripts/${script}`);
 }
 // The web app's libraries are packed with public/; an AppImage without them could not open PDFs, and would send speech as WAV.
 await requireWebLibs(join(root, "public", "vendor"));
@@ -80,8 +76,8 @@ await requireWebLibs(join(root, "public", "vendor"));
 /** The file at `path` as pinned, downloaded unless a copy with the right checksum is already there. */
 async function tool(pin: { url: string; sha256: string }, path: string): Promise<void> {
   const file = Bun.file(path);
-  if ((await file.exists()) && new Bun.CryptoHasher("sha256").update(await file.bytes()).digest("hex") === pin.sha256) {
-    return;
+  if (await file.exists()) {
+    if (new Bun.CryptoHasher("sha256").update(await file.bytes()).digest("hex") === pin.sha256) return;
   }
   await Bun.write(path, await download(pin.url, pin.sha256));
 }
@@ -90,9 +86,7 @@ async function tool(pin: { url: string; sha256: string }, path: string): Promise
 async function copyEngine(from: string, to: string): Promise<void> {
   await mkdir(to, { recursive: true });
   for (const name of await readdir(from)) {
-    if (name !== "include") {
-      await cp(join(from, name), join(to, name), { verbatimSymlinks: true });
-    }
+    if (name !== "include") await cp(join(from, name), join(to, name), { verbatimSymlinks: true });
   }
 }
 
@@ -103,9 +97,7 @@ await mkdir(app, { recursive: true });
 // The repository's own layout under usr/share/index-translator, so the code finds its files
 // (public/, prompts/, docs/openapi.yaml, vendor/) the way it does in a checkout.
 for (const name of await readdir(join(root, "src"))) {
-  if (name.endsWith(".ts")) {
-    await cp(join(root, "src", name), join(app, "src", name));
-  }
+  if (name.endsWith(".ts")) await cp(join(root, "src", name), join(app, "src", name));
 }
 await cp(join(root, "public"), join(app, "public"), { recursive: true });
 await cp(join(root, "prompts"), join(app, "prompts"), { recursive: true });

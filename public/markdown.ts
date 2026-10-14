@@ -62,15 +62,11 @@ const DETECT_WEAK = [
  * breaks), which plain text seldom has together.
  */
 export function looksLikeMarkdown(source: string): boolean {
-  if (DETECT_STRONG.some((re) => re.test(source))) {
-    return true;
-  }
+  if (DETECT_STRONG.some((re) => re.test(source))) return true;
   let hints = 0;
   for (const re of DETECT_WEAK) {
     hints += source.match(re)?.length ?? 0;
-    if (hints >= 2) {
-      return true;
-    }
+    if (hints >= 2) return true;
   }
   return false;
 }
@@ -91,14 +87,10 @@ const isBlank = (line: string) => !/\S/.test(line);
 
 /** Leading tabs count as four columns; the result has them expanded. */
 function expandIndent(line: string): string {
-  const [m] = /^[ \t]*/.exec(line)!;
-  if (!m.includes("\t")) {
-    return line;
-  }
+  const m = /^[ \t]*/.exec(line)![0];
+  if (!m.includes("\t")) return line;
   let col = 0;
-  for (const ch of m) {
-    col = ch === "\t" ? col + 4 - (col % 4) : col + 1;
-  }
+  for (const ch of m) col = ch === "\t" ? col + 4 - (col % 4) : col + 1;
   return " ".repeat(col) + line.slice(m.length);
 }
 
@@ -127,9 +119,7 @@ function listMarker(line: string): Marker | null {
     spaces = m[3]!;
   } else {
     m = ORDERED.exec(line);
-    if (!m) {
-      return null;
-    }
+    if (!m) return null;
     ordered = true;
     start = Number(m[2]);
     kind = m[3]!;
@@ -145,12 +135,8 @@ function listMarker(line: string): Marker | null {
 
 function splitRow(line: string): string[] {
   let s = line.trim();
-  if (s.startsWith("|")) {
-    s = s.slice(1);
-  }
-  if (s.endsWith("|") && !s.endsWith(String.raw`\|`)) {
-    s = s.slice(0, -1);
-  }
+  if (s.startsWith("|")) s = s.slice(1);
+  if (s.endsWith("|") && !s.endsWith("\\|")) s = s.slice(0, -1);
   const cells: string[] = [];
   let cell = "";
   for (let i = 0; i < s.length; i++) {
@@ -160,9 +146,7 @@ function splitRow(line: string): string[] {
     } else if (s[i] === "|") {
       cells.push(cell.trim());
       cell = "";
-    } else {
-      cell += s[i];
-    }
+    } else cell += s[i];
   }
   cells.push(cell.trim());
   return cells;
@@ -172,33 +156,23 @@ function splitRow(line: string): string[] {
 function tableStart(lines: string[], i: number): boolean {
   const head = lines[i];
   const delim = lines[i + 1];
-  if (head === undefined || delim === undefined || !head.includes("|") || !TABLE_DELIM.test(delim)) {
-    return false;
-  }
-  if (!delim.includes("|") && !head.trim().startsWith("|")) {
-    return false;
-  }
+  if (head === undefined || delim === undefined || !head.includes("|") || !TABLE_DELIM.test(delim)) return false;
+  if (!delim.includes("|") && !head.trim().startsWith("|")) return false;
   return splitRow(head).length === splitRow(delim).length;
 }
 
 /** Whether a line starts a block that ends a paragraph (and lazy continuation in lists and quotes). */
 function interrupts(lines: string[], i: number): boolean {
   const line = lines[i]!;
-  if (ATX.test(line) || FENCE_OPEN.test(line) || HR.test(line) || QUOTE.test(line)) {
-    return true;
-  }
+  if (ATX.test(line) || FENCE_OPEN.test(line) || HR.test(line) || QUOTE.test(line)) return true;
   const marker = listMarker(line);
-  if (marker && !isBlank(marker.rest) && (!marker.ordered || marker.start === 1)) {
-    return true;
-  }
+  if (marker && !isBlank(marker.rest) && (!marker.ordered || marker.start === 1)) return true;
   return tableStart(lines, i);
 }
 
 /** Whether the open block at the end of `body` is a paragraph, which is all a lazy line may continue. */
 function endsInParagraph(body: string[]): boolean {
-  if (body.length === 0 || isBlank(body.at(-1)!)) {
-    return false;
-  }
+  if (!body.length || isBlank(body[body.length - 1]!)) return false;
   let last = parseLines(body).at(-1)?.block;
   // The innermost open block: through the last quote or list item.
   while (last?.type === "quote" || last?.type === "list") {
@@ -222,10 +196,9 @@ function lazyLine(line: string): string {
     SETEXT.test(l) ||
     listMarker(l) ||
     l.startsWith("|")
-  )) {
+  ))
     return l;
-  }
-  return /^\d/.test(l) ? l.replace(/^(\d+)([.)])/, String.raw`$1\$2`) : `\\${l}`;
+  return /^\d/.test(l) ? l.replace(/^(\d+)([.)])/, "$1\\$2") : "\\" + l;
 }
 
 export interface ParsedBlock {
@@ -249,10 +222,10 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
     }
 
     const fence = FENCE_OPEN.exec(line);
-    if (fence && !(fence[2]!.startsWith("`") && fence[3]!.includes("`"))) {
+    if (fence && !(fence[2]![0] === "`" && fence[3]!.includes("`"))) {
       const indent = fence[1]!.length;
       const mark = fence[2]!;
-      const close = new RegExp(`^ {0,3}${mark.startsWith("`") ? "`" : "~"}{${mark.length},}[ \\t]*$`);
+      const close = new RegExp(`^ {0,3}${mark[0] === "`" ? "`" : "~"}{${mark.length},}[ \\t]*$`);
       const body: string[] = [];
       i++;
       while (i < n && !close.test(lines[i]!)) {
@@ -261,11 +234,7 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
         i++;
       }
       // An unclosed fence runs to the end of the text; its trailing blank lines are not content yet.
-      if (i >= n) {
-        while (body.length > 0 && isBlank(body.at(-1)!)) {
-          body.pop();
-        }
-      }
+      if (i >= n) while (body.length && isBlank(body[body.length - 1]!)) body.pop();
       i++; // the closing fence, or past the end
       out.push({
         block: {
@@ -296,15 +265,10 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
       const body: string[] = [];
       while (i < n) {
         const l = lines[i]!;
-        if (QUOTE.test(l)) {
-          body.push(l.replace(QUOTE, ""));
-        }
+        if (QUOTE.test(l)) body.push(l.replace(QUOTE, ""));
         // Lazy continuation: an unmarked line continues a quoted paragraph.
-        else if (!isBlank(l) && !interrupts(lines, i) && endsInParagraph(body)) {
-          body.push(lazyLine(l));
-        } else {
-          break;
-        }
+        else if (!isBlank(l) && !interrupts(lines, i) && endsInParagraph(body)) body.push(lazyLine(l));
+        else break;
         i++;
       }
       out.push({ block: { type: "quote", children: parseLines(body).map((p) => p.block) }, line: first });
@@ -317,7 +281,7 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
       let loose = false;
       let current = marker;
       for (;;) {
-        let { rest } = current;
+        let rest = current.rest;
         let task: boolean | null = null;
         const t = TASK.exec(rest);
         if (t) {
@@ -337,23 +301,17 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
             continue;
           }
           if (indentOf(l) >= current.contentIndent) {
-            if (blanks && body.every((entry) => isBlank(entry))) {
-              break;
-            } // an item that starts empty ends at a blank line
+            if (blanks && body.every(isBlank)) break; // an item that starts empty ends at a blank line
             body.push(l.slice(current.contentIndent));
             blanks = 0;
             i++;
             continue;
           }
-          if (HR.test(l)) {
-            break;
-          }
+          if (HR.test(l)) break;
           const m = listMarker(l);
           if (m) {
             // The same kind of marker adds an item; another kind starts a new list.
-            if (m.ordered === current.ordered && m.kind === current.kind) {
-              next = m;
-            }
+            if (m.ordered === current.ordered && m.kind === current.kind) next = m;
             break;
           }
           if (!blanks && !interrupts(lines, i) && endsInParagraph(body)) {
@@ -363,24 +321,16 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
           }
           break;
         }
-        while (body.length > 1 && isBlank(body.at(-1)!)) {
-          body.pop();
-        }
+        while (body.length > 1 && isBlank(body[body.length - 1]!)) body.pop();
         items.push({ task, lines: body });
-        if (!next) {
-          break;
-        }
-        if (blanks) {
-          loose = true;
-        }
+        if (!next) break;
+        if (blanks) loose = true;
         current = next;
       }
       const parsed = items.map((it) => {
         const children = parseLines(it.lines);
         // Loose also when a blank line separates two of an item's own blocks (not lines inside one).
-        if (children.some((c, k) => k > 0 && isBlank(it.lines[c.line - 1]!))) {
-          loose = true;
-        }
+        if (children.some((c, k) => k > 0 && isBlank(it.lines[c.line - 1]!))) loose = true;
         return { task: it.task, children: children.map((c) => c.block) };
       });
       out.push({
@@ -414,18 +364,14 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
     let level = 0;
     while (i < n) {
       const l = lines[i]!;
-      if (isBlank(l)) {
-        break;
-      }
+      if (isBlank(l)) break;
       const setext = SETEXT.exec(l);
       if (setext) {
-        level = setext[1]!.startsWith("=") ? 1 : 2;
+        level = setext[1]![0] === "=" ? 1 : 2;
         i++;
         break;
       }
-      if (interrupts(lines, i)) {
-        break;
-      }
+      if (interrupts(lines, i)) break;
       para.push(l.trimStart());
       i++;
     }
@@ -463,9 +409,7 @@ function matchAt(re: RegExp, s: string, i: number): RegExpExecArray | null {
 
 function runLength(s: string, i: number): number {
   let j = i;
-  while (s[j] === s[i]) {
-    j++;
-  }
+  while (s[j] === s[i]) j++;
   return j - i;
 }
 
@@ -473,39 +417,29 @@ function runLength(s: string, i: number): number {
 function codeClose(s: string, from: number, len: number): number {
   for (let j = s.indexOf("`", from); j >= 0; j = s.indexOf("`", j)) {
     const run = runLength(s, j);
-    if (run === len) {
-      return j;
-    }
+    if (run === len) return j;
     j += run;
   }
   return -1;
 }
 
-const unescapePunctuation = (s: string) => s.replaceAll(/\\([!-/:-@[-`{-~])/g, "$1");
+const unescapePunctuation = (s: string) => s.replace(/\\([!-/:-@[-`{-~])/g, "$1");
 
 /** Reads `(href "title")` with s[k] === "(". */
 function linkTail(s: string, k: number): { href: string; title: string; end: number } | null {
   k++;
   const skipSpace = () => {
-    while (s[k] === " " || s[k] === "\t" || s[k] === "\n") {
-      k++;
-    }
+    while (s[k] === " " || s[k] === "\t" || s[k] === "\n") k++;
   };
   skipSpace();
   let href: string;
   if (s[k] === "<") {
     let j = k + 1;
     for (; j < s.length && s[j] !== ">"; j++) {
-      if (s[j] === "\n" || s[j] === "<") {
-        return null;
-      }
-      if (s[j] === "\\") {
-        j++;
-      }
+      if (s[j] === "\n" || s[j] === "<") return null;
+      if (s[j] === "\\") j++;
     }
-    if (j >= s.length) {
-      return null;
-    }
+    if (j >= s.length) return null;
     href = s.slice(k + 1, j);
     k = j + 1;
   } else {
@@ -513,24 +447,16 @@ function linkTail(s: string, k: number): { href: string; title: string; end: num
     const start = k;
     for (; k < s.length; k++) {
       const ch = s[k]!;
-      if (ch === "\\" && ASCII_PUNCT.test(s[k + 1] ?? "")) {
-        k++;
-      }
+      if (ch === "\\" && ASCII_PUNCT.test(s[k + 1] ?? "")) k++;
       // eslint-disable-next-line no-control-regex -- a bare link destination ends at a control character
-      else if (/[ \u0000-\u001F\u007F]/.test(ch)) {
-        break;
-      } else if (ch === "(") {
-        parens++;
-      } else if (ch === ")") {
-        if (parens === 0) {
-          break;
-        }
+      else if (/[ \x00-\x1f\x7f]/.test(ch)) break;
+      else if (ch === "(") parens++;
+      else if (ch === ")") {
+        if (parens === 0) break;
         parens--;
       }
     }
-    if (parens) {
-      return null;
-    }
+    if (parens) return null;
     href = s.slice(start, k);
   }
   const beforeTitle = k;
@@ -540,21 +466,13 @@ function linkTail(s: string, k: number): { href: string; title: string; end: num
   if ((q === '"' || q === "'" || q === "(") && k > beforeTitle) {
     const closer = q === "(" ? ")" : q;
     let j = k + 1;
-    for (; j < s.length && s[j] !== closer; j++) {
-      if (s[j] === "\\") {
-        j++;
-      }
-    }
-    if (j >= s.length) {
-      return null;
-    }
+    for (; j < s.length && s[j] !== closer; j++) if (s[j] === "\\") j++;
+    if (j >= s.length) return null;
     title = s.slice(k + 1, j);
     k = j + 1;
     skipSpace();
   }
-  if (s[k] !== ")") {
-    return null;
-  }
+  if (s[k] !== ")") return null;
   return { href: unescapePunctuation(href), title: unescapePunctuation(title), end: k + 1 };
 }
 
@@ -605,9 +523,7 @@ export function parseInline(src: string): Inline[] {
   const brackets: Bracket[] = [];
   let buf = "";
   const flush = () => {
-    if (buf) {
-      out.push({ type: "text", text: buf });
-    }
+    if (buf) out.push({ type: "text", text: buf });
     buf = "";
   };
   const textNode = (text: string): TextNode => {
@@ -632,28 +548,19 @@ export function parseInline(src: string): Inline[] {
       let o = c - 1;
       for (; o >= floor; o--) {
         const opener = delims[o]!;
-        if (opener.char !== closer.char || !opener.canOpen) {
-          continue;
-        }
-        if (closer.char === "~" && opener.count !== closer.count) {
-          continue;
-        }
+        if (opener.char !== closer.char || !opener.canOpen) continue;
+        if (closer.char === "~" && opener.count !== closer.count) continue;
         const oddMatch =
           (opener.canClose || closer.canOpen) &&
           (opener.length + closer.length) % 3 === 0 &&
           !(opener.length % 3 === 0 && closer.length % 3 === 0);
-        if (closer.char !== "~" && oddMatch) {
-          continue;
-        }
+        if (closer.char !== "~" && oddMatch) continue;
         break;
       }
       if (o < floor) {
         openersBottom.set(key, c);
-        if (closer.canOpen) {
-          c++;
-        } else {
-          delims.splice(c, 1);
-        }
+        if (!closer.canOpen) delims.splice(c, 1);
+        else c++;
         continue;
       }
       const opener = delims[o]!;
@@ -705,16 +612,12 @@ export function parseInline(src: string): Inline[] {
     if (c === "\n") {
       // Every line break is kept (see the header); trailing spaces before it are not content.
       buf = buf.replace(/[ \t]+$/, "");
-      const last = out.at(-1);
-      if (!buf && last?.type === "text") {
-        last.text = last.text.replace(/[ \t]+$/, "");
-      }
+      const last = out[out.length - 1];
+      if (!buf && last?.type === "text") last.text = last.text.replace(/[ \t]+$/, "");
       flush();
       out.push({ type: "br" });
       i++;
-      while (src[i] === " " || src[i] === "\t") {
-        i++;
-      }
+      while (src[i] === " " || src[i] === "\t") i++;
       continue;
     }
 
@@ -726,10 +629,8 @@ export function parseInline(src: string): Inline[] {
         i += run;
         continue;
       }
-      let code = src.slice(i + run, close).replaceAll("\n", " ");
-      if (code.length > 2 && code.startsWith(" ") && code.endsWith(" ") && /[^ ]/.test(code)) {
-        code = code.slice(1, -1);
-      }
+      let code = src.slice(i + run, close).replace(/\n/g, " ");
+      if (code.length > 2 && code.startsWith(" ") && code.endsWith(" ") && /[^ ]/.test(code)) code = code.slice(1, -1);
       flush();
       out.push({ type: "code", text: code });
       i = close + run;
@@ -771,13 +672,7 @@ export function parseInline(src: string): Inline[] {
         ? { type: "image", href: tail.href, title: tail.title, alt: plainText(children) }
         : { type: "link", href: tail.href, title: tail.title, children };
       // No links inside links: earlier "[" openers can no longer form one.
-      if (!opener.image) {
-        for (const b of brackets) {
-          if (!b.image) {
-            b.active = false;
-          }
-        }
-      }
+      if (!opener.image) for (const b of brackets) if (!b.image) b.active = false;
       i = tail.end;
       continue;
     }
@@ -822,15 +717,11 @@ export function parseInline(src: string): Inline[] {
   const merge = (nodes: Inline[]): Inline[] => {
     const merged: Inline[] = [];
     for (const n of nodes) {
-      const prev = merged.at(-1);
-      if (n.type === "text" && !n.text) {
-        continue;
-      }
-      if (n.type === "text" && prev?.type === "text") {
+      const prev = merged[merged.length - 1];
+      if (n.type === "text" && !n.text) continue;
+      if (n.type === "text" && prev?.type === "text")
         merged[merged.length - 1] = { type: "text", text: prev.text + n.text };
-      } else {
-        merged.push("children" in n ? { ...n, children: merge(n.children) } : n);
-      }
+      else merged.push("children" in n ? { ...n, children: merge(n.children) } : n);
     }
     return merged;
   };
@@ -840,32 +731,21 @@ export function parseInline(src: string): Inline[] {
 /** GFM extended autolinks: bare http(s) URLs in text outside links become links, after the inline parse. */
 function linkBareUrls(nodes: Inline[]): Inline[] {
   return nodes.flatMap((n): Inline[] => {
-    if (n.type === "link") {
-      return [n];
-    }
-    if ("children" in n) {
-      return [{ ...n, children: linkBareUrls(n.children) }];
-    }
-    if (n.type !== "text" || !n.text.includes("http")) {
-      return [n];
-    }
+    if (n.type === "link") return [n];
+    if ("children" in n) return [{ ...n, children: linkBareUrls(n.children) }];
+    if (n.type !== "text" || !n.text.includes("http")) return [n];
     const parts: Inline[] = [];
     let last = 0;
     for (const m of n.text.matchAll(BARE_URL)) {
-      let [url] = m;
+      let url = m[0];
       // A closing parenthesis belongs to the URL only if it has an opening one.
-      while (url.endsWith(")") && (url.match(/\)/g)?.length ?? 0) > (url.match(/\(/g)?.length ?? 0)) {
+      while (url.endsWith(")") && (url.match(/\)/g)?.length ?? 0) > (url.match(/\(/g)?.length ?? 0))
         url = url.slice(0, -1);
-      }
-      if (m.index > last) {
-        parts.push({ type: "text", text: n.text.slice(last, m.index) });
-      }
+      if (m.index > last) parts.push({ type: "text", text: n.text.slice(last, m.index) });
       parts.push({ type: "link", href: url, title: "", children: [{ type: "text", text: url }] });
       last = m.index + url.length;
     }
-    if (last < n.text.length) {
-      parts.push({ type: "text", text: n.text.slice(last) });
-    }
+    if (last < n.text.length) parts.push({ type: "text", text: n.text.slice(last) });
     return parts;
   });
 }
@@ -904,12 +784,10 @@ export class MarkdownStream {
       lines.pop(); // empty after the final newline
       const parsed = parseLines(lines);
       if (parsed.length > 1) {
-        const last = parsed.at(-1)!;
+        const last = parsed[parsed.length - 1]!;
         done = parsed.slice(0, -1).map((p) => ({ block: p.block, line: p.line + this.tailLine }));
         let offset = 0;
-        for (let k = 0; k < last.line; k++) {
-          offset += lines[k]!.length + 1;
-        }
+        for (let k = 0; k < last.line; k++) offset += lines[k]!.length + 1;
         this.tailStart += offset;
         this.tailLine += last.line;
         tail = tail.slice(offset);

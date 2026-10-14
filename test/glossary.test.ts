@@ -57,7 +57,7 @@ describe("parseGlossary", () => {
     expect(error).toBeUndefined();
     expect(Object.hasOwn(glossary, "__proto__")).toBe(true);
     expect(Object.getPrototypeOf(glossary)).toBeNull();
-    expect(glossary.__proto__).toBe("原型");
+    expect(glossary["__proto__"]).toBe("原型");
   });
 
   test("does not treat constructor or toString as existing entries", () => {
@@ -72,7 +72,7 @@ describe("parseGlossary", () => {
     expect(wire).toBe('{"glossary":{"__proto__":"原型","apple":"苹果"}}');
     const back = JSON.parse(wire) as { glossary: Record<string, string> };
     expect(Object.hasOwn(back.glossary, "__proto__")).toBe(true);
-    expect(back.glossary.__proto__).toBe("原型");
+    expect(back.glossary["__proto__"]).toBe("原型");
   });
 
   test("reports a repeated source term as a duplicate on the later line", () => {

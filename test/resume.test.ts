@@ -13,14 +13,9 @@ function frame(id: number, event: string, data: unknown) {
 function response(frames: string[], opts: { hang?: AbortSignal; id?: boolean } = {}) {
   const body = new ReadableStream<Uint8Array>({
     start(c) {
-      for (const f of frames) {
-        c.enqueue(encoder.encode(f));
-      }
-      if (opts.hang) {
-        opts.hang.addEventListener("abort", () => c.error(new DOMException("aborted", "AbortError")));
-      } else {
-        c.close();
-      }
+      for (const f of frames) c.enqueue(encoder.encode(f));
+      if (!opts.hang) c.close();
+      else opts.hang.addEventListener("abort", () => c.error(new DOMException("aborted", "AbortError")));
     },
   });
   return new Response(body, { headers: opts.id === false ? {} : { [TRANSLATION_ID_HEADER]: "abc" } });
@@ -70,9 +65,7 @@ describe("resumableEvents", () => {
     let calls = 0;
     const events = run((last) => {
       calls++;
-      if (last === 0) {
-        return Promise.resolve(response([frame(1, "start", {})]));
-      }
+      if (last === 0) return Promise.resolve(response([frame(1, "start", {})]));
       return Promise.reject(new TypeError("offline"));
     });
     await expect(events).rejects.toThrow("could not be restored");

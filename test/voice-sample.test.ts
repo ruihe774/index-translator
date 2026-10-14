@@ -2,8 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { encodeWav, MicRecorder } from "../public/mic-recorder";
-import type { MicMediaRecorder, MicStream } from "../public/mic-recorder";
+import { encodeWav, type MicMediaRecorder, MicRecorder, type MicStream } from "../public/mic-recorder";
 import { readWav } from "../src/wav";
 
 class FakeTrack {
@@ -37,31 +36,20 @@ class FakeRecorder {
   onerror: (() => void) | null = null;
   constructor(
     readonly stream: FakeStream,
-    private knobs: { mode: Rig["mode"] },
+    private rig: { mode: Rig["mode"] },
   ) {
-    if (knobs.mode.construct) {
-      throw knobs.mode.construct;
-    }
+    if (rig.mode.construct) throw rig.mode.construct;
   }
   start() {
-    if (this.knobs.mode.start) {
-      throw this.knobs.mode.start;
-    }
+    if (this.rig.mode.start) throw this.rig.mode.start;
     this.state = "recording";
   }
   stop() {
-    if (this.knobs.mode.stop) {
-      throw this.knobs.mode.stop;
-    }
+    if (this.rig.mode.stop) throw this.rig.mode.stop;
     this.state = "inactive";
-    if (this.knobs.mode.silentStop) {
-      return;
-    }
+    if (this.rig.mode.silentStop) return;
     queueMicrotask(() => {
-      if (this.knobs.mode.stopEmits === "error") {
-        this.onerror?.();
-        return;
-      }
+      if (this.rig.mode.stopEmits === "error") return this.onerror?.();
       this.ondataavailable?.({ data: new Blob([new Uint8Array([1, 2, 3])]) });
       this.onstop?.();
     });
@@ -91,10 +79,7 @@ function rig(limitMs = 60_000): Rig {
 }
 
 const stopped = (s: FakeStream) => s.tracks.every((t) => t.stopped > 0);
-const tick = () =>
-  new Promise((resolve) => {
-    setTimeout(resolve, 0);
-  });
+const tick = () => new Promise((r) => setTimeout(r, 0));
 
 describe("MicRecorder", () => {
   test("records, then stop returns the bytes and releases the microphone", async () => {
@@ -221,9 +206,7 @@ describe("MicRecorder", () => {
     const started = r.mic.start(() => limits++);
     r.gum[0]!.resolve();
     await started;
-    await new Promise((resolve) => {
-      setTimeout(resolve, 40);
-    });
+    await new Promise((res) => setTimeout(res, 40));
     expect(limits).toBe(1);
     await r.mic.stop();
 
@@ -233,9 +216,7 @@ describe("MicRecorder", () => {
     r2.gum[0]!.resolve();
     await s2;
     await r2.mic.stop();
-    await new Promise((resolve) => {
-      setTimeout(resolve, 40);
-    });
+    await new Promise((res) => setTimeout(res, 40));
     expect(limits2).toBe(0);
     await tick();
   });

@@ -6,8 +6,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
-import { startApp } from "../src/app";
-import type { App } from "../src/app";
+import { type App, startApp } from "../src/app";
 import { MODELS } from "../src/models";
 import { MAX_SPEECH_CHARS, MAX_SPEED, MIN_SPEED, SPEECH_LANGUAGES } from "../src/speech";
 import { CHAT, config, launcher, mock, PNG, postTo, readSse, resetMock, root, waitReady } from "./helpers/mock-engine";
@@ -24,16 +23,12 @@ const spec = Bun.YAML.parse(await Bun.file(join(root, "docs", "openapi.yaml")).t
 function deref(node: any): any {
   let n = node;
   for (let hops = 0; n && typeof n === "object" && typeof n.$ref === "string"; hops++) {
-    if (hops > 20 || !n.$ref.startsWith("#/")) {
-      throw new Error(`unsupported $ref ${n.$ref}`);
-    }
+    if (hops > 20 || !n.$ref.startsWith("#/")) throw new Error(`unsupported $ref ${n.$ref}`);
     n = n.$ref
       .slice(2)
       .split("/")
       .reduce((o: any, k: string) => o?.[k], spec);
-    if (n === undefined) {
-      throw new Error(`dangling $ref`);
-    }
+    if (n === undefined) throw new Error(`dangling $ref`);
   }
   return n;
 }
@@ -42,39 +37,29 @@ const isObject = (v: unknown): v is Record<string, unknown> => typeof v === "obj
 
 function typeMatches(type: string, value: unknown): boolean {
   switch (type) {
-    case "null": {
+    case "null":
       return value === null;
-    }
-    case "string": {
+    case "string":
       return typeof value === "string";
-    }
-    case "integer": {
+    case "integer":
       return typeof value === "number" && Number.isInteger(value);
-    }
-    case "number": {
+    case "number":
       return typeof value === "number" && Number.isFinite(value);
-    }
-    case "boolean": {
+    case "boolean":
       return typeof value === "boolean";
-    }
-    case "array": {
+    case "array":
       return Array.isArray(value);
-    }
-    case "object": {
+    case "object":
       return isObject(value);
-    }
-    default: {
+    default:
       throw new Error(`validator does not know type "${type}"`);
-    }
   }
 }
 
 /** Every way `value` breaks `schemaNode`, as readable lines; empty when it conforms. */
 function problems(schemaNode: any, value: unknown, at = "$", out: string[] = []): string[] {
   const schema = deref(schemaNode);
-  if (schema === undefined || schema === null) {
-    throw new Error(`no schema at ${at}`);
-  }
+  if (schema === undefined || schema === null) throw new Error(`no schema at ${at}`);
 
   if (schema.type !== undefined) {
     const types: string[] = [schema.type].flat();
@@ -90,14 +75,11 @@ function problems(schemaNode: any, value: unknown, at = "$", out: string[] = [])
     out.push(`${at}: ${value} is below the minimum ${schema.minimum}`);
   }
   if (typeof value === "string") {
-    // eslint-disable-next-line @typescript-eslint/no-misused-spread -- JSON Schema counts code points
-    const { length } = [...value];
-    if (typeof schema.minLength === "number" && length < schema.minLength) {
+    const length = [...value].length; // JSON Schema counts code points
+    if (typeof schema.minLength === "number" && length < schema.minLength)
       out.push(`${at}: shorter than ${schema.minLength}`);
-    }
-    if (typeof schema.maxLength === "number" && length > schema.maxLength) {
+    if (typeof schema.maxLength === "number" && length > schema.maxLength)
       out.push(`${at}: longer than ${schema.maxLength}`);
-    }
     if (typeof schema.pattern === "string" && !new RegExp(schema.pattern, "u").test(value)) {
       out.push(`${at}: does not match ${schema.pattern}`);
     }
@@ -109,19 +91,13 @@ function problems(schemaNode: any, value: unknown, at = "$", out: string[] = [])
   }
   if (isObject(value)) {
     for (const key of schema.required ?? []) {
-      if (!(key in value)) {
-        out.push(`${at}: missing required property "${key}"`);
-      }
+      if (!(key in value)) out.push(`${at}: missing required property "${key}"`);
     }
     const properties = schema.properties ?? {};
     for (const [key, v] of Object.entries(value)) {
-      if (key in properties) {
-        problems(properties[key], v, `${at}.${key}`, out);
-      } else if (schema.additionalProperties === false) {
-        out.push(`${at}: unexpected property "${key}"`);
-      } else if (isObject(schema.additionalProperties)) {
-        problems(schema.additionalProperties, v, `${at}.${key}`, out);
-      }
+      if (key in properties) problems(properties[key], v, `${at}.${key}`, out);
+      else if (schema.additionalProperties === false) out.push(`${at}: unexpected property "${key}"`);
+      else if (isObject(schema.additionalProperties)) problems(schema.additionalProperties, v, `${at}.${key}`, out);
     }
   }
   return out;
@@ -163,17 +139,13 @@ afterEach(() => {
 
 const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
 const plain = { text: "Hi", target_lang: "zh" };
-/** Code-unit order, the order sort() uses by default, made explicit. */
-const byCodeUnit = (a: string, b: string) => (a < b ? -1 : Number(a > b));
 
 /** Starts a second app whose engine is still loading, then runs `fn` against it. */
 async function withLoadingApp(fn: (origin: string) => Promise<void>): Promise<void> {
   mock.ready = false;
   const loading = await startApp(config(), launcher);
   try {
-    for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) {
-      await Bun.sleep(10);
-    }
+    for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) await Bun.sleep(10);
     expect(loading.engine.state).toBe("loading");
     await fn(loading.server.url.origin);
   } finally {
@@ -227,7 +199,7 @@ describe("validator", () => {
 
 describe("GET responses", () => {
   test("GET /health when ready matches Health", async () => {
-    const res = await fetch(`${base}/api/v1/health`);
+    const res = await fetch(base + "/api/v1/health");
     expect(res.status).toBe(200);
     const body: any = await res.json();
     expect(check("Health", body)).toEqual([]);
@@ -236,7 +208,7 @@ describe("GET responses", () => {
 
   test("GET /health while loading is a 503 that still matches Health", async () => {
     await withLoadingApp(async (origin) => {
-      const res = await fetch(`${origin}/api/v1/health`);
+      const res = await fetch(origin + "/api/v1/health");
       expect(res.status).toBe(503);
       const body: any = await res.json();
       expect(check("Health", body)).toEqual([]);
@@ -250,10 +222,8 @@ describe("GET responses", () => {
     mock.failLaunch = "model file is corrupt";
     const broken = await startApp(config(), launcher);
     try {
-      for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) {
-        await Bun.sleep(10);
-      }
-      const res = await fetch(`${broken.server.url.origin}/api/v1/health`);
+      for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) await Bun.sleep(10);
+      const res = await fetch(broken.server.url.origin + "/api/v1/health");
       expect(res.status).toBe(503);
       const body: any = await res.json();
       expect(check("Health", body)).toEqual([]);
@@ -266,7 +236,7 @@ describe("GET responses", () => {
   });
 
   test("GET /models matches ModelList, with one ModelInfo per model", async () => {
-    const body: any = await (await fetch(`${base}/api/v1/models`)).json();
+    const body: any = await (await fetch(base + "/api/v1/models")).json();
     expect(check("ModelList", body)).toEqual([]);
     expect(body.models.map((m: any) => m.id)).toEqual(MODELS.map((m) => m.id));
     for (const m of MODELS) {
@@ -275,7 +245,7 @@ describe("GET responses", () => {
   });
 
   test("GET /voices matches VoiceList; POST /speech without an engine is a 503 that matches Error", async () => {
-    const voices = await (await fetch(`${base}/api/v1/voices`)).json();
+    const voices = await (await fetch(base + "/api/v1/voices")).json();
     expect(check("VoiceList", voices)).toEqual([]);
     const res = await post("/api/v1/speech", { text: "Hello", lang: "en" });
     expect(res.status).toBe(503);
@@ -290,12 +260,12 @@ describe("GET responses", () => {
   });
 
   test("GET /languages matches the inline response schema of the spec", async () => {
-    const body = await (await fetch(`${base}/api/v1/languages`)).json();
+    const body = await (await fetch(base + "/api/v1/languages")).json();
     expect(problems(documented("/languages", "get", "200"), body)).toEqual([]);
   });
 
   test("GET /openapi.yaml is served as YAML", async () => {
-    const res = await fetch(`${base}/api/v1/openapi.yaml`);
+    const res = await fetch(base + "/api/v1/openapi.yaml");
     expect(res.status).toBe(200);
     expect(res.headers.get("content-type")).toStartWith("application/yaml");
     expect(Bun.YAML.parse(await res.text())).toEqual(spec);
@@ -391,13 +361,13 @@ describe("error responses match components/schemas/Error", () => {
   });
 
   test("404 not_found", async () => {
-    const res = await fetch(`${base}/api/v1/nope`);
+    const res = await fetch(base + "/api/v1/nope");
     expect(res.status).toBe(404);
     expect(check("Error", await res.json())).toEqual([]);
   });
 
   test("405 method_not_allowed", async () => {
-    const res = await fetch(`${base}/api/v1/translate`);
+    const res = await fetch(base + "/api/v1/translate");
     expect(res.status).toBe(405);
     expect(check("Error", await res.json())).toEqual([]);
   });
@@ -469,7 +439,7 @@ describe("the spec against the server", () => {
       await res.text();
       answers[`${method.toUpperCase()} ${template}`] = res.status;
     }
-    expect(Object.keys(answers).toSorted(byCodeUnit)).toEqual(
+    expect(Object.keys(answers).sort()).toEqual(
       [
         "GET /health",
         "GET /languages",
@@ -482,7 +452,7 @@ describe("the spec against the server", () => {
         "POST /tokenize",
         "POST /translate",
         "POST /voices",
-      ].toSorted(byCodeUnit),
+      ].sort(),
     );
     for (const [op, status] of Object.entries(answers)) {
       // A translation that does not exist answers 404 from its own route, as an error with a message.
@@ -492,13 +462,11 @@ describe("the spec against the server", () => {
   });
 
   test("the model enums in the spec match the server's MODELS", () => {
-    const ids = MODELS.map((m) => m.id).toSorted(byCodeUnit);
-    const { schemas } = spec.components;
-    expect([...schemas.TranslateRequest.properties.model.enum].toSorted(byCodeUnit)).toEqual(ids);
-    expect([...schemas.ModelInfo.properties.id.enum].toSorted(byCodeUnit)).toEqual(ids);
-    expect([...schemas.ModelInfo.properties.kind.enum].toSorted(byCodeUnit)).toEqual(
-      [...new Set(MODELS.map((m) => m.kind))].toSorted(byCodeUnit),
-    );
+    const ids = MODELS.map((m) => m.id).sort();
+    const schemas = spec.components.schemas;
+    expect([...schemas.TranslateRequest.properties.model.enum].sort()).toEqual(ids);
+    expect([...schemas.ModelInfo.properties.id.enum].sort()).toEqual(ids);
+    expect([...schemas.ModelInfo.properties.kind.enum].sort()).toEqual([...new Set(MODELS.map((m) => m.kind))].sort());
   });
 
   test("the spec's default model is the server's default", () => {
@@ -553,8 +521,8 @@ describe("the spec against the server", () => {
         }
       },
     };
-    const documentedStatuses = Object.keys(spec.paths["/translate"].post.responses).toSorted(byCodeUnit);
-    expect(Object.keys(triggers).toSorted(byCodeUnit)).toEqual(documentedStatuses);
+    const documentedStatuses = Object.keys(spec.paths["/translate"].post.responses).sort();
+    expect(Object.keys(triggers).sort()).toEqual(documentedStatuses);
     for (const [status, trigger] of Object.entries(triggers)) {
       const actual = await trigger();
       expect({ status, actual }).toEqual({ status, actual: Number(status) });
@@ -562,11 +530,10 @@ describe("the spec against the server", () => {
   });
 
   test("every status documented for /tokenize can be produced by the server", async () => {
-    const documentedStatuses = Object.keys(spec.paths["/tokenize"].post.responses).toSorted(byCodeUnit);
+    const documentedStatuses = Object.keys(spec.paths["/tokenize"].post.responses).sort();
     expect(documentedStatuses).toEqual(["200", "400", "403", "413", "415", "503"]);
 
     const seen: Record<string, number> = {};
-    // eslint-disable-next-line unicorn/no-immediate-mutation -- the requests are made one after another, each its own status
     seen["200"] = (await post("/api/v1/tokenize", plain)).status;
     seen["400"] = (await post("/api/v1/tokenize", { text: "", target_lang: "en" })).status;
     seen["403"] = (await post("/api/v1/tokenize", plain, { headers: { origin: "https://evil.example" } })).status;

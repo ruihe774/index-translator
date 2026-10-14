@@ -1,8 +1,7 @@
 // Layout and wording of the page: aligned panes, no shift between views, status text at the bottom,
 // placeholders instead of labels and hints, the Model switch and the engine link.
 
-import { expect, test, THINK } from "./fixtures";
-import type { AppPage } from "./fixtures";
+import { type AppPage, expect, test, THINK } from "./fixtures";
 
 const MARKDOWN = "# Title\n\nSome **bold** text.\n\n- one\n- two\n";
 
@@ -115,11 +114,9 @@ test("the text box and the option boxes carry their instructions as placeholders
     ["Hard constraints", "hard-hint"],
     ["Soft constraints", "soft-hint"],
   ] as const) {
-    const field = app.page.getByLabel(label, { exact: true });
-    await expect(field).toHaveAccessibleDescription(
-      await field
-        .getAttribute("placeholder")
-        .then((p) => new RegExp(`^${p!.replaceAll(/[.*+?^${}()|[\]\\]/g, String.raw`\$&`)}`)),
+    const box = app.page.getByLabel(label, { exact: true });
+    await expect(box).toHaveAccessibleDescription(
+      await box.getAttribute("placeholder").then((p) => new RegExp(`^${p!.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`)),
     );
     expect(await app.page.locator(`#${hint}`).evaluate((el) => el.classList.contains("sr-only"))).toBe(true);
   }
@@ -130,16 +127,13 @@ test("Model is a switch on the same line as Model and options", async ({ app }) 
   const group = app.page.getByRole("group", { name: "Model" });
   await expect(group.getByRole("button")).toHaveCount(3);
   // innerText is what is rendered: the long names here, the short ones below 32rem.
-  // eslint-disable-next-line unicorn/prefer-dom-node-text-content -- textContent would include the hidden short names
   const names = () => group.getByRole("button").evaluateAll((els) => els.map((el) => (el as HTMLElement).innerText));
   expect(await names()).toEqual(["Automatic", "Index-Translate-9B", "Index-NativeLong-9B"]);
   await app.page.setViewportSize({ width: 320, height: 700 });
   expect(await names()).toEqual(["Auto", "Index-Translate", "Nailong"]);
   // A wider font than the design font, as on the CI runner: the switch must still fit.
   await app.page.evaluate(() => {
-    for (const e of document.querySelectorAll<HTMLElement>("*")) {
-      e.style.fontFamily = "DejaVu Sans";
-    }
+    for (const e of document.querySelectorAll<HTMLElement>("*")) e.style.fontFamily = "DejaVu Sans";
   });
   const tops = await group
     .getByRole("button")
@@ -207,9 +201,7 @@ const STABLE = ["#text", "#output-area", "#count", "#translate", "#meta", "#sett
 
 async function layout(app: AppPage, selectors = STABLE) {
   const out: Record<string, unknown> = {};
-  for (const s of selectors) {
-    out[s] = await box(app, s);
-  }
+  for (const s of selectors) out[s] = await box(app, s);
   return out;
 }
 
@@ -230,9 +222,7 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
     app,
     STABLE.filter((s) => s !== "#meta"),
   );
-  for (const [k, v] of Object.entries(running)) {
-    expect(v, `while running: ${k}`).toEqual(idle[k]);
-  }
+  for (const [k, v] of Object.entries(running)) expect(v, `while running: ${k}`).toEqual(idle[k]);
   // Stop sits where Clear was, and Translate has not moved.
   expect(await box(app, "#stop")).toEqual(buttons["#clear"]);
   expect(await box(app, "#translate")).toEqual(buttons["#translate"]);
@@ -244,9 +234,7 @@ test("clicking Translate and finishing move nothing", async ({ app, mock }) => {
     app,
     STABLE.filter((s) => s !== "#meta"),
   );
-  for (const [k, v] of Object.entries(done)) {
-    expect(v, `when done: ${k}`).toEqual(idle[k]);
-  }
+  for (const [k, v] of Object.entries(done)) expect(v, `when done: ${k}`).toEqual(idle[k]);
   expect(await box(app, "#clear")).toEqual(buttons["#clear"]);
   expect(await box(app, "#translate")).toEqual(buttons["#translate"]);
 });
@@ -345,9 +333,7 @@ test("gaps are even: panel padding, the rows, the buttons", async ({ app, mock }
     };
   });
   const gap = await app.page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
-  for (const [k, v] of Object.entries(gaps)) {
-    expect(Math.abs(v - gap), k).toBeLessThan(1.5);
-  }
+  for (const [k, v] of Object.entries(gaps)) expect(Math.abs(v - gap), k).toBeLessThan(1.5);
 });
 
 test("a long status line scrolls sideways and stays reachable by keyboard", async ({ app, mock }) => {

@@ -61,7 +61,7 @@ test("the output follows the stream to its end until the user scrolls", async ({
   expect(await gap()).toBeLessThanOrEqual(2);
 
   await area.hover();
-  await app.page.mouse.wheel(0, -100_000);
+  await app.page.mouse.wheel(0, -100000);
   // The wheel animation may stop a few pixels short of the top; what matters is that it stays away
   // from the end while more text arrives.
   await expect.poll(() => area.evaluate((el) => el.scrollTop)).toBeLessThan(100);

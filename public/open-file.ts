@@ -29,26 +29,14 @@ const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 /** The kind of a picked file, by its name's extension, else by its media type; `null` when neither is taken. */
 export function fileKind(name: string, type: string): FileKind | null {
   const dot = name.lastIndexOf(".");
-  const extension = dot === -1 ? "" : name.slice(dot + 1).toLowerCase();
-  if (extension === "pdf") {
-    return "pdf";
-  }
-  if (TEXT_EXTENSIONS.includes(extension)) {
-    return "text";
-  }
-  if (IMAGE_EXTENSIONS.includes(extension)) {
-    return "image";
-  }
+  const extension = dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
+  if (extension === "pdf") return "pdf";
+  if (TEXT_EXTENSIONS.includes(extension)) return "text";
+  if (IMAGE_EXTENSIONS.includes(extension)) return "image";
   const media = type.split(";")[0]!.trim().toLowerCase();
-  if (media === "application/pdf") {
-    return "pdf";
-  }
-  if (TEXT_TYPES.includes(media)) {
-    return "text";
-  }
-  if (IMAGE_TYPES.includes(media)) {
-    return "image";
-  }
+  if (media === "application/pdf") return "pdf";
+  if (TEXT_TYPES.includes(media)) return "text";
+  if (IMAGE_TYPES.includes(media)) return "image";
   return null;
 }
 
@@ -63,10 +51,8 @@ export function decodeText(bytes: Uint8Array): string | null {
   } catch {
     return null;
   }
-  if (text.includes("\0")) {
-    return null;
-  }
-  return text.replaceAll(/\r\n?/g, "\n");
+  if (text.includes("\0")) return null;
+  return text.replace(/\r\n?/g, "\n");
 }
 
 export function megabytes(bytes: number): string {
@@ -79,12 +65,8 @@ export function refusal(name: string, kind: FileKind | null, size: number): stri
     return `${name} was not opened: only plain text, Markdown and PDF files and JPEG, PNG and WebP images can be.`;
   }
   const limit = kind === "pdf" ? MAX_PDF_BYTES : kind === "image" ? MAX_IMAGE_BYTES : MAX_TEXT_BYTES;
-  if (size > limit) {
-    return `${name} was not opened: it is larger than ${megabytes(limit)}.`;
-  }
-  if (size === 0) {
-    return `${name} was not opened: it is empty.`;
-  }
+  if (size > limit) return `${name} was not opened: it is larger than ${megabytes(limit)}.`;
+  if (size === 0) return `${name} was not opened: it is empty.`;
   return null;
 }
 

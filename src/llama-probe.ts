@@ -38,11 +38,9 @@ function probe(dir: string): Probe {
       cpu: found.some((d) => d.type === "cpu"),
       vulkanLoader,
     };
-  } catch (error) {
-    return { error: error instanceof Error ? error.message : String(error) };
+  } catch (e) {
+    return { error: e instanceof Error ? e.message : String(e) };
   }
 }
 
-if (import.meta.main) {
-  console.log(JSON.stringify(probe(Bun.argv[2] ?? "")));
-}
+if (import.meta.main) console.log(JSON.stringify(probe(Bun.argv[2] ?? "")));

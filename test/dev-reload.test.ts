@@ -5,8 +5,7 @@ import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import { startApp } from "../src/app";
-import type { App } from "../src/app";
+import { type App, startApp } from "../src/app";
 import { config, launcher } from "./helpers/mock-engine";
 
 let dir: string;
@@ -58,9 +57,7 @@ describe("with DEV_RELOAD", () => {
     const deadline = Date.now() + 3000;
     while (!seen.includes("event: reload") && Date.now() < deadline) {
       const next = await Promise.race([reader.read(), Bun.sleep(3000).then(() => undefined)]);
-      if (!next || next.done) {
-        break;
-      }
+      if (!next || next.done) break;
       seen += decoder.decode(next.value);
     }
     expect(seen).toContain("event: reload");

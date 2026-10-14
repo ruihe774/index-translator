@@ -13,7 +13,6 @@ const PORT = Number(process.env.E2E_PORT ?? 3100);
 const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
 
 // Browser: Playwright's own download if present, else $CHROMIUM_PATH (e.g. a preinstalled Chromium).
-// eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing -- an empty CHROMIUM_PATH means unset too
 const executablePath = process.env.CHROMIUM_PATH || undefined;
 
 export default defineConfig({
@@ -23,7 +22,7 @@ export default defineConfig({
   // of one worker run one at a time; tests are spread over the workers.
   fullyParallel: true,
   workers: WORKERS,
-  forbidOnly: Boolean(process.env.CI),
+  forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
   reporter: process.env.CI ? [["dot"], ["html", { open: "never", outputFolder: at("../playwright-report") }]] : "dot",
   use: {

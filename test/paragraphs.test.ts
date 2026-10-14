@@ -102,9 +102,8 @@ describe("blockStarts", () => {
 
   test("counts as many blocks as countBlocks", () => {
     for (const text of ["", "A", "A\n\n\nB\n", "\r\nA\r\n \r\nB\r\nb", "# T\n\n- a\n- b\n\n```\nx\n\ny\n```"]) {
-      for (const unit of ["paragraphs", "lines"] as const) {
+      for (const unit of ["paragraphs", "lines"] as const)
         expect(blockStarts(text, unit)).toHaveLength(countBlocks(text, unit));
-      }
     }
   });
 });

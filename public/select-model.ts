@@ -106,7 +106,6 @@ function scan(text: string, stopAtSample: boolean): Scan {
   let sampleEnd = n;
   let i = 0;
   while (i < n) {
-    // eslint-disable-next-line unicorn/prefer-code-point -- UTF-16 code units: surrogate pairs are combined by hand below
     const c = text.charCodeAt(i);
     let width = 1;
     let letter: boolean;
@@ -114,12 +113,9 @@ function scan(text: string, stopAtSample: boolean): Scan {
       const lower = c | 0x20; // maps 'A'..'Z' onto 'a'..'z' and nothing else onto a letter
       letter = lower >= 0x61 && lower <= 0x7a;
     } else {
-      if (c >= 0xd8_00 && c <= 0xdb_ff && i + 1 < n) {
-        // eslint-disable-next-line unicorn/prefer-code-point -- the low half of the pair, as a code unit
+      if (c >= 0xd800 && c <= 0xdbff && i + 1 < n) {
         const d = text.charCodeAt(i + 1);
-        if (d >= 0xdc_00 && d <= 0xdf_ff) {
-          width = 2;
-        }
+        if (d >= 0xdc00 && d <= 0xdfff) width = 2;
       }
       letter = matchesAt(LETTER_AT, text, i);
     }
@@ -127,18 +123,12 @@ function scan(text: string, stopAtSample: boolean): Scan {
       letters++;
       if (sampleLetters < SAMPLE_LETTERS) {
         sampleLetters++;
-        if (c < 0x80) {
-          ascii++;
-        } else if (matchesAt(KANA_AT, text, i)) {
-          kana++;
-        } else if (matchesAt(HAN_AT, text, i)) {
-          han++;
-        }
+        if (c < 0x80) ascii++;
+        else if (matchesAt(KANA_AT, text, i)) kana++;
+        else if (matchesAt(HAN_AT, text, i)) han++;
         if (sampleLetters === SAMPLE_LETTERS) {
           sampleEnd = i + width;
-          if (stopAtSample) {
-            break;
-          }
+          if (stopAtSample) break;
         }
       }
     }
@@ -163,21 +153,16 @@ function hasCommonEnglish(lower: string): boolean {
   let common = 0;
   let start = -1;
   for (let i = 0; i <= lower.length; i++) {
-    // eslint-disable-next-line unicorn/prefer-code-point -- ASCII word characters are single code units
     const c = i < lower.length ? lower.charCodeAt(i) : 0;
     const wordChar = (c >= 0x61 && c <= 0x7a) || c === 0x27;
     if (wordChar) {
-      if (start < 0) {
-        start = i;
-      }
+      if (start < 0) start = i;
       continue;
     }
     if (start >= 0) {
       words++;
       const len = i - start;
-      if (len >= 2 && len <= 4 && ENGLISH_WORDS.has(lower.slice(start, i))) {
-        common++;
-      }
+      if (len >= 2 && len <= 4 && ENGLISH_WORDS.has(lower.slice(start, i))) common++;
       start = -1;
     }
   }
@@ -193,18 +178,10 @@ function hasCommonEnglish(lower: string): boolean {
 export function detectSource(text: string): "zh" | "ja" | "en" | undefined {
   const s = scan(text, true);
   const sample = s.sampleLetters;
-  if (sample === 0) {
-    return undefined;
-  }
-  if (s.kana / sample > 0.05) {
-    return "ja";
-  }
-  if (s.han / sample > 0.3) {
-    return "zh";
-  }
-  if (s.ascii / sample < 0.98) {
-    return undefined;
-  }
+  if (sample === 0) return undefined;
+  if (s.kana / sample > 0.05) return "ja";
+  if (s.han / sample > 0.3) return "zh";
+  if (s.ascii / sample < 0.98) return undefined;
   return hasCommonEnglish(text.slice(0, s.sampleEnd).toLowerCase()) ? "en" : undefined;
 }
 
@@ -225,25 +202,15 @@ export function selectModel(input: SelectionInput): Selection {
     warn,
   });
 
-  if (input.choice === CHAT_MODEL) {
-    return make(CHAT_MODEL, "manual", letters > LONG_THRESHOLD_LETTERS);
-  }
+  if (input.choice === CHAT_MODEL) return make(CHAT_MODEL, "manual", letters > LONG_THRESHOLD_LETTERS);
   if (input.choice === DOCUMENT_MODEL) {
     const usable = supported && !input.hasOptions;
     return make(DOCUMENT_MODEL, usable ? "manual" : "manual-document-unusable", !usable);
   }
 
-  if (letters <= LONG_THRESHOLD_LETTERS) {
-    return make(CHAT_MODEL, "short", false);
-  }
-  if (input.hasOptions) {
-    return make(CHAT_MODEL, "long-options", true);
-  }
-  if (sourceLang === undefined) {
-    return make(CHAT_MODEL, "long-unknown-source", true);
-  }
-  if (!supported) {
-    return make(CHAT_MODEL, "long-unsupported-direction", true);
-  }
+  if (letters <= LONG_THRESHOLD_LETTERS) return make(CHAT_MODEL, "short", false);
+  if (input.hasOptions) return make(CHAT_MODEL, "long-options", true);
+  if (sourceLang === undefined) return make(CHAT_MODEL, "long-unknown-source", true);
+  if (!supported) return make(CHAT_MODEL, "long-unsupported-direction", true);
   return make(DOCUMENT_MODEL, "long-document", false);
 }

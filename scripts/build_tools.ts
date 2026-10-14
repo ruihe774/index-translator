@@ -15,9 +15,7 @@ export async function run(command: string[], cwd?: string, env?: Record<string, 
     stderr: "inherit",
   });
   const code = await child.exited;
-  if (code !== 0) {
-    throw new Error(`${command[0]} failed with exit code ${code}`);
-  }
+  if (code !== 0) throw new Error(`${command[0]} failed with exit code ${code}`);
 }
 
 /** What a command prints, trimmed; empty when it fails. */
@@ -43,23 +41,17 @@ export async function checkout(repo: string, commit: string, dir: string): Promi
 /** Throws, with `hint`, unless every one of `tools` is on the PATH. */
 export function requireTools(tools: string[], hint: string): void {
   const missing = tools.filter((tool) => !Bun.which(tool));
-  if (missing.length > 0) {
-    throw new Error(`${missing.join(", ")} not found; ${hint}`);
-  }
+  if (missing.length > 0) throw new Error(`${missing.join(", ")} not found; ${hint}`);
 }
 
 /** Downloads `url` and throws unless its SHA-256 is `sha256`. */
 export async function download(url: string, sha256: string): Promise<Uint8Array> {
   console.log(`downloading ${url}`);
   const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`download failed: HTTP ${res.status} for ${url}`);
-  }
+  if (!res.ok) throw new Error(`download failed: HTTP ${res.status} for ${url}`);
   const bytes = await res.bytes();
   const got = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
-  if (got !== sha256) {
-    throw new Error(`checksum mismatch for ${url}: want ${sha256}, got ${got}`);
-  }
+  if (got !== sha256) throw new Error(`checksum mismatch for ${url}: want ${sha256}, got ${got}`);
   return bytes;
 }
 
@@ -99,9 +91,7 @@ export function msvc(): Promise<Msvc> {
         property,
       ]);
     const path = await query("installationPath");
-    if (!path) {
-      throw new Error(`Visual Studio with the C++ tools (x64) not found; ${TOOLS_HINT}`);
-    }
+    if (!path) throw new Error(`Visual Studio with the C++ tools (x64) not found; ${TOOLS_HINT}`);
     const major = Number.parseInt(await query("installationVersion"), 10);
     const years: Record<number, string> = { 16: "2019", 17: "2022", 18: "2026" };
     const bat = join(path, "VC", "Auxiliary", "Build", "vcvars64.bat");
@@ -114,15 +104,11 @@ export function msvc(): Promise<Msvc> {
 `,
     );
     const text = await output(["cmd", "/d", "/c", script]).finally(() => rm(script, { force: true }));
-    if (!text) {
-      throw new Error(`${bat} did not set up the build environment`);
-    }
+    if (!text) throw new Error(`${bat} did not set up the build environment`);
     const env: Record<string, string> = {};
     for (const line of text.split(/\r?\n/)) {
       const eq = line.indexOf("=");
-      if (eq > 0) {
-        env[line.slice(0, eq)] = line.slice(eq + 1);
-      }
+      if (eq > 0) env[line.slice(0, eq)] = line.slice(eq + 1);
     }
     return { env, generator: `Visual Studio ${major} ${years[major] ?? ""}`.trim() };
   })();

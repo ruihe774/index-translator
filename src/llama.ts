@@ -27,19 +27,13 @@ export interface EngineTimings {
 export type GenerationEvent =
   { type: "delta"; text: string } | { type: "done"; finishReason: FinishReason; usage: Usage; timings: EngineTimings };
 
-export class EngineError extends Error {
-  override name = "EngineError";
-}
+export class EngineError extends Error {}
 
 /** The model cannot be given images here: it has no image encoder, or the encoder's file is not downloaded. */
-export class ImageUnavailableError extends EngineError {
-  override name = "ImageUnavailableError";
-}
+export class ImageUnavailableError extends EngineError {}
 
 /** The engine could not read the image it was given; the engine itself is fine. */
-export class ImageInputError extends EngineError {
-  override name = "ImageInputError";
-}
+export class ImageInputError extends EngineError {}
 
 /** A loaded model, as seen by the engine. */
 export interface Running {
@@ -79,19 +73,15 @@ class NativeWorker {
 
   constructor(onLost: () => void) {
     // Not referenced: the server decides when the process ends, not an idle engine thread.
-    this.worker = new Worker(new URL("llama-worker.ts", import.meta.url).href, { ref: false });
-    this.worker.addEventListener("message", (event: MessageEvent<WorkerReply>) =>
-      this.waiting.get(event.data.req)?.(event.data),
-    );
+    this.worker = new Worker(new URL("./llama-worker.ts", import.meta.url).href, { ref: false });
+    this.worker.onmessage = (event: MessageEvent<WorkerReply>) => this.waiting.get(event.data.req)?.(event.data);
     this.lost = new Promise((resolve) => {
       const fail = (reason: string) => {
         onLost();
         resolve(reason);
-        for (const [req, deliver] of this.waiting) {
-          deliver({ type: "error", req, message: reason });
-        }
+        for (const [req, deliver] of this.waiting) deliver({ type: "error", req, message: reason });
       };
-      this.worker.addEventListener("error", (event) => fail(`the engine thread failed: ${event.message}`));
+      this.worker.onerror = (event) => fail(`the engine thread failed: ${event.message}`);
       this.worker.addEventListener("close", () => fail("the engine thread exited"));
     });
   }
@@ -99,7 +89,6 @@ class NativeWorker {
   private send(msg: Send<WorkerRequest>, deliver: (reply: WorkerReply) => void): number {
     const req = ++this.lastReq;
     this.waiting.set(req, deliver);
-    // eslint-disable-next-line unicorn/require-post-message-target-origin -- Worker.postMessage has no target origin
     this.worker.postMessage({ ...msg, req });
     return req;
   }
@@ -109,11 +98,8 @@ class NativeWorker {
     return new Promise((resolve, reject) => {
       const req = this.send(msg, (reply) => {
         this.waiting.delete(req);
-        if (reply.type === "error") {
-          reject(new (reply.image ? ImageInputError : EngineError)(reply.message));
-        } else {
-          resolve(reply);
-        }
+        if (reply.type === "error") reject(new (reply.image ? ImageInputError : EngineError)(reply.message));
+        else resolve(reply);
       });
     });
   }
@@ -123,12 +109,8 @@ class NativeWorker {
     const mmproj = model.mmproj && join(cfg.modelsDir, model.mmproj);
     /** Before an image goes to the engine thread: a missing encoder is the user's to download, not an engine failure. */
     const checkImage = async (image: Uint8Array | undefined) => {
-      if (!image) {
-        return;
-      }
-      if (!mmproj) {
-        throw new ImageUnavailableError(`${model.id} does not translate images`);
-      }
+      if (!image) return;
+      if (!mmproj) throw new ImageUnavailableError(`${model.id} does not translate images`);
       if (!(await Bun.file(mmproj).exists())) {
         throw new ImageUnavailableError(
           `the image encoder of ${model.id} is not at ${mmproj}; download it with: ${fetchCommand()} --model ${model.id}`,
@@ -150,9 +132,7 @@ class NativeWorker {
     });
 
     let finish!: (reason: string | undefined) => void;
-    const exited = new Promise<string | undefined>((resolve) => {
-      finish = resolve;
-    });
+    const exited = new Promise<string | undefined>((resolve) => (finish = resolve));
     void this.lost.then(finish);
     return {
       exited,
@@ -160,9 +140,7 @@ class NativeWorker {
       countTokens: async (content, image) => {
         await checkImage(image);
         const reply = await this.call({ type: "count", model: no, content, image });
-        if (reply.type !== "count") {
-          throw new EngineError(`unexpected ${reply.type} reply to a token count`);
-        }
+        if (reply.type !== "count") throw new EngineError(`unexpected ${reply.type} reply to a token count`);
         return reply.tokens;
       },
       generate: (content, maxTokens, signal, image) => this.generate(no, content, maxTokens, signal, image, checkImage),
@@ -187,17 +165,11 @@ class NativeWorker {
       wake?.();
     });
     const onAbort = () => wake?.();
-    const nextReply = () =>
-      new Promise<void>((resolve) => {
-        wake = resolve;
-      });
     signal?.addEventListener("abort", onAbort);
     let ended = false;
     try {
       for (;;) {
-        while (replies.length === 0 && !signal?.aborted) {
-          await nextReply();
-        }
+        while (replies.length === 0 && !signal?.aborted) await new Promise<void>((resolve) => (wake = resolve));
         signal?.throwIfAborted();
         const reply = replies.shift()!;
         if (reply.type === "delta") {
@@ -208,9 +180,7 @@ class NativeWorker {
           return;
         } else if (reply.type === "error") {
           ended = true;
-          if (reply.image) {
-            throw new ImageInputError(reply.message);
-          }
+          if (reply.image) throw new ImageInputError(reply.message);
           throw new EngineError(`generation failed: ${reply.message}`);
         }
       }
@@ -218,10 +188,7 @@ class NativeWorker {
       signal?.removeEventListener("abort", onAbort);
       this.waiting.delete(req);
       // Aborted, or the consumer stopped reading: the worker gives up at its next token.
-      if (!ended) {
-        // eslint-disable-next-line unicorn/require-post-message-target-origin -- Worker.postMessage has no target origin
-        this.worker.postMessage({ type: "cancel", req } satisfies WorkerRequest);
-      }
+      if (!ended) this.worker.postMessage({ type: "cancel", req } satisfies WorkerRequest);
     }
   }
 }
@@ -235,9 +202,7 @@ export const launchNative: Launcher = async (model, cfg) => {
     throw new EngineError(`model not found at ${modelPath}; run: ${fetchCommand()}`);
   }
   nativeWorker ??= new NativeWorker(() => {
-    if (nativeWorker === worker) {
-      nativeWorker = undefined;
-    }
+    if (nativeWorker === worker) nativeWorker = undefined;
   });
   const worker = nativeWorker;
   return worker.load(model, cfg);
@@ -263,9 +228,7 @@ export class Engine {
    * generation runs while the model is being swapped.
    */
   async load(model: ModelSpec): Promise<void> {
-    if (this.state === "ready" && this.loaded?.id === model.id) {
-      return;
-    }
+    if (this.state === "ready" && this.loaded?.id === model.id) return;
     // A client that gave up frees the queue slot while its load is still in flight, so a later load
     // can start before this one ends. Whichever load is newest wins; an older one frees its own
     // model and leaves the engine state alone.
@@ -283,28 +246,23 @@ export class Engine {
       }
       this.running = running;
       void running.exited.then((reason) => {
-        if (this.running !== running) {
-          return undefined;
-        }
+        if (this.running !== running) return;
         this.running = undefined;
         this.loaded = undefined;
         this.state = "error";
         this.error = reason ?? "the model was unloaded";
         console.error(`[engine] ${this.error}`);
-        return undefined;
       });
       this.state = "ready";
       console.error(`[engine] ${model.id} ready`);
-    } catch (error) {
-      if (epoch !== this.epoch) {
-        throw error instanceof EngineError ? error : new EngineError(String(error));
-      }
-      const message = error instanceof Error ? error.message : String(error);
+    } catch (e) {
+      if (epoch !== this.epoch) throw e instanceof EngineError ? e : new EngineError(String(e));
+      const message = e instanceof Error ? e.message : String(e);
       await this.stopRunning();
       this.state = "error";
       this.error = message;
       console.error(`[engine] could not load ${model.id}: ${message}`);
-      throw error instanceof EngineError ? error : new EngineError(message);
+      throw e instanceof EngineError ? e : new EngineError(message);
     }
   }
 
@@ -315,22 +273,18 @@ export class Engine {
   }
 
   private async stopRunning(): Promise<void> {
-    const { running } = this;
+    const running = this.running;
     this.running = undefined;
     this.loaded = undefined;
     this.state = "stopped";
-    if (!running) {
-      return;
-    }
+    if (!running) return;
     running.stop();
     await running.exited;
   }
 
   /** The loaded model, or an EngineError while there is none to use. */
   private ready(): Running {
-    if (this.state !== "ready" || !this.running) {
-      throw new EngineError(`the engine is ${this.state}`);
-    }
+    if (this.state !== "ready" || !this.running) throw new EngineError(`the engine is ${this.state}`);
     return this.running;
   }
 

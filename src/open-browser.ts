@@ -10,12 +10,9 @@ export function openBrowser(url: string): void {
     const child = Bun.spawn(cmd, { stdin: "ignore", stdout: "ignore", stderr: "ignore" });
     child.unref();
     void child.exited.then((code) => {
-      if (code !== 0) {
-        console.error(`[server] could not open browser (${cmd[0]} exited ${code})`);
-      }
-      return undefined;
+      if (code !== 0) console.error(`[server] could not open browser (${cmd[0]} exited ${code})`);
     });
-  } catch (error) {
-    console.error(`[server] could not open browser: ${error instanceof Error ? error.message : String(error)}`);
+  } catch (err) {
+    console.error(`[server] could not open browser: ${err instanceof Error ? err.message : String(err)}`);
   }
 }

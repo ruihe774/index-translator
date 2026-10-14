@@ -11,7 +11,7 @@
 // Markdown, the panes' elements) comes in through `SpeechUiDeps`. What the controls look like
 // follows `state` (state.ts), so `refresh` is what `render()` runs after it writes the rest.
 
-import { API, ApiFailureError, failureMessage } from "./api.ts";
+import { API, ApiFailure, failureMessage } from "./api.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.ts";
@@ -19,10 +19,8 @@ import type { ApiErrorBody } from "./errors.ts";
 import { giveUpQoa, QOA_TYPE, qoaDecoder, QoaError } from "./qoa.ts";
 import type { SpeechAudio } from "./speech-audio.ts";
 import { canSpeak, speechSegments } from "./speech-text.ts";
-import { SpeechPlayer } from "./speech.ts";
-import type { SpeechSettings } from "./speech.ts";
-import { setState, state } from "./state.ts";
-import type { Side } from "./state.ts";
+import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
+import { setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
 import { audioToWav, uploadVoice } from "./voice-sample.ts";
 
@@ -74,7 +72,7 @@ async function requestSpeech(
   });
   if (!res.ok) {
     const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-    throw new ApiFailureError(payload?.error ?? {}, res.status);
+    throw new ApiFailure(payload?.error ?? {}, res.status);
   }
   return res;
 }
@@ -89,16 +87,13 @@ async function synthesize(text: string, settings: SpeechSettings, signal: AbortS
   if (decoder) {
     try {
       const res = await requestSpeech(text, settings, signal, `${QOA_TYPE}, audio/wav;q=0.5`);
-      if (res.body && res.headers.get("content-type")?.startsWith(QOA_TYPE)) {
+      if (res.body && res.headers.get("content-type")?.startsWith(QOA_TYPE))
         return await decoder.decode(res.body, signal);
-      }
       return await res.arrayBuffer();
-    } catch (error) {
-      if (!(error instanceof QoaError)) {
-        throw error;
-      }
+    } catch (e) {
+      if (!(e instanceof QoaError)) throw e;
       // The codec, not the network or the engine, failed: ask again in a form the browser decodes itself.
-      console.error(error);
+      console.error(e);
       giveUpQoa();
     }
   }
@@ -113,16 +108,11 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
 
   const player = new SpeechPlayer(synthesize, {
     onState(playerState) {
-      if (playerState === "idle" && state.speaking) {
-        setState({ speaking: null });
-      } else {
-        refresh();
-      }
+      if (playerState === "idle" && state.speaking) setState({ speaking: null });
+      else refresh();
     },
     onSegment(segment) {
-      if (state.speaking) {
-        setState({ speaking: { ...state.speaking, line: segment?.line ?? null } });
-      }
+      if (state.speaking) setState({ speaking: { ...state.speaking, line: segment?.line ?? null } });
       showSpeaking(true);
       refresh();
     },
@@ -134,22 +124,12 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
 
   /** Why this side cannot be read aloud right now; empty when it can. */
   function blocked(side: Side): string {
-    if (state.speechProblem) {
-      return state.speechProblem;
-    }
+    if (state.speechProblem) return state.speechProblem;
     const { text, lang } = deps.target(side);
-    if (!text.trim()) {
-      return `There is no ${SIDE_NAME[side]} to read aloud yet.`;
-    }
-    if (side === "output" && state.running) {
-      return "The translation can be read aloud once it is finished.";
-    }
-    if (!lang) {
-      return "Choose the language under From to have this text read aloud.";
-    }
-    if (!canSpeak(lang)) {
-      return "Reading aloud is available for Chinese, English, Japanese, Spanish and Arabic.";
-    }
+    if (!text.trim()) return `There is no ${SIDE_NAME[side]} to read aloud yet.`;
+    if (side === "output" && state.running) return "The translation can be read aloud once it is finished.";
+    if (!lang) return "Choose the language under From to have this text read aloud.";
+    if (!canSpeak(lang)) return "Reading aloud is available for Chinese, English, Japanese, Spanish and Arabic.";
     return "";
   }
 
@@ -172,22 +152,14 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
       el.removeAttribute("aria-current");
     }
     const { speaking } = state;
-    if (!speaking) {
-      scrolledTo = null;
-    }
-    if (!speaking || speaking.line === null) {
-      return;
-    }
+    if (!speaking) scrolledTo = null;
+    if (!speaking || speaking.line === null) return;
     const { view, area } = panes[speaking.side];
     const block = view.querySelector<HTMLElement>(`:scope > [data-line="${speaking.line}"]`);
-    if (!block) {
-      return;
-    }
+    if (!block) return;
     block.classList.add("speaking");
     block.setAttribute("aria-current", "true");
-    if (!scroll) {
-      return;
-    }
+    if (!scroll) return;
     const pane = area.getBoundingClientRect();
     const box = block.getBoundingClientRect();
     // A later piece of the block already being followed may sit anywhere in it, and a block taller
@@ -198,9 +170,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     scrolledTo = key;
     const outside = box.top < pane.top || box.bottom > pane.bottom;
     const hidden = box.bottom <= pane.top || box.top >= pane.bottom;
-    if (sameBlock ? hidden : outside) {
-      area.scrollTop += box.top - pane.top - 8;
-    }
+    if (sameBlock ? hidden : outside) area.scrollTop += box.top - pane.top - 8;
   }
 
   function toggle(side: Side) {
@@ -212,15 +182,11 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     if (reason) {
       meta.flash(reason);
       // Reading aloud may have become available since the page loaded.
-      if (state.speechProblem) {
-        void recheckNow(true);
-      }
+      if (state.speechProblem) void recheckNow(true);
       return;
     }
     // After a failure the voice list may be out of date; the reading goes on with what is selected.
-    if (state.voicesStale) {
-      void loadVoices();
-    }
+    if (state.voicesStale) void loadVoices();
     const { text, lang } = deps.target(side);
     // Read as it is shown: rendered Markdown when the text looks like Markdown, else line by line.
     const segments = speechSegments(text, deps.isMarkdown(side), lang!);
@@ -235,20 +201,14 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
 
   /** Jumps a block back or forward and says where that is, since the shaded block may be out of view. */
   function jump(direction: -1 | 1) {
-    if (!player.jump(direction)) {
-      return;
-    }
+    if (!player.jump(direction)) return;
     const at = player.position();
-    if (at) {
-      meta.flash(`Block ${at.block} of ${at.blocks}`);
-    }
+    if (at) meta.flash(`Block ${at.block} of ${at.blocks}`);
     refresh();
   }
 
   function stop(side?: Side) {
-    if (state.speaking && (side === undefined || state.speaking.side === side)) {
-      player.stop();
-    }
+    if (state.speaking && (side === undefined || state.speaking.side === side)) player.stop();
   }
 
   function loadVoices(): Promise<void> {
@@ -268,9 +228,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
               ? "Reading aloud needs a voice: upload or record a sample under Model and options."
               : "";
           // The voice being read with is gone: the next piece uses the one now selected.
-          if (voiceSettings.setVoices(body.voices, stored("voice"))) {
-            player.update({ voice: voiceSettings.voice });
-          }
+          if (voiceSettings.setVoices(body.voices, stored("voice"))) player.update({ voice: voiceSettings.voice });
           settingsPanel.hidden = false;
         }
         state.voicesStale = false;
@@ -286,12 +244,8 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   }
 
   function recheck() {
-    if (!state.speechProblem && !state.voicesStale) {
-      return;
-    }
-    if (Date.now() - voicesCheckedAt < VOICES_RECHECK_MS) {
-      return;
-    }
+    if (!state.speechProblem && !state.voicesStale) return;
+    if (Date.now() - voicesCheckedAt < VOICES_RECHECK_MS) return;
     void loadVoices();
   }
 
@@ -299,9 +253,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   async function recheckNow(announce: boolean) {
     const had = state.speechProblem;
     await loadVoices();
-    if (announce && had && !state.speechProblem) {
-      meta.flash("Reading aloud is available now. Press Listen to start.");
-    }
+    if (announce && had && !state.speechProblem) meta.flash("Reading aloud is available now. Press Listen to start.");
   }
 
   /** Adds an uploaded voice to the list, selects it and tells the player. */
@@ -315,8 +267,8 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
       player.update({ voice: voice.id });
       setState({ speechProblem: "" });
       voiceSettings.status = `Voice "${voice.name}" added. It is kept until the server stops.`;
-    } catch (error) {
-      voiceSettings.status = error instanceof Error ? error.message : String(error);
+    } catch (e) {
+      voiceSettings.status = e instanceof Error ? e.message : String(e);
     }
   }
 
@@ -326,26 +278,19 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     c.addEventListener("prev", () => jump(-1));
     c.addEventListener("next", () => jump(1));
     c.addEventListener("pause", () => {
-      if (player.state === "paused") {
-        player.resume();
-      } else {
-        player.pause();
-      }
+      if (player.state === "paused") player.resume();
+      else player.pause();
     });
   }
   voiceSettings.addEventListener("voicechange", () => {
     store("voice", voiceSettings.voice);
     player.update({ voice: voiceSettings.voice });
-    if (state.speechProblem || state.voicesStale) {
-      void recheckNow(false);
-    }
+    if (state.speechProblem || state.voicesStale) void recheckNow(false);
   });
   voiceSettings.addEventListener("speedchange", () => {
     store("speed", String(voiceSettings.speed));
     player.update({ speed: voiceSettings.speed });
-    if (state.speechProblem || state.voicesStale) {
-      void recheckNow(false);
-    }
+    if (state.speechProblem || state.voicesStale) void recheckNow(false);
   });
   voiceSettings.addEventListener("sample", (e) => void addSampleVoice((e as CustomEvent<SampleDetail>).detail));
   voiceSettings.speed = stored("speed");

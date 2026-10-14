@@ -3,8 +3,7 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 
-import { startApp } from "../src/app";
-import type { App } from "../src/app";
+import { type App, startApp } from "../src/app";
 import { engineSize, ImageRejected, MAX_IMAGE_BYTES, prepareImage } from "../src/image";
 import { imageChatPrompt } from "../src/llama-ffi";
 import {
@@ -31,11 +30,9 @@ const isPng = (bytes: Uint8Array) => PNG_MAGIC.every((b, i) => bytes[i] === b);
 const rejection = async (file: Uint8Array) => {
   try {
     await prepareImage(file);
-  } catch (error) {
-    if (error instanceof ImageRejected) {
-      return error;
-    }
-    throw error;
+  } catch (e) {
+    if (e instanceof ImageRejected) return e;
+    throw e;
   }
   throw new Error("the image was accepted");
 };
@@ -97,11 +94,9 @@ describe("prepareImage", () => {
       [4000, 3000, 2336, 1760],
       [3024, 4032, 1760, 2336],
       [8000, 8000, 2048, 2048],
-      [50, 20_000, 64, 20_000],
+      [50, 20000, 64, 20000],
     ];
-    for (const [w, h, rw, rh] of cases) {
-      expect(engineSize(w, h)).toEqual({ width: rw, height: rh });
-    }
+    for (const [w, h, rw, rh] of cases) expect(engineSize(w, h)).toEqual({ width: rw, height: rh });
   });
 
   test("what is not a JPEG, PNG or WebP image is refused as invalid", async () => {
@@ -171,7 +166,7 @@ describe("POST /translate with an image", () => {
       stream: true,
     });
     const events = await readSse(res);
-    const { prompt } = mock.requests[0]!;
+    const prompt = mock.requests[0]!.prompt;
     expect(prompt).toBe(
       "请将图片中的文本翻译为英语，直接输出翻译结果，不要进行任何解释。\n\n" +
         "【参考文本/关注内容】\nthe menu\n\n【硬性要求】保留数字\n\n【软性要求】口语化\n\n【专名/术语对照】拉面→ramen\n\n" +

@@ -1,7 +1,14 @@
 import { describe, expect, test } from "bun:test";
 
-import { looksLikeMarkdown, MarkdownStream, parseInline, parseLines, parseMarkdown } from "../public/markdown";
-import type { Block, ParsedBlock } from "../public/markdown";
+import {
+  type Block,
+  looksLikeMarkdown,
+  MarkdownStream,
+  type ParsedBlock,
+  parseInline,
+  parseLines,
+  parseMarkdown,
+} from "../public/markdown";
 
 describe("looksLikeMarkdown", () => {
   test("one unambiguous construct is enough", () => {
@@ -22,7 +29,7 @@ describe("looksLikeMarkdown", () => {
   test("plain prose is not Markdown", async () => {
     expect(looksLikeMarkdown("Hello, world")).toBe(false);
     expect(looksLikeMarkdown("#hashtag and 5 * 3 = 15, 2023. A year.")).toBe(false);
-    expect(looksLikeMarkdown(await Bun.file(new URL("fixtures/essays.en.txt", import.meta.url)).text())).toBe(false);
+    expect(looksLikeMarkdown(await Bun.file(new URL("./fixtures/essays.en.txt", import.meta.url)).text())).toBe(false);
   });
 });
 
@@ -69,7 +76,7 @@ describe("parseMarkdown blocks", () => {
   test("tight, loose, nested, ordered and task lists", () => {
     const [list] = parseMarkdown("- a\n  - b\n- [x] c\n");
     expect(list).toMatchObject({ type: "list", ordered: false, tight: true });
-    const { items } = list as Extract<Block, { type: "list" }>;
+    const items = (list as Extract<Block, { type: "list" }>).items;
     expect(items).toHaveLength(2);
     expect(items[0]!.children[1]).toMatchObject({ type: "list", items: [{ children: [{ type: "paragraph" }] }] });
     expect(items[1]).toMatchObject({ task: true, children: [{ type: "paragraph", children: [{ text: "c" }] }] });
@@ -278,10 +285,8 @@ describe("MarkdownStream", () => {
       s.push(c);
       const r = s.take();
       blocks.push(...r.done);
-      for (const _ of r.done) {
-        doneAt.push(k);
-      }
-      ({ tail } = r);
+      for (const _ of r.done) doneAt.push(k);
+      tail = r.tail;
     });
     return { blocks: [...blocks, ...tail], doneAt };
   }
@@ -289,13 +294,12 @@ describe("MarkdownStream", () => {
   test("any chunking ends in the same blocks as one parse of the whole text", () => {
     const whole = parseMarkdown(DOC);
     expect(streamed([DOC]).blocks).toEqual(whole);
-    // eslint-disable-next-line @typescript-eslint/no-misused-spread -- the stream is cut by code point, which is what this checks
     expect(streamed([...DOC]).blocks).toEqual(whole);
     let seed = 7;
     for (let round = 0; round < 50; round++) {
       const chunks: string[] = [];
       for (let i = 0; i < DOC.length;) {
-        seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31;
+        seed = (seed * 1103515245 + 12345) % 2 ** 31;
         const len = 1 + (seed % 12);
         chunks.push(DOC.slice(i, i + len));
         i += len;
@@ -335,7 +339,7 @@ describe("MarkdownStream", () => {
         s.push(DOC.slice(i, i + size));
         const r = s.takeParsed();
         got.push(...r.done);
-        ({ tail } = r);
+        tail = r.tail;
       }
       expect([...got, ...tail]).toEqual(whole);
     }

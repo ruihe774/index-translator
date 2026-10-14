@@ -10,13 +10,11 @@ const files = Bun.argv.slice(2);
 if (files.length === 0) {
   files.push("public/style.css");
   const names = await Array.fromAsync(new Bun.Glob("*").scan({ cwd: "public/css", onlyFiles: true }));
-  for (const name of names.toSorted()) {
-    files.push(`public/css/${name}`);
-  }
+  for (const name of names.sort()) files.push(`public/css/${name}`);
 }
 
 const browsers = browserslist();
-const found: string[] = [];
+let problems = 0;
 for (const file of files) {
   const css = await Bun.file(file).text();
   await postcss([
@@ -26,11 +24,11 @@ for (const file of files) {
       // form (visually hidden text, resizable textarea, overflow hidden).
       ignore: ["css-clip-path", "css-masks", "css-overflow", "css-resize"],
       onFeatureUsage: (info: { message: string }) => {
-        found.push(info.message);
+        problems++;
         console.error(info.message);
       },
     }),
   ]).process(css, { from: file });
 }
-console.log(`${files.length} file(s): checked against ${browsers.length} browser versions, ${found.length} problem(s)`);
-process.exit(found.length > 0 ? 1 : 0);
+console.log(`${files.length} file(s): checked against ${browsers.length} browser versions, ${problems} problem(s)`);
+process.exit(problems ? 1 : 0);

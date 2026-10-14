@@ -8,6 +8,7 @@ import {
   interruption,
   metaLine,
   modelLabel,
+  type ResultContext,
   resultNotes,
   SAME_LANGUAGE_WARNING,
   sameLanguage,
@@ -15,9 +16,13 @@ import {
   selectionMessage,
   STOPPED_NOTE,
 } from "../public/messages";
-import type { ResultContext } from "../public/messages";
-import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS } from "../public/select-model";
-import type { Reason, Selection } from "../public/select-model";
+import {
+  CHAT_MODEL,
+  DOCUMENT_MODEL,
+  LONG_THRESHOLD_LETTERS,
+  type Reason,
+  type Selection,
+} from "../public/select-model";
 
 const selection = (model: Selection["model"], reason: Reason, letters = 100): Selection =>
   ({ model, reason, letters }) as Selection;
@@ -37,7 +42,7 @@ describe("selectionMessage", () => {
     ["manual-document-unusable", DOCUMENT_MODEL, true, /^Warning: Index-NativeLong-9B cannot translate this/],
   ];
   for (const [reason, model, warn, pattern] of cases) {
-    test(reason, () => {
+    test(`${reason}`, () => {
       const m = selectionMessage(selection(model, reason, LONG_THRESHOLD_LETTERS + 1));
       expect(m.warn).toBe(warn);
       expect(m.text).toMatch(pattern);

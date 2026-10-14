@@ -1,7 +1,14 @@
 import { afterEach, describe, expect, test } from "bun:test";
 
-import { HISTORY_KEY, loadHistory, MAX_ENTRIES, parseHistory, saveHistory, withEntry } from "../public/history";
-import type { HistoryEntry } from "../public/history";
+import {
+  HISTORY_KEY,
+  type HistoryEntry,
+  loadHistory,
+  MAX_ENTRIES,
+  parseHistory,
+  saveHistory,
+  withEntry,
+} from "../public/history";
 
 function entry(n: number, over: Partial<HistoryEntry> = {}): HistoryEntry {
   return {
@@ -32,9 +39,7 @@ describe("parseHistory", () => {
 describe("withEntry", () => {
   test("puts the new entry first and caps the list", () => {
     let list: HistoryEntry[] = [];
-    for (let i = 0; i < MAX_ENTRIES + 5; i++) {
-      list = withEntry(list, entry(i));
-    }
+    for (let i = 0; i < MAX_ENTRIES + 5; i++) list = withEntry(list, entry(i));
     expect(list).toHaveLength(MAX_ENTRIES);
     expect(list[0]!.id).toBe(`id${MAX_ENTRIES + 4}`);
   });
@@ -61,9 +66,7 @@ describe("storage", () => {
     g.localStorage = {
       getItem: (k: string) => data.get(k) ?? null,
       setItem: (k: string, v: string) => {
-        if (v.length > limit) {
-          throw new Error("QuotaExceededError");
-        }
+        if (v.length > limit) throw new Error("QuotaExceededError");
         data.set(k, v);
       },
     };

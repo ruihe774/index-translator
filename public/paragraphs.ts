@@ -33,9 +33,7 @@ export function countBlocks(text: string, unit: Unit): number {
 export function paragraphMismatch(source: string, output: string): Mismatch | null {
   const unit = unitOf(source);
   const sourceBlocks = countBlocks(source, unit);
-  if (sourceBlocks < MIN_BLOCKS) {
-    return null;
-  }
+  if (sourceBlocks < MIN_BLOCKS) return null;
   const outputBlocks = countBlocks(output, unit);
   return sourceBlocks === outputBlocks ? null : { unit, source: sourceBlocks, output: outputBlocks };
 }
@@ -53,9 +51,7 @@ export function blockStarts(text: string, unit: Unit): number[] {
   let previousBlank = true;
   text.split("\n").forEach((line, i) => {
     const blank = BLANK.test(line);
-    if (!blank && (unit === "lines" || previousBlank)) {
-      starts.push(i);
-    }
+    if (!blank && (unit === "lines" || previousBlank)) starts.push(i);
     previousBlank = blank;
   });
   return starts;
@@ -82,8 +78,6 @@ export function alignBlocks(source: string, output: string): Alignment | null {
 /** The block that holds `line`: the last one starting at or before it (the first, before any). */
 export function blockAt(starts: number[], line: number): number {
   let k = 0;
-  while (k + 1 < starts.length && starts[k + 1]! <= line) {
-    k++;
-  }
+  while (k + 1 < starts.length && starts[k + 1]! <= line) k++;
   return k;
 }

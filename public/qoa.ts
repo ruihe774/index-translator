@@ -12,9 +12,7 @@ import type { Pcm16 } from "./speech-audio.ts";
 export const QOA_TYPE = "audio/qoa";
 
 /** The decoder failed on this stream or is gone; the caller can ask for WAV instead. */
-export class QoaError extends Error {
-  override name = "QoaError";
-}
+export class QoaError extends Error {}
 
 export interface QoaDecoder {
   /** Decodes the whole of `body` as it arrives; the worker works on each chunk when it comes. */
@@ -29,15 +27,13 @@ interface Waiting {
 /** A worker that is ready, or null when this browser cannot run the codec. */
 function startDecoder(): Promise<QoaDecoder | null> {
   // Both are in every browser the page supports except an engine with WebAssembly turned off.
-  if (typeof WebAssembly !== "object" || typeof Worker !== "function") {
-    return Promise.resolve(null);
-  }
-  return new Promise((resolve) => {
+  if (typeof WebAssembly !== "object" || typeof Worker !== "function") return Promise.resolve(null);
+  return new Promise((ready) => {
     let worker: Worker;
     try {
       worker = new Worker("/qoa-worker.ts", { type: "module" });
     } catch {
-      resolve(null);
+      ready(null);
       return;
     }
     const waiting = new Map<number, Waiting>();
@@ -46,54 +42,48 @@ function startDecoder(): Promise<QoaDecoder | null> {
     const fail = (e: QoaError) => {
       dead = e;
       worker.terminate();
-      for (const w of waiting.values()) {
-        w.reject(e);
-      }
+      for (const w of waiting.values()) w.reject(e);
       waiting.clear();
     };
 
     worker.addEventListener("message", (event: MessageEvent<QoaReply>) => {
       const reply = event.data;
       if (reply.type === "ready") {
-        resolve(decoder);
+        ready(decoder);
       } else if (reply.type === "unavailable") {
         console.info(`QOA speech is off, using WAV: ${reply.message}`);
         fail(new QoaError(reply.message));
-        resolve(null);
+        ready(null);
       } else {
         const w = waiting.get(reply.id);
         waiting.delete(reply.id);
-        if (reply.type === "error") {
-          w?.reject(new QoaError(reply.message));
-        } else {
-          w?.resolve({ sampleRate: reply.sampleRate, channels: reply.channels, samples: reply.samples });
-        }
+        if (reply.type === "error") w?.reject(new QoaError(reply.message));
+        else w?.resolve({ sampleRate: reply.sampleRate, channels: reply.channels, samples: reply.samples });
       }
     });
     // The worker's script did not load (a codec that is not installed ends here too).
     worker.addEventListener("error", () => {
       fail(new QoaError("the QOA decoder did not start"));
-      resolve(null);
+      ready(null);
     });
 
     const post = (request: QoaRequest, transfer: Transferable[] = []) => worker.postMessage(request, transfer);
     const decoder: QoaDecoder = {
       async decode(body, signal) {
-        if (dead) {
-          throw dead;
-        }
+        if (dead) throw dead;
         const id = next++;
         const reader = body.getReader();
-        const pending = Promise.withResolvers<Pcm16>();
-        waiting.set(id, pending);
-        const result = pending.promise;
+        const result = new Promise<Pcm16>((resolve, reject) => waiting.set(id, { resolve, reject }));
         // Settled by the worker, or by the abort below; checked between chunks to stop reading early.
         let settled = false;
-        void result
-          .catch(() => {})
-          .finally(() => {
+        result.then(
+          () => {
             settled = true;
-          });
+          },
+          () => {
+            settled = true;
+          },
+        );
         const abort = () => {
           waiting.get(id)?.reject(signal.reason);
           waiting.delete(id);
@@ -107,12 +97,9 @@ function startDecoder(): Promise<QoaDecoder | null> {
         signal.addEventListener("abort", abort, { once: true });
         post({ type: "open", id });
         try {
-          // eslint-disable-next-line no-unmodified-loop-condition -- settled is set by the promise callback above
           while (!settled) {
             const { done, value } = await reader.read();
-            if (settled) {
-              break;
-            }
+            if (settled) break;
             if (done) {
               post({ type: "end", id });
               break;
@@ -123,11 +110,11 @@ function startDecoder(): Promise<QoaDecoder | null> {
             post({ type: "chunk", id, bytes }, [bytes.buffer]);
           }
           return await result;
-        } catch (error) {
+        } catch (e) {
           // The body broke off, or the worker gave up on it: the worker forgets the stream, and so does the table.
           waiting.delete(id);
           post({ type: "cancel", id });
-          throw error;
+          throw e;
         } finally {
           signal.removeEventListener("abort", abort);
           void reader.cancel().catch(() => {});

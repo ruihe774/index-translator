@@ -18,9 +18,7 @@ export function splitChannels(pcm: Pcm16): Float32Array<ArrayBuffer>[] {
   const out: Float32Array<ArrayBuffer>[] = [];
   for (let c = 0; c < pcm.channels; c++) {
     const channel = new Float32Array(frames);
-    for (let i = 0; i < frames; i++) {
-      channel[i] = pcm.samples[i * pcm.channels + c]! / 0x80_00;
-    }
+    for (let i = 0; i < frames; i++) channel[i] = pcm.samples[i * pcm.channels + c]! / 0x8000;
     out.push(channel);
   }
   return out;

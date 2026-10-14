@@ -17,8 +17,7 @@ import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
 import { fetchCommand } from "./preflight";
 import type { SpeechWorkerReply, SpeechWorkerRequest } from "./speech-worker";
-import { readWav } from "./wav";
-import type { Pcm } from "./wav";
+import { type Pcm, readWav } from "./wav";
 
 /** The languages IndexTTS-2.5 speaks. Any other text comes out as noise, so it is refused. */
 export const SPEECH_LANGUAGES = ["zh", "en", "ja", "es", "ar"];
@@ -43,16 +42,12 @@ export const MAX_UPLOADED_VOICES = 16;
 export const MIN_SAMPLE_SECONDS = 1;
 export const MAX_SAMPLE_SECONDS = 60;
 export const MIN_SAMPLE_RATE = 8000;
-export const MAX_SAMPLE_RATE = 192_000;
+export const MAX_SAMPLE_RATE = 192000;
 
-export class SpeechError extends Error {
-  override name = "SpeechError";
-}
+export class SpeechError extends Error {}
 
 /** Separating the voice from an uploaded sample failed in the engine; the sample itself may be fine. */
-export class SeparationError extends SpeechError {
-  override name = "SeparationError";
-}
+export class SeparationError extends SpeechError {}
 
 export interface Voice {
   id: string;
@@ -106,8 +101,8 @@ export function validateSample(wav: ArrayBuffer): Pcm {
   let pcm: Pcm;
   try {
     pcm = readWav(new Uint8Array(wav));
-  } catch (error) {
-    throw new SpeechError(`the sample cannot be used: ${messageOf(error)}`);
+  } catch (e) {
+    throw new SpeechError(`the sample cannot be used: ${messageOf(e)}`);
   }
   if (pcm.sampleRate < MIN_SAMPLE_RATE || pcm.sampleRate > MAX_SAMPLE_RATE) {
     throw new SpeechError(
@@ -129,7 +124,7 @@ export type SpeechWorkerFactory = () => Worker;
 
 const defaultWorker: SpeechWorkerFactory = () =>
   // Not referenced: the server decides when the process ends, not an idle speech thread.
-  new Worker(new URL("speech-worker.ts", import.meta.url).href, { ref: false });
+  new Worker(new URL("./speech-worker.ts", import.meta.url).href, { ref: false });
 
 export class NativeSpeech implements Speech {
   /** The thread that owns libaudiocpp, started by the first request. */
@@ -157,9 +152,7 @@ export class NativeSpeech implements Speech {
 
   /** Why speech cannot run at all, checked each time so an install does not need a restart. */
   private missing(): string | undefined {
-    if (!this.cfg.speech) {
-      return "reading aloud is turned off (SPEECH=0)";
-    }
+    if (!this.cfg.speech) return "reading aloud is turned off (SPEECH=0)";
     if (!existsSync(libraryPath(this.cfg.audioDir))) {
       return "the speech engine is not installed; run bun scripts/build_audiocpp.ts";
     }
@@ -170,15 +163,9 @@ export class NativeSpeech implements Speech {
   }
 
   get state(): SpeechState {
-    if (this.missing()) {
-      return "unavailable";
-    }
-    if (this.loaded) {
-      return "ready";
-    }
-    if (this.loading) {
-      return "starting";
-    }
+    if (this.missing()) return "unavailable";
+    if (this.loaded) return "ready";
+    if (this.loading) return "starting";
     return this.failure ? "error" : "stopped";
   }
 
@@ -191,9 +178,9 @@ export class NativeSpeech implements Speech {
     const files = await Array.fromAsync(new Bun.Glob("*.wav").scan({ cwd: this.cfg.voicesDir, onlyFiles: true })).catch(
       () => [] as string[],
     );
-    const installed = files.toSorted().map((f) => {
+    const installed = files.sort().map((f) => {
       const id = basename(f, ".wav");
-      return { id, name: id.replaceAll(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase()) };
+      return { id, name: id.replace(/[_-]+/g, " ").replace(/^./, (c) => c.toUpperCase()) };
     });
     return [...installed, ...[...this.uploads].map(([id, u]) => ({ id, name: u.name }))];
   }
@@ -202,14 +189,10 @@ export class NativeSpeech implements Speech {
     // Decoded once here, so a recording the engine could not read is refused when it is uploaded.
     validateSample(wav);
     const tooMany = () => new SpeechError("too many uploaded voices");
-    if (this.uploads.size >= MAX_UPLOADED_VOICES) {
-      throw tooMany();
-    }
+    if (this.uploads.size >= MAX_UPLOADED_VOICES) throw tooMany();
     const voice = this.separationInstalled() ? await this.separate(wav) : wav;
     // Uploads that finished while this one was being separated may have filled the slots.
-    if (this.uploads.size >= MAX_UPLOADED_VOICES) {
-      throw tooMany();
-    }
+    if (this.uploads.size >= MAX_UPLOADED_VOICES) throw tooMany();
     const id = `upload-${crypto.randomUUID()}`;
     const path = join(this.uploadDir, `${id}.wav`);
     // Bun.write creates the upload directory too.
@@ -220,9 +203,7 @@ export class NativeSpeech implements Speech {
 
   /** The BS-RoFormer GGUF in `SEPARATION_MODEL_DIR`, if the speech engine and the model are installed. */
   private separationModel(): string | undefined {
-    if (this.missing()) {
-      return undefined;
-    }
+    if (this.missing()) return undefined;
     const dir = this.cfg.separationModelDir;
     const file = existsSync(dir)
       ? new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().value
@@ -240,9 +221,7 @@ export class NativeSpeech implements Speech {
    * not yet sent to the worker wait until it is over.
    */
   private async separate(wav: ArrayBuffer): Promise<ArrayBuffer> {
-    while (this.separating) {
-      await this.separating;
-    }
+    while (this.separating) await this.separating;
     let finished!: () => void;
     this.separating = new Promise<void>((resolve) => {
       finished = resolve;
@@ -251,9 +230,7 @@ export class NativeSpeech implements Speech {
       // A load in progress ends first, or it would report a model that is gone.
       await this.loading?.catch(() => {});
       const modelPath = this.separationModel();
-      if (!modelPath) {
-        throw new SeparationError("the separation model is gone");
-      }
+      if (!modelPath) throw new SeparationError("the separation model is gone");
       clearTimeout(this.idle);
       this.loaded = false;
       const started = performance.now();
@@ -267,12 +244,10 @@ export class NativeSpeech implements Speech {
           threads: THREADS,
         },
         wav,
-      }).catch((error) => {
-        throw new SeparationError(`separating the voice failed: ${messageOf(error)}`);
+      }).catch((e) => {
+        throw new SeparationError(`separating the voice failed: ${messageOf(e)}`);
       });
-      if (reply.type !== "audio") {
-        throw new SeparationError(`unexpected ${reply.type} reply to a separation`);
-      }
+      if (reply.type !== "audio") throw new SeparationError(`unexpected ${reply.type} reply to a separation`);
       console.error(`[speech] voice separated (${Math.round(performance.now() - started)} ms)`);
       return reply.wav;
     } finally {
@@ -288,36 +263,26 @@ export class NativeSpeech implements Speech {
       const req = ++this.lastReq;
       this.waiting.set(req, (reply) => {
         this.waiting.delete(req);
-        if (reply.type === "error") {
-          reject(new SpeechError(reply.message));
-        } else {
-          resolve(reply);
-        }
+        if (reply.type === "error") reject(new SpeechError(reply.message));
+        else resolve(reply);
       });
-      // eslint-disable-next-line unicorn/require-post-message-target-origin -- Worker.postMessage has no target origin
       worker.postMessage({ ...msg, req });
     });
   }
 
   private startWorker(): Worker {
     const worker = this.makeWorker();
-    worker.addEventListener("message", (event: MessageEvent<SpeechWorkerReply>) =>
-      this.waiting.get(event.data.req)?.(event.data),
-    );
+    worker.onmessage = (event: MessageEvent<SpeechWorkerReply>) => this.waiting.get(event.data.req)?.(event.data);
     // If the thread dies its model is gone with it; the next request starts another.
     const lost = (reason: string) => {
-      if (this.worker !== worker) {
-        return;
-      }
+      if (this.worker !== worker) return;
       this.worker = null;
       this.loaded = false;
       this.failure = reason;
       console.error(`[speech] ${reason}`);
-      for (const [req, deliver] of this.waiting) {
-        deliver({ type: "error", req, message: reason });
-      }
+      for (const [req, deliver] of this.waiting) deliver({ type: "error", req, message: reason });
     };
-    worker.addEventListener("error", (event) => lost(`the speech thread failed: ${event.message}`));
+    worker.onerror = (event) => lost(`the speech thread failed: ${event.message}`);
     worker.addEventListener("close", () => lost("the speech thread exited"));
     this.worker = worker;
     return worker;
@@ -336,8 +301,8 @@ export class NativeSpeech implements Speech {
           threads: THREADS,
         },
       });
-    } catch (error) {
-      this.failure = `the speech model could not be loaded: ${messageOf(error)}`;
+    } catch (e) {
+      this.failure = `the speech model could not be loaded: ${messageOf(e)}`;
       console.error(`[speech] ${this.failure}`);
       throw new SpeechError(this.failure);
     }
@@ -347,9 +312,7 @@ export class NativeSpeech implements Speech {
   }
 
   private ready(): Promise<void> {
-    if (this.loaded) {
-      return Promise.resolve();
-    }
+    if (this.loaded) return Promise.resolve();
     this.loading ??= this.load().finally(() => {
       this.loading = null;
     });
@@ -359,18 +322,15 @@ export class NativeSpeech implements Speech {
   /** Frees the model once nothing has been asked of it for `SPEECH_IDLE_UNLOAD` seconds. */
   private unloadWhenIdle(): void {
     clearTimeout(this.idle);
-    if (this.pending > 0 || !this.loaded || this.cfg.speechIdleUnload <= 0) {
-      return;
-    }
+    if (this.pending > 0 || !this.loaded || this.cfg.speechIdleUnload <= 0) return;
     this.idle = setTimeout(() => {
-      if (this.pending > 0 || !this.loaded) {
-        return;
-      }
+      if (this.pending > 0 || !this.loaded) return;
       // A request that arrives from here on loads the model again; the worker frees it first.
       this.loaded = false;
-      this.call({ type: "unload" })
-        .then(() => console.error("[speech] model unloaded after being idle"))
-        .catch(() => {});
+      this.call({ type: "unload" }).then(
+        () => console.error("[speech] model unloaded after being idle"),
+        () => {},
+      );
     }, this.cfg.speechIdleUnload * 1000);
     this.idle.unref();
   }
@@ -387,9 +347,7 @@ export class NativeSpeech implements Speech {
   ): Promise<ArrayBuffer> {
     // The model is checked again after every wait: a separation that starts in between frees it.
     do {
-      while (this.separating) {
-        await this.separating;
-      }
+      while (this.separating) await this.separating;
       await this.ready();
     } while (this.separating || !this.loaded);
     // Gone while the model was loading: the utterance is never sent.
@@ -404,21 +362,15 @@ export class NativeSpeech implements Speech {
       abort: abort.buffer as SharedArrayBuffer,
     });
     // Nobody receives this: the caller was answered with the signal's reason when it aborted.
-    if (reply.type === "aborted") {
-      throw new SpeechError("the utterance was stopped");
-    }
-    if (reply.type !== "audio") {
-      throw new SpeechError(`unexpected ${reply.type} reply to an utterance`);
-    }
+    if (reply.type === "aborted") throw new SpeechError("the utterance was stopped");
+    if (reply.type !== "audio") throw new SpeechError(`unexpected ${reply.type} reply to an utterance`);
     return reply.wav;
   }
 
   synthesize(req: SpeechRequest, signal: AbortSignal, done: () => void): Promise<ArrayBuffer> {
     let released = false;
     const release = () => {
-      if (released) {
-        return;
-      }
+      if (released) return;
       released = true;
       done();
     };
@@ -447,9 +399,7 @@ export class NativeSpeech implements Speech {
     return new Promise((resolve, reject) => {
       const onAbort = () => {
         Atomics.store(abort, 0, 1);
-        if (!posted.value) {
-          release();
-        }
+        if (!posted.value) release();
         reject(signal.reason as Error);
       };
       signal.addEventListener("abort", onAbort, { once: true });
@@ -459,13 +409,11 @@ export class NativeSpeech implements Speech {
 
   async stop(): Promise<void> {
     clearTimeout(this.idle);
-    const { worker } = this;
+    const worker = this.worker;
     if (worker) {
       // Waits for a running utterance, then frees the model.
       await this.call({ type: "unload" }).catch(() => {});
-      if (this.worker === worker) {
-        this.worker = null;
-      }
+      if (this.worker === worker) this.worker = null;
       worker.terminate();
     }
     this.loaded = false;

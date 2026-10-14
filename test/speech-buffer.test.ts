@@ -25,9 +25,7 @@ function setup(lines: number[], seconds = 10) {
   const buffer = new SpeechBuffer(synthesize, () => Promise.resolve({ duration: seconds } as AudioBuffer));
   buffer.open(segments, { lang: "en", voice: "v", speed: 1 });
   const flush = async () => {
-    for (let i = 0; i < 5; i++) {
-      await Bun.sleep(0);
-    }
+    for (let i = 0; i < 5; i++) await Bun.sleep(0);
   };
   /** The requests nobody aborted and nobody answered: at most one, if the buffer keeps its word. */
   const live = () => requests.filter((r) => !r.signal.aborted && !answered.has(r));
@@ -36,16 +34,14 @@ function setup(lines: number[], seconds = 10) {
   const answer = async (count = 1) => {
     for (let n = 0; n < count; n++) {
       const [r] = live();
-      if (!r) {
-        return;
-      }
+      if (!r) return;
       answered.add(r);
       r.resolve();
       await flush();
     }
   };
   const index = (r: Request) => Number(r.text.slice(1));
-  return { buffer, segments, requests, live, answer, flush, index, asked: () => requests.map((r) => index(r)) };
+  return { buffer, segments, requests, live, answer, flush, index, asked: () => requests.map(index) };
 }
 
 /** `count` pieces, each a block of its own. */
@@ -84,7 +80,7 @@ describe("keeping the engine busy", () => {
     t.buffer.aim(0);
     await t.answer();
     expect(t.buffer.has(0)).toBe(true);
-    expect(t.live().map((r) => t.index(r))).toEqual([1]);
+    expect(t.live().map(t.index)).toEqual([1]);
   });
 
   test("it goes on when the reader moves into the audio that is there", async () => {
@@ -137,7 +133,7 @@ describe("stale requests", () => {
     const flight = t.live()[0]!;
     t.buffer.aim(40);
     expect(flight.signal.aborted).toBe(true);
-    expect(t.live().map((r) => t.index(r))).toEqual([40]);
+    expect(t.live().map(t.index)).toEqual([40]);
   });
 
   test("a request that is still wanted gives way when the reader waits for another piece", async () => {
@@ -149,7 +145,7 @@ describe("stale requests", () => {
     t.buffer.aim(7);
     // 4 is no jump target from 7 any more.
     expect(flight.signal.aborted).toBe(true);
-    expect(t.live().map((r) => t.index(r))).toEqual([7]);
+    expect(t.live().map(t.index)).toEqual([7]);
     // 8 is wanted from 6 as well as from 7, but the reader at 6 has its audio: it stays.
     await t.answer();
     const eight = t.live()[0]!;
@@ -159,7 +155,7 @@ describe("stale requests", () => {
     // The reader at 3 has none, and 8 is not it.
     t.buffer.aim(3);
     expect(eight.signal.aborted).toBe(true);
-    expect(t.live().map((r) => t.index(r))).toEqual([3]);
+    expect(t.live().map(t.index)).toEqual([3]);
   });
 
   test("the request for the piece the reader waits for is never aborted by aiming at it again", () => {
