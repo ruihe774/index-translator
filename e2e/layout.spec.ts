@@ -27,6 +27,19 @@ test("source and translation areas line up, before and after a translation", asy
   expect(done.output).toStrictEqual(idle.output);
 });
 
+test("the two panes' header rows line up across the desktop widths", async ({ app }) => {
+  // The From pane has an extra Open button; the header must still wrap in both panes or in neither.
+  const misaligned: number[] = [];
+  for (let width = 864; width <= 1280; width += 4) {
+    await app.page.setViewportSize({ width, height: 800 });
+    await app.open();
+    const source = await box(app, "#text");
+    const output = await box(app, "#output-area");
+    if (source.y !== output.y || source.height !== output.height) misaligned.push(width);
+  }
+  expect(misaligned).toEqual([]);
+});
+
 test("long text and a long translation do not change the pane size", async ({ app, mock }) => {
   await mock.set({ chunks: [THINK, "译文\n\n".repeat(200)] });
   await app.open();
