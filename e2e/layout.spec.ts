@@ -35,7 +35,9 @@ test("the two panes' header rows line up across the desktop widths", async ({ ap
     await app.open();
     const source = await box(app, "#text");
     const output = await box(app, "#output-area");
-    if (source.y !== output.y || source.height !== output.height) misaligned.push(width);
+    if (source.y !== output.y || source.height !== output.height) {
+      misaligned.push(width);
+    }
   }
   expect(misaligned).toEqual([]);
 });
