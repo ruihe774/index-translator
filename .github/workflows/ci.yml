@@ -40,8 +40,8 @@ jobs:
       - name: CSS browser support
         run: bun run lint:css
 
-      # The PDF tests run the two PDF libraries in the browser, and the speech tests the QOA codec, in
-      # the browser and on the server; all are pinned by checksum in the script.
+      # The PDF tests run the two PDF libraries in the browser, the Word tests undoc, and the speech
+      # tests the QOA codec, in the browser and on the server; all are pinned by checksum in the script.
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 

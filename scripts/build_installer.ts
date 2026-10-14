@@ -8,7 +8,7 @@
 // Usage: bun scripts/build_installer.ts
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, and
-// bun scripts/fetch_web_libs.ts (the web app's PDF libraries and QOA codec). The Bun that is packed is
+// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries and QOA codec). The Bun that is packed is
 // the one running this script. Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
@@ -49,7 +49,7 @@ for (const [file, script] of [
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
   }
 }
-// The web app's libraries are packed with public/; an installation without them could not open PDFs, and would send speech as WAV.
+// The web app's libraries are packed with public/; an installation without them could not open PDF or Word files, and would send speech as WAV.
 await requireWebLibs(join(root, "public", "vendor"));
 
 /** Copies an engine's directory as it is: the DLLs and licenses, not the headers or import libraries. */

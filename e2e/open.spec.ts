@@ -1,7 +1,8 @@
-// The Open button: text, Markdown and PDF files into the source box, in the browser alone, and
-// images in its place, which Translate sends.
-// The PDF tests need the libraries in public/vendor/ (bun scripts/fetch_web_libs.ts) and use
-// test/fixtures/sample.pdf (three pages, see make_sample_pdf.py beside it).
+// The Open button: text, Markdown, PDF and Word files into the source box, in the browser alone,
+// and images in its place, which Translate sends.
+// The PDF and Word tests need the libraries in public/vendor/ (bun scripts/fetch_web_libs.ts) and
+// use test/fixtures/sample.pdf (three pages, see make_sample_pdf.py beside it) and sample.docx
+// (make_sample_docx.py).
 
 import { existsSync } from "node:fs";
 import { join } from "node:path";
@@ -11,6 +12,7 @@ import type { Page } from "@playwright/test";
 import { expect, test, THINK } from "./fixtures";
 
 const SAMPLE = join(import.meta.dirname, "..", "test", "fixtures", "sample.pdf");
+const SAMPLE_DOCX = join(import.meta.dirname, "..", "test", "fixtures", "sample.docx");
 const VENDOR = join(import.meta.dirname, "..", "public", "vendor");
 
 function pick(page: Page, name: string, content: string | Buffer, mimeType = "") {
@@ -279,9 +281,9 @@ test.describe("text and Markdown", () => {
   test("other files, other encodings and empty files are refused with a reason", async ({ app }) => {
     await app.open();
     await app.text.fill("kept");
-    await pick(app.page, "report.docx", "PK");
+    await pick(app.page, "report.doc", "ÐÏ");
     await expect(note(app.page)).toHaveText(
-      "report.docx was not opened: only plain text, Markdown and PDF files and JPEG, PNG and WebP images can be.",
+      "report.doc was not opened: only plain text, Markdown, PDF and Word (.docx) files and JPEG, PNG and WebP images can be.",
     );
     await expect(note(app.page)).toHaveClass(/error/);
     await pick(app.page, "gbk.txt", Buffer.from([0xc4, 0xe3, 0xba, 0xc3]));
@@ -291,10 +293,22 @@ test.describe("text and Markdown", () => {
     await expect(app.text).toHaveValue("kept");
   });
 
-  test("the picker offers text, Markdown and images", async ({ app }) => {
+  test("the picker offers text, Markdown, PDF, Word and images", async ({ app }) => {
     await app.open();
     const accept = (await app.page.locator("#open-file").getAttribute("accept")) ?? "";
-    for (const kind of [".txt", ".md", ".jpg", ".jpeg", ".png", ".webp", "image/jpeg", "image/png", "image/webp"]) {
+    for (const kind of [
+      ".txt",
+      ".md",
+      ".pdf",
+      ".docx",
+      ".jpg",
+      ".jpeg",
+      ".png",
+      ".webp",
+      "image/jpeg",
+      "image/png",
+      "image/webp",
+    ]) {
       expect(accept.split(",")).toContain(kind);
     }
   });
@@ -532,7 +546,9 @@ test.describe("PDF", () => {
     await expect(app.page.locator("#pdf-pages")).toBeHidden();
   });
 
-  test("without the libraries, text files still open and a PDF is refused with a reason", async ({ app }) => {
+  test("without the libraries, text files still open and a PDF or Word file is refused with a reason", async ({
+    app,
+  }) => {
     await app.page.route("**/vendor/**", (route) => route.fulfill({ status: 404, body: "Not Found" }));
     const errors: string[] = [];
     app.page.on("pageerror", (e) => errors.push(e.message));
@@ -542,16 +558,58 @@ test.describe("PDF", () => {
       "accept",
       ".txt,.md,.markdown,text/plain,text/markdown,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp",
     );
-    await expect(app.page.getByRole("button", { name: "Open a file" })).toHaveAttribute("title", /not installed/);
+    await expect(app.page.getByRole("button", { name: "Open a file" })).toHaveAttribute(
+      "title",
+      "PDF and Word files cannot be opened: their support is not installed on this server.",
+    );
 
     await input.setInputFiles(SAMPLE);
     await expect(note(app.page)).toHaveText("sample.pdf was not opened. PDF support could not be loaded.");
     await expect(note(app.page)).toHaveClass(/error/);
     await expect(app.page.locator("#pdf-pages")).toBeHidden();
 
+    await input.setInputFiles(SAMPLE_DOCX);
+    await expect(note(app.page)).toHaveText("sample.docx was not opened. Word support could not be loaded.");
+    await expect(note(app.page)).toHaveClass(/error/);
+
     await pick(app.page, "notes.txt", "still works");
     await expect(app.text).toHaveValue("still works");
     await expect(app.translate).toHaveAttribute("aria-disabled", "false");
     expect(errors).toStrictEqual([]);
+  });
+});
+
+test.describe("Word", () => {
+  test.beforeAll(() => {
+    if (!existsSync(join(VENDOR, "undoc", "VERSION"))) {
+      throw new Error("undoc is not in public/vendor; run: bun scripts/fetch_web_libs.ts");
+    }
+  });
+
+  test("a .docx goes into the box whole as Markdown, shown formatted, and nothing is sent", async ({ app, mock }) => {
+    const api = watchApi(app.page);
+    await app.open();
+    await app.page.locator("#open-file").setInputFiles(SAMPLE_DOCX);
+    await expect(note(app.page)).toHaveText("Opened sample.docx.");
+    await expect(note(app.page)).not.toHaveClass(/error/);
+    const view = app.page.locator("#source-view");
+    await expect(view.getByRole("heading", { name: "Harbours of the South" })).toBeVisible();
+    await expect(view.locator("strong")).toHaveText("Lighthouses");
+    await expect(view.locator("td").first()).toHaveText("Marlow");
+    await expect(box(app.page)).toHaveValue(/^# Harbours of the South\n\nA harbour shelters ships/);
+    await expect(box(app.page)).toHaveValue(/\| Marlow \| 1204 \|/);
+    await expect(app.page.locator("#pdf-pages")).toBeHidden();
+    await expect(app.page.locator("#source-field")).not.toHaveAttribute("aria-busy");
+    expect((await mock.state()).requests).toHaveLength(0);
+    expect(api.filter((r) => r.method !== "GET")).toEqual([]);
+  });
+
+  test("a file that is not a Word document inside is refused, and the box is kept", async ({ app }) => {
+    await app.open();
+    await app.text.fill("kept");
+    await pick(app.page, "fake.docx", "this is not a zip");
+    await expect(note(app.page)).toHaveText("fake.docx was not opened. It is not a readable Word (.docx) document.");
+    await expect(note(app.page)).toHaveClass(/error/);
+    await expect(app.text).toHaveValue("kept");
   });
 });

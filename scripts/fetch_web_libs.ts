@@ -1,10 +1,11 @@
 // Fetch the libraries the web app runs in the browser, into public/vendor/: for PDF support,
 // pdf-inspector's WebAssembly build (page text as Markdown) and pdf.js (page thumbnails), both npm
 // packages downloaded from the registry by version and checksum, of which only the files the page
-// loads are unpacked, plus the licenses; and the QOA codec of the speech stream, a few files of a
-// git commit. Nothing is installed with a package manager, and the page never loads them from the
-// network: the server serves public/vendor/ like the rest of public/. Without the PDF libraries
-// opening a PDF is refused with a message; without the codec speech arrives as WAV.
+// loads are unpacked, plus the licenses; and, each a few files of a git commit, undoc's WebAssembly
+// build (a Word document's text as Markdown) and the QOA codec of the speech stream. Nothing is
+// installed with a package manager, and the page never loads them from the network: the server
+// serves public/vendor/ like the rest of public/. Without the PDF libraries or undoc opening a PDF
+// or a Word document is refused with a message; without the codec speech arrives as WAV.
 // Usage: bun scripts/fetch_web_libs.ts
 //
 // A library whose directory already holds the pinned version is left alone. Needs nothing besides Bun.
@@ -91,6 +92,10 @@ interface FileLibrary {
 
 const QOA_COMMIT = "3c85bd84595d56cb13bef779add463246e0908b7";
 const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${QOA_COMMIT}`;
+const UNDOC_COMMIT = "591a28e21b647dddc58d2924ebb94a4e71b3fd97";
+const UNDOC_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${UNDOC_COMMIT}`;
+/** wasm-bindgen names the directory after the crate and a hash; a new build may move it (see undoc_wasm.js's import). */
+const UNDOC_SNIPPET = "snippets/undoc-wasm-0162723ffca917e4/inline0.js";
 
 /**
  * qoa-wasm (the `qoa` branch of this project's repository): the QOA audio codec the speech stream
@@ -121,6 +126,37 @@ export const FILE_LIBRARIES: FileLibrary[] = [
         to: "LICENSE",
         url: `${QOA_RAW}/LICENSE`,
         sha256: "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e",
+      },
+    ],
+  },
+  /**
+   * undoc-wasm (the `undoc` branch: wasm-pack's output for undoc, docx only): a Word document's
+   * text as Markdown. undoc_wasm.js imports its DecompressionStream glue from `snippets/`, so the
+   * files keep the package's layout.
+   */
+  {
+    dir: "undoc",
+    version: UNDOC_COMMIT,
+    files: [
+      {
+        to: "undoc_wasm.js",
+        url: `${UNDOC_RAW}/undoc_wasm.js`,
+        sha256: "f655397f5606742d288ccacf8dae6cd7767633cc8fc9c61bfadf01622bdd6057",
+      },
+      {
+        to: "undoc_wasm_bg.wasm",
+        url: `${UNDOC_RAW}/undoc_wasm_bg.wasm`,
+        sha256: "458f178e647d8328caf9d2b59b3752b49d49240a94e90ca61ab1164e4c7d5891",
+      },
+      {
+        to: UNDOC_SNIPPET,
+        url: `${UNDOC_RAW}/${UNDOC_SNIPPET}`,
+        sha256: "c7362dbb9648c99bc4e718e07434a192d2c4fcc7649f779466a9a45d1d992cf4",
+      },
+      {
+        to: "LICENSE",
+        url: `${UNDOC_RAW}/LICENSE`,
+        sha256: "d3f35f6b7df9b36287e75e9811881b24288726f2af92213c7fb5a965478f0496",
       },
     ],
   },

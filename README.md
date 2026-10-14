@@ -47,7 +47,7 @@ service. It runs the Index-Translate 9B models on your GPU, with no accounts, qu
 | 🔒 **Private and offline** | Models run on your GPU. Your text never leaves your machine, so confidential documents are fine. |
 | 📄 **Built for whole documents** | A long-document model translates a full text in one pass (Chinese ↔ English, Chinese ↔ Japanese). The app picks it for you by length. |
 | 🖼️ **Reads pictures** | Drop a screenshot or photo (JPEG, PNG, WebP); the model reads and translates the text in it. No separate OCR step. |
-| 📑 **Opens PDFs locally** | Text, Markdown and PDF files are read in your browser. One click on a page thumbnail turns it into Markdown. |
+| 📑 **Opens PDFs locally** | Text, Markdown, PDF and Word files are read in your browser. One click on a page thumbnail turns it into Markdown. |
 | 🔊 **Reads aloud** | Listen to the source or the translation in Chinese, English, Japanese, Spanish or Arabic, with voices and speed (IndexTTS-2.5, also local). |
 | 📚 **Terminology and style** | Glossary, hard rules ("keep placeholders unchanged"), soft style guidance and a genre such as academic paper or subtitles. |
 | ✅ **Tells you what went missing** | Models can silently drop or repeat paragraphs. The app counts paragraphs and warns you; when they match, click one side to jump to the same paragraph on the other. |
@@ -140,11 +140,11 @@ Before the first start, build the engines and get the models once (about 17.9 Gi
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, example voices
-bun scripts/fetch_web_libs.ts   # the libraries that open PDF files and compress speech in the browser (12 MB), into public/vendor/
+bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and compress speech in the browser (13 MB), into public/vendor/
 ```
 
-Opening PDF files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
-Markdown files, and says that PDF support is not installed. Reading aloud then sends its audio
+Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
+Markdown files, and says that PDF and Word support is not installed. Reading aloud then sends its audio
 as WAV instead of the smaller QOA.
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and download only the
@@ -198,11 +198,11 @@ links and are not loaded.
 </details>
 
 <details>
-<summary><b>Open a file</b>: text, Markdown, PDF</summary>
+<summary><b>Open a file</b>: text, Markdown, PDF, Word</summary>
 
 
 **Open**, next to the **From** language, takes the text from a file on your computer; dropping or pasting a
-file anywhere on the page does the same. A text or PDF file is read by your browser and stays
+file anywhere on the page does the same. A text, PDF or Word file is read by your browser and stays
 there: nothing is uploaded, and the server only receives the text you then send with
 **Translate**. An image is different: it is what gets translated, so **Translate** sends the image
 itself to the server (see Translate an image, below). Opening a file replaces what
@@ -216,6 +216,10 @@ is in the box and removes the translation of the old text; it never starts a tra
   allows); it is shown formatted, with **Raw** for editing. Click another page to replace it. One
   page at a time is taken, so a long document is translated page by page. While a PDF is open,
   **Open** reads **Close**: close the PDF before you open another file. The text you took stays.
+- **Word** (`.docx`, up to 64 MB): the whole document goes into the box as Markdown (headings,
+  lists, tables and emphasis are kept) and is shown formatted, with **Raw** for editing. A picture
+  is not taken, only its name, as a Markdown image (shown as a link). Older `.doc` files and
+  password-protected documents are not opened.
 - **Images** (`.jpg`, `.jpeg`, `.png`, `.webp`, up to 8 MB): the picture takes the place of the
   text box. See Translate an image, below.
 

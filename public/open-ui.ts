@@ -1,17 +1,29 @@
 // The Open button: a text or Markdown file goes into the source box, a PDF is shown as a strip of
 // page thumbnails (elements/pdf-pages.ts) and the page that is clicked goes into the box as
-// Markdown, and an image (JPEG, PNG, WebP) takes the place of the box. While a PDF is open the
-// button reads Close and puts it away. Nothing is translated by opening. The page (app.ts) supplies
-// how a text or an image is put in the box; open-file.ts holds the rules and the wording, pdf.ts
-// the libraries.
+// Markdown, a Word document (.docx) goes into the box whole as Markdown, and an image (JPEG, PNG,
+// WebP) takes the place of the box. While a PDF is open the button reads Close and puts it away.
+// Nothing is translated by opening. The page (app.ts) supplies how a text or an image is put in
+// the box; open-file.ts holds the rules and the wording, pdf.ts and docx.ts the libraries.
 //
 // Opening happens in this browser: no request carries the file or says that one was opened. Only
 // Translate sends something, and for an image that is the file.
 
+import { DocxError, docxInstalled, readDocx } from "./docx.ts";
 import type { PdfPages } from "./elements/pdf-pages.ts";
 import { looksLikeMarkdown } from "./markdown.ts";
-import { ACCEPT_IMAGE, ACCEPT_PDF, ACCEPT_TEXT, decodeText, fileKind, pageNote, refusal } from "./open-file.ts";
-import { openPdf, type PdfDocument, PdfError, pdfInstalled } from "./pdf.ts";
+import {
+  ACCEPT_DOCX,
+  ACCEPT_IMAGE,
+  ACCEPT_PDF,
+  ACCEPT_TEXT,
+  decodeText,
+  docxNote,
+  fileKind,
+  pageNote,
+  refusal,
+} from "./open-file.ts";
+import { openPdf, PdfError, pdfInstalled } from "./pdf.ts";
+import type { PdfDocument } from "./pdf.ts";
 
 export interface OpenUiDeps {
   button: HTMLElement;
@@ -41,7 +53,12 @@ export interface OpenUi {
   deselect(): void;
 }
 
-const NOT_INSTALLED = "PDF files cannot be opened: PDF support is not installed on this server.";
+/** The button's title when a library is missing, by what can still be opened. */
+const NOT_INSTALLED = {
+  pdf: "PDF files cannot be opened: PDF support is not installed on this server.",
+  docx: "Word files cannot be opened: Word support is not installed on this server.",
+  both: "PDF and Word files cannot be opened: their support is not installed on this server.",
+};
 
 export function initOpenUi(d: OpenUiDeps): OpenUi {
   let busy = false;
@@ -116,6 +133,34 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     say(`Opened ${file.name}. Translate sends the image to the server, which reads the text in it.`);
   }
 
+  async function openWord(file: File, mine: number) {
+    say(`Opening ${file.name}…`);
+    let markdown: string;
+    try {
+      markdown = await readDocx(await file.arrayBuffer());
+    } catch (e) {
+      reading(false, mine);
+      if (mine !== turn) {
+        return;
+      }
+      if (!(e instanceof DocxError)) {
+        console.error(e);
+      }
+      say(`${file.name} was not opened. ${e instanceof DocxError ? e.message : "It could not be read."}`, "error");
+      return;
+    }
+    reading(false, mine);
+    // A translation that started meanwhile keeps its source.
+    if (mine !== turn || busy) {
+      return;
+    }
+    const note = docxNote(file.name, markdown);
+    if (!note.failed) {
+      d.load(markdown, true);
+    }
+    say(note.text, note.failed ? "error" : "plain");
+  }
+
   async function openDocument(file: File, mine: number) {
     say(`Opening ${file.name}…`);
     let doc: PdfDocument;
@@ -153,9 +198,11 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       reading(true);
       void (kind === "pdf"
         ? openDocument(file, mine)
-        : kind === "image"
-          ? openImage(file, mine)
-          : openText(file, mine));
+        : kind === "docx"
+          ? openWord(file, mine)
+          : kind === "image"
+            ? openImage(file, mine)
+            : openText(file, mine));
     }
   }
 
@@ -280,14 +327,17 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   });
   d.pages.addEventListener("page", (e) => void takePage((e as CustomEvent<number>).detail));
 
-  // Without the libraries the picker offers no PDFs, and one that is picked anyway is refused by openPdf.
-  d.input.accept = `${ACCEPT_TEXT},${ACCEPT_PDF},${ACCEPT_IMAGE}`;
-  void pdfInstalled().then((installed) => {
-    if (installed) {
+  // Without a library the picker does not offer its files, and one that is picked anyway is refused
+  // by openPdf or readDocx.
+  d.input.accept = `${ACCEPT_TEXT},${ACCEPT_PDF},${ACCEPT_DOCX},${ACCEPT_IMAGE}`;
+  void Promise.all([pdfInstalled(), docxInstalled()]).then(([pdfOk, docxOk]) => {
+    if (pdfOk && docxOk) {
       return;
     }
-    d.input.accept = `${ACCEPT_TEXT},${ACCEPT_IMAGE}`;
-    d.button.title = NOT_INSTALLED;
+    d.input.accept = [ACCEPT_TEXT, ...(pdfOk ? [ACCEPT_PDF] : []), ...(docxOk ? [ACCEPT_DOCX] : []), ACCEPT_IMAGE].join(
+      ",",
+    );
+    d.button.title = NOT_INSTALLED[pdfOk ? "docx" : docxOk ? "pdf" : "both"];
   });
 
   return {

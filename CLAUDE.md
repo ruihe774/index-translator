@@ -25,7 +25,7 @@ Setup (Linux and Windows):
 - `bun scripts/build_llama.ts`: libllama, libmtmd (`LLAMA_BUILD_MTMD`, no video), Vulkan, CPU variants, `libllama-shim.so` into `vendor/llama.cpp` (`--native`, `--keep`, `--shim` only recompiles `src/llama-shim.c`)
 - `bun scripts/build_audiocpp.ts`: `vendor/audio.cpp/libaudiocpp.so` from the pinned commit plus `scripts/patches/audiocpp-abort.patch` (AVX2 unless `--native`)
 - `bun scripts/fetch_models.ts`: models (about 17.9 GiB) and example voices; `--model <id>`, `HF_ENDPOINT`
-- `bun scripts/fetch_web_libs.ts`: `public/vendor/` (not in git): PDF libraries and QOA codec; needed by `e2e`, the QOA tests and packaging, optional for running
+- `bun scripts/fetch_web_libs.ts`: `public/vendor/` (not in git): PDF libraries, undoc (Word) and QOA codec; needed by `e2e`, the QOA tests and packaging, optional for running
 - `bun scripts/build_appimage.ts`, `bun scripts/build_installer.ts` (needs both engines built; `WINDOWS.md`)
 
 No npm runtime dependencies on the server; no build step for the web app.
@@ -36,7 +36,7 @@ No npm runtime dependencies on the server; no build step for the web app.
 - `src/image.ts`: an uploaded image through `Bun.Image` to the PNG the engine is given
 - Engine pairs, server side + worker: `llama.ts` / `llama-worker.ts` (`llama-ffi.ts` bindings to libllama and libmtmd, `llama-shim.c` struct calls, compiled by `build_llama.ts`); `speech.ts` / `speech-worker.ts` (`audiocpp-ffi.ts` bindings to `vendor/audio.cpp/include/audiocpp.h`, no C shim); `qoa-stream.ts`; `wav.ts`
 - `public/`: web app. `state.ts` + `render.ts` hold the state behind the always-shown controls and the one synchronous `render()` (callers move focus right after `setState`); `elements/` light-DOM custom elements enhancing `index.html`; `css/` one file per feature, `style.css` only the layer order and `@import`s
-- `e2e/mock-server.ts`: real app on the `test/helpers/mock-engine.ts` mocks, scriptable via a control port. Fixtures: `test/fixtures/essays.en.txt` (long input), `sample.pdf` (rebuilt by `uv run test/fixtures/make_sample_pdf.py`)
+- `e2e/mock-server.ts`: real app on the `test/helpers/mock-engine.ts` mocks, scriptable via a control port. Fixtures: `test/fixtures/essays.en.txt` (long input), `sample.pdf` (rebuilt by `uv run test/fixtures/make_sample_pdf.py`), `sample.docx` (`make_sample_docx.py`, stdlib only)
 - `docs/openapi.yaml` is served at `/api/v1/openapi.yaml`
 
 ## Invariants
@@ -123,6 +123,7 @@ repeats paragraphs by about 16K letters (model property; "translate everything" 
   - Chromium 141 died with a V8 OOM compiling pdf-inspector's WebAssembly on a large PDF; e2e uses Playwright `~1.64.0` (Chromium 156). A new minor means a new browser: bump deliberately.
   - pdf-inspector 1.25.2: CJK in non-embedded fonts naming a predefined CMap comes out as U+FFFD (page 3 of `sample.pdf`; when fixed upstream, `e2e/open.spec.ts`'s warning test needs another page); two-column pages may be misordered; password-protected files are refused.
   - Changing a pin (`LIBRARIES` in `fetch_web_libs.ts`): check the typed calls in `pdf.ts` and `pdf-worker.ts` against the packages' `.d.ts`, that `place` finds the files, the licenses (`THIRD_PARTY_NOTICES.md`, `AppRun`), then `bun run e2e` and a large PDF in Chrome and Firefox.
+- **Word documents** (`docx.ts`, `docx-worker.ts`): `.docx` only, read whole by undoc into the box as Markdown with `preview` (images stay as `![alt](name)` references; the preview shows them as links). The library is the `undoc` orphan branch of this repository: wasm-pack's `--target web` output of `undoc-wasm` with `--no-default-features --features docx`, built from ruihe774/undoc@393af42, which inflates ZIP entries with the browser's `DecompressionStream` (no decompressor in the binary). One worker per document, ended after its answer; WebAssembly only in workers (the page's CSP has no `wasm-unsafe-eval`). Errors carry undoc's numeric `kind` (`docxFailure` in `open-file.ts`; numbers never change upstream). Rebuilding: commit the new output on that branch, then update `UNDOC_COMMIT`, the checksums and `UNDOC_SNIPPET` (the `snippets/` directory name has a hash, see the import in `undoc_wasm.js`) in `fetch_web_libs.ts`, and the notices if the crate list changed (`cargo tree -e normal --format "{p} {l}"`).
 
 ### Engine and packaging
 

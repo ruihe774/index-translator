@@ -11,9 +11,10 @@
   `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream` (a tone, prompt accepted);
   the denial test stubs `getUserMedia`.
 - `open.spec.ts`: the Open button. Text and Markdown files are given as buffers; the PDF tests open
-  `test/fixtures/sample.pdf` (three pages, written by `make_sample_pdf.py` beside it) with the real
-  libraries from `public/vendor/`, so run `bun scripts/fetch_web_libs.ts` once before them. One
-  test serves `/vendor/` as 404 to check that the page does without the libraries.
+  `test/fixtures/sample.pdf` (three pages, written by `make_sample_pdf.py` beside it) and the Word
+  tests `test/fixtures/sample.docx` (written by `make_sample_docx.py`) with the real libraries from
+  `public/vendor/`, so run `bun scripts/fetch_web_libs.ts` once before them. One test serves
+  `/vendor/` as 404 to check that the page does without the libraries.
 - `speech.spec.ts` also runs the QOA stream (the default way speech reaches the page) against the
   real codec in `public/vendor/qoa/`, and the fallbacks to WAV (codec files not served; a stream
   that cannot be decoded).

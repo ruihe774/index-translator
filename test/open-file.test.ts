@@ -2,7 +2,10 @@ import { describe, expect, test } from "bun:test";
 
 import {
   decodeText,
+  docxFailure,
+  docxNote,
   fileKind,
+  MAX_DOCX_BYTES,
   MAX_IMAGE_BYTES,
   MAX_PDF_BYTES,
   MAX_TEXT_BYTES,
@@ -17,6 +20,7 @@ describe("fileKind", () => {
     expect(fileKind("README.MD", "")).toBe("text");
     expect(fileKind("a.b.markdown", "application/octet-stream")).toBe("text");
     expect(fileKind("paper.PDF", "")).toBe("pdf");
+    expect(fileKind("Report.DOCX", "")).toBe("docx");
     expect(fileKind("photo.JPG", "")).toBe("image");
     expect(fileKind("photo.jpeg", "")).toBe("image");
     expect(fileKind("shot.png", "")).toBe("image");
@@ -27,14 +31,16 @@ describe("fileKind", () => {
     expect(fileKind("LICENSE", "text/plain")).toBe("text");
     expect(fileKind("notes", "text/markdown; charset=utf-8")).toBe("text");
     expect(fileKind("download", "application/pdf")).toBe("pdf");
+    expect(fileKind("attachment", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(
+      "docx",
+    );
     expect(fileKind("image", "image/png")).toBe("image");
     expect(fileKind("blob", "image/webp")).toBe("image");
   });
 
   test("takes nothing else", () => {
-    expect(
-      fileKind("report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
-    ).toBeNull();
+    expect(fileKind("report.doc", "application/msword")).toBeNull();
+    expect(fileKind("sheet.xlsx", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")).toBeNull();
     expect(fileKind("page.html", "text/html")).toBeNull();
     expect(fileKind("photo.gif", "image/gif")).toBeNull();
     expect(fileKind("scan.heic", "image/heic")).toBeNull();
@@ -60,9 +66,11 @@ describe("decodeText", () => {
 
 describe("refusal", () => {
   test("names the file and the reason", () => {
-    expect(refusal("a.docx", null, 10)).toContain(
-      "only plain text, Markdown and PDF files and JPEG, PNG and WebP images",
+    expect(refusal("a.doc", null, 10)).toContain(
+      "only plain text, Markdown, PDF and Word (.docx) files and JPEG, PNG and WebP images",
     );
+    expect(refusal("a.docx", "docx", MAX_DOCX_BYTES + 1)).toContain("larger than 64 MB");
+    expect(refusal("a.docx", "docx", MAX_DOCX_BYTES)).toBeNull();
     expect(refusal("a.png", "image", MAX_IMAGE_BYTES + 1)).toContain("larger than 8 MB");
     expect(refusal("a.png", "image", MAX_IMAGE_BYTES)).toBeNull();
     expect(refusal("a.png", "image", 0)).toContain("empty");
@@ -74,6 +82,26 @@ describe("refusal", () => {
   test("lets a PDF be larger than a text", () => {
     expect(refusal("a.txt", "text", MAX_TEXT_BYTES)).toBeNull();
     expect(refusal("a.pdf", "pdf", MAX_TEXT_BYTES + 1)).toBeNull();
+  });
+});
+
+describe("Word documents", () => {
+  test("undoc's reasons for a failure are told apart where the user can act on them", () => {
+    expect(docxFailure(12)).toBe("It is protected by a password.");
+    for (const kind of [3, 4, 5]) {
+      expect(docxFailure(kind)).toBe("It is not a readable Word (.docx) document.");
+    }
+    expect(docxFailure(6)).toBe("It could not be read.");
+    expect(docxFailure(undefined)).toBe("It could not be read.");
+  });
+
+  test("a document without text fails; one with text is named", () => {
+    expect(docxNote("a.docx", " \n")).toStrictEqual({
+      text: "a.docx: no text was found in it.",
+      failed: true,
+      warning: false,
+    });
+    expect(docxNote("a.docx", "# Title\n")).toStrictEqual({ text: "Opened a.docx.", failed: false, warning: false });
   });
 });
 

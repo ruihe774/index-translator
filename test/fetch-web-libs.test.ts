@@ -86,14 +86,23 @@ describe("the pinned libraries", () => {
 });
 
 describe("the pinned files of a commit", () => {
-  const qoa = FILE_LIBRARIES.find((l) => l.dir === "qoa")!;
+  const files = (dir: string) => FILE_LIBRARIES.find((l) => l.dir === dir)!.files.map((f) => f.to);
 
   test("every file is pinned to the commit by checksum, and the license is among them", () => {
-    expect(qoa.version).toMatch(/^[0-9a-f]{40}$/);
-    for (const file of qoa.files) {
-      expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(file.url).toContain(`/${qoa.version}/`);
+    for (const lib of FILE_LIBRARIES) {
+      expect(lib.version).toMatch(/^[0-9a-f]{40}$/);
+      for (const file of lib.files) {
+        expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
+        expect(file.url).toContain(`/${lib.version}/`);
+      }
+      expect(lib.files.map((f) => f.to)).toContain("LICENSE");
     }
-    expect(qoa.files.map((f) => f.to)).toStrictEqual(["src/qoa.ts", "dist/qoa.wasm", "dist/qoa-simd.wasm", "LICENSE"]);
+    expect(files("qoa")).toStrictEqual(["src/qoa.ts", "dist/qoa.wasm", "dist/qoa-simd.wasm", "LICENSE"]);
+    expect(files("undoc")).toStrictEqual([
+      "undoc_wasm.js",
+      "undoc_wasm_bg.wasm",
+      "snippets/undoc-wasm-0162723ffca917e4/inline0.js",
+      "LICENSE",
+    ]);
   });
 });
