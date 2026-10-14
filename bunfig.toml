@@ -258,3 +258,4 @@ ignorePatterns = ["*.md", "docs/"]
 
 [run]
 noOrphans = true
+bun = true
