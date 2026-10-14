@@ -1,0 +1,28 @@
+{
+  "name": "undoc-wasm",
+  "type": "module",
+  "description": "High-performance Microsoft Office (DOCX, XLSX, PPTX, DOC, XLS, PPT) extraction to Markdown (WebAssembly)",
+  "version": "0.24.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/iyulab/undoc"
+  },
+  "files": [
+    "undoc_wasm_bg.wasm",
+    "undoc_wasm.js",
+    "undoc_wasm.d.ts"
+  ],
+  "main": "undoc_wasm.js",
+  "types": "undoc_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ],
+  "keywords": [
+    "docx",
+    "xlsx",
+    "pptx",
+    "wasm",
+    "webassembly"
+  ]
+}
