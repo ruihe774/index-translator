@@ -93,7 +93,7 @@ describe("POST /speech", () => {
   });
 
   test("503 speech_unavailable when there is no voice", async () => {
-    const voices = mockSpeech.voices;
+    const { voices } = mockSpeech;
     mockSpeech.voices = [];
     try {
       const res = await speak({ text: "Hello", lang: "en" });
@@ -130,7 +130,9 @@ describe("POST /speech", () => {
     await Bun.sleep(30);
     gone.abort();
     await pending;
-    for (let i = 0; i < 50 && mockSpeech.aborted === 0; i++) await Bun.sleep(10);
+    for (let i = 0; i < 50 && mockSpeech.aborted === 0; i++) {
+      await Bun.sleep(10);
+    }
     expect(mockSpeech.aborted).toBe(1);
   });
 
@@ -192,7 +194,7 @@ describe("GET /voices and health", () => {
       max_chars: 1000,
       max_sample_bytes: 8 * 1024 * 1024,
       sample_seconds: { min: 1, max: 60 },
-      sample_rate: { min: 8000, max: 192000 },
+      sample_rate: { min: 8000, max: 192_000 },
       voices: mockSpeech.voices,
     });
   });
@@ -229,8 +231,9 @@ describe("the native speech engine without audio.cpp", () => {
   test("a voice is a .wav file in the voices directory", async () => {
     const dir = await mkdtemp(join(tmpdir(), "voices-"));
     try {
-      for (const name of ["narrator_two.wav", "alice.wav", "notes.txt", "clip.mp3"])
+      for (const name of ["narrator_two.wav", "alice.wav", "notes.txt", "clip.mp3"]) {
         await Bun.write(join(dir, name), "");
+      }
       expect(await nativeSpeech(config({ voicesDir: dir })).voices()).toEqual([
         { id: "alice", name: "Alice" },
         { id: "narrator_two", name: "Narrator two" },
@@ -386,15 +389,24 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       terminated: false,
       postMessage(m: any) {
         w.posted.push(m);
-        if (!w.manual && !(holdLoads && m.type === "load")) setTimeout(() => w.answer(m), 1);
+        if (!w.manual && !(holdLoads && m.type === "load")) {
+          setTimeout(() => w.answer(m), 1);
+        }
       },
       answer(m: any) {
-        if (m.type === "load" && w.failLoad) w.onmessage({ data: { req: m.req, type: "error", message: w.failLoad } });
-        else if (m.type === "synthesize") w.onmessage({ data: { req: m.req, type: "audio", wav: silentWav() } });
-        else if (m.type === "separate") {
-          if (w.failSeparation) w.onmessage({ data: { req: m.req, type: "error", message: w.failSeparation } });
-          else w.onmessage({ data: { req: m.req, type: "audio", wav: separated() } });
-        } else w.onmessage({ data: { req: m.req, type: "ok" } });
+        if (m.type === "load" && w.failLoad) {
+          w.onmessage({ data: { req: m.req, type: "error", message: w.failLoad } });
+        } else if (m.type === "synthesize") {
+          w.onmessage({ data: { req: m.req, type: "audio", wav: silentWav() } });
+        } else if (m.type === "separate") {
+          if (w.failSeparation) {
+            w.onmessage({ data: { req: m.req, type: "error", message: w.failSeparation } });
+          } else {
+            w.onmessage({ data: { req: m.req, type: "audio", wav: separated() } });
+          }
+        } else {
+          w.onmessage({ data: { req: m.req, type: "ok" } });
+        }
       },
       addEventListener(type: string, fn: () => void) {
         w.listeners[type] = fn;
@@ -408,16 +420,18 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   const kinds = (w: any) => w.posted.map((m: any) => m.type);
   const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
   const say = (speech: NativeSpeech) => speech.synthesize(request, new AbortController().signal, () => {});
-  const wav = () => silentWav(1.5, 16000);
+  const wav = () => silentWav(1.5, 16_000);
   /** What the worker answers a separation with: recognizably not the uploaded sample. */
-  const separated = () => silentWav(2, 44100);
+  const separated = () => silentWav(2, 44_100);
   const quiet = () => spyOn(console, "error").mockImplementation(() => {});
 
   /** `separation`: the separation model is installed (a .gguf file in its directory). */
   async function setup(overrides: object = {}, separation = false) {
     const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
     await Bun.write(libraryPath(dir), "");
-    if (separation) await Bun.write(join(dir, "bs-roformer.gguf"), "");
+    if (separation) {
+      await Bun.write(join(dir, "bs-roformer.gguf"), "");
+    }
     const workers: any[] = [];
     const speech = new NativeSpeech(
       config({ speech: true, audioDir: dir, speechModelDir: dir, separationModelDir: dir, ...overrides }),
@@ -588,7 +602,9 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   test("at most 16 uploads are kept", async () => {
     const { speech, cleanup } = await setup();
     try {
-      for (let i = 0; i < MAX_UPLOADED_VOICES; i++) await speech.addVoice(`v${i}`, wav());
+      for (let i = 0; i < MAX_UPLOADED_VOICES; i++) {
+        await speech.addVoice(`v${i}`, wav());
+      }
       await expect(speech.addVoice("one more", wav())).rejects.toThrow("too many uploaded voices");
       expect(await speech.voices()).toHaveLength(MAX_UPLOADED_VOICES);
       await speech.stop();
@@ -602,7 +618,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   test("addVoice refuses samples outside the limits without keeping them", async () => {
     const { speech, cleanup } = await setup();
     try {
-      await expect(speech.addVoice("x", silentWav(0.5, 16000))).rejects.toThrow("too short");
+      await expect(speech.addVoice("x", silentWav(0.5, 16_000))).rejects.toThrow("too short");
       await expect(speech.addVoice("x", silentWav(1.5, 4000))).rejects.toThrow("sample rate");
       await expect(speech.addVoice("x", new ArrayBuffer(100))).rejects.toThrow(SpeechError);
       expect(await speech.voices()).toEqual([]);
@@ -769,7 +785,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     test("a sample outside the limits is refused before the speech model is touched", async () => {
       const { workers, speech, cleanup } = await setup({}, true);
       try {
-        await expect(speech.addVoice("x", silentWav(0.5, 16000))).rejects.toThrow("too short");
+        await expect(speech.addVoice("x", silentWav(0.5, 16_000))).rejects.toThrow("too short");
         expect(workers).toHaveLength(0);
       } finally {
         await cleanup();
@@ -785,7 +801,7 @@ describe("POST /voices", () => {
       headers: { "content-type": type },
       body,
     });
-  const sample = (seconds = 1.5, rate = 16000) => new Uint8Array(silentWav(seconds, rate));
+  const sample = (seconds = 1.5, rate = 16_000) => new Uint8Array(silentWav(seconds, rate));
   const errorOf = async (res: Response) => ((await res.json()) as any).error;
 
   test("a WAV sample becomes a voice", async () => {
@@ -857,7 +873,7 @@ describe("POST /voices", () => {
     ["shorter than 1 s", sample(0.5), "too short"],
     ["longer than 60 s", sample(61, 8000), "too long"],
     ["below 8 kHz", sample(1.5, 7999), "sample rate"],
-    ["above 192 kHz", sample(0.2, 192001), "sample rate"],
+    ["above 192 kHz", sample(0.2, 192_001), "sample rate"],
   ])("a sample %s is a 400", async (_what, wav, message) => {
     const res = await upload(wav);
     expect(res.status).toBe(400);
@@ -868,7 +884,7 @@ describe("POST /voices", () => {
   });
 
   test("the limits are inclusive at 1 s, 60 s, 8 kHz and 192 kHz", async () => {
-    for (const wav of [sample(1, 8000), sample(60, 8000), sample(1, 192000)]) {
+    for (const wav of [sample(1, 8000), sample(60, 8000), sample(1, 192_000)]) {
       expect((await upload(wav)).status).toBe(201);
     }
   });

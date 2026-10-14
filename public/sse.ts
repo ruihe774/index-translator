@@ -19,21 +19,27 @@ export async function* sseEvents(body: ReadableStream<Uint8Array>): AsyncGenerat
   try {
     for (;;) {
       const { value, done } = await reader.read();
-      if (done) break;
+      if (done) {
+        break;
+      }
       // Normalise after appending, so a "\r" at the end of one chunk pairs with a "\n" at the start of the next.
-      buffer = (buffer + decoder.decode(value, { stream: true })).replace(/\r\n/g, "\n");
+      buffer = (buffer + decoder.decode(value, { stream: true })).replaceAll("\r\n", "\n");
       for (let end = buffer.indexOf("\n\n"); end >= 0; end = buffer.indexOf("\n\n")) {
         const block = buffer.slice(0, end);
         buffer = buffer.slice(end + 2);
         const event = parseBlock(block);
-        if (event) yield event;
+        if (event) {
+          yield event;
+        }
       }
     }
     // End of stream: flush the decoder and treat any unterminated final block as an event.
-    buffer = (buffer + decoder.decode()).replace(/\r\n/g, "\n");
+    buffer = (buffer + decoder.decode()).replaceAll("\r\n", "\n");
     if (buffer.trim()) {
       const event = parseBlock(buffer);
-      if (event) yield event;
+      if (event) {
+        yield event;
+      }
     }
   } finally {
     try {
@@ -50,12 +56,20 @@ function parseBlock(block: string): SseEvent | null {
   let id: string | undefined;
   const data: string[] = [];
   for (const line of block.split("\n")) {
-    if (line.startsWith(":")) continue; // comment or keepalive
-    if (line.startsWith("event:")) event = line.slice(6).trim();
-    else if (line.startsWith("id:")) id = line.slice(3).trim();
-    else if (line.startsWith("data:")) data.push(line.slice(5).replace(/^ /, ""));
+    if (line.startsWith(":")) {
+      continue;
+    } // comment or keepalive
+    if (line.startsWith("event:")) {
+      event = line.slice(6).trim();
+    } else if (line.startsWith("id:")) {
+      id = line.slice(3).trim();
+    } else if (line.startsWith("data:")) {
+      data.push(line.slice(5).replace(/^ /, ""));
+    }
   }
-  if (!data.length) return null;
+  if (!data.length) {
+    return null;
+  }
   try {
     return { event, data: JSON.parse(data.join("\n")), id };
   } catch {

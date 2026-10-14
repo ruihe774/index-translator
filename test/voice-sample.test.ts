@@ -38,18 +38,28 @@ class FakeRecorder {
     readonly stream: FakeStream,
     private rig: { mode: Rig["mode"] },
   ) {
-    if (rig.mode.construct) throw rig.mode.construct;
+    if (rig.mode.construct) {
+      throw rig.mode.construct;
+    }
   }
   start() {
-    if (this.rig.mode.start) throw this.rig.mode.start;
+    if (this.rig.mode.start) {
+      throw this.rig.mode.start;
+    }
     this.state = "recording";
   }
   stop() {
-    if (this.rig.mode.stop) throw this.rig.mode.stop;
+    if (this.rig.mode.stop) {
+      throw this.rig.mode.stop;
+    }
     this.state = "inactive";
-    if (this.rig.mode.silentStop) return;
+    if (this.rig.mode.silentStop) {
+      return;
+    }
     queueMicrotask(() => {
-      if (this.rig.mode.stopEmits === "error") return this.onerror?.();
+      if (this.rig.mode.stopEmits === "error") {
+        return this.onerror?.();
+      }
       this.ondataavailable?.({ data: new Blob([new Uint8Array([1, 2, 3])]) });
       this.onstop?.();
     });
@@ -102,11 +112,11 @@ describe("MicRecorder", () => {
     const r = rig();
     const first = r.mic.start(() => {});
     await expect(r.mic.start(() => {})).rejects.toThrow("Already recording.");
-    expect(r.gum.length).toBe(1);
+    expect(r.gum).toHaveLength(1);
     r.gum[0]!.resolve();
     await first;
     await expect(r.mic.start(() => {})).rejects.toThrow("Already recording.");
-    expect(r.streams.length).toBe(1);
+    expect(r.streams).toHaveLength(1);
     await r.mic.stop();
   });
 
@@ -228,7 +238,7 @@ describe("encodeWav", () => {
     const pcm = readWav(new Uint8Array(encodeWav(samples, 24_000)));
     expect(pcm.sampleRate).toBe(24_000);
     expect(pcm.channels).toBe(1);
-    expect(pcm.samples.length).toBe(samples.length);
+    expect(pcm.samples).toHaveLength(samples.length);
     samples.forEach((v, i) => {
       expect(Math.abs(pcm.samples[i]! - v)).toBeLessThan(1 / 16_000);
     });

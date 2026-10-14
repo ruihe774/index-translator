@@ -24,16 +24,22 @@ function el<K extends keyof HTMLElementTagNameMap>(
   className = "",
 ): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
-  if (className) e.className = className;
+  if (className) {
+    e.className = className;
+  }
   e.append(...children);
   return e;
 }
 
 function link(href: string, title: string, children: Node[]): Node {
-  if (!SAFE_URL.test(href)) return el("span", children);
+  if (!SAFE_URL.test(href)) {
+    return el("span", children);
+  }
   const a = el("a", children);
   a.href = href;
-  if (title) a.title = title;
+  if (title) {
+    a.title = title;
+  }
   a.target = "_blank";
   a.rel = "noopener noreferrer";
   return a;
@@ -42,10 +48,12 @@ function link(href: string, title: string, children: Node[]): Node {
 function inlineNodes(nodes: Inline[]): Node[] {
   return nodes.map((n): Node => {
     switch (n.type) {
-      case "text":
+      case "text": {
         return document.createTextNode(n.text);
-      case "br":
+      }
+      case "br": {
         return el("br");
+      }
       case "code": {
         const code = el("code");
         code.textContent = n.text;
@@ -53,13 +61,16 @@ function inlineNodes(nodes: Inline[]): Node[] {
       }
       case "em":
       case "strong":
-      case "del":
+      case "del": {
         return el(n.type, inlineNodes(n.children));
-      case "link":
+      }
+      case "link": {
         return link(n.href, n.title, inlineNodes(n.children));
-      case "image":
+      }
+      case "image": {
         // Shown as a link: the page loads nothing from other origins.
         return link(n.href, n.title, [document.createTextNode(n.alt || n.href)]);
+      }
     }
   });
 }
@@ -68,24 +79,32 @@ const ALIGN_CLASS = (a: Align) => (a ? `align-${a}` : "");
 
 function blockNode(b: Block, tight = false): Node[] {
   switch (b.type) {
-    case "heading":
+    case "heading": {
       // Two levels down, below the page's own h1 and h2; the class keeps the source level for styling.
       return [el(`h${Math.min(b.level + 2, 6)}` as "h3", inlineNodes(b.children), `md-h${b.level}`)];
-    case "paragraph":
+    }
+    case "paragraph": {
       return tight ? inlineNodes(b.children) : [el("p", inlineNodes(b.children))];
+    }
     case "code": {
       const code = el("code");
       code.textContent = b.text;
-      if (/^[\w+#.-]+$/.test(b.lang)) code.className = `language-${b.lang}`;
+      if (/^[\w+#.-]+$/.test(b.lang)) {
+        code.className = `language-${b.lang}`;
+      }
       return [el("pre", [code])];
     }
-    case "quote":
+    case "quote": {
       return [el("blockquote", blockNodes(b.children))];
-    case "hr":
+    }
+    case "hr": {
       return [el("hr")];
+    }
     case "list": {
       const list = el(b.ordered ? "ol" : "ul");
-      if (b.ordered && b.start !== 1) (list as HTMLOListElement).start = b.start;
+      if (b.ordered && b.start !== 1) {
+        (list as HTMLOListElement).start = b.start;
+      }
       for (const item of b.items) {
         const li = el("li", blockNodes(item.children, b.tight));
         if (item.task !== null) {
@@ -145,7 +164,9 @@ function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
   let count = 0;
   const write = (t: string) => {
     for (const part of t.split(/(?<=\n)/)) {
-      if (!part) continue;
+      if (!part) {
+        continue;
+      }
       if (!line) {
         line = el("span");
         line.dataset.line = String(count++);
@@ -153,17 +174,23 @@ function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
         target.append(line);
       }
       (line.firstChild as Text).appendData(part);
-      if (part.endsWith("\n")) line = null;
+      if (part.endsWith("\n")) {
+        line = null;
+      }
     }
   };
-  if (!reduced) return { append: write, finish() {} };
+  if (!reduced) {
+    return { append: write, finish() {} };
+  }
 
   let pending = "";
   let timer: ReturnType<typeof setTimeout> | undefined;
   const flush = () => {
     clearTimeout(timer);
     timer = undefined;
-    if (pending) write(pending);
+    if (pending) {
+      write(pending);
+    }
     pending = "";
   };
   return {
@@ -180,9 +207,13 @@ function lineNodes(parsed: ParsedBlock[], settled: boolean): Node[] {
   return parsed.flatMap(({ block, line }) => {
     const nodes = blockNode(block);
     for (const n of nodes) {
-      if (!(n instanceof HTMLElement)) continue;
+      if (!(n instanceof HTMLElement)) {
+        continue;
+      }
       n.dataset.line = String(line);
-      if (settled) n.classList.add("settled");
+      if (settled) {
+        n.classList.add("settled");
+      }
     }
     return nodes;
   });
@@ -205,7 +236,9 @@ function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
     frame = 0;
     timer = undefined;
     const { done, tail: open } = stream.takeParsed();
-    for (const node of tail) node.parentNode?.removeChild(node);
+    for (const node of tail) {
+      node.parentNode?.removeChild(node);
+    }
     tail = lineNodes(open, final);
     target.append(...lineNodes(done, true), ...tail);
   };
@@ -213,8 +246,11 @@ function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
   return {
     append(t) {
       stream.push(t);
-      if (reduced) timer ??= setTimeout(() => render(), REDUCED_MOTION_FLUSH_MS);
-      else if (!frame) frame = requestAnimationFrame(() => render());
+      if (reduced) {
+        timer ??= setTimeout(() => render(), REDUCED_MOTION_FLUSH_MS);
+      } else if (!frame) {
+        frame = requestAnimationFrame(() => render());
+      }
     },
     finish: () => render(true),
   };

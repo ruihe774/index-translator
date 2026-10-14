@@ -20,11 +20,15 @@ export interface RenderTargets {
 }
 
 function setAttr(el: Element, name: string, value: string) {
-  if (el.getAttribute(name) !== value) el.setAttribute(name, value);
+  if (el.getAttribute(name) !== value) {
+    el.setAttribute(name, value);
+  }
 }
 
 function setHidden(el: HTMLElement, hidden: boolean) {
-  if (el.hidden !== hidden) el.hidden = hidden;
+  if (el.hidden !== hidden) {
+    el.hidden = hidden;
+  }
 }
 
 export function createRender(t: RenderTargets): () => void {

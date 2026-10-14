@@ -20,7 +20,9 @@ export async function translateStream(baseUrl: string, body: Record<string, unkn
     headers: { "content-type": "application/json", accept: "text/event-stream" },
     body: JSON.stringify(body),
   });
-  if (!res.ok) throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  if (!res.ok) {
+    throw new Error(`HTTP ${res.status}: ${await res.text()}`);
+  }
 
   let translation = "";
   let start: any;
@@ -34,15 +36,24 @@ export async function translateStream(baseUrl: string, body: Record<string, unkn
       buffer = buffer.slice(end + 2);
       const event = /^event: (.*)$/m.exec(frame)?.[1];
       const data = /^data: (.*)$/m.exec(frame)?.[1];
-      if (!event || !data) continue;
+      if (!event || !data) {
+        continue;
+      }
       const payload = JSON.parse(data);
-      if (event === "delta") translation += payload.text;
-      else if (event === "start") start = payload;
-      else if (event === "done") done = payload;
-      else if (event === "error") throw new Error(`${payload.code}: ${payload.message}`);
+      if (event === "delta") {
+        translation += payload.text;
+      } else if (event === "start") {
+        start = payload;
+      } else if (event === "done") {
+        done = payload;
+      } else if (event === "error") {
+        throw new Error(`${payload.code}: ${payload.message}`);
+      }
     }
   }
-  if (!done) throw new Error("stream ended without a done event");
+  if (!done) {
+    throw new Error("stream ended without a done event");
+  }
   return { translation, start, done };
 }
 

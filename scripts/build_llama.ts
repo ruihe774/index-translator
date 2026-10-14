@@ -50,10 +50,12 @@ const BASELINE = process.arch === "x64" && !windows ? ["-march=x86-64"] : [];
 /** The import libraries the shim is linked against on Windows; they stay beside the DLLs so `--shim` works. */
 const IMPORT_LIBS = ["llama", "mtmd", "ggml", "ggml-base"];
 
-const OPTIONS = ["--native", "--keep", "--shim"];
+const OPTIONS = new Set(["--native", "--keep", "--shim"]);
 const flags = new Set(Bun.argv.slice(2));
 for (const flag of flags) {
-  if (!OPTIONS.includes(flag)) throw new Error(`unknown option ${flag}; see the head of this file`);
+  if (!OPTIONS.has(flag)) {
+    throw new Error(`unknown option ${flag}; see the head of this file`);
+  }
 }
 const native = flags.has("--native");
 const keep = flags.has("--keep");
@@ -90,7 +92,9 @@ async function buildShim(dir: string): Promise<void> {
       (await msvc()).env,
     );
     // The shim's own import library and export file are not needed.
-    for (const ext of [".lib", ".exp"]) await unlink(shimPath(dir).replace(/\.dll$/, ext)).catch(() => {});
+    for (const ext of [".lib", ".exp"]) {
+      await unlink(shimPath(dir).replace(/\.dll$/, ext)).catch(() => {});
+    }
     return;
   }
   await run([
@@ -119,8 +123,12 @@ async function buildShim(dir: string): Promise<void> {
 /** Opens the libraries in `dir` with the declarations the server uses and lists what they can compute on. */
 function report(dir: string, what: string): void {
   const found = devices(dir);
-  for (const device of found) console.log(`${device.type} ${device.label}`);
-  if (!found.some((d) => d.type === "cpu")) throw new Error(`no CPU backend could be loaded from ${dir}`);
+  for (const device of found) {
+    console.log(`${device.type} ${device.label}`);
+  }
+  if (!found.some((d) => d.type === "cpu")) {
+    throw new Error(`no CPU backend could be loaded from ${dir}`);
+  }
   if (!found.some((d) => d.type === "gpu" || d.type === "igpu")) {
     console.log("no GPU with a Vulkan driver on this machine; the engine would need GPU_LAYERS=0 here");
   }
@@ -128,7 +136,9 @@ function report(dir: string, what: string): void {
 }
 
 if (flags.has("--shim")) {
-  if (flags.size > 1) throw new Error("--shim is used alone");
+  if (flags.size > 1) {
+    throw new Error("--shim is used alone");
+  }
   requireTools(windows ? [] : ["cc"], TOOLS_HINT);
   await buildShim(dest);
   await rm(join(work, "shim"), { recursive: true, force: true });
@@ -139,7 +149,9 @@ if (flags.has("--shim")) {
 requireTools(["git", "cmake", ...COMPILERS, "glslc"], TOOLS_HINT);
 const visualStudio = windows ? await msvc() : undefined;
 
-if (!keep) await rm(work, { recursive: true, force: true });
+if (!keep) {
+  await rm(work, { recursive: true, force: true });
+}
 await checkout(REPO, COMMIT, source);
 
 const started = performance.now();
@@ -182,19 +194,25 @@ try {
     // The Visual Studio generator puts the DLLs in bin/Release and each import library in its target's own directory.
     const bin = join(build, "bin", "Release");
     for (const name of await readdir(bin)) {
-      if (name.endsWith(".dll")) await cp(join(bin, name), join(stage, name));
+      if (name.endsWith(".dll")) {
+        await cp(join(bin, name), join(stage, name));
+      }
     }
     for (const name of IMPORT_LIBS) {
       const [found] = await Array.fromAsync(
         new Bun.Glob(`**/Release/${name}.lib`).scan({ cwd: build, absolute: true }),
       );
-      if (!found) throw new Error(`the build left no ${name}.lib`);
+      if (!found) {
+        throw new Error(`the build left no ${name}.lib`);
+      }
       await cp(found, join(stage, `${name}.lib`));
     }
   } else {
     // The libraries and the links to them (libllama.so -> libllama.so.0 -> the file), kept as links.
     for (const name of await readdir(join(build, "bin"))) {
-      if (/\.so(\.|$)/.test(name)) await cp(join(build, "bin", name), join(stage, name), { verbatimSymlinks: true });
+      if (/\.so(\.|$)/.test(name)) {
+        await cp(join(build, "bin", name), join(stage, name), { verbatimSymlinks: true });
+      }
     }
   }
   for (const header of HEADERS) {
@@ -219,5 +237,7 @@ if (!keep) {
 
 const seconds = Math.round((performance.now() - started) / 1000);
 const variants = (await readdir(dest)).filter((name) => /^(lib)?ggml-cpu/.test(name)).length;
-if (!(await Bun.file(libraryPath(dest)).exists())) throw new Error(`the build left no ${libraryPath(dest)}`);
+if (!(await Bun.file(libraryPath(dest)).exists())) {
+  throw new Error(`the build left no ${libraryPath(dest)}`);
+}
 report(dest, `${TAG}, ${native ? "this machine's CPU" : `${variants} CPU variants`}, built in ${seconds} s`);

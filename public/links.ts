@@ -22,26 +22,42 @@ export interface LinkReference {
 
 function inlineHrefs(nodes: Inline[], into: Set<string>) {
   for (const n of nodes) {
-    if (n.type === "link" || n.type === "image") into.add(n.href);
-    if ("children" in n) inlineHrefs(n.children, into);
+    if (n.type === "link" || n.type === "image") {
+      into.add(n.href);
+    }
+    if ("children" in n) {
+      inlineHrefs(n.children, into);
+    }
   }
 }
 
 function blockHrefs(b: Block, into: Set<string>) {
   switch (b.type) {
     case "heading":
-    case "paragraph":
+    case "paragraph": {
       inlineHrefs(b.children, into);
       break;
-    case "quote":
-      for (const c of b.children) blockHrefs(c, into);
+    }
+    case "quote": {
+      for (const c of b.children) {
+        blockHrefs(c, into);
+      }
       break;
-    case "list":
-      for (const item of b.items) for (const c of item.children) blockHrefs(c, into);
+    }
+    case "list": {
+      for (const item of b.items) {
+        for (const c of item.children) {
+          blockHrefs(c, into);
+        }
+      }
       break;
-    case "table":
-      for (const cell of [...b.head, ...b.rows.flat()]) inlineHrefs(cell, into);
+    }
+    case "table": {
+      for (const cell of [...b.head, ...b.rows.flat()]) {
+        inlineHrefs(cell, into);
+      }
       break;
+    }
   }
 }
 
@@ -60,13 +76,21 @@ export function linkReference(source: string, alignment: Alignment | null): Link
  * top-level block that holds the link.
  */
 export function linkProblem(ref: LinkReference, href: string, outputLine: number): LinkProblem | null {
-  if (!ref.text.includes(href)) return "missing";
+  if (!ref.text.includes(href)) {
+    return "missing";
+  }
   const a = ref.alignment;
-  if (!a) return "mismatch";
+  if (!a) {
+    return "mismatch";
+  }
   const k = blockAt(a.output, outputLine);
   const sourceBlock = new Set<string>();
   for (const [line, hrefs] of ref.byLine) {
-    if (blockAt(a.source, line) === k) for (const h of hrefs) sourceBlock.add(h);
+    if (blockAt(a.source, line) === k) {
+      for (const h of hrefs) {
+        sourceBlock.add(h);
+      }
+    }
   }
   return sourceBlock.has(href) ? null : "mismatch";
 }

@@ -79,8 +79,10 @@ export async function prepareImage(file: Uint8Array): Promise<Uint8Array> {
     // Not compressed: it is read once, on this machine, a moment later.
     return await image.png({ compressionLevel: 0 }).bytes();
   } catch (e) {
-    if (e instanceof ImageRejected) throw e;
-    const code = (e as { code?: string }).code;
+    if (e instanceof ImageRejected) {
+      throw e;
+    }
+    const { code } = e as { code?: string };
     if (code === "ERR_IMAGE_TOO_MANY_PIXELS") {
       throw new ImageRejected("image_too_large", `the image has more than ${MAX_IMAGE_PIXELS} pixels`);
     }

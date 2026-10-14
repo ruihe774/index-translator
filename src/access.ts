@@ -42,40 +42,53 @@ function canonicalName(name: string): string | undefined {
 
 /** Splits "name", "name:port" or "[v6]:port" (an unbracketed IPv6 address has no port). */
 function splitHostPort(value: string): { name: string; port: string | undefined } | undefined {
-  if (value.split(":").length > 2 && !value.startsWith("[")) return { name: value, port: undefined };
+  if (value.split(":").length > 2 && !value.startsWith("[")) {
+    return { name: value, port: undefined };
+  }
   const m = /^(\[[^\]]*\]|[^:]*)(?::(\d+))?$/.exec(value);
-  if (!m) return undefined;
+  if (!m) {
+    return undefined;
+  }
   return { name: m[1] as string, port: m[2] === undefined ? undefined : String(Number(m[2])) };
 }
 
 export function parseHostRule(entry: string): HostRule {
   const setting = "ALLOWED_HOSTS";
   const value = entry.trim().toLowerCase();
-  if (value === "*") fail(setting, entry, "would allow every host name; list names, or `*.example.com`");
+  if (value === "*") {
+    fail(setting, entry, "would allow every host name; list names, or `*.example.com`");
+  }
   if (value.includes("://") || value.includes("/")) {
     fail(setting, entry, "must be a host name (`app.example.com`); origins with a scheme go to ALLOWED_ORIGINS");
   }
   const wildcard = value.startsWith("*.");
   const split = splitHostPort(wildcard ? value.slice(2) : value);
-  if (!split || !split.name || !NAME_CHARS.test(split.name)) {
+  if (!split?.name || !NAME_CHARS.test(split.name)) {
     fail(setting, entry, "is not a host name; use `name`, `name:port` or `*.name`");
   }
   const name = canonicalName(split.name);
-  if (!name) fail(setting, entry, "is not a valid host name");
+  if (!name) {
+    fail(setting, entry, "is not a valid host name");
+  }
   if (wildcard && (name.includes(":") || /^[\d.]+$/.test(name))) {
     fail(setting, entry, "puts a wildcard on an IP address, which has no subdomains");
   }
-  if (split.port !== undefined && Number(split.port) > 65535) fail(setting, entry, "has a port above 65535");
+  if (split.port !== undefined && Number(split.port) > 65_535) {
+    fail(setting, entry, "has a port above 65535");
+  }
   return { name, wildcard, port: split.port };
 }
 
 export function parseOriginRule(entry: string): OriginRule {
   const setting = "ALLOWED_ORIGINS";
   const value = entry.trim();
-  if (value === "*")
+  if (value === "*") {
     fail(setting, entry, "would let every web page call the API; list origins, or `https://*.example.com`");
+  }
   const m = /^(https?):\/\/(\*\.)?(.+?)\/*$/i.exec(value);
-  if (!m) fail(setting, entry, "must be an origin such as `https://app.example.com` or `https://*.example.com`");
+  if (!m) {
+    fail(setting, entry, "must be an origin such as `https://app.example.com` or `https://*.example.com`");
+  }
   const wildcard = m[2] !== undefined;
   let url: URL;
   try {
@@ -101,7 +114,9 @@ function nameMatches(rule: { name: string; wildcard: boolean }, host: string): b
 export function hostAllowed(rules: readonly HostRule[], header: string): boolean {
   const split = splitHostPort(header.trim().toLowerCase());
   const host = split && canonicalName(split.name);
-  if (!split || !host) return false;
+  if (!split || !host) {
+    return false;
+  }
   return rules.some((r) => nameMatches(r, host) && (r.port === undefined || r.port === split.port));
 }
 

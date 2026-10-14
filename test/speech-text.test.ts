@@ -73,24 +73,32 @@ describe("pieces", () => {
   test("a long paragraph is cut at sentence ends, short sentences stay together", () => {
     const sentence = "This sentence is here to fill the paragraph with ordinary words. ";
     const parts = texts(sentence.repeat(6), false);
-    expect(parts.length).toBe(3);
-    for (const p of parts) expect(p).toBe(sentence.repeat(2).trim());
+    expect(parts).toHaveLength(3);
+    for (const p of parts) {
+      expect(p).toBe(sentence.repeat(2).trim());
+    }
     expect(texts("Yes. No. Maybe.", false)).toEqual(["Yes. No. Maybe."]);
   });
 
   test("a sentence beyond the limit is cut at commas, then at spaces", () => {
     const clause = "and then another clause follows with a few more words in it, ";
-    for (const p of texts(clause.repeat(12), false)) expect(p.length).toBeLessThanOrEqual(400);
+    for (const p of texts(clause.repeat(12), false)) {
+      expect(p.length).toBeLessThanOrEqual(400);
+    }
     const unbroken = texts("word ".repeat(200), false);
     expect(unbroken.length).toBeGreaterThan(1);
-    for (const p of unbroken) expect(p.length).toBeLessThanOrEqual(400);
+    for (const p of unbroken) {
+      expect(p.length).toBeLessThanOrEqual(400);
+    }
     expect(unbroken.join(" ")).toBe("word ".repeat(200).trim());
   });
 
   test("Chinese is cut into shorter pieces than English", () => {
     const parts = texts("今天天气很好，我们一起去公园散步吧。".repeat(8), false, "zh");
     expect(parts.length).toBeGreaterThan(1);
-    for (const p of parts) expect(p.length).toBeLessThanOrEqual(60);
+    for (const p of parts) {
+      expect(p.length).toBeLessThanOrEqual(60);
+    }
   });
 
   test("the silence is longest after a heading and shortest inside a paragraph", () => {
@@ -103,7 +111,9 @@ describe("pieces", () => {
   test("every piece fits one speech request", () => {
     const long = `${"x".repeat(5000)} ${"好".repeat(5000)}`;
     for (const lang of ["en", "zh"]) {
-      for (const s of speechSegments(long, false, lang)) expect(s.text.length).toBeLessThanOrEqual(1000);
+      for (const s of speechSegments(long, false, lang)) {
+        expect(s.text.length).toBeLessThanOrEqual(1000);
+      }
     }
   });
 });
@@ -135,7 +145,7 @@ describe("cutting by code points", () => {
 describe("tables and lists that are odd", () => {
   test("pipes inside a cell are never spoken", () => {
     const parts = texts("| Cmd | Use |\n|---|---|\n| a \\| b | x \\| y |", true);
-    expect(parts.length).toBe(1);
+    expect(parts).toHaveLength(1);
     expect(parts[0]).not.toContain("|");
     expect(parts[0]).toMatch(/^Cmd: a b, Use: x y\.$/);
   });
@@ -218,11 +228,13 @@ test("kanjiNumber", () => {
     ["0.05", "〇点〇五"],
     ["007", "〇〇七"],
   ];
-  for (const [digits, kanji] of cases) expect([digits, kanjiNumber(digits)]).toEqual([digits, kanji]);
+  for (const [digits, kanji] of cases) {
+    expect([digits, kanjiNumber(digits)]).toEqual([digits, kanji]);
+  }
 });
 
 test("canSpeak", () => {
   expect(["zh", "en", "ja", "es", "ar"].every(canSpeak)).toBe(true);
   expect(canSpeak("de")).toBe(false);
-  expect(canSpeak(undefined)).toBe(false);
+  expect(canSpeak()).toBe(false);
 });

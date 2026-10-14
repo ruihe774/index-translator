@@ -56,13 +56,19 @@ function stripWhitespace(html: Response): Response {
     })
     .onDocument({
       text(chunk) {
-        if (literal) return;
+        if (literal) {
+          return;
+        }
         pending += chunk.text;
         chunk.remove();
-        if (!chunk.lastInTextNode) return;
-        const text = pending.replace(/\s+/g, " ");
+        if (!chunk.lastInTextNode) {
+          return;
+        }
+        const text = pending.replaceAll(/\s+/g, " ");
         pending = "";
-        if (text !== " ") chunk.after(text, { html: true });
+        if (text !== " ") {
+          chunk.after(text, { html: true });
+        }
       },
     });
   return rewriter.transform(html);
@@ -81,12 +87,16 @@ export function createStaticServer(publicDir: string) {
   async function plainFile(path: string, req: Request): Promise<Response | undefined> {
     // Constructed before the stat: a path with a null byte throws here, and the caller answers that as a 500.
     const file = Bun.file(path);
-    const info = await file.stat().catch(() => undefined);
-    if (!info?.isFile()) return undefined;
+    const info = await file.stat().catch(() => {});
+    if (!info?.isFile()) {
+      return undefined;
+    }
 
     const etag = `W/"${info.mtimeMs}-${info.size}"`;
     const headers = { etag, "cache-control": cacheControl(path.slice(prefix.length)) };
-    if (req.headers.get("if-none-match") === etag) return new Response(null, { status: 304, headers });
+    if (req.headers.get("if-none-match") === etag) {
+      return new Response(null, { status: 304, headers });
+    }
     if (path.endsWith(".html")) {
       return new Response(await stripWhitespace(new Response(file)).text(), {
         headers: { ...headers, "content-type": "text/html; charset=utf-8" },
@@ -98,8 +108,10 @@ export function createStaticServer(publicDir: string) {
   async function transpiled(path: string, req: Request): Promise<Response | undefined> {
     const info = await Bun.file(path)
       .stat()
-      .catch(() => undefined);
-    if (!info?.isFile()) return undefined;
+      .catch(() => {});
+    if (!info?.isFile()) {
+      return undefined;
+    }
 
     let entry = cache.get(path);
     if (!entry || entry.mtimeMs !== info.mtimeMs || entry.size !== info.size) {
@@ -118,31 +130,45 @@ export function createStaticServer(publicDir: string) {
 
     // The file is revalidated on every load, so an edit shows up on the next reload.
     const headers = { etag: entry.etag, "cache-control": "no-cache" };
-    if (req.headers.get("if-none-match") === entry.etag) return new Response(null, { status: 304, headers });
+    if (req.headers.get("if-none-match") === entry.etag) {
+      return new Response(null, { status: 304, headers });
+    }
     return new Response(entry.code, {
       headers: { ...headers, "content-type": "text/javascript; charset=utf-8" },
     });
   }
 
   async function lookup(pathname: string, req: Request): Promise<Response> {
-    if (req.method !== "GET" && req.method !== "HEAD") return new Response("Method Not Allowed", { status: 405 });
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      return new Response("Method Not Allowed", { status: 405 });
+    }
     let rel: string;
     try {
       rel = decodeURIComponent(pathname);
     } catch {
       return new Response("Bad Request", { status: 400 });
     }
-    if (rel.endsWith("/")) rel += "index.html";
+    if (rel.endsWith("/")) {
+      rel += "index.html";
+    }
     const path = normalize(join(dir, rel));
-    if (!path.startsWith(prefix)) return notFound();
+    if (!path.startsWith(prefix)) {
+      return notFound();
+    }
     // The module's name is .ts, its answer is JavaScript: the transpiled code, never the source.
-    if (path.endsWith(".ts")) return (await transpiled(path, req)) ?? notFound();
+    if (path.endsWith(".ts")) {
+      return (await transpiled(path, req)) ?? notFound();
+    }
 
     const file = await plainFile(path, req);
-    if (file) return file;
+    if (file) {
+      return file;
+    }
     if (path.endsWith(".js")) {
       const res = await transpiled(path.slice(0, -3) + ".ts", req);
-      if (res) return res;
+      if (res) {
+        return res;
+      }
     }
     return notFound();
   }

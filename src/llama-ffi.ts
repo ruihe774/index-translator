@@ -76,7 +76,9 @@ let libDir = "";
 
 /** Opens the libraries in `dir` and registers the backends, once per process. */
 function open(dir: string): Lib {
-  if (lib && libDir !== dir) throw new Error(`libllama is already loaded from ${libDir}`);
+  if (lib && libDir !== dir) {
+    throw new Error(`libllama is already loaded from ${libDir}`);
+  }
   lib ??= bind(dir);
   libDir = dir;
   return lib;
@@ -183,7 +185,9 @@ export class ImagePrompt {
   }
 
   free(): void {
-    if (!this.freed) this.lib.mtmd_input_chunks_free(this.handle);
+    if (!this.freed) {
+      this.lib.mtmd_input_chunks_free(this.handle);
+    }
     this.freed = true;
   }
 }
@@ -231,7 +235,9 @@ export class Model {
   static load(opts: ModelOptions): Model {
     const lib = open(opts.dir);
     const model = lib.shim_load_model(cstr(opts.path), opts.gpuLayers);
-    if (!model) throw new Error(`llama.cpp could not load ${opts.path}`);
+    if (!model) {
+      throw new Error(`llama.cpp could not load ${opts.path}`);
+    }
     const ctx = lib.shim_new_context(model, opts.ctxSize, BATCH_SIZE, opts.threads);
     if (!ctx) {
       lib.llama_model_free(model);
@@ -247,12 +253,18 @@ export class Model {
     // Only the template's pieces (head, tail) parse special tokens; the vocabulary's BOS, if any, goes first.
     for (const [i, piece] of chatPromptParts(content, this.emptyThink).entries()) {
       const text = encoder.encode(piece);
-      if (text.length === 0) continue;
+      if (text.length === 0) {
+        continue;
+      }
       // A token covers at least one byte; the slack is for special tokens the vocabulary may add.
       const tokens = new Int32Array(text.length + 8);
       const n = this.lib.llama_tokenize(this.vocab, text, text.length, tokens, tokens.length, i === 0, i !== 1);
-      if (n < 0) throw new Error("llama_tokenize failed");
-      for (let k = 0; k < n; k++) out.push(tokens[k]!);
+      if (n < 0) {
+        throw new Error("llama_tokenize failed");
+      }
+      for (let k = 0; k < n; k++) {
+        out.push(tokens[k]!);
+      }
     }
     return Int32Array.from(out);
   }
@@ -264,14 +276,20 @@ export class Model {
    * file is not an image or the model takes none.
    */
   imagePrompt(content: string, file: Uint8Array): ImagePrompt {
-    if (!this.mmproj) throw new ImageError("this model does not take images");
+    if (!this.mmproj) {
+      throw new ImageError("this model does not take images");
+    }
     if (!this.vision) {
       const vision = this.lib.shim_mtmd_load(cstr(this.mmproj), this.model, this.onGpu, this.threads);
-      if (!vision) throw new Error(`llama.cpp could not load the image encoder ${this.mmproj}`);
+      if (!vision) {
+        throw new Error(`llama.cpp could not load the image encoder ${this.mmproj}`);
+      }
       this.vision = vision;
     }
     const bitmap = this.lib.shim_mtmd_bitmap(file, file.length);
-    if (!bitmap) throw new ImageError("the image could not be decoded");
+    if (!bitmap) {
+      throw new ImageError("the image could not be decoded");
+    }
     const [head, body, tail] = chatPromptParts(content, this.emptyThink, true).map((s) =>
       new TextEncoder().encode(s),
     ) as [Uint8Array, Uint8Array, Uint8Array];
@@ -287,7 +305,9 @@ export class Model {
     );
     // The chunks hold the preprocessed image; the decoded one is not needed again.
     this.lib.mtmd_bitmap_free(bitmap);
-    if (!chunks) throw new ImageError("the image could not be prepared for the model");
+    if (!chunks) {
+      throw new ImageError("the image could not be prepared for the model");
+    }
     return new ImagePrompt(this.lib, chunks);
   }
 
@@ -297,9 +317,13 @@ export class Model {
    * blocking call.
    */
   evalChunk(prompt: ImagePrompt, index: number): void {
-    if (index === 0) this.posBuf[0] = 0;
+    if (index === 0) {
+      this.posBuf[0] = 0;
+    }
     const status = this.lib.shim_mtmd_eval_chunk(this.vision!, this.ctx, prompt.handle, index, BATCH_SIZE, this.posBuf);
-    if (status !== 0) throw new Error(`evaluating the image prompt failed with status ${status}`);
+    if (status !== 0) {
+      throw new Error(`evaluating the image prompt failed with status ${status}`);
+    }
     this.nextPos = this.posBuf[0]!;
   }
 
@@ -318,7 +342,9 @@ export class Model {
       status = this.lib.shim_decode_at(this.ctx, tokens, tokens.length, this.nextPos);
       this.nextPos += tokens.length;
     }
-    if (status !== 0) throw new Error(`llama_decode failed with status ${status}`);
+    if (status !== 0) {
+      throw new Error(`llama_decode failed with status ${status}`);
+    }
   }
 
   decodeOne(token: number): void {
@@ -347,10 +373,14 @@ export class Model {
   }
 
   free(): void {
-    if (this.freed) return;
+    if (this.freed) {
+      return;
+    }
     this.freed = true;
     this.lib.llama_sampler_free(this.sampler);
-    if (this.vision) this.lib.mtmd_free(this.vision);
+    if (this.vision) {
+      this.lib.mtmd_free(this.vision);
+    }
     this.lib.llama_free(this.ctx);
     this.lib.llama_model_free(this.model);
   }

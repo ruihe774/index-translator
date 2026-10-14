@@ -16,7 +16,11 @@ export class ApiFailure extends Error {
 
 /** A failed request as a sentence for the user. */
 export function failureMessage(e: unknown): string {
-  if (e instanceof ApiFailure) return describeError(e.body, e.status);
-  if (e instanceof TypeError) return "The server cannot be reached.";
+  if (e instanceof ApiFailure) {
+    return describeError(e.body, e.status);
+  }
+  if (e instanceof TypeError) {
+    return "The server cannot be reached.";
+  }
   return e instanceof Error ? e.message : String(e);
 }

@@ -305,7 +305,9 @@ test("a 429 in the middle of a reading is explained and the buttons return to Li
   await mock.set({ speech: { audioSeconds: 0.6 } });
   let calls = 0;
   await app.page.route("**/api/v1/speech", (route) => {
-    if (++calls < 2) return route.continue();
+    if (++calls < 2) {
+      return route.continue();
+    }
     return route.fulfill({
       status: 429,
       contentType: "application/json",
@@ -342,7 +344,9 @@ test("a speech_error in the middle of a reading is shown the same way", async ({
 function watchSpeech(page: Page) {
   const seen: { accept: string | undefined; type: string | undefined }[] = [];
   page.on("response", (res) => {
-    if (!res.url().endsWith("/api/v1/speech")) return;
+    if (!res.url().endsWith("/api/v1/speech")) {
+      return;
+    }
     seen.push({ accept: res.request().headers().accept, type: res.headers()["content-type"] });
   });
   return seen;
@@ -386,7 +390,9 @@ test("without the QOA codec the page reads from WAV", async ({ app, mock }) => {
 test("a QOA stream that cannot be decoded is asked for again as WAV, and QOA is given up", async ({ app, mock }) => {
   let calls = 0;
   await app.page.route("**/api/v1/speech", (route) => {
-    if (calls++ > 0) return route.continue();
+    if (calls++ > 0) {
+      return route.continue();
+    }
     return route.fulfill({
       status: 200,
       contentType: "audio/qoa",
@@ -467,7 +473,9 @@ test.describe("reading aloud that becomes available later", () => {
     await mock.set({ speech: { state: "unavailable" } });
     let asked = 0;
     app.page.on("request", (r) => {
-      if (r.url().endsWith("/api/v1/voices")) asked++;
+      if (r.url().endsWith("/api/v1/voices")) {
+        asked++;
+      }
     });
     await app.open();
     await app.from.selectOption("en");

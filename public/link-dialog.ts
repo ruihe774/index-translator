@@ -37,7 +37,9 @@ function build(): Parts {
   open.className = "primary";
   row.append(cancel, open);
   dialog.append(title, message, target, row);
-  for (const b of [cancel, open]) b.addEventListener("click", () => dialog.close(b.value));
+  for (const b of [cancel, open]) {
+    b.addEventListener("click", () => dialog.close(b.value));
+  }
   document.body.append(dialog);
   return { dialog, title, message, target, open };
 }

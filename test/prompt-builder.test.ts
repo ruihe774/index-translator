@@ -8,7 +8,7 @@ const JSON_TAIL = "请以相同的 JSON 格式输出翻译结果，key 保持不
 
 /** The numbered lines of the 【约束要求】 block. */
 function constraintBlock(prompt: string): string[] {
-  const m = prompt.match(/【约束要求】\n([\s\S]*?)\n\n/);
+  const m = /【约束要求】\n([\s\S]*?)\n\n/.exec(prompt);
   return m ? m[1]!.split("\n") : [];
 }
 
@@ -276,14 +276,17 @@ describe("models", () => {
   test("every kind is chat or document, and only document models carry directions", () => {
     for (const m of MODELS) {
       expect(["chat", "document"]).toContain(m.kind);
-      if (m.kind === "chat") expect(m.directions).toBeUndefined();
-      else expect(m.directions).toBeDefined();
+      if (m.kind === "chat") {
+        expect(m.directions).toBeUndefined();
+      } else {
+        expect(m.directions).toBeDefined();
+      }
     }
   });
 
   test("the document model's directions match DOCUMENT_DIRECTIONS in order", () => {
     const doc = MODELS.filter((m) => m.kind === "document");
-    expect(doc.length).toBe(1);
+    expect(doc).toHaveLength(1);
     expect(doc[0]!.directions).toEqual(DOCUMENT_DIRECTIONS);
   });
 
@@ -296,7 +299,9 @@ describe("models", () => {
   });
 
   test("findModel returns the spec for a known id and undefined otherwise", () => {
-    for (const m of MODELS) expect(findModel(m.id)).toBe(m);
+    for (const m of MODELS) {
+      expect(findModel(m.id)).toBe(m);
+    }
     expect(findModel("no-such-model")).toBeUndefined();
     expect(findModel("")).toBeUndefined();
   });
@@ -307,7 +312,7 @@ describe("buildDocumentPrompt extras", () => {
     const doc = "（在这里放入需要翻译的完整英文原文）\nmore";
     const prompt = buildDocumentPrompt("en-zh", doc);
     expect(prompt).toEndWith(`【源文】\n\n${doc}`);
-    expect(prompt.split("（在这里放入").length).toBe(2);
+    expect(prompt.split("（在这里放入")).toHaveLength(2);
   });
 
   test("multi-paragraph text is preserved verbatim", () => {

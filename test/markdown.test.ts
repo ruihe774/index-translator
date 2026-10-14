@@ -76,7 +76,7 @@ describe("parseMarkdown blocks", () => {
   test("tight, loose, nested, ordered and task lists", () => {
     const [list] = parseMarkdown("- a\n  - b\n- [x] c\n");
     expect(list).toMatchObject({ type: "list", ordered: false, tight: true });
-    const items = (list as Extract<Block, { type: "list" }>).items;
+    const { items } = list as Extract<Block, { type: "list" }>;
     expect(items).toHaveLength(2);
     expect(items[0]!.children[1]).toMatchObject({ type: "list", items: [{ children: [{ type: "paragraph" }] }] });
     expect(items[1]).toMatchObject({ task: true, children: [{ type: "paragraph", children: [{ text: "c" }] }] });
@@ -285,7 +285,9 @@ describe("MarkdownStream", () => {
       s.push(c);
       const r = s.take();
       blocks.push(...r.done);
-      for (const _ of r.done) doneAt.push(k);
+      for (const _ of r.done) {
+        doneAt.push(k);
+      }
       tail = r.tail;
     });
     return { blocks: [...blocks, ...tail], doneAt };
@@ -299,7 +301,7 @@ describe("MarkdownStream", () => {
     for (let round = 0; round < 50; round++) {
       const chunks: string[] = [];
       for (let i = 0; i < DOC.length;) {
-        seed = (seed * 1103515245 + 12345) % 2 ** 31;
+        seed = (seed * 1_103_515_245 + 12_345) % 2 ** 31;
         const len = 1 + (seed % 12);
         chunks.push(DOC.slice(i, i + len));
         i += len;

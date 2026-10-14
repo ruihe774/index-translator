@@ -37,7 +37,9 @@ export class SlotQueue {
 
   /** `onPosition` receives the number of requests ahead, each time it changes while waiting. */
   enter(onPosition?: (position: number) => void): Ticket {
-    if (this.active && this.waiting.length >= this.maxWaiting) throw new QueueFullError();
+    if (this.active && this.waiting.length >= this.maxWaiting) {
+      throw new QueueFullError();
+    }
 
     let settle!: (granted: boolean) => void;
     const ready = new Promise<boolean>((resolve) => (settle = resolve));
@@ -61,14 +63,18 @@ export class SlotQueue {
     return {
       ready,
       leave: () => {
-        if (left) return;
+        if (left) {
+          return;
+        }
         left = true;
         if (this.active === entry) {
           this.active = this.waiting.shift() ?? null;
           this.active?.settle(true);
         } else {
           const i = this.waiting.indexOf(entry);
-          if (i < 0) return;
+          if (i < 0) {
+            return;
+          }
           this.waiting.splice(i, 1);
           entry.settle(false);
         }

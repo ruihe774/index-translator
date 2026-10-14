@@ -43,4 +43,6 @@ function probe(dir: string): Probe {
   }
 }
 
-if (import.meta.main) console.log(JSON.stringify(probe(Bun.argv[2] ?? "")));
+if (import.meta.main) {
+  console.log(JSON.stringify(probe(Bun.argv[2] ?? "")));
+}

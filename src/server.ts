@@ -16,7 +16,9 @@ if (problem) {
   console.error(`[server] cannot start. ${problem}`);
   process.exit(1);
 }
-if (cfg.devReload) await import("./dev-watch");
+if (cfg.devReload) {
+  await import("./dev-watch");
+}
 const app = await startApp(cfg);
 console.error(
   `[server] listening on ${String(app.server.url)} (default model ${cfg.defaultModel}, context ${cfg.ctxSize})`,
@@ -31,7 +33,9 @@ if (cfg.openBrowser) {
 let stopping = false;
 for (const sig of ["SIGINT", "SIGTERM"] as const) {
   process.on(sig, () => {
-    if (stopping) return;
+    if (stopping) {
+      return;
+    }
     stopping = true;
     console.error(`[server] ${sig}, shutting down`);
     void app.stop().then(() => process.exit(0));

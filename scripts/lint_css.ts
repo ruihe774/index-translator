@@ -10,7 +10,9 @@ const files = Bun.argv.slice(2);
 if (files.length === 0) {
   files.push("public/style.css");
   const names = await Array.fromAsync(new Bun.Glob("*").scan({ cwd: "public/css", onlyFiles: true }));
-  for (const name of names.sort()) files.push(`public/css/${name}`);
+  for (const name of names.sort()) {
+    files.push(`public/css/${name}`);
+  }
 }
 
 const browsers = browserslist();

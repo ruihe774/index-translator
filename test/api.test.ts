@@ -114,7 +114,7 @@ describe("POST /tokenize", () => {
     const body = (await res.json()) as any;
     expect(body).toMatchObject({ model: DOCUMENT, counted_with: CHAT });
     expect(body.prompt_tokens).toBe(buildDocumentPrompt("en-zh", "The fox.").length + TEMPLATE.length);
-    expect(mock.launches.length).toBe(before);
+    expect(mock.launches).toHaveLength(before);
 
     const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
     expect(health.model).toBe(CHAT);
@@ -440,7 +440,9 @@ describe("queueing and cancellation", () => {
     await reader.read();
     ac.abort();
 
-    for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) await Bun.sleep(20);
+    for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) {
+      await Bun.sleep(20);
+    }
     mock.delayMs = 0;
     expect(mock.aborted).toBe(abortedBefore + 1);
 
@@ -456,7 +458,9 @@ describe("queueing and cancellation", () => {
   }
 
   async function waitForWaiting(count: number): Promise<void> {
-    for (let i = 0; i < 100 && (await queueState()).waiting !== count; i++) await Bun.sleep(20);
+    for (let i = 0; i < 100 && (await queueState()).waiting !== count; i++) {
+      await Bun.sleep(20);
+    }
   }
 
   // /tokenize never queues (see the tokenize tests), so only translate can be cancelled while waiting.
@@ -501,7 +505,9 @@ describe("queueing and cancellation", () => {
       ac.abort();
       await expect(pending).rejects.toThrow();
 
-      for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) await Bun.sleep(20);
+      for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) {
+        await Bun.sleep(20);
+      }
       await waitForWaiting(0);
       await Bun.sleep(50);
       expect(mock.aborted).toBe(abortedBefore + 1);
@@ -537,7 +543,9 @@ describe("queueing and cancellation", () => {
       // The stream's headers arrive at once, so the queued request is open but never answered.
       await post("/api/v1/translate", { text: "two", target_lang: "en", stream: true }, { signal: ac.signal });
       // Bun starts the response stream when it first writes it, so the interval can appear a moment late.
-      for (let i = 0; i < 100 && live.size !== before + 1; i++) await Bun.sleep(10);
+      for (let i = 0; i < 100 && live.size !== before + 1; i++) {
+        await Bun.sleep(10);
+      }
       expect((await queueState()).waiting).toBe(1);
       expect(live.size).toBe(before + 1);
 
@@ -563,7 +571,7 @@ describe("engine availability", () => {
     mock.ready = false;
     const loading = await startApp(config(), launcher);
     try {
-      const origin = loading.server.url.origin;
+      const { origin } = loading.server.url;
       const health = await fetch(origin + "/api/v1/health");
       expect(health.status).toBe(503);
       expect(((await health.json()) as any).status).toBe("loading");
@@ -588,8 +596,10 @@ describe("engine availability", () => {
     mock.ready = false;
     const loading = await startApp(config(), launcher);
     try {
-      const origin = loading.server.url.origin;
-      for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) await Bun.sleep(10);
+      const { origin } = loading.server.url;
+      for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) {
+        await Bun.sleep(10);
+      }
       expect(loading.engine.state).toBe("loading");
 
       const tokenize = () =>
@@ -618,7 +628,9 @@ describe("engine availability", () => {
     mock.failLaunch = "model file is corrupt";
     const broken = await startApp(config(), launcher);
     try {
-      for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) await Bun.sleep(10);
+      for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) {
+        await Bun.sleep(10);
+      }
       expect(broken.engine.state).toBe("error");
       const res = await fetch(broken.server.url.origin + "/api/v1/tokenize", {
         method: "POST",
@@ -692,7 +704,7 @@ describe("browser request checks", () => {
   });
 
   test("a same-origin page is served, and so is a request without an Origin", async () => {
-    const port = app.server.url.port;
+    const { port } = app.server.url;
     const same = await post(
       "/api/v1/tokenize",
       { text: "Hi", target_lang: "zh" },
@@ -868,7 +880,7 @@ describe("output budget", () => {
     // loadConfig would reject this pair (290 + 64 >= 300); startApp takes the config as given.
     const app = await startApp(config({ ctxSize: 300, maxInputTokens: 290 }), launcher);
     try {
-      const origin = app.server.url.origin;
+      const { origin } = app.server.url;
       await waitReady(app);
 
       // 230 tokens leaves 300 - 230 - 64 = 6 for the translation: still accepted.
@@ -888,7 +900,7 @@ describe("output budget", () => {
           details: { prompt_tokens: 240, context_tokens: 300 },
         },
       });
-      expect(mock.requests.length).toBe(requests);
+      expect(mock.requests).toHaveLength(requests);
     } finally {
       await app.stop();
     }

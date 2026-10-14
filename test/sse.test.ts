@@ -10,8 +10,11 @@ function body(chunks: (string | Uint8Array)[]) {
   const stream = new ReadableStream<Uint8Array>({
     pull(controller) {
       const next = chunks.shift();
-      if (next === undefined) controller.close();
-      else controller.enqueue(typeof next === "string" ? encoder.encode(next) : next);
+      if (next === undefined) {
+        controller.close();
+      } else {
+        controller.enqueue(typeof next === "string" ? encoder.encode(next) : next);
+      }
     },
     cancel() {
       state.cancelled++;
@@ -22,7 +25,9 @@ function body(chunks: (string | Uint8Array)[]) {
 
 async function collect(chunks: (string | Uint8Array)[]): Promise<SseEvent[]> {
   const out: SseEvent[] = [];
-  for await (const ev of sseEvents(body(chunks).stream)) out.push(ev);
+  for await (const ev of sseEvents(body(chunks).stream)) {
+    out.push(ev);
+  }
   return out;
 }
 
@@ -61,7 +66,7 @@ describe("sseEvents", () => {
     expect(events).toEqual([{ event: "delta", data: { text: "译文" } }]);
   });
 
-  test("handles a \\n\\n separator that falls on a chunk boundary", async () => {
+  test(String.raw`handles a \n\n separator that falls on a chunk boundary`, async () => {
     expect(await collect(['data: {"a":1}\n', '\ndata: {"a":2}\n', "\n"])).toEqual([
       { event: "message", data: { a: 1 } },
       { event: "message", data: { a: 2 } },
@@ -123,7 +128,9 @@ describe("sseEvents", () => {
   test("events before a malformed one are still delivered in order", async () => {
     const seen: SseEvent[] = [];
     const run = (async () => {
-      for await (const ev of sseEvents(body(['data: {"a":1}\n\ndata: {bad\n\n']).stream)) seen.push(ev);
+      for await (const ev of sseEvents(body(['data: {"a":1}\n\ndata: {bad\n\n']).stream)) {
+        seen.push(ev);
+      }
     })();
     await expect(run).rejects.toThrow("the server sent an unreadable event");
     expect(seen).toEqual([{ event: "message", data: { a: 1 } }]);
@@ -141,7 +148,9 @@ describe("sseEvents", () => {
   test("cancels the reader when the consumer throws", async () => {
     const { stream, state } = body(['data: {"a":1}\n\n', 'data: {"a":2}\n\n']);
     const run = (async () => {
-      for await (const _ of sseEvents(stream)) throw new Error("consumer failed");
+      for await (const _ of sseEvents(stream)) {
+        throw new Error("consumer failed");
+      }
     })();
     await expect(run).rejects.toThrow("consumer failed");
     expect(state.cancelled).toBe(1);
@@ -154,13 +163,17 @@ describe("sseEvents", () => {
         if (first) {
           first = false;
           controller.enqueue(encoder.encode('data: {"a":1}\n\n'));
-        } else controller.error(new Error("connection reset"));
+        } else {
+          controller.error(new Error("connection reset"));
+        }
       },
     });
     const seen: SseEvent[] = [];
     await expect(
       (async () => {
-        for await (const ev of sseEvents(stream)) seen.push(ev);
+        for await (const ev of sseEvents(stream)) {
+          seen.push(ev);
+        }
       })(),
     ).rejects.toThrow("connection reset");
     expect(seen).toEqual([{ event: "message", data: { a: 1 } }]);
@@ -170,7 +183,9 @@ describe("sseEvents", () => {
     // A closed stream ignores cancel(); the point is that the finally block does not throw.
     const { stream } = body(['data: {"a":1}\n\n']);
     const seen: SseEvent[] = [];
-    for await (const ev of sseEvents(stream)) seen.push(ev);
+    for await (const ev of sseEvents(stream)) {
+      seen.push(ev);
+    }
     expect(seen).toEqual([{ event: "message", data: { a: 1 } }]);
   });
 });

@@ -113,13 +113,21 @@ async function generate(
       break;
     }
     const text = utf8.decode(m.piece(token), { stream: true });
-    if (text) post({ type: "delta", req, text });
-    if (produced >= limit) break;
+    if (text) {
+      post({ type: "delta", req, text });
+    }
+    if (produced >= limit) {
+      break;
+    }
     m.decodeOne(token);
     await tick();
   }
-  if (cancelled.has(req)) return;
-  if (epoch !== started) throw new Error("the model was unloaded during the generation");
+  if (cancelled.has(req)) {
+    return;
+  }
+  if (epoch !== started) {
+    throw new Error("the model was unloaded during the generation");
+  }
 
   const generationMs = performance.now() - generationStart;
   post({
@@ -138,7 +146,7 @@ async function generate(
 self.onmessage = (event: MessageEvent<WorkerRequest>) => {
   const msg = event.data;
   switch (msg.type) {
-    case "load":
+    case "load": {
       epoch++;
       exclusive(msg.req, () => {
         unload();
@@ -147,29 +155,39 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         post({ type: "ok", req: msg.req });
       });
       break;
-    case "unload":
-      if (msg.model === modelNo) epoch++;
+    }
+    case "unload": {
+      if (msg.model === modelNo) {
+        epoch++;
+      }
       exclusive(msg.req, () => {
-        if (msg.model === modelNo) unload();
+        if (msg.model === modelNo) {
+          unload();
+        }
         post({ type: "ok", req: msg.req });
       });
       break;
+    }
     case "count": {
       const { image } = msg;
       if (image) {
         // Counting an image means decoding and scaling it, and the first one loads the encoder: that
         // waits its turn like a generation, which the caller has the queue slot for anyway.
         exclusive(msg.req, () => {
-          if (!model || msg.model !== modelNo) throw new Error("the model is not loaded");
+          if (!model || msg.model !== modelNo) {
+            throw new Error("the model is not loaded");
+          }
           const prompt = model.imagePrompt(msg.content, image);
-          const tokens = prompt.tokens;
+          const { tokens } = prompt;
           prompt.free();
           post({ type: "count", req: msg.req, tokens });
         });
         break;
       }
       try {
-        if (!model || msg.model !== modelNo) throw new Error("the model is not loaded");
+        if (!model || msg.model !== modelNo) {
+          throw new Error("the model is not loaded");
+        }
         post({ type: "count", req: msg.req, tokens: model.tokenize(msg.content).length });
       } catch (e) {
         postError(msg.req, e);
@@ -181,8 +199,12 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       active.add(msg.req);
       exclusive(msg.req, async () => {
         try {
-          if (cancelled.has(msg.req)) return;
-          if (!model || msg.model !== modelNo || epoch !== started) throw new Error("the model is not loaded");
+          if (cancelled.has(msg.req)) {
+            return;
+          }
+          if (!model || msg.model !== modelNo || epoch !== started) {
+            throw new Error("the model is not loaded");
+          }
           await generate(model, started, msg.req, msg.content, msg.maxTokens, msg.image);
         } finally {
           active.delete(msg.req);
@@ -191,8 +213,11 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
       });
       break;
     }
-    case "cancel":
-      if (active.has(msg.req)) cancelled.add(msg.req);
+    case "cancel": {
+      if (active.has(msg.req)) {
+        cancelled.add(msg.req);
+      }
       break;
+    }
   }
 };

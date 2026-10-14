@@ -20,7 +20,9 @@ const form = (over: Partial<FormValues> = {}): FormValues => ({
   ...over,
 });
 const bodyOf = (r: ReturnType<typeof buildRequest>) => {
-  if (!("body" in r)) throw new Error("expected a body");
+  if (!("body" in r)) {
+    throw new Error("expected a body");
+  }
   return r.body;
 };
 
@@ -53,6 +55,7 @@ describe("buildImageRequest", () => {
     });
     expect(bodyOf(buildImageRequest(image, "ja", form()))).toMatchObject({ source_lang: "ja" });
   });
+
   test("glossary and constraints are sent with it, genre never", () => {
     const body = bodyOf(
       buildImageRequest(image, undefined, form({ glossary: "拉面 = ramen", hard: "a\nb", soft: "c", genre: "菜单" })),
@@ -61,6 +64,7 @@ describe("buildImageRequest", () => {
     expect(body).not.toHaveProperty("genre");
     expect(body).not.toHaveProperty("text");
   });
+
   test("a malformed glossary stops the request", () => {
     expect(buildImageRequest(image, undefined, form({ glossary: "no separator" }))).toHaveProperty("glossaryProblem");
   });
@@ -75,6 +79,7 @@ describe("buildRequest", () => {
       stream: true,
     });
   });
+
   test("source_lang is sent only when the selection has one", () => {
     expect(bodyOf(buildRequest(CHAT_MODEL, undefined, form()))).not.toHaveProperty("source_lang");
     expect(bodyOf(buildRequest(DOCUMENT_MODEL, "zh", form({ targetLang: "en" })))).toMatchObject({
@@ -83,9 +88,11 @@ describe("buildRequest", () => {
     });
     expect(bodyOf(buildRequest(CHAT_MODEL, "en", form()))).toMatchObject({ source_lang: "en" });
   });
+
   test("the text is sent untrimmed", () => {
     expect(bodyOf(buildRequest(CHAT_MODEL, undefined, form({ text: "  hi\n" }))).text).toBe("  hi\n");
   });
+
   test("glossary, constraints and genre go to the chat model", () => {
     const body = bodyOf(
       buildRequest(
@@ -105,6 +112,7 @@ describe("buildRequest", () => {
       genre: "novel",
     });
   });
+
   test("a lone genre is not sent, with each kind of option it is", () => {
     expect(bodyOf(buildRequest(CHAT_MODEL, undefined, form({ genre: "novel" })))).not.toHaveProperty("genre");
     for (const extra of [{ glossary: "a=b" }, { hard: "x" }, { soft: "x" }]) {
@@ -114,9 +122,11 @@ describe("buildRequest", () => {
       );
     }
   });
+
   test("a blank glossary adds no glossary key", () => {
     expect(bodyOf(buildRequest(CHAT_MODEL, undefined, form({ glossary: " \n" })))).not.toHaveProperty("glossary");
   });
+
   test("the document model never gets options, even malformed ones", () => {
     const r = buildRequest(
       DOCUMENT_MODEL,
@@ -131,6 +141,7 @@ describe("buildRequest", () => {
       source_lang: "zh",
     });
   });
+
   test("a malformed glossary stops the request and reports the line", () => {
     expect(buildRequest(CHAT_MODEL, undefined, form({ glossary: "a=b\nno equals" }))).toEqual({
       glossaryProblem: { line: 2, kind: "format" },
@@ -139,6 +150,7 @@ describe("buildRequest", () => {
       glossaryProblem: { line: 2, kind: "duplicate", term: "a" },
     });
   });
+
   test("__proto__ stays a glossary term in the serialized body", () => {
     const body = bodyOf(buildRequest(CHAT_MODEL, undefined, form({ glossary: "__proto__ = x" })));
     expect(JSON.parse(JSON.stringify(body)).glossary).toEqual(JSON.parse('{"__proto__":"x"}'));

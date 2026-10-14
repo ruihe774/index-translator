@@ -37,9 +37,13 @@ async function answer(request: WorkerRequest): Promise<WorkerReply> {
       pdf = new Uint8Array(request.open);
       return { id, ok: true };
     }
-    if (!inspector || !pdf) throw new Error("no document is open");
+    if (!inspector || !pdf) {
+      throw new Error("no document is open");
+    }
     const result = inspector.processPdf(pdf, { pages: [request.page] });
-    if (request.page < 1 || request.page > result.pageCount) throw new Error(`there is no page ${request.page}`);
+    if (request.page < 1 || request.page > result.pageCount) {
+      throw new Error(`there is no page ${request.page}`);
+    }
     return { id, markdown: result.markdown ?? "", needsOcr: result.pagesNeedingOcr.includes(request.page) };
   } catch (e) {
     return { id, error: e instanceof Error ? e.message : String(e) };

@@ -160,7 +160,7 @@ describe("SlotQueue", () => {
 describe("fixtures", () => {
   test("the essay document exceeds 16K letters and every paragraph is checkable", async () => {
     const en = await englishEssays();
-    expect(countLetters(en.text)).toBeGreaterThanOrEqual(16000);
+    expect(countLetters(en.text)).toBeGreaterThanOrEqual(16_000);
     expect(en.markers.every((group) => group.length > 0)).toBe(true);
     const all = en.markers.flat();
     expect(new Set(all).size).toBe(all.length);

@@ -276,7 +276,9 @@ for (const scheme of ["light", "dark"] as const) {
         return (Math.max(a, b) + 0.05) / (Math.min(a, b) + 0.05);
       });
     });
-    for (const r of ratios) expect(r).toBeGreaterThanOrEqual(4.5);
+    for (const r of ratios) {
+      expect(r).toBeGreaterThanOrEqual(4.5);
+    }
   });
 }
 

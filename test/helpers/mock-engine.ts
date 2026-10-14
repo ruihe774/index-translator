@@ -101,7 +101,9 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
   const exited = new Promise<string | undefined>((resolve) => (finish = resolve));
   const gone = new AbortController();
   const end = (reason: string | undefined) => {
-    if (model.stopped) return;
+    if (model.stopped) {
+      return;
+    }
     model.stopped = true;
     gone.abort();
     finish(reason);
@@ -115,20 +117,28 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
       signal.addEventListener("abort", wake);
       await Promise.race([p, aborted]).finally(() => signal.removeEventListener("abort", wake));
     }
-    if (model.stopped) throw new EngineError("generation failed: the model was unloaded during the generation");
+    if (model.stopped) {
+      throw new EngineError("generation failed: the model was unloaded during the generation");
+    }
     signal.throwIfAborted();
   }
 
   const model: FakeModel = {
     exited,
     stopped: false,
-    stop: () => end(undefined),
+    stop: () => end(),
     kill: (reason = "the engine thread exited") => end(reason),
     // eslint-disable-next-line @typescript-eslint/require-await -- a refusal rejects, as the real engine does, rather than throwing
     async countTokens(content, image) {
-      if (model.stopped) throw new EngineError("the model is not loaded");
-      if (image && mock.imageFailWith) throw new ImageInputError(mock.imageFailWith);
-      if (image && mock.imageUnavailable) throw new ImageUnavailableError(mock.imageUnavailable);
+      if (model.stopped) {
+        throw new EngineError("the model is not loaded");
+      }
+      if (image && mock.imageFailWith) {
+        throw new ImageInputError(mock.imageFailWith);
+      }
+      if (image && mock.imageUnavailable) {
+        throw new ImageUnavailableError(mock.imageUnavailable);
+      }
       return Array.from(content).length + TEMPLATE.length + (image ? IMAGE_TOKENS : 0);
     },
     async *generate(prompt, maxTokens, client, image): AsyncGenerator<GenerationEvent> {
@@ -144,7 +154,9 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
           yield { type: "delta", text };
         }
         played = true;
-        if (failWith) throw new EngineError(`generation failed: ${failWith}`);
+        if (failWith) {
+          throw new EngineError(`generation failed: ${failWith}`);
+        }
         yield {
           type: "done",
           finishReason,
@@ -152,7 +164,9 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
           timings: { prompt_ms: 12, generation_ms: 100, tokens_per_second: 70.12 },
         };
       } finally {
-        if (!played && !model.stopped) hooks.onAbort?.();
+        if (!played && !model.stopped) {
+          hooks.onAbort?.();
+        }
         hooks.onEnd?.();
       }
     },
@@ -161,9 +175,13 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
 }
 
 export const launcher: Launcher = async (model) => {
-  if (mock.failLaunch) throw new EngineError(mock.failLaunch);
+  if (mock.failLaunch) {
+    throw new EngineError(mock.failLaunch);
+  }
   mock.launches.push(model.id);
-  while (!mock.ready) await Bun.sleep(10);
+  while (!mock.ready) {
+    await Bun.sleep(10);
+  }
   return fakeModel({
     onStart: (prompt, maxTokens, image) => mock.requests.push({ prompt, maxTokens, ...(image ? { image } : {}) }),
     onAbort: () => mock.aborted++,
@@ -171,11 +189,13 @@ export const launcher: Launcher = async (model) => {
 };
 
 /** A tenth of a second of silence: 22.05 kHz, mono, 16-bit PCM, as the speech engine answers. */
-export function silentWav(seconds = 0.1, rate = 22050): ArrayBuffer {
+export function silentWav(seconds = 0.1, rate = 22_050): ArrayBuffer {
   const samples = Math.round(rate * seconds);
   const view = new DataView(new ArrayBuffer(44 + samples * 2));
   const ascii = (at: number, s: string) => {
-    for (let i = 0; i < s.length; i++) view.setUint8(at + i, s.charCodeAt(i));
+    for (let i = 0; i < s.length; i++) {
+      view.setUint8(at + i, s.charCodeAt(i));
+    }
   };
   ascii(0, "RIFF");
   view.setUint32(4, 36 + samples * 2, true);
@@ -243,7 +263,9 @@ export const speechLauncher: SpeechLauncher = () => ({
   // eslint-disable-next-line @typescript-eslint/require-await -- a bad sample rejects, as the real engine does, rather than throwing
   async addVoice(name, wav) {
     validateSample(wav);
-    if (mockSpeech.separationFailWith) throw new SeparationError(mockSpeech.separationFailWith);
+    if (mockSpeech.separationFailWith) {
+      throw new SeparationError(mockSpeech.separationFailWith);
+    }
     const voice = { id: `upload-${mockSpeech.voices.length}`, name };
     mockSpeech.voices.push(voice);
     return voice;
@@ -268,7 +290,9 @@ export const speechLauncher: SpeechLauncher = () => ({
           mockSpeech.aborted++;
           signal.throwIfAborted();
         }
-        if (mockSpeech.failWith) throw new SpeechError(mockSpeech.failWith);
+        if (mockSpeech.failWith) {
+          throw new SpeechError(mockSpeech.failWith);
+        }
         mockSpeech.state = "ready";
         return silentWav(mockSpeech.audioSeconds);
       } finally {
@@ -276,7 +300,9 @@ export const speechLauncher: SpeechLauncher = () => ({
         done();
       }
     })();
-    if (!mockSpeech.ignoreAbort) return work;
+    if (!mockSpeech.ignoreAbort) {
+      return work;
+    }
     return new Promise((resolve, reject) => {
       signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       work.then(resolve, reject);
@@ -315,8 +341,12 @@ export function config(overrides: Partial<Config> = {}): Config {
 }
 
 export async function waitReady(app: App): Promise<void> {
-  for (let i = 0; i < 100 && app.engine.state !== "ready"; i++) await Bun.sleep(20);
-  if (app.engine.state !== "ready") throw new Error(`engine not ready: ${app.engine.state}`);
+  for (let i = 0; i < 100 && app.engine.state !== "ready"; i++) {
+    await Bun.sleep(20);
+  }
+  if (app.engine.state !== "ready") {
+    throw new Error(`engine not ready: ${app.engine.state}`);
+  }
 }
 
 /** POST JSON (or a raw string body) to `base + path`. */
@@ -339,7 +369,9 @@ export async function readSse(res: Response): Promise<SseEvent[]> {
   for (const frame of (await res.text()).split("\n\n")) {
     const event = /^event: (.*)$/m.exec(frame)?.[1];
     const data = /^data: (.*)$/m.exec(frame)?.[1];
-    if (event && data) events.push({ event, data: JSON.parse(data) });
+    if (event && data) {
+      events.push({ event, data: JSON.parse(data) });
+    }
   }
   return events;
 }

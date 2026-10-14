@@ -12,12 +12,12 @@ describe("describeError: input_too_long", () => {
         {
           code: "input_too_long",
           message: "the input exceeds the token limit",
-          details: { prompt_tokens: 12345, max_input_tokens: 4096 },
+          details: { prompt_tokens: 12_345, max_input_tokens: 4096 },
         },
         413,
       ),
     ).toBe(
-      `The text is too long for one translation: ${fmt(12345)} tokens, and the limit is ${fmt(4096)}. Shorten it or translate it in parts.`,
+      `The text is too long for one translation: ${fmt(12_345)} tokens, and the limit is ${fmt(4096)}. Shorten it or translate it in parts.`,
     );
   });
 
@@ -67,7 +67,7 @@ describe("describeError: engine_unavailable", () => {
 
 describe("describeError: body_too_large", () => {
   test("with details", () => {
-    expect(describeError({ code: "body_too_large", details: { limit: 4194304 } }, 413)).toBe(
+    expect(describeError({ code: "body_too_large", details: { limit: 4_194_304 } }, 413)).toBe(
       "The request is too large to send.",
     );
   });
@@ -156,7 +156,7 @@ describe("describeError: fallbacks", () => {
   });
 
   test("with no body and no status, says something went wrong", () => {
-    expect(describeError(undefined)).toBe("Something went wrong.");
+    expect(describeError()).toBe("Something went wrong.");
     expect(describeError({})).toBe("Something went wrong.");
   });
 

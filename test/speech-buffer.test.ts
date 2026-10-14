@@ -25,7 +25,9 @@ function setup(lines: number[], seconds = 10) {
   const buffer = new SpeechBuffer(synthesize, () => Promise.resolve({ duration: seconds } as AudioBuffer));
   buffer.open(segments, { lang: "en", voice: "v", speed: 1 });
   const flush = async () => {
-    for (let i = 0; i < 5; i++) await Bun.sleep(0);
+    for (let i = 0; i < 5; i++) {
+      await Bun.sleep(0);
+    }
   };
   /** The requests nobody aborted and nobody answered: at most one, if the buffer keeps its word. */
   const live = () => requests.filter((r) => !r.signal.aborted && !answered.has(r));
@@ -34,7 +36,9 @@ function setup(lines: number[], seconds = 10) {
   const answer = async (count = 1) => {
     for (let n = 0; n < count; n++) {
       const [r] = live();
-      if (!r) return;
+      if (!r) {
+        return;
+      }
       answered.add(r);
       r.resolve();
       await flush();
@@ -66,13 +70,13 @@ describe("keeping the engine busy", () => {
     t.buffer.aim(0);
     expect(t.asked()).toEqual([0]);
     await t.answer();
-    expect(t.live().length).toBe(1);
-    expect(t.requests.length).toBe(2);
+    expect(t.live()).toHaveLength(1);
+    expect(t.requests).toHaveLength(2);
     await t.answer(40);
     // It stops by itself once the stretch ahead of the reader is there.
     expect(t.live()).toEqual([]);
     expect(t.requests.every((r) => !r.signal.aborted)).toBe(true);
-    expect(t.requests.length).toBe(Math.ceil(AHEAD_SECONDS / 10));
+    expect(t.requests).toHaveLength(Math.ceil(AHEAD_SECONDS / 10));
   });
 
   test("a long piece after a short one is asked for when the short one arrives, not when it is played", async () => {
@@ -89,7 +93,7 @@ describe("keeping the engine busy", () => {
     await t.answer(40);
     const before = t.requests.length;
     t.buffer.aim(1);
-    expect(t.requests.length).toBe(before + 1);
+    expect(t.requests).toHaveLength(before + 1);
     expect(t.index(t.requests.at(-1)!)).toBe(before);
   });
 });
@@ -120,7 +124,7 @@ describe("the order", () => {
     t.buffer.aim(2);
     t.buffer.aim(0);
     await t.flush();
-    expect(t.requests.length).toBe(before);
+    expect(t.requests).toHaveLength(before);
     expect(await t.buffer.take(0)).toEqual({ duration: 10 } as AudioBuffer);
   });
 });
@@ -163,7 +167,7 @@ describe("stale requests", () => {
     t.buffer.aim(2);
     t.buffer.aim(2);
     t.buffer.aim(2);
-    expect(t.requests.length).toBe(1);
+    expect(t.requests).toHaveLength(1);
     expect(t.requests[0]!.signal.aborted).toBe(false);
   });
 
@@ -208,7 +212,7 @@ describe("take", () => {
     await t.flush();
     await expect(t.buffer.take(1)).rejects.toBe(boom);
     // Nothing beyond the failed piece can be reached by reading on, so nothing there is made.
-    expect(t.requests.length).toBe(2);
+    expect(t.requests).toHaveLength(2);
   });
 
   test("when the piece the reader waits for fails, nothing more is asked for", async () => {
@@ -219,7 +223,7 @@ describe("take", () => {
     t.requests[0]!.reject(boom);
     await expect(taken).rejects.toBe(boom);
     await t.flush();
-    expect(t.requests.length).toBe(1);
+    expect(t.requests).toHaveLength(1);
   });
 
   test("close refuses the pieces waited for and aborts the request", async () => {
@@ -230,7 +234,7 @@ describe("take", () => {
     await expect(taken).rejects.toThrow("stopped");
     expect(t.requests[0]!.signal.aborted).toBe(true);
     t.buffer.aim(0);
-    expect(t.requests.length).toBe(1);
+    expect(t.requests).toHaveLength(1);
   });
 });
 

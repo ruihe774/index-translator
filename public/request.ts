@@ -63,16 +63,30 @@ function build(
   sourceLang: string | undefined,
   v: Omit<FormValues, "text">,
 ): RequestResult {
-  if (sourceLang) body.source_lang = sourceLang;
-  if (body.model !== CHAT_MODEL) return { body };
+  if (sourceLang) {
+    body.source_lang = sourceLang;
+  }
+  if (body.model !== CHAT_MODEL) {
+    return { body };
+  }
 
   const { glossary, error } = parseGlossary(v.glossary);
-  if (error) return { glossaryProblem: error };
+  if (error) {
+    return { glossaryProblem: error };
+  }
   const hasGlossary = Object.keys(glossary).length > 0;
-  if (hasGlossary) body.glossary = glossary;
-  if (v.hard.trim()) body.hard_constraints = lines(v.hard);
-  if (v.soft.trim()) body.soft_constraints = lines(v.soft);
+  if (hasGlossary) {
+    body.glossary = glossary;
+  }
+  if (v.hard.trim()) {
+    body.hard_constraints = lines(v.hard);
+  }
+  if (v.soft.trim()) {
+    body.soft_constraints = lines(v.soft);
+  }
   // Genre is sent only with a glossary or constraints; alone the backend ignores it (see hasOptions).
-  if (v.genre.trim() && (hasGlossary || body.hard_constraints || body.soft_constraints)) body.genre = v.genre.trim();
+  if (v.genre.trim() && (hasGlossary || body.hard_constraints || body.soft_constraints)) {
+    body.genre = v.genre.trim();
+  }
   return { body };
 }

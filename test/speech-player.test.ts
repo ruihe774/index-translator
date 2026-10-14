@@ -37,7 +37,9 @@ class FakeAudioContext {
   /** The system changes the context's state (iOS: "interrupted"). */
   setState(state: string) {
     this.state = state;
-    for (const l of this.listeners) l();
+    for (const l of this.listeners) {
+      l();
+    }
   }
   constructor() {
     FakeAudioContext.last = this;
@@ -95,7 +97,9 @@ function makeSynth(auto = false) {
       };
       signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       requests.push(req);
-      if (auto) req.resolve();
+      if (auto) {
+        req.resolve();
+      }
     });
   return { requests, synthesize };
 }
@@ -106,7 +110,9 @@ const SEGMENTS = [seg("a1", 0), seg("a2", 0), seg("b1", 2), seg("c1", 4)];
 const SETTINGS: SpeechSettings = { lang: "en", voice: "v1", speed: 1 };
 
 const flush = async () => {
-  for (let i = 0; i < 5; i++) await Bun.sleep(0);
+  for (let i = 0; i < 5; i++) {
+    await Bun.sleep(0);
+  }
 };
 const sleep = (ms: number) => Bun.sleep(ms);
 
@@ -137,9 +143,9 @@ describe("audio that arrives decoded (QOA)", () => {
   test("is put into a buffer of its own, one array per channel, and played like a decoded WAV", async () => {
     const synthesize = () =>
       Promise.resolve({
-        sampleRate: 22050,
+        sampleRate: 22_050,
         channels: 2,
-        samples: Int16Array.of(0x4000, -0x8000, 0, 0x7fff),
+        samples: Int16Array.of(0x40_00, -0x80_00, 0, 0x7f_ff),
       });
     const player = new SpeechPlayer(synthesize, {
       onState() {},
@@ -152,10 +158,10 @@ describe("audio that arrives decoded (QOA)", () => {
     await flush();
     expect(player.state).toBe("playing");
     const buffer = FakeAudioContext.last.sources[0]!.buffer as ReturnType<FakeAudioContext["createBuffer"]>;
-    expect(buffer).toMatchObject({ channels: 2, length: 2, sampleRate: 22050 });
+    expect(buffer).toMatchObject({ channels: 2, length: 2, sampleRate: 22_050 });
     expect(buffer.data.map((c) => [...c])).toEqual([
       [0.5, 0],
-      [-1, 0x7fff / 0x8000],
+      [-1, 0x7f_ff / 0x80_00],
     ]);
   });
 });
@@ -212,7 +218,7 @@ describe("starting and the state", () => {
     expect(t.segments.at(-1)).toBeNull();
     const n = t.segments.length;
     t.player.stop();
-    expect(t.segments.length).toBe(n);
+    expect(t.segments).toHaveLength(n);
     expect(t.ctx().sources[0]!.stopped).toBe(true);
   });
 
@@ -253,8 +259,8 @@ describe("the play state between pieces", () => {
     t.ctx().sources[0]!.end();
     await flush();
     expect(t.player.state).toBe("playing");
-    expect(t.states.length).toBe(before);
-    expect(t.ctx().sources.length).toBe(3); // a1, a2 (now playing) and a3 already lined up behind it
+    expect(t.states).toHaveLength(before);
+    expect(t.ctx().sources).toHaveLength(3); // a1, a2 (now playing) and a3 already lined up behind it
   });
 
   test("the silence between pieces is scheduled on the audio clock", async () => {
@@ -293,7 +299,7 @@ describe("the play state between pieces", () => {
     t.ctx().sources[0]!.end();
     t.requests[1]!.resolve();
     await flush();
-    expect(t.ctx().sources.length).toBe(2);
+    expect(t.ctx().sources).toHaveLength(2);
     expect(t.segments.at(-1)).toBe(SEGMENTS[1]);
   });
 
@@ -344,7 +350,7 @@ describe("stale work after a cancel", () => {
     t.player.stop();
     first.end();
     await flush();
-    expect(t.requests.length).toBe(asked);
+    expect(t.requests).toHaveLength(asked);
     expect(t.player.state).toBe("idle");
   });
 
@@ -358,7 +364,7 @@ describe("stale work after a cancel", () => {
     expect(old.signal.aborted).toBe(true);
     t.requests[1]!.resolve();
     await flush();
-    expect(t.ctx().sources.length).toBe(1);
+    expect(t.ctx().sources).toHaveLength(1);
     expect(t.segments.filter(Boolean).map((s) => s!.text)).toEqual(["new"]);
   });
 
@@ -385,14 +391,14 @@ describe("jumping", () => {
     expect(t.player.position()).toEqual({ block: 2, blocks: 3 });
     await flush();
     expect(t.player.state).toBe("playing");
-    expect(t.states.length).toBe(states);
-    expect(t.requests.length).toBe(4);
+    expect(t.states).toHaveLength(states);
+    expect(t.requests).toHaveLength(4);
     // And back: the audio already played was kept.
     expect(t.player.jump(-1)).toBe(true);
     await flush();
     expect(t.player.state).toBe("playing");
     expect(t.segments.at(-1)).toBe(SEGMENTS[0]);
-    expect(t.requests.length).toBe(4);
+    expect(t.requests).toHaveLength(4);
   });
 
   test("a jump to a block that is not there shows it, stops the request in flight and asks for it", async () => {
@@ -450,7 +456,7 @@ describe("jumping", () => {
     t.player.jump(1);
     await flush();
     expect(t.player.state).toBe("playing");
-    expect(t.ctx().calls.filter((c) => c === "resume").length).toBe(2);
+    expect(t.ctx().calls.filter((c) => c === "resume")).toHaveLength(2);
   });
 
   test("stop after a jump stops the request made for it", async () => {
@@ -462,7 +468,7 @@ describe("jumping", () => {
     t.player.stop();
     await flush();
     expect(t.requests.every((r) => r.signal.aborted)).toBe(true);
-    expect(t.requests.length).toBe(asked);
+    expect(t.requests).toHaveLength(asked);
     expect(t.player.state).toBe("idle");
     expect(t.errors).toEqual([]);
   });
@@ -520,10 +526,10 @@ describe("update (voice or speed)", () => {
     expect(inFlight.signal.aborted).toBe(true);
     expect(t.player.state).toBe("loading");
     await sleep(UPDATE_SETTLE_MS / 2);
-    expect(t.requests.length).toBe(asked);
+    expect(t.requests).toHaveLength(asked);
     await sleep(UPDATE_SETTLE_MS);
     const fresh = t.requests.slice(asked).filter((r) => r.text === "a1");
-    expect(fresh.length).toBe(1);
+    expect(fresh).toHaveLength(1);
     expect(fresh[0]!.settings).toEqual({ ...SETTINGS, speed: 1.5 });
   });
 
@@ -574,7 +580,7 @@ describe("update (voice or speed)", () => {
     t.player.update({ speed: 2 });
     t.player.stop();
     await sleep(UPDATE_SETTLE_MS + 100);
-    expect(t.requests.length).toBe(asked);
+    expect(t.requests).toHaveLength(asked);
   });
 });
 
@@ -587,7 +593,7 @@ describe("pause and resume", () => {
     expect(t.player.state).toBe("paused");
     expect(t.ctx().calls.at(-1)).toBe("suspend");
     t.player.pause(); // again: nothing new
-    expect(t.states.filter((s) => s === "paused").length).toBe(1);
+    expect(t.states.filter((s) => s === "paused")).toHaveLength(1);
     t.player.resume();
     expect(t.player.state).toBe("playing");
     t.player.resume();

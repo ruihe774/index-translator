@@ -12,10 +12,16 @@ type Env = Record<string, string | undefined>;
 
 function int(env: Env, name: string, fallback: number, { min = 0, max = Infinity } = {}): number {
   const raw = env[name];
-  if (raw === undefined || raw === "") return fallback;
+  if (raw === undefined || raw === "") {
+    return fallback;
+  }
   const n = Number(raw);
-  if (!Number.isInteger(n) || n < min) throw new Error(`${name} must be an integer of at least ${min}, got "${raw}"`);
-  if (n > max) throw new Error(`${name} must be at most ${max}, got "${raw}"`);
+  if (!Number.isInteger(n) || n < min) {
+    throw new Error(`${name} must be an integer of at least ${min}, got "${raw}"`);
+  }
+  if (n > max) {
+    throw new Error(`${name} must be at most ${max}, got "${raw}"`);
+  }
   return n;
 }
 
@@ -105,12 +111,16 @@ export function parseArgs(argv: readonly string[]): Env {
     const eq = arg.indexOf("=");
     const flag = arg.startsWith("--") && eq > 0 ? arg.slice(0, eq) : arg;
     const name = byFlag.get(flag);
-    if (!name) throw new Error(`unknown argument "${arg}"; settings are ${[...byFlag.keys()].join(", ")}`);
+    if (!name) {
+      throw new Error(`unknown argument "${arg}"; settings are ${[...byFlag.keys()].join(", ")}`);
+    }
     if (arg !== flag) {
       out[name] = arg.slice(eq + 1);
     } else {
       const value = argv[++i];
-      if (value === undefined) throw new Error(`${flag} needs a value`);
+      if (value === undefined) {
+        throw new Error(`${flag} needs a value`);
+      }
       out[name] = value;
     }
   }
@@ -121,12 +131,16 @@ export function parseArgs(argv: readonly string[]): Env {
 export function loadConfig(environment: Env = Bun.env, argv: readonly string[] = []): Config {
   const env: Env = { ...environment, ...parseArgs(argv) };
   const defaultModel = env.DEFAULT_MODEL ?? DEFAULT_MODEL_ID;
-  if (!findModel(defaultModel)) throw new Error(`DEFAULT_MODEL "${defaultModel}" is not a known model`);
-  const ctxSize = int(env, "CTX_SIZE", 65536, { min: 1 });
-  const maxInputTokens = int(env, "MAX_INPUT_TOKENS", 28000, { min: 1 });
+  if (!findModel(defaultModel)) {
+    throw new Error(`DEFAULT_MODEL "${defaultModel}" is not a known model`);
+  }
+  const ctxSize = int(env, "CTX_SIZE", 65_536, { min: 1 });
+  const maxInputTokens = int(env, "MAX_INPUT_TOKENS", 28_000, { min: 1 });
   // The prompt, the margin and at least one output token must fit: MAX_INPUT_TOKENS + CONTEXT_MARGIN < CTX_SIZE.
   const largestInput = ctxSize - CONTEXT_MARGIN - 1;
-  if (largestInput < 1) throw new Error(`CTX_SIZE must be at least ${CONTEXT_MARGIN + 2}, got ${ctxSize}`);
+  if (largestInput < 1) {
+    throw new Error(`CTX_SIZE must be at least ${CONTEXT_MARGIN + 2}, got ${ctxSize}`);
+  }
   if (maxInputTokens > largestInput) {
     throw new Error(
       `MAX_INPUT_TOKENS must be at most ${largestInput} for CTX_SIZE=${ctxSize} (MAX_INPUT_TOKENS + ${CONTEXT_MARGIN} must be less than CTX_SIZE, leaving room for output), got ${maxInputTokens}`,
@@ -139,7 +153,7 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
   allowedHosts.forEach(parseHostRule);
   return {
     host: env.HOST ?? "127.0.0.1",
-    port: int(env, "PORT", 3000, { max: 65535 }),
+    port: int(env, "PORT", 3000, { max: 65_535 }),
     // Resolved so a relative path, a trailing slash or "./" cannot break the static traversal check.
     publicDir: resolve(env.PUBLIC_DIR || join(root, "public")),
     specPath: join(root, "docs", "openapi.yaml"),

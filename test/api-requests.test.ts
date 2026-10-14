@@ -280,7 +280,7 @@ describe("request body size", () => {
 
   test("a body of exactly 4 MiB (by Content-Length) is parsed", async () => {
     const body = paddedTo(4 * MiB);
-    expect(new TextEncoder().encode(body).length).toBe(4 * MiB);
+    expect(new TextEncoder().encode(body)).toHaveLength(4 * MiB);
     const res = await post("/api/v1/tokenize", body);
     expect(res.status).toBe(200);
     await res.text();
@@ -299,7 +299,9 @@ describe("request body size", () => {
     let offset = 0;
     return new ReadableStream({
       pull(controller) {
-        if (offset >= bytes.length) return controller.close();
+        if (offset >= bytes.length) {
+          return controller.close();
+        }
         controller.enqueue(bytes.subarray(offset, offset + chunkSize));
         offset += chunkSize;
       },
@@ -447,7 +449,7 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
     const { error } = await json(res);
     expect(error.code).toBe("input_too_long");
     expect(error.details).toEqual({ prompt_tokens: 401, max_input_tokens: 400 });
-    expect(mock.requests.length).toBe(before);
+    expect(mock.requests).toHaveLength(before);
   });
 
   test("tokenize ignores stream and max_output_tokens and always answers JSON", async () => {
@@ -606,9 +608,9 @@ describe("static files", () => {
 describe("error envelope", () => {
   function expectEnvelope(body: any, code: string): void {
     expect(Object.keys(body)).toEqual(["error"]);
-    expect(typeof body.error.code).toBe("string");
+    expect(body.error.code).toBeTypeOf("string");
     expect(body.error.code).toBe(code);
-    expect(typeof body.error.message).toBe("string");
+    expect(body.error.message).toBeTypeOf("string");
   }
 
   test("every API error is application/json with {error:{code,message}}", async () => {
@@ -735,7 +737,9 @@ describe("resumable streams", () => {
       const events: string[] = [];
       for (;;) {
         const { done } = await reader.read();
-        if (done) break;
+        if (done) {
+          break;
+        }
       }
       expect(events).toEqual([]);
       const plain = await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true });

@@ -59,18 +59,26 @@ function join<T extends Uint8Array | Int16Array>(parts: T[]): T {
 /** Decodes the frames of `stream` that are complete. Throws on anything that is not QOA. */
 function decodeWhole(stream: Stream): void {
   if (!stream.header) {
-    if (stream.pending.length < FILE_HEADER) return;
+    if (stream.pending.length < FILE_HEADER) {
+      return;
+    }
     stream.header = stream.pending.slice(0, FILE_HEADER);
     stream.pending = stream.pending.slice(FILE_HEADER);
   }
   let end = 0;
   while (stream.pending.length - end >= FRAME_HEADER) {
     const size = (stream.pending[end + 6]! << 8) | stream.pending[end + 7]!;
-    if (size < FRAME_HEADER) throw new Error("invalid frame header");
-    if (end + size > stream.pending.length) break;
+    if (size < FRAME_HEADER) {
+      throw new Error("invalid frame header");
+    }
+    if (end + size > stream.pending.length) {
+      break;
+    }
     end += size;
   }
-  if (end === 0) return;
+  if (end === 0) {
+    return;
+  }
   const audio = codec!.decode(join([stream.header, stream.pending.subarray(0, end)]));
   stream.format ??= { sampleRate: audio.sampleRate, channels: audio.channels };
   if (audio.sampleRate !== stream.format.sampleRate || audio.channels !== stream.format.channels) {
@@ -92,7 +100,9 @@ function handle(request: QoaRequest): QoaReply | undefined {
   }
   const stream = streams.get(id);
   // Cancelled or failed: what still arrives for it is dropped.
-  if (!stream) return undefined;
+  if (!stream) {
+    return undefined;
+  }
   try {
     if (request.type === "chunk") {
       stream.pending = stream.pending.length === 0 ? request.bytes : join([stream.pending, request.bytes]);
@@ -100,7 +110,9 @@ function handle(request: QoaRequest): QoaReply | undefined {
       return undefined;
     }
     streams.delete(id);
-    if (!stream.format || stream.pending.length > 0) throw new Error("the stream ended inside a frame or had none");
+    if (!stream.format || stream.pending.length > 0) {
+      throw new Error("the stream ended inside a frame or had none");
+    }
     return { type: "audio", id, ...stream.format, samples: join(stream.parts) };
   } catch (e) {
     streams.delete(id);
@@ -124,9 +136,14 @@ const started = start();
 let last: Promise<void> = started;
 self.addEventListener("message", (event: MessageEvent<QoaRequest>) => {
   last = last.then(() => {
-    if (!codec) return;
+    if (!codec) {
+      return;
+    }
     const reply = handle(event.data);
-    if (reply?.type === "audio") self.postMessage(reply, { transfer: [reply.samples.buffer] });
-    else if (reply) self.postMessage(reply);
+    if (reply?.type === "audio") {
+      self.postMessage(reply, { transfer: [reply.samples.buffer] });
+    } else if (reply) {
+      self.postMessage(reply);
+    }
   });
 });

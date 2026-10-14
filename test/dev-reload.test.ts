@@ -56,8 +56,10 @@ describe("with DEV_RELOAD", () => {
     await Bun.write(join(dir, "app.ts"), "export {};\n");
     const deadline = Date.now() + 3000;
     while (!seen.includes("event: reload") && Date.now() < deadline) {
-      const next = await Promise.race([reader.read(), Bun.sleep(3000).then(() => undefined)]);
-      if (!next || next.done) break;
+      const next = await Promise.race([reader.read(), Bun.sleep(3000).then(() => {})]);
+      if (!next || next.done) {
+        break;
+      }
       seen += decoder.decode(next.value);
     }
     expect(seen).toContain("event: reload");

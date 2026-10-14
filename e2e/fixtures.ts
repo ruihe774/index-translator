@@ -71,7 +71,7 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
     await call("DELETE");
   },
   app: async ({ page, mock }, use) => {
-    void mock; // reset before the page loads
+    mock; // reset before the page loads
     await use(new AppPage(page));
   },
 });

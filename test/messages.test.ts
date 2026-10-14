@@ -42,7 +42,7 @@ describe("selectionMessage", () => {
     ["manual-document-unusable", DOCUMENT_MODEL, true, /^Warning: Index-NativeLong-9B cannot translate this/],
   ];
   for (const [reason, model, warn, pattern] of cases) {
-    test(`${reason}`, () => {
+    test(reason, () => {
       const m = selectionMessage(selection(model, reason, LONG_THRESHOLD_LETTERS + 1));
       expect(m.warn).toBe(warn);
       expect(m.text).toMatch(pattern);
@@ -81,12 +81,15 @@ describe("adviceMessage", () => {
     expect(adviceMessage(base, "auto", "en", "")).toBe("");
     expect(adviceMessage(selection(CHAT_MODEL, "manual"), "auto", "en", "")).toBe("");
   });
+
   test("the same-language warning", () => {
     expect(adviceMessage(base, "en", "en", "")).toBe(SAME_LANGUAGE_WARNING);
   });
+
   test("the language note", () => {
     expect(adviceMessage(base, "auto", "en", "Only three languages.")).toBe("Only three languages.");
   });
+
   test("a selection warning, the same-language warning and the note keep their order", () => {
     const warned = selection(CHAT_MODEL, "long-options", LONG_THRESHOLD_LETTERS + 1);
     expect(adviceMessage(warned, "en", "en", "Note.")).toBe(
@@ -99,6 +102,7 @@ describe("imageAdviceMessage", () => {
   test("nothing to say for the chat model or Automatic", () => {
     expect(imageAdviceMessage(false, "auto", "en", "")).toBe("");
   });
+
   test("the document model was chosen: the chat model is used, and the warnings keep their order", () => {
     expect(imageAdviceMessage(true, "en", "en", "Note.")).toBe(
       `Warning: Index-NativeLong-9B does not translate images. Index-Translate-9B will be used. ${SAME_LANGUAGE_WARNING} Note.`,
@@ -108,6 +112,7 @@ describe("imageAdviceMessage", () => {
 
 describe("healthMessage", () => {
   const queue = { running: false, waiting: 0 };
+
   test("ready with and without a model, and with a queue", () => {
     expect(healthMessage({ status: "ready", model: null, queue })).toEqual({ text: "Engine ready.", loading: false });
     expect(healthMessage({ status: "ready", model: CHAT_MODEL, queue }).text).toBe(
@@ -117,6 +122,7 @@ describe("healthMessage", () => {
       "Engine ready, other-model loaded. 2 waiting in the queue.",
     );
   });
+
   test("loading is the only state that keeps polling", () => {
     expect(healthMessage({ status: "loading", model: null, queue })).toEqual({
       text: "Engine loading a model…",
@@ -153,16 +159,19 @@ describe("resultNotes", () => {
   test("a clean result has no notes", () => {
     expect(resultNotes({ finish_reason: "stop" }, ctx)).toEqual([]);
   });
+
   test("finish_reason length is reported first", () => {
     const notes = resultNotes({ finish_reason: "length" }, ctx);
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain("reached the output limit");
   });
+
   test("lost lines are reported", () => {
     const notes = resultNotes({ finish_reason: "stop" }, { ...ctx, translation: "1\n2" });
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain("3 lines");
   });
+
   test("the Chinese to English document-model warning needs all three conditions", () => {
     const doc = { ...ctx, model: DOCUMENT_MODEL, sourceLang: "zh" } as const;
     expect(resultNotes({ finish_reason: "stop" }, doc)[0]).toContain("Long Chinese-to-English output");
@@ -170,6 +179,7 @@ describe("resultNotes", () => {
     expect(resultNotes({ finish_reason: "stop" }, { ...doc, sourceLang: "ja" })).toEqual([]);
     expect(resultNotes({ finish_reason: "stop" }, { ...doc, targetLang: "ja" })).toEqual([]);
   });
+
   test("all three together keep their order", () => {
     const notes = resultNotes(
       { finish_reason: "length" },
@@ -212,6 +222,7 @@ describe("interruption", () => {
     expect(interruption("", true)).toEqual({ note: null, showCopy: false });
     expect(interruption("", false)).toEqual({ note: null, showCopy: false });
   });
+
   test("partial text is kept with Copy and a note that says why", () => {
     expect(interruption("partial", true)).toEqual({ note: STOPPED_NOTE, showCopy: true });
     expect(interruption("partial", false)).toEqual({ note: INTERRUPTED_NOTE, showCopy: true });

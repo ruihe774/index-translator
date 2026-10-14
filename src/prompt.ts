@@ -21,7 +21,9 @@ const PLACEHOLDER = /（在这里放入需要翻译的完整[^）]*原文）/;
 /** The NativeLong prompt for one whole document. `direction` is one of DOCUMENT_DIRECTIONS. */
 export function buildDocumentPrompt(direction: string, text: string): string {
   const template = DOCUMENT_TEMPLATES[direction];
-  if (!template) throw new Error(`no document template for ${direction}`);
+  if (!template) {
+    throw new Error(`no document template for ${direction}`);
+  }
   // A function replacement keeps "$" sequences in the document text literal.
   return template.replace(PLACEHOLDER, () => text.trim()).trim();
 }
@@ -94,7 +96,9 @@ function constraintLines(items: string[] | undefined, tag: string, accepted: str
   for (const item of items ?? []) {
     for (const raw of item.split("\n")) {
       const line = raw.trim().replace(/^(?:\d+(?:[.)、]\s*|\s+)|[.\s])+/, "");
-      if (!line) continue;
+      if (!line) {
+        continue;
+      }
       out.push(accepted.some((p) => line.startsWith(p)) ? line : tag + line);
     }
   }
@@ -102,7 +106,9 @@ function constraintLines(items: string[] | undefined, tag: string, accepted: str
 }
 
 function isJsonObject(text: string): boolean {
-  if (!text.startsWith("{") || !text.endsWith("}")) return false;
+  if (!text.startsWith("{") || !text.endsWith("}")) {
+    return false;
+  }
   try {
     const v = JSON.parse(text);
     return typeof v === "object" && v !== null && !Array.isArray(v);
@@ -124,12 +130,20 @@ export function buildImagePrompt(input: Partial<Pick<PromptInput, "text">> & Omi
 
   const extras: string[] = [];
   const text = input.text?.trim();
-  if (text) extras.push(`【参考文本/关注内容】\n${text}`);
-  extras.push(...constraintLines(input.hardConstraints, HARD, [HARD]));
-  extras.push(...constraintLines(input.softConstraints, "【软性要求】", [SOFT, "【软性要求】"]));
+  if (text) {
+    extras.push(`【参考文本/关注内容】\n${text}`);
+  }
+  extras.push(
+    ...constraintLines(input.hardConstraints, HARD, [HARD]),
+    ...constraintLines(input.softConstraints, "【软性要求】", [SOFT, "【软性要求】"]),
+  );
   const terms = Object.entries(input.glossary ?? {}).map(([k, v]) => `${k.trim()}→${v.trim()}`);
-  if (terms.length) extras.push(`【专名/术语对照】${terms.join("、")}`);
-  if (!extras.length) return base;
+  if (terms.length) {
+    extras.push(`【专名/术语对照】${terms.join("、")}`);
+  }
+  if (!extras.length) {
+    return base;
+  }
   return `${base}\n\n${extras.join("\n\n")}\n\n只输出翻译结果，不要进行任何解释。`;
 }
 
@@ -141,7 +155,9 @@ export function buildPrompt(input: PromptInput): string {
 
   const constraints = constraintLines(input.hardConstraints, HARD, [HARD]);
   const terms = Object.entries(input.glossary ?? {}).map(([k, v]) => `${k.trim()}→${v.trim()}`);
-  if (terms.length) constraints.push(`${HARD}专名/术语对照: ${terms.join("、")}`);
+  if (terms.length) {
+    constraints.push(`${HARD}专名/术语对照: ${terms.join("、")}`);
+  }
   constraints.push(...constraintLines(input.softConstraints, SOFT, [SOFT, "【软性要求】"]));
 
   if (!constraints.length) {

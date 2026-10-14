@@ -31,11 +31,15 @@ export class VoiceSettings extends HTMLElement {
   #built = false;
 
   connectedCallback() {
-    if (this.#built) return;
+    if (this.#built) {
+      return;
+    }
     this.#built = true;
     const find = <T extends HTMLElement>(selector: string) => {
       const el = this.querySelector<T>(selector);
-      if (!el) throw new Error(`<voice-settings> needs ${selector}`);
+      if (!el) {
+        throw new Error(`<voice-settings> needs ${selector}`);
+      }
       return el;
     };
     this.#voice = find("#voice");
@@ -54,7 +58,9 @@ export class VoiceSettings extends HTMLElement {
   async #loadFile(): Promise<void> {
     const file = this.#file.files?.[0];
     this.#file.value = "";
-    if (!file) return;
+    if (!file) {
+      return;
+    }
     this.#sample(file.name.replace(/\.[^.]*$/, ""), await file.arrayBuffer());
   }
 
@@ -70,7 +76,9 @@ export class VoiceSettings extends HTMLElement {
 
   /** Selects a speed from the list, as stored; anything not offered is ignored. */
   set speed(speed: string | null) {
-    if ([...this.#speed.options].some((o) => o.value === speed)) this.#speed.value = speed as string;
+    if ([...this.#speed.options].some((o) => o.value === speed)) {
+      this.#speed.value = speed as string;
+    }
   }
 
   /** Text under the clone row: progress, the result, or why it failed. */
@@ -86,7 +94,9 @@ export class VoiceSettings extends HTMLElement {
     const before = this.#voice.value;
     const wanted = [before, remembered].find((id) => voices.some((v) => v.id === id));
     this.#voice.replaceChildren(...voices.map((v) => new Option(v.name, v.id)));
-    if (wanted) this.#voice.value = wanted;
+    if (wanted) {
+      this.#voice.value = wanted;
+    }
     return this.#voice.value !== before && this.#voice.value !== "";
   }
 
@@ -102,8 +112,12 @@ export class VoiceSettings extends HTMLElement {
 
   async #toggleRecording() {
     const recorder = this.#recorder;
-    if (recorder.recording) return this.#finishRecording();
-    if (recorder.starting || recorder.stopping) return; // a permission prompt or a stop is already under way
+    if (recorder.recording) {
+      return this.#finishRecording();
+    }
+    if (recorder.starting || recorder.stopping) {
+      return;
+    } // a permission prompt or a stop is already under way
     this.status = "Waiting for the microphone…";
     try {
       await recorder.start(() => void this.#finishRecording());
@@ -117,7 +131,9 @@ export class VoiceSettings extends HTMLElement {
 
   async #finishRecording() {
     // Idempotent: the 30 s limit and a click on Stop may both arrive; the first one wins.
-    if (!this.#recorder.recording) return;
+    if (!this.#recorder.recording) {
+      return;
+    }
     this.#record.textContent = "Record";
     let audio: ArrayBuffer;
     try {

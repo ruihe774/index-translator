@@ -31,7 +31,9 @@ function watchApi(page: Page): { method: string; path: string; body: string }[] 
   const seen: { method: string; path: string; body: string }[] = [];
   page.on("request", (r) => {
     const { pathname } = new URL(r.url());
-    if (pathname.startsWith("/api/")) seen.push({ method: r.method(), path: pathname, body: r.postData() ?? "" });
+    if (pathname.startsWith("/api/")) {
+      seen.push({ method: r.method(), path: pathname, body: r.postData() ?? "" });
+    }
   });
   return seen;
 }
@@ -305,7 +307,11 @@ test.describe("PDF", () => {
       .evaluate((canvas: HTMLCanvasElement) => {
         const { data } = canvas.getContext("2d")!.getImageData(0, 0, canvas.width, canvas.height);
         let n = 0;
-        for (let i = 0; i < data.length; i += 4) if (data[i]! < 128 && data[i + 3]! > 0) n++;
+        for (let i = 0; i < data.length; i += 4) {
+          if (data[i]! < 128 && data[i + 3]! > 0) {
+            n++;
+          }
+        }
         return n;
       });
     expect(dark).toBeGreaterThan(20);

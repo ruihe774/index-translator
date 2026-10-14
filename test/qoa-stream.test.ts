@@ -21,7 +21,7 @@ import {
   waitReady,
 } from "./helpers/mock-engine";
 
-const publicDir = config().publicDir;
+const { publicDir } = config();
 const installed = existsSync(join(publicDir, "vendor", "qoa", "VERSION"));
 
 interface Decoder extends QoaCodec {
@@ -35,14 +35,16 @@ async function codec(): Promise<Decoder> {
 }
 
 /** A tone with a little of everything speech has: a slow sweep, some harmonics, a fade at both ends. */
-function tone(seconds: number, sampleRate = 22050, channels = 1): Pcm {
+function tone(seconds: number, sampleRate = 22_050, channels = 1): Pcm {
   const length = Math.round(seconds * sampleRate);
   const samples = new Float32Array(length * channels);
   for (let i = 0; i < length; i++) {
     const t = i / sampleRate;
     const fade = Math.min(1, t * 20, (seconds - t) * 20);
     const v = fade * 0.5 * (Math.sin(2 * Math.PI * (180 + 40 * t) * t) + 0.4 * Math.sin(2 * Math.PI * 540 * t));
-    for (let c = 0; c < channels; c++) samples[i * channels + c] = v * (c === 0 ? 1 : 0.5);
+    for (let c = 0; c < channels; c++) {
+      samples[i * channels + c] = v * (c === 0 ? 1 : 0.5);
+    }
   }
   return { samples, sampleRate, channels };
 }
@@ -50,7 +52,9 @@ function tone(seconds: number, sampleRate = 22050, channels = 1): Pcm {
 async function bodyChunks(res: Response): Promise<Uint8Array[]> {
   const chunks: Uint8Array[] = [];
   const reader = res.body!.getReader();
-  for (let r = await reader.read(); !r.done; r = await reader.read()) chunks.push(r.value);
+  for (let r = await reader.read(); !r.done; r = await reader.read()) {
+    chunks.push(r.value);
+  }
   return chunks;
 }
 
@@ -96,14 +100,14 @@ describe.skipIf(!installed)("qoaResponse", () => {
     expect(bytes.length).toBeLessThan(pcm.samples.length * 2 * 0.3);
 
     const audio = qoa.decode(bytes);
-    expect(audio.sampleRate).toBe(22050);
+    expect(audio.sampleRate).toBe(22_050);
     expect(audio.channels).toBe(1);
-    expect(audio.samples.length).toBe(pcm.samples.length);
+    expect(audio.samples).toHaveLength(pcm.samples.length);
     // Lossy, but close: the error is a small fraction of the signal.
     let signal = 0;
     let error = 0;
     for (let i = 0; i < audio.samples.length; i++) {
-      const want = pcm.samples[i]! * 0x7fff;
+      const want = pcm.samples[i]! * 0x7f_ff;
       signal += want * want;
       error += (audio.samples[i]! - want) ** 2;
     }
@@ -112,11 +116,11 @@ describe.skipIf(!installed)("qoaResponse", () => {
 
   test("keeps the channels of a stereo recording, and ends mid-frame as well as on one", async () => {
     const qoa = await codec();
-    for (const seconds of [0.01, 5120 / 22050, 0.5]) {
-      const pcm = tone(seconds, 22050, 2);
+    for (const seconds of [0.01, 5120 / 22_050, 0.5]) {
+      const pcm = tone(seconds, 22_050, 2);
       const audio = qoa.decode(concat(await bodyChunks(qoaResponse(qoa, pcm))));
       expect(audio.channels).toBe(2);
-      expect(audio.samples.length).toBe(pcm.samples.length);
+      expect(audio.samples).toHaveLength(pcm.samples.length);
     }
   });
 });
@@ -178,9 +182,9 @@ describe("POST /speech", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
     expect(res.headers.get("vary")).toBe("accept");
     const audio = (await codec()).decode(new Uint8Array(await res.arrayBuffer()));
-    expect(audio.sampleRate).toBe(22050);
+    expect(audio.sampleRate).toBe(22_050);
     expect(audio.channels).toBe(1);
-    expect(audio.samples.length).toBe(22050);
+    expect(audio.samples).toHaveLength(22_050);
     // Lossy: silence comes back with a hiss of a few steps (measured: at most 17 of 32,767).
     expect(audio.samples.every((s) => Math.abs(s) <= 32)).toBe(true);
     resetMockSpeech();

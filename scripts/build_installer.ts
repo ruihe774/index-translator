@@ -20,9 +20,12 @@ import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { download, output, run } from "./build_tools";
 import { requireWebLibs } from "./fetch_web_libs";
 
-if (process.platform !== "win32" || process.arch !== "x64")
+if (process.platform !== "win32" || process.arch !== "x64") {
   throw new Error("the installer is built on, and for, x86-64 Windows");
-if (Bun.argv.length > 2) throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
+}
+if (Bun.argv.length > 2) {
+  throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
+}
 
 const INNO = {
   url: "https://github.com/jrsoftware/issrc/releases/download/is-6_7_3/innosetup-6.7.3.exe",
@@ -42,7 +45,9 @@ for (const [file, script] of [
   [shimPath(llama), "build_llama.ts"],
   [audioLibrary(audio), "build_audiocpp.ts"],
 ] as const) {
-  if (!(await Bun.file(file).exists())) throw new Error(`${file} is missing; run: bun scripts/${script}`);
+  if (!(await Bun.file(file).exists())) {
+    throw new Error(`${file} is missing; run: bun scripts/${script}`);
+  }
 }
 // The web app's libraries are packed with public/; an installation without them could not open PDFs, and would send speech as WAV.
 await requireWebLibs(join(root, "public", "vendor"));
@@ -51,8 +56,9 @@ await requireWebLibs(join(root, "public", "vendor"));
 async function copyEngine(from: string, to: string): Promise<void> {
   await mkdir(to, { recursive: true });
   for (const name of await readdir(from)) {
-    if (name !== "include" && !name.endsWith(".lib") && !name.endsWith(".exp"))
+    if (name !== "include" && !name.endsWith(".lib") && !name.endsWith(".exp")) {
       await cp(join(from, name), join(to, name));
+    }
   }
 }
 
@@ -64,13 +70,19 @@ async function iscc(): Promise<string> {
     join(Bun.env.ProgramFiles ?? "", "Inno Setup 6", "ISCC.exe"),
     join(Bun.env.LOCALAPPDATA ?? "", "Programs", "Inno Setup 6", "ISCC.exe"),
   ];
-  for (const place of places) if (place && (await Bun.file(place).exists())) return place;
+  for (const place of places) {
+    if (place && (await Bun.file(place).exists())) {
+      return place;
+    }
+  }
   const setup = join(work, "innosetup.exe");
   await mkdir(work, { recursive: true });
   await Bun.write(setup, await download(INNO.url, INNO.sha256));
   await run([setup, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER"]);
   const installed = places[3] as string;
-  if (!(await Bun.file(installed).exists())) throw new Error("Inno Setup was installed but ISCC.exe was not found");
+  if (!(await Bun.file(installed).exists())) {
+    throw new Error("Inno Setup was installed but ISCC.exe was not found");
+  }
   return installed;
 }
 
@@ -89,7 +101,9 @@ if (
 await rm(stage, { recursive: true, force: true });
 await mkdir(stage, { recursive: true });
 for (const name of await readdir(join(root, "src"))) {
-  if (name.endsWith(".ts")) await cp(join(root, "src", name), join(stage, "src", name));
+  if (name.endsWith(".ts")) {
+    await cp(join(root, "src", name), join(stage, "src", name));
+  }
 }
 await cp(join(root, "public"), join(stage, "public"), { recursive: true });
 await cp(join(root, "prompts"), join(stage, "prompts"), { recursive: true });

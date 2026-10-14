@@ -27,7 +27,9 @@ interface Waiting {
 /** A worker that is ready, or null when this browser cannot run the codec. */
 function startDecoder(): Promise<QoaDecoder | null> {
   // Both are in every browser the page supports except an engine with WebAssembly turned off.
-  if (typeof WebAssembly !== "object" || typeof Worker !== "function") return Promise.resolve(null);
+  if (typeof WebAssembly !== "object" || typeof Worker !== "function") {
+    return Promise.resolve(null);
+  }
   return new Promise((ready) => {
     let worker: Worker;
     try {
@@ -42,7 +44,9 @@ function startDecoder(): Promise<QoaDecoder | null> {
     const fail = (e: QoaError) => {
       dead = e;
       worker.terminate();
-      for (const w of waiting.values()) w.reject(e);
+      for (const w of waiting.values()) {
+        w.reject(e);
+      }
       waiting.clear();
     };
 
@@ -57,8 +61,11 @@ function startDecoder(): Promise<QoaDecoder | null> {
       } else {
         const w = waiting.get(reply.id);
         waiting.delete(reply.id);
-        if (reply.type === "error") w?.reject(new QoaError(reply.message));
-        else w?.resolve({ sampleRate: reply.sampleRate, channels: reply.channels, samples: reply.samples });
+        if (reply.type === "error") {
+          w?.reject(new QoaError(reply.message));
+        } else {
+          w?.resolve({ sampleRate: reply.sampleRate, channels: reply.channels, samples: reply.samples });
+        }
       }
     });
     // The worker's script did not load (a codec that is not installed ends here too).
@@ -70,7 +77,9 @@ function startDecoder(): Promise<QoaDecoder | null> {
     const post = (request: QoaRequest, transfer: Transferable[] = []) => worker.postMessage(request, transfer);
     const decoder: QoaDecoder = {
       async decode(body, signal) {
-        if (dead) throw dead;
+        if (dead) {
+          throw dead;
+        }
         const id = next++;
         const reader = body.getReader();
         const result = new Promise<Pcm16>((resolve, reject) => waiting.set(id, { resolve, reject }));
@@ -99,7 +108,9 @@ function startDecoder(): Promise<QoaDecoder | null> {
         try {
           while (!settled) {
             const { done, value } = await reader.read();
-            if (settled) break;
+            if (settled) {
+              break;
+            }
             if (done) {
               post({ type: "end", id });
               break;

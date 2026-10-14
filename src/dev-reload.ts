@@ -71,7 +71,9 @@ export function createDevReload(publicDir: string) {
           headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" },
         });
       }
-      if (path !== EVENTS_PATH) return undefined;
+      if (path !== EVENTS_PATH) {
+        return undefined;
+      }
       server.timeout(req, 0);
       let self: ReadableStreamDefaultController<Uint8Array>;
       const stream = new ReadableStream<Uint8Array>({
@@ -91,7 +93,9 @@ export function createDevReload(publicDir: string) {
 
     /** Adds the client script to HTML responses; every other response passes through. */
     async inject(res: Response): Promise<Response> {
-      if (res.status !== 200 || !res.headers.get("content-type")?.startsWith("text/html")) return res;
+      if (res.status !== 200 || !res.headers.get("content-type")?.startsWith("text/html")) {
+        return res;
+      }
       const html = await res.text();
       const body = html.includes("</body>") ? html.replace("</body>", `${SCRIPT_TAG}</body>`) : html + SCRIPT_TAG;
       const headers = new Headers(res.headers);

@@ -42,7 +42,9 @@ const PATCH = join(import.meta.dir, "patches", "audiocpp-abort.patch");
 
 const flags = new Set(Bun.argv.slice(2));
 for (const flag of flags) {
-  if (flag !== "--native" && flag !== "--keep") throw new Error(`unknown option ${flag}; see the head of this file`);
+  if (flag !== "--native" && flag !== "--keep") {
+    throw new Error(`unknown option ${flag}; see the head of this file`);
+  }
 }
 const native = flags.has("--native");
 const keep = flags.has("--keep");
@@ -56,14 +58,18 @@ const build = join(work, "build");
 requireTools(["git", "cmake", ...COMPILERS, "glslc"], TOOLS_HINT);
 const visualStudio = windows ? await msvc() : undefined;
 
-if (!keep) await rm(work, { recursive: true, force: true });
+if (!keep) {
+  await rm(work, { recursive: true, force: true });
+}
 await checkout(REPO, COMMIT, source);
 // A tree kept by --keep has the patch already: taking it out again would then work.
 const reverse = Bun.spawn(["git", "apply", "--reverse", "--check", "--ignore-whitespace", PATCH], {
   cwd: source,
   stdio: ["ignore", "ignore", "ignore"],
 });
-if ((await reverse.exited) !== 0) await run(["git", "apply", "--ignore-whitespace", PATCH], source);
+if ((await reverse.exited) !== 0) {
+  await run(["git", "apply", "--ignore-whitespace", PATCH], source);
+}
 
 const started = performance.now();
 try {
@@ -123,7 +129,9 @@ await mkdir(join(dest, "include"), { recursive: true });
 const [built] = windows
   ? await Array.fromAsync(new Bun.Glob("**/audiocpp.dll").scan({ cwd: build, absolute: true }))
   : [libraryPath(join(build, "bin"))];
-if (!built) throw new Error("the build left no audiocpp.dll");
+if (!built) {
+  throw new Error("the build left no audiocpp.dll");
+}
 await cp(built, libraryPath(dest), { dereference: true });
 await cp(join(source, "include", "audiocpp.h"), join(dest, "include", "audiocpp.h"));
 await cp(join(source, "LICENSE"), join(dest, "LICENSE"));

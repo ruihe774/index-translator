@@ -32,13 +32,13 @@ describe("fileKind", () => {
   });
 
   test("takes nothing else", () => {
-    expect(fileKind("report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(
-      null,
-    );
-    expect(fileKind("page.html", "text/html")).toBe(null);
-    expect(fileKind("photo.gif", "image/gif")).toBe(null);
-    expect(fileKind("scan.heic", "image/heic")).toBe(null);
-    expect(fileKind("noextension", "")).toBe(null);
+    expect(
+      fileKind("report.docx", "application/vnd.openxmlformats-officedocument.wordprocessingml.document"),
+    ).toBeNull();
+    expect(fileKind("page.html", "text/html")).toBeNull();
+    expect(fileKind("photo.gif", "image/gif")).toBeNull();
+    expect(fileKind("scan.heic", "image/heic")).toBeNull();
+    expect(fileKind("noextension", "")).toBeNull();
   });
 });
 
@@ -52,9 +52,9 @@ describe("decodeText", () => {
   });
 
   test("refuses bytes that are not UTF-8 text", () => {
-    expect(decodeText(new Uint8Array([0xff, 0xfe, 0x61, 0x00]))).toBe(null); // UTF-16
-    expect(decodeText(new Uint8Array([0xc4, 0xe3, 0xba, 0xc3]))).toBe(null); // GBK
-    expect(decodeText(bytes("a\0b"))).toBe(null);
+    expect(decodeText(new Uint8Array([0xff, 0xfe, 0x61, 0x00]))).toBeNull(); // UTF-16
+    expect(decodeText(new Uint8Array([0xc4, 0xe3, 0xba, 0xc3]))).toBeNull(); // GBK
+    expect(decodeText(bytes("a\0b"))).toBeNull();
   });
 });
 
@@ -64,7 +64,7 @@ describe("refusal", () => {
       "only plain text, Markdown and PDF files and JPEG, PNG and WebP images",
     );
     expect(refusal("a.png", "image", MAX_IMAGE_BYTES + 1)).toContain("larger than 8 MB");
-    expect(refusal("a.png", "image", MAX_IMAGE_BYTES)).toBe(null);
+    expect(refusal("a.png", "image", MAX_IMAGE_BYTES)).toBeNull();
     expect(refusal("a.png", "image", 0)).toContain("empty");
     expect(refusal("a.txt", "text", 0)).toContain("empty");
     expect(refusal("a.txt", "text", MAX_TEXT_BYTES + 1)).toContain("larger than 2 MB");
@@ -72,8 +72,8 @@ describe("refusal", () => {
   });
 
   test("lets a PDF be larger than a text", () => {
-    expect(refusal("a.txt", "text", MAX_TEXT_BYTES)).toBe(null);
-    expect(refusal("a.pdf", "pdf", MAX_TEXT_BYTES + 1)).toBe(null);
+    expect(refusal("a.txt", "text", MAX_TEXT_BYTES)).toBeNull();
+    expect(refusal("a.pdf", "pdf", MAX_TEXT_BYTES + 1)).toBeNull();
   });
 });
 

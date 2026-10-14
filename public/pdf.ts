@@ -90,23 +90,32 @@ function startExtractor(): Extractor {
 
   const fail = (e: Error) => {
     dead = e;
-    for (const w of waiting.values()) w.reject(e);
+    for (const w of waiting.values()) {
+      w.reject(e);
+    }
     waiting.clear();
   };
   worker.addEventListener("message", (event: MessageEvent<WorkerReply>) => {
     const { id, ...reply } = event.data;
     const w = waiting.get(id);
     waiting.delete(id);
-    if (!w) return;
-    if ("error" in reply) w.reject(new PdfError(reply.error));
-    else w.resolve(reply);
+    if (!w) {
+      return;
+    }
+    if ("error" in reply) {
+      w.reject(new PdfError(reply.error));
+    } else {
+      w.resolve(reply);
+    }
   });
   // The worker's own script did not load or threw outside a request.
   worker.addEventListener("error", () => fail(new PdfError(`${NOT_LOADED}.`)));
 
   return {
     ask(request, transfer = []) {
-      if (dead) return Promise.reject(dead);
+      if (dead) {
+        return Promise.reject(dead);
+      }
       const id = next++;
       return new Promise<Reply>((resolve, reject) => {
         waiting.set(id, { resolve, reject });
@@ -154,8 +163,12 @@ export async function openPdf(bytes: Uint8Array<ArrayBuffer>): Promise<PdfDocume
   } catch (e) {
     void task.destroy();
     const name = (e as { name?: string } | null)?.name;
-    if (name === "PasswordException") throw new PdfError("It is protected by a password.");
-    if (name === "InvalidPDFException" || name === "FormatError") throw new PdfError("It is not a readable PDF.");
+    if (name === "PasswordException") {
+      throw new PdfError("It is protected by a password.");
+    }
+    if (name === "InvalidPDFException" || name === "FormatError") {
+      throw new PdfError("It is not a readable PDF.");
+    }
     console.error(e);
     throw new PdfError(`${NOT_LOADED}, or the file is damaged.`);
   }

@@ -25,9 +25,13 @@ const fake = {
 };
 
 const launcher: Launcher = async (model) => {
-  if (fake.launchError) throw fake.launchError;
+  if (fake.launchError) {
+    throw fake.launchError;
+  }
   fake.launches.push(model.id);
-  if (fake.gate) await fake.gate;
+  if (fake.gate) {
+    await fake.gate;
+  }
   const loaded = fakeModel({ gate: () => fake.generationGate, onAbort: () => fake.aborted++ });
   fake.models.push(loaded);
   return loaded;
@@ -44,7 +48,9 @@ function gate(): { promise: Promise<void>; open(): void } {
 async function until(cond: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs;
   while (!cond()) {
-    if (Date.now() > deadline) throw new Error(`timed out waiting for ${what}`);
+    if (Date.now() > deadline) {
+      throw new Error(`timed out waiting for ${what}`);
+    }
     await Bun.sleep(5);
   }
 }
@@ -60,7 +66,9 @@ async function errorOf(p: Promise<unknown>): Promise<any> {
 
 async function collect(gen: AsyncIterable<GenerationEvent>): Promise<GenerationEvent[]> {
   const events: GenerationEvent[] = [];
-  for await (const ev of gen) events.push(ev);
+  for await (const ev of gen) {
+    events.push(ev);
+  }
   return events;
 }
 
@@ -87,7 +95,9 @@ beforeEach(() => {
 });
 
 afterEach(async () => {
-  for (const engine of engines.splice(0)) await engine.unload();
+  for (const engine of engines.splice(0)) {
+    await engine.unload();
+  }
   silence.mockRestore();
   resetMock();
   fake.launches = [];

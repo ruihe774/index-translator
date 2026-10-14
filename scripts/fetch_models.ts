@@ -136,7 +136,9 @@ export function parseArgs(argv: readonly string[]): { ids: string[]; rest: strin
     const arg = argv[i] as string;
     if (arg === "--model") {
       const id = argv[++i];
-      if (id === undefined) throw new FetchError("--model needs a value");
+      if (id === undefined) {
+        throw new FetchError("--model needs a value");
+      }
       ids.push(id);
     } else if (arg.startsWith("--model=")) {
       ids.push(arg.slice("--model=".length));
@@ -145,7 +147,9 @@ export function parseArgs(argv: readonly string[]): { ids: string[]; rest: strin
     }
   }
   for (const id of ids) {
-    if (!MODEL_IDS.includes(id)) throw new FetchError(`unknown model "${id}"; models are ${MODEL_IDS.join(", ")}`);
+    if (!MODEL_IDS.includes(id)) {
+      throw new FetchError(`unknown model "${id}"; models are ${MODEL_IDS.join(", ")}`);
+    }
   }
   return { ids: ids.length > 0 ? ids : MODEL_IDS, rest };
 }
@@ -186,7 +190,9 @@ export function plan(
 
 async function sha256Of(path: string): Promise<string> {
   const hasher = new Bun.CryptoHasher("sha256");
-  for await (const chunk of Bun.file(path).stream()) hasher.update(chunk);
+  for await (const chunk of Bun.file(path).stream()) {
+    hasher.update(chunk);
+  }
   return hasher.digest("hex");
 }
 
@@ -202,8 +208,12 @@ export async function fetchFile(
 ): Promise<void> {
   if (existsSync(file.dest)) {
     const got = await sha256Of(file.dest);
-    if (got === file.sha256) return log(`ok ${file.dest}`);
-    if (file.keep) return log(`kept ${file.dest} (not the example voice of that name)`);
+    if (got === file.sha256) {
+      return log(`ok ${file.dest}`);
+    }
+    if (file.keep) {
+      return log(`kept ${file.dest} (not the example voice of that name)`);
+    }
     throw new FetchError(
       `${file.dest} is not the expected file (SHA-256 ${got}, not ${file.sha256}); delete it and run this again`,
     );
@@ -255,7 +265,9 @@ export async function fetchFile(
 /** Standard input's next line after `question`; empty at the end of input. */
 async function readLine(question: string): Promise<string> {
   process.stdout.write(question);
-  for await (const line of console) return line;
+  for await (const line of console) {
+    return line;
+  }
   return "";
 }
 
@@ -270,11 +282,17 @@ export async function acceptNotices(
   ask: (question: string) => Promise<string>,
 ): Promise<void> {
   const needed = ids.filter((id) => plan([id], dirs).some((f) => !existsSync(f.dest)));
-  if (needed.length === 0) return;
+  if (needed.length === 0) {
+    return;
+  }
   log("Third-party notices for what is about to be downloaded (see also THIRD_PARTY_NOTICES.md):\n");
-  for (const id of needed) log(`${NOTICES[id]}\n`);
+  for (const id of needed) {
+    log(`${NOTICES[id]}\n`);
+  }
   const answer = (await ask('Type "yes" to accept these terms and download: ')).trim().toLowerCase();
-  if (answer !== "yes") throw new FetchError("the terms were not accepted; nothing was downloaded");
+  if (answer !== "yes") {
+    throw new FetchError("the terms were not accepted; nothing was downloaded");
+  }
 }
 
 /** Downloads what `argv` asks for. Throws FetchError with the reason when something is not as pinned. */
@@ -306,14 +324,18 @@ export async function fetchModels(
   };
   await acceptNotices(ids, dirs, log, ask);
   const files = plan(ids, dirs);
-  for (const file of files) await fetchFile(file, endpoint, curl, log);
+  for (const file of files) {
+    await fetchFile(file, endpoint, curl, log);
+  }
 }
 
 if (import.meta.main) {
   try {
     await fetchModels(Bun.argv.slice(2));
   } catch (e) {
-    if (!(e instanceof FetchError)) throw e;
+    if (!(e instanceof FetchError)) {
+      throw e;
+    }
     console.error(`error: ${e.message}`);
     process.exit(1);
   }

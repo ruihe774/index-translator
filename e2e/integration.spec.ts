@@ -16,7 +16,7 @@ const done = {
 const health = (over: object = {}) => ({
   status: "ready",
   model: "index-translate-9b",
-  limits: { context_tokens: 65536, max_input_tokens: 28000 },
+  limits: { context_tokens: 65_536, max_input_tokens: 28_000 },
   queue: { running: false, waiting: 0, max_waiting: 8 },
   ...over,
 });
@@ -75,7 +75,7 @@ for (const [name, status, error, message] of [
   [
     "input_too_long",
     413,
-    { code: "input_too_long", details: { prompt_tokens: 30000, max_input_tokens: 28000 } },
+    { code: "input_too_long", details: { prompt_tokens: 30_000, max_input_tokens: 28_000 } },
     "30,000 tokens, and the limit is 28,000",
   ],
   ["a bare 429", 429, {}, "The translator is busy. Try again in a minute."],

@@ -202,7 +202,9 @@ describe("paths", () => {
 
   // "/" is the root of the current drive on Windows, so the temp directory must be on it.
   test("a public directory of / is not doubled into // and still serves", async () => {
-    if (process.platform === "win32" && resolve(dir)[0] !== resolve("/")[0]) return;
+    if (process.platform === "win32" && resolve(dir)[0] !== resolve("/")[0]) {
+      return;
+    }
     const rel = resolve(dir)
       .replace(/^[A-Za-z]:/, "")
       .replaceAll("\\", "/")
