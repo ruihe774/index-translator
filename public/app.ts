@@ -233,7 +233,7 @@ async function loadLanguages() {
     o.textContent = name;
     select.append(o);
   };
-  add(fromSelect, "auto", "Detect language");
+  add(fromSelect, "auto", "Detect");
   for (const l of languages) {
     add(fromSelect, l.code, l.name);
     add(toSelect, l.code, l.name);

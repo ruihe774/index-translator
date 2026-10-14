@@ -5,7 +5,7 @@ import { CHAT, DOCUMENT, expect, test, THINK } from "./fixtures";
 test("the page loads languages and reports a ready engine", async ({ app }) => {
   await app.open();
   await expect(app.engine).toHaveText("Engine ready, Index-Translate-9B loaded.");
-  await expect(app.from.locator("option").first()).toHaveText("Detect language");
+  await expect(app.from.locator("option").first()).toHaveText("Detect");
   await expect(app.to).toHaveValue("zh");
   await expect(app.page).toHaveTitle(/Index Translator/);
 });

@@ -178,7 +178,7 @@ http://127.0.0.1:3000/). Pick languages, paste text, click **Translate**.
 <summary><b>Translate text</b>: languages, Markdown, copy</summary>
 
 
-1. Choose the **From** and **To** languages. Pick **Detect language** if you are not sure of the
+1. Choose the **From** and **To** languages. Pick **Detect** if you are not sure of the
    source. Languages include English, Chinese, Japanese, Korean, German, French, Spanish, Russian
    and about 25 more.
 2. Paste or type your text into the box, or click **Open** to take it from a file (see
