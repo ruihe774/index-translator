@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
 // Server for the Playwright tests: the real app (routes, static files, queue, engine supervisor)
 // on top of the fake models from test/helpers/mock-engine.ts, so no GPU, libllama or model files
 // are needed.

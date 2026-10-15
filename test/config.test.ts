@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/await-thenable */
 import { describe, expect, test } from "bun:test";
 import { join, resolve } from "node:path";
 

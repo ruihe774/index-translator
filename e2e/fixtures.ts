@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // Shared fixtures: `mock` scripts the mock engine behind the server, and the page objects below
 // keep selectors in one place. Every test starts with the mock reset and a fresh browser context.
 

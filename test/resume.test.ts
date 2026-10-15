@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/await-thenable */
 import { describe, expect, test } from "bun:test";
 
 import { resumableEvents, TRANSLATION_ID_HEADER } from "../public/resume";

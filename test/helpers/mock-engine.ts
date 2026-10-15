@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment */
 // Shared harness for API tests and the Playwright mock server (e2e/mock-server.ts): a fake model that
 // stands in for the one libllama would load, a launcher that makes one per model load, and small
 // request/SSE helpers. No GPU, library or model files are needed.

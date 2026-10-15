@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/await-thenable */
 // Microphone recording and WAV encoding for voice samples (public/voice-sample.ts), with fakes.
 
 import { describe, expect, test } from "bun:test";

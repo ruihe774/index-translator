@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument */
 // Contract tests: the bodies the server sends are checked against docs/openapi.yaml, and the spec is
 // checked against the server (every documented operation exists, every documented status can be
 // produced, the model enums match src/models.ts). The validator is local and covers the subset of

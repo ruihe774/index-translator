@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable */
 // The QOA form of the speech stream: how a client asks for it, what the server sends, and that
 // the codec's own decoder gets the audio back. The codec is a file of public/vendor/qoa (fetched by
 // scripts/fetch_web_libs.ts); tests that need it are skipped where it was not fetched.

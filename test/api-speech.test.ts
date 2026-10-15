@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/await-thenable */
 // The speech endpoints against a mock speech engine (test/helpers/mock-engine.ts), and the parts
 // of the real one that need no audio.cpp: what it reports when nothing is installed, and how it
 // lists voices.

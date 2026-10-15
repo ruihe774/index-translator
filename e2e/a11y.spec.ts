@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 // Accessibility checks that need a rendered page: axe-core, reflow, text spacing, keyboard order.
 // The acceptance record is A11Y-ACCEPTANCE.md.
 

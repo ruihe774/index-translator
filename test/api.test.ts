@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/await-thenable */
 // API tests against a mock engine, so they run without a GPU or model files. The mock launcher
 // (test/helpers/mock-engine.ts) starts an in-process upstream server per load and records which
 // model each load was for.

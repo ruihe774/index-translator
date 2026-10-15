@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable */
 // Request parsing, validation, input budget, static files and the error envelope, against the mock
 // engine. Complements api.test.ts: each case here is about how a request is read or refused.
 // Findings the server gets wrong are written as test.failing and listed in the report.

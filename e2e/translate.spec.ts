@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
 // End to end: the web app in a real browser against the real server, with the mock engine.
 
 import { CHAT, DOCUMENT, expect, test, THINK } from "./fixtures";

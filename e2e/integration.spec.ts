@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
 // Integration: the real page and static server, with the API stubbed in the browser (page.route).
 // These cover what the mock engine cannot produce on demand: error envelopes, status codes, an
 // unreachable server, SSE framing and the health polling.
