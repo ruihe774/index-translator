@@ -45,6 +45,5 @@ async function answer({ bytes }: DocxRequest): Promise<DocxReply> {
 }
 
 self.addEventListener("message", (event: MessageEvent<DocxRequest>) => {
-  // eslint-disable-next-line unicorn/require-post-message-target-origin -- a dedicated worker answers its one page; there is no origin to name
   void answer(event.data).then((reply) => self.postMessage(reply));
 });

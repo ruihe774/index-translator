@@ -515,9 +515,7 @@ function linkTail(s: string, k: number): { href: string; title: string; end: num
       const ch = s[k]!;
       if (ch === "\\" && ASCII_PUNCT.test(s[k + 1] ?? "")) {
         k++;
-      }
-      // eslint-disable-next-line no-control-regex -- a bare link destination ends at a control character
-      else if (/[ \x00-\x1F\x7F]/.test(ch)) {
+      } else if (/[ \x00-\x1F\x7F]/.test(ch)) {
         break;
       } else if (ch === "(") {
         parens++;
