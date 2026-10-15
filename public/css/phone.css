@@ -75,6 +75,14 @@
     }
   }
 
+  .actions {
+    --button-min-inline-size: 5rem;
+
+    > button {
+      padding-inline: 0.75rem;
+    }
+  }
+
   /* The Model switch has three buttons and must stay on one row in fonts wider than the
      design font (the CI runner's fallback is one). */
   #model-switch > button {
@@ -90,11 +98,6 @@
         flex-basis: 100%;
       }
     }
-  }
-
-  .actions > button {
-    min-inline-size: 5rem;
-    padding-inline: 0.75rem;
   }
 
   #open {

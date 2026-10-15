@@ -76,9 +76,9 @@ p {
 
 /* Pretty wrapping and balancing re-break whole paragraphs, so they wait until streaming has
    finished the block (`.settled`, set in markdown-dom.ts); the link dialog's text is static. */
+dialog p,
 .settled p,
-p.settled,
-dialog p {
+p.settled {
   text-wrap: pretty;
 }
 

@@ -23,16 +23,16 @@ button.icon {
     }
   }
 
+  .when-loading {
+    fill: none;
+  }
+
   &[data-state="paused"] .when-playing,
   &:not([data-state="paused"]) .when-paused,
   &[data-state="loading"] .when-playing,
   &[data-state="loading"] .when-paused,
   &:not([data-state="loading"]) .when-loading {
     display: none;
-  }
-
-  .when-loading {
-    fill: none;
   }
 
   /* Waiting for the first audio: the speech model may still be loading. The state is also in the

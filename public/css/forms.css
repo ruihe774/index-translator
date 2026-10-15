@@ -50,6 +50,12 @@ textarea::placeholder {
   opacity: 1;
 }
 
+textarea {
+  resize: none;
+  min-block-size: 4.5rem;
+  line-height: 1.6;
+}
+
 /* The native grip sits in the square corner and pokes out past the rounded
    border; hide it and draw one over it instead. The native hit area stays in
    the corner (about 15px square), so the drawn grip must lie inside it to
@@ -81,12 +87,6 @@ textarea::placeholder {
     background-image: none;
     resize: none;
   }
-}
-
-textarea {
-  resize: none;
-  min-block-size: 4.5rem;
-  line-height: 1.6;
 }
 
 /* Text areas: larger type and roomier side padding on wide screens. */

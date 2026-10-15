@@ -1,17 +1,6 @@
-.actions {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--gap);
-
-  /* Clear, Stop and Translate share one width, so swapping Clear for Stop moves nothing. */
-  > button {
-    min-inline-size: 6.5rem;
-  }
-}
-
 button {
   min-block-size: var(--target);
-  min-inline-size: var(--target);
+  min-inline-size: var(--button-min-inline-size, var(--target));
   padding: 0.5rem 1.25rem;
   font: inherit;
   font-weight: 600;
@@ -41,6 +30,15 @@ button {
     border: 1px dashed var(--border);
     cursor: default;
   }
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--gap);
+
+  /* Clear, Stop and Translate share one width, so swapping Clear for Stop moves nothing. */
+  --button-min-inline-size: 6.5rem;
 }
 
 @media (prefers-reduced-motion: no-preference) {
