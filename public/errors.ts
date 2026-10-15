@@ -1,21 +1,22 @@
 // Turns an API error body (and the HTTP status it came with) into a sentence for the user.
 // Pure: no DOM access, so it can be unit tested.
 
-export interface ApiErrorBody {
-  code?: string;
-  message?: string;
-  details?: Record<string, unknown>;
-}
+import type { ErrorBody, ErrorEvent } from "../src/api.ts";
+
+/**
+ * What the server's error says, whether it came as a response or as an `error` event. Every field is
+ * optional: a proxy in front of the server can answer with something that is not the API's envelope.
+ */
+export type ApiErrorBody = Partial<ErrorBody | ErrorEvent>;
 
 const number = new Intl.NumberFormat();
 
 export function describeError(e: ApiErrorBody | undefined, status?: number): string {
   const d = e?.details ?? {};
-  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- untyped string
   switch (e?.code) {
     case "input_too_long": {
       return d.prompt_tokens && d.max_input_tokens
-        ? `The text is too long for one translation: ${number.format(Number(d.prompt_tokens))} tokens, and the limit is ${number.format(Number(d.max_input_tokens))}. Shorten it or translate it in parts.`
+        ? `The text is too long for one translation: ${number.format(d.prompt_tokens)} tokens, and the limit is ${number.format(d.max_input_tokens)}. Shorten it or translate it in parts.`
         : "The text is too long for one translation. Shorten it or translate it in parts.";
     }
     case "queue_full": {
@@ -38,6 +39,9 @@ export function describeError(e: ApiErrorBody | undefined, status?: number): str
     }
     case "speech_error": {
       return `Reading aloud failed${e.message ? `: ${e.message}` : ""}.`;
+    }
+    default: {
+      break;
     }
   }
   // No recognised code: a bare 429 or 503 still tells the user the server is busy, not broken.

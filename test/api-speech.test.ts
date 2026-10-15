@@ -9,6 +9,7 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import type { Health, Voice, VoiceList } from "../src/api";
 import { type App, startApp } from "../src/app";
 import { libraryPath } from "../src/audiocpp-ffi";
 import {
@@ -17,10 +18,13 @@ import {
   nativeSpeech,
   SeparationError,
   SpeechError,
+  type SpeechRequest,
   validateSample,
 } from "../src/speech";
 import {
+  bodyOf,
   config,
+  errorOf,
   launcher,
   mockSpeech,
   postTo,
@@ -71,9 +75,9 @@ describe("POST /speech", () => {
   ])("rejects %j, naming %s", async (body, field) => {
     const res = await speak(body);
     expect(res.status).toBe(400);
-    const { error } = (await res.json()) as any;
+    const error = await errorOf(res);
     expect(error.code).toBe("invalid_request");
-    expect(error.details.field).toBe(field);
+    expect(error.details?.field).toBe(field);
     expect(mockSpeech.requests).toStrictEqual([]);
   });
 
@@ -85,7 +89,7 @@ describe("POST /speech", () => {
     mockSpeech.state = "unavailable";
     const res = await speak({ text: "Hello", lang: "en" });
     expect(res.status).toBe(503);
-    expect(((await res.json()) as any).error).toStrictEqual({
+    await expect(errorOf(res)).resolves.toStrictEqual({
       code: "speech_unavailable",
       message: "the speech engine is not installed",
     });
@@ -97,7 +101,7 @@ describe("POST /speech", () => {
     try {
       const res = await speak({ text: "Hello", lang: "en" });
       expect(res.status).toBe(503);
-      expect(((await res.json()) as any).error.code).toBe("speech_unavailable");
+      expect((await errorOf(res)).code).toBe("speech_unavailable");
     } finally {
       mockSpeech.voices = voices;
     }
@@ -107,7 +111,7 @@ describe("POST /speech", () => {
     mockSpeech.failWith = "out of memory";
     const res = await speak({ text: "Hello", lang: "en" });
     expect(res.status).toBe(502);
-    expect(((await res.json()) as any).error).toStrictEqual({ code: "speech_error", message: "out of memory" });
+    await expect(errorOf(res)).resolves.toStrictEqual({ code: "speech_error", message: "out of memory" });
   });
 
   test("one utterance at a time; beyond the queue it is 429", async () => {
@@ -117,7 +121,7 @@ describe("POST /speech", () => {
     await Bun.sleep(30);
     const third = await speak({ text: "three", lang: "en" });
     expect(third.status).toBe(429);
-    expect(((await third.json()) as any).error.code).toBe("queue_full");
+    expect((await errorOf(third)).code).toBe("queue_full");
     expect((await Promise.all([first, second])).map((r) => r.status)).toStrictEqual([200, 200]);
     expect(mockSpeech.requests.map((r) => r.text)).toStrictEqual(["one", "two"]);
   });
@@ -200,13 +204,13 @@ describe("GET /voices and health", () => {
 
   test("health carries the speech engine's state", async () => {
     await speak({ text: "Hello", lang: "en" });
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(health.speech).toStrictEqual({ status: "ready" });
   });
 
   test("no voices are listed while speech is unavailable", async () => {
     mockSpeech.state = "unavailable";
-    const body = (await (await fetch(base + "/api/v1/voices")).json()) as any;
+    const body = await bodyOf<VoiceList>(await fetch(base + "/api/v1/voices"));
     expect(body.status).toBe("unavailable");
     expect(body.error).toBe("the speech engine is not installed");
     expect(body.voices).toStrictEqual([]);
@@ -219,7 +223,7 @@ describe("the native speech engine without audio.cpp", () => {
     expect(speech.state).toBe("unavailable");
     expect(speech.error).toContain("bun scripts/build_audiocpp.ts");
     expect(nativeSpeech(config({ speech: false })).error).toContain("SPEECH=0");
-    const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
+    const request: SpeechRequest = { text: "Hi", lang: "en", voice: "a", speed: 1 };
     let released = 0;
     await expect(speech.synthesize(request, new AbortController().signal, () => void released++)).rejects.toThrow(
       "not installed",
@@ -259,7 +263,7 @@ describe("NativeSpeech with a fake worker", () => {
     };
     return fake;
   }
-  const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
+  const request: SpeechRequest = { text: "Hi", lang: "en", voice: "a", speed: 1 };
   const tick = () => Bun.sleep(5);
 
   async function setup() {
@@ -417,7 +421,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     return w;
   }
   const kinds = (w: any) => w.posted.map((m: any) => m.type);
-  const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
+  const request: SpeechRequest = { text: "Hi", lang: "en", voice: "a", speed: 1 };
   const say = (speech: NativeSpeech) => speech.synthesize(request, new AbortController().signal, () => {});
   const wav = () => silentWav(1.5, 16_000);
   /** What the worker answers a separation with: recognizably not the uploaded sample. */
@@ -801,7 +805,6 @@ describe("POST /voices", () => {
       body,
     });
   const sample = (seconds = 1.5, rate = 16_000) => new Uint8Array(silentWav(seconds, rate));
-  const errorOf = async (res: Response) => ((await res.json()) as any).error;
 
   test("a WAV sample becomes a voice", async () => {
     const res = await upload(sample());
@@ -824,7 +827,7 @@ describe("POST /voices", () => {
   test("anything else is refused", async () => {
     const res = await upload(new Uint8Array(64));
     expect(res.status).toBe(400);
-    expect((await errorOf(res)).details.field).toBe("body");
+    expect((await errorOf(res)).details?.field).toBe("body");
     expect((await upload("{}", "application/json")).status).toBe(415);
     expect((await upload("{}", "text/plain")).status).toBe(415);
   });
@@ -859,8 +862,7 @@ describe("POST /voices", () => {
   });
 
   test("the name is trimmed, whitespace is collapsed, and it is cut at 60 characters", async () => {
-    const named = async (name: string | null) =>
-      ((await (await upload(sample(), "audio/wav", name)).json()) as any).name;
+    const named = async (name: string | null) => (await bodyOf<Voice>(await upload(sample(), "audio/wav", name))).name;
     await expect(named("  My \n  new\t voice  ")).resolves.toBe("My new voice");
     await expect(named("a".repeat(80))).resolves.toBe("a".repeat(60));
     await expect(named("   ")).resolves.toBe("Uploaded voice");
@@ -878,7 +880,7 @@ describe("POST /voices", () => {
     expect(res.status).toBe(400);
     const error = await errorOf(res);
     expect(error.code).toBe("invalid_request");
-    expect(error.details.field).toBe("body");
+    expect(error.details?.field).toBe("body");
     expect(error.message).toContain(message);
   });
 
@@ -898,7 +900,7 @@ describe("POST /speech speed range", () => {
   test.each([0.49, 2.01, 0, -1])("speed %d is refused", async (speed) => {
     const res = await speak({ text: "Hi", lang: "en", speed });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as any).error.details.field).toBe("speed");
+    expect((await errorOf(res)).details?.field).toBe("speed");
     expect(mockSpeech.requests).toStrictEqual([]);
   });
 });

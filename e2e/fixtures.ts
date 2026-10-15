@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 // Shared fixtures: `mock` scripts the mock engine behind the server, and the page objects below
 // keep selectors in one place. Every test starts with the mock reset and a fresh browser context.
 
@@ -6,6 +5,7 @@ import { expect, test as base } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import { CoverageReport } from "monocart-coverage-reports";
 
+import type { FinishReason, SpeechStatus, Voice } from "../src/api";
 import { COVERAGE, mappedModule, REPORT } from "./coverage";
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
@@ -14,18 +14,18 @@ const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
 export interface MockKnobs {
   chunks?: string[];
   delayMs?: number;
-  finish?: "stop" | "length";
+  finish?: FinishReason;
   failWith?: string | null;
   failLaunch?: string | null;
   /** The model's image encoder is not installed: an image request fails with this message. */
   imageUnavailable?: string;
   /** The mock speech engine: `state: "unavailable"` is an install without it. */
   speech?: {
-    state?: string;
+    state?: SpeechStatus;
     delayMs?: number;
     audioSeconds?: number;
     failWith?: string;
-    voices?: { id: string; name: string }[];
+    voices?: Voice[];
   };
 }
 
@@ -78,9 +78,9 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
   baseURL: ({}, use, testInfo) => use(`http://127.0.0.1:${PORT + 2 * testInfo.parallelIndex}`),
   mock: async ({}, use, testInfo) => {
     const CONTROL = `http://127.0.0.1:${CONTROL_PORT + 2 * testInfo.parallelIndex}/mock`;
-    const call = (method: string, body?: unknown, path = ""): Promise<any> =>
-      fetch(CONTROL + path, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then((r) =>
-        r.json(),
+    const call = <T = void>(method: string, body?: unknown, path = ""): Promise<T> =>
+      fetch(CONTROL + path, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then(
+        (r) => r.json() as Promise<T>,
       );
     await call("DELETE");
     await use({
@@ -91,7 +91,7 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
           failLaunch: knobs.failLaunch ?? undefined,
         });
       },
-      state: () => call("GET"),
+      state: () => call<MockState>("GET"),
       unload: () => call("POST", undefined, "/restart"),
     });
     await call("DELETE");

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
 // Long-input check against a running backend. Translates a 16K-letter English document to
 // Chinese in a single generation, translates the result back, and verifies after each pass
 // that no paragraph was dropped or repeated.
@@ -6,6 +5,7 @@
 
 import { join } from "node:path";
 
+import type { DeltaEvent, DoneEvent, ErrorEvent, StartEvent } from "../src/api";
 import {
   countLetters,
   englishEssays,
@@ -26,8 +26,8 @@ export async function translateStream(baseUrl: string, body: Record<string, unkn
   }
 
   let translation = "";
-  let start: any;
-  let done: any;
+  let start: StartEvent | undefined;
+  let done: DoneEvent | undefined;
   let buffer = "";
   const decoder = new TextDecoder();
   for await (const chunk of res.body!) {
@@ -40,15 +40,16 @@ export async function translateStream(baseUrl: string, body: Record<string, unkn
       if (!event || !data) {
         continue;
       }
-      const payload = JSON.parse(data);
+      // The wire holds no types: `event` says which schema the data has.
       if (event === "delta") {
-        translation += payload.text;
+        translation += (JSON.parse(data) as DeltaEvent).text;
       } else if (event === "start") {
-        start = payload;
+        start = JSON.parse(data) as StartEvent;
       } else if (event === "done") {
-        done = payload;
+        done = JSON.parse(data) as DoneEvent;
       } else if (event === "error") {
-        throw new Error(`${payload.code}: ${payload.message}`);
+        const { code, message } = JSON.parse(data) as ErrorEvent;
+        throw new Error(`${code}: ${message}`);
       }
     }
   }
@@ -83,7 +84,7 @@ export async function runPass(
   console.log(
     `  input: ${fixture.text.length} characters (${countLetters(fixture.text)} letters), ${fixture.markers.length} paragraphs`,
   );
-  console.log(`  tokens: ${start.prompt_tokens} prompt + ${done.usage.completion_tokens} completion`);
+  console.log(`  tokens: ${start?.prompt_tokens} prompt + ${done.usage.completion_tokens} completion`);
   console.log(`  output: ${translation.length} characters, finish_reason=${done.finish_reason}`);
   console.log(`  time: ${seconds.toFixed(1)} s wall, ${done.timings.tokens_per_second} tokens/s generation`);
   console.log(`  paragraphs with missing numbers: ${missing.length ? missing.join(", ") : "none"}`);

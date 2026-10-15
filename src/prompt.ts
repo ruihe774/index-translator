@@ -6,6 +6,7 @@ import nailongJaZh from "../prompts/nailong_ja-zh.txt" with { type: "text" };
 // Fixed NativeLong templates, copied from inference/llm/prompts/ in bilibili/Index-Translate.
 import nailongZhEn from "../prompts/nailong_zh-en.txt" with { type: "text" };
 import nailongZhJa from "../prompts/nailong_zh-ja.txt" with { type: "text" };
+import type { Language } from "./api";
 
 const DOCUMENT_TEMPLATES: Record<string, string> = {
   "zh-en": nailongZhEn,
@@ -28,14 +29,12 @@ export function buildDocumentPrompt(direction: string, text: string): string {
   return template.replace(PLACEHOLDER, () => text.trim()).trim();
 }
 
-export interface Language {
-  code: string;
-  name: string;
+export interface PromptLanguage extends Language {
   /** Name used inside the prompt. */
   zh: string;
 }
 
-export const LANGUAGES: Language[] = [
+export const LANGUAGES: PromptLanguage[] = [
   { code: "en", name: "English", zh: "英语" },
   { code: "zh", name: "Chinese", zh: "中文" },
   { code: "de", name: "German", zh: "德语" },

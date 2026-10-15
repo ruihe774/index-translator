@@ -1,14 +1,28 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/await-thenable */
 // API tests against a mock engine, so they run without a GPU or model files. The mock launcher
 // (test/helpers/mock-engine.ts) starts an in-process upstream server per load and records which
 // model each load was for.
 
 import { afterAll, beforeAll, describe, expect, spyOn, test } from "bun:test";
 
+import type { Health, Language, ModelList, TokenizeResponse, TranslateResponse } from "../src/api";
 import { type App, startApp } from "../src/app";
 import type { Config } from "../src/config";
 import { buildDocumentPrompt } from "../src/prompt";
-import { CHAT, config, DOCUMENT, launcher, mock, postTo, readSse, TEMPLATE, waitReady } from "./helpers/mock-engine";
+import {
+  bodyOf,
+  CHAT,
+  config,
+  dataOf,
+  DOCUMENT,
+  errorOf,
+  launcher,
+  mock,
+  postTo,
+  readSse,
+  TEMPLATE,
+  waitReady,
+} from "./helpers/mock-engine";
 
 let app: App;
 let base: string;
@@ -38,10 +52,10 @@ describe("metadata endpoints", () => {
   });
 
   test("models lists both checkpoints with their document directions", async () => {
-    const body = (await (await fetch(base + "/api/v1/models")).json()) as any;
+    const body = await bodyOf<ModelList>(await fetch(base + "/api/v1/models"));
     expect(body.default).toBe(CHAT);
     expect(body.loaded).toBe(CHAT);
-    expect(body.models.map((m: any) => m.id)).toStrictEqual([CHAT, DOCUMENT]);
+    expect(body.models.map((m) => m.id)).toStrictEqual([CHAT, DOCUMENT]);
     expect(body.models[1]).toStrictEqual({
       id: DOCUMENT,
       label: expect.any(String),
@@ -52,7 +66,7 @@ describe("metadata endpoints", () => {
   });
 
   test("languages lists codes and names", async () => {
-    const { languages } = (await (await fetch(base + "/api/v1/languages")).json()) as any;
+    const { languages } = await bodyOf<{ languages: Language[] }>(await fetch(base + "/api/v1/languages"));
     expect(languages).toContainEqual({ code: "zh", name: "Chinese" });
     expect(languages.length).toBeGreaterThan(30);
   });
@@ -66,12 +80,12 @@ describe("metadata endpoints", () => {
   test("unknown endpoints and wrong methods use the error envelope", async () => {
     const missing = await fetch(base + "/api/v1/nope");
     expect(missing.status).toBe(404);
-    expect(((await missing.json()) as any).error.code).toBe("not_found");
+    expect((await errorOf(missing)).code).toBe("not_found");
 
     const wrong = await fetch(base + "/api/v1/translate");
     expect(wrong.status).toBe(405);
     expect(wrong.headers.get("allow")).toBe("POST");
-    expect(((await wrong.json()) as any).error.code).toBe("method_not_allowed");
+    expect((await errorOf(wrong)).code).toBe("method_not_allowed");
   });
 });
 
@@ -91,14 +105,16 @@ describe("POST /tokenize", () => {
   });
 
   test("reports inputs that do not fit instead of failing", async () => {
-    const body = (await (await post("/api/v1/tokenize", { text: "x".repeat(500), target_lang: "zh" })).json()) as any;
+    const body = await bodyOf<TokenizeResponse>(
+      await post("/api/v1/tokenize", { text: "x".repeat(500), target_lang: "zh" }),
+    );
     expect(body.fits).toBe(false);
   });
 
   test("validates the document model's language pair like /translate does", async () => {
     const res = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh", model: DOCUMENT });
     expect(res.status).toBe(400);
-    expect(((await res.json()) as any).error.details.field).toBe("source_lang");
+    expect((await errorOf(res)).details?.field).toBe("source_lang");
   });
 
   test("counts a document request's own prompt with the loaded model, without loading it", async () => {
@@ -110,12 +126,12 @@ describe("POST /tokenize", () => {
       model: DOCUMENT,
     });
     expect(res.status).toBe(200);
-    const body = (await res.json()) as any;
+    const body = await bodyOf<TokenizeResponse>(res);
     expect(body).toMatchObject({ model: DOCUMENT, counted_with: CHAT });
     expect(body.prompt_tokens).toBe(buildDocumentPrompt("en-zh", "The fox.").length + TEMPLATE.length);
     expect(mock.launches).toHaveLength(before);
 
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(health.model).toBe(CHAT);
   });
 
@@ -129,7 +145,7 @@ describe("POST /tokenize", () => {
     const elapsed = performance.now() - started;
     expect(res.status).toBe(200);
     expect(elapsed).toBeLessThan(200);
-    expect(((await res.json()) as any).counted_with).toBe(CHAT);
+    expect((await bodyOf<TokenizeResponse>(res)).counted_with).toBe(CHAT);
 
     expect((await readSse(await running)).at(-1)!.event).toBe("done");
     mock.delayMs = 0;
@@ -142,13 +158,13 @@ describe("POST /tokenize", () => {
     const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
     await Bun.sleep(30);
 
-    const before = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const before = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(before.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     const res = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" });
     expect(res.status).toBe(200);
 
-    const after = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const after = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(after.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     await Promise.all([first.then(readSse), second.then(readSse)]);
@@ -191,7 +207,7 @@ describe("POST /translate (JSON)", () => {
 
   test("reports truncation through finish_reason", async () => {
     mock.finish = "length";
-    const body = (await (await post("/api/v1/translate", { text: "Hi", target_lang: "zh" })).json()) as any;
+    const body = await bodyOf<TranslateResponse>(await post("/api/v1/translate", { text: "Hi", target_lang: "zh" }));
     mock.finish = "stop";
     expect(body.finish_reason).toBe("length");
   });
@@ -211,7 +227,7 @@ describe("POST /translate (JSON)", () => {
   ])("rejects %s with 400", async (_name, body, field) => {
     const res = await post("/api/v1/translate", body);
     expect(res.status).toBe(400);
-    const { error } = (await res.json()) as any;
+    const error = await errorOf(res);
     expect(error.code).toBe("invalid_request");
     expect(error.details?.field).toBe(field);
   });
@@ -219,10 +235,10 @@ describe("POST /translate (JSON)", () => {
   test("rejects oversized input with 413 and the measured token counts", async () => {
     const res = await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh" });
     expect(res.status).toBe(413);
-    const { error } = (await res.json()) as any;
+    const error = await errorOf(res);
     expect(error.code).toBe("input_too_long");
-    expect(error.details.max_input_tokens).toBe(400);
-    expect(error.details.prompt_tokens).toBeGreaterThan(500);
+    expect(error.details?.max_input_tokens).toBe(400);
+    expect(error.details?.prompt_tokens).toBeGreaterThan(500);
   });
 
   test("rejects an oversized body with 413 and the error envelope", async () => {
@@ -231,7 +247,7 @@ describe("POST /translate (JSON)", () => {
       JSON.stringify({ text: "a".repeat(5 * 1024 * 1024), target_lang: "zh" }),
     );
     expect(res.status).toBe(413);
-    expect(((await res.json()) as any).error.code).toBe("body_too_large");
+    expect((await errorOf(res)).code).toBe("body_too_large");
   });
 
   test("surfaces engine failures as 502", async () => {
@@ -239,7 +255,7 @@ describe("POST /translate (JSON)", () => {
     const res = await post("/api/v1/translate", { text: "Hi", target_lang: "zh" });
     mock.failWith = undefined;
     expect(res.status).toBe(502);
-    const { error } = (await res.json()) as any;
+    const error = await errorOf(res);
     expect(error.code).toBe("engine_error");
     expect(error.message).toContain("out of memory");
   });
@@ -293,8 +309,7 @@ describe("POST /translate (SSE)", () => {
       await post("/api/v1/translate", { text: "x".repeat(500), target_lang: "zh", stream: true }),
     );
     expect(events.map((e) => e.event)).toStrictEqual(["error"]);
-    expect(events[0]!.data.code).toBe("input_too_long");
-    expect(events[0]!.data.details.max_input_tokens).toBe(400);
+    expect(events[0]!.data).toMatchObject({ code: "input_too_long", details: { max_input_tokens: 400 } });
   });
 
   test("engine failures mid-stream arrive as an error event", async () => {
@@ -318,10 +333,10 @@ describe("model selection", () => {
       model: DOCUMENT,
     });
     expect(res.status).toBe(200);
-    expect(((await res.json()) as any).model).toBe(DOCUMENT);
+    expect((await bodyOf<TranslateResponse>(res)).model).toBe(DOCUMENT);
     expect(mock.launches.slice(before)).toStrictEqual([DOCUMENT]);
 
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(health.model).toBe(DOCUMENT);
 
     // A request already on the loaded model does not reload it.
@@ -350,13 +365,13 @@ describe("model selection", () => {
   test("the document model needs a source language and a supported direction", async () => {
     const missing = await post("/api/v1/translate", { text: "Hi", target_lang: "zh", model: DOCUMENT });
     expect(missing.status).toBe(400);
-    expect(((await missing.json()) as any).error.details.field).toBe("source_lang");
+    expect((await errorOf(missing)).details?.field).toBe("source_lang");
 
     const pair = await post("/api/v1/translate", { text: "Hi", source_lang: "en", target_lang: "fr", model: DOCUMENT });
     expect(pair.status).toBe(400);
-    const { error } = (await pair.json()) as any;
+    const error = await errorOf(pair);
     expect(error.code).toBe("unsupported_language_pair");
-    expect(error.details.supported).toStrictEqual(["zh-en", "en-zh", "zh-ja", "ja-zh"]);
+    expect(error.details?.supported).toStrictEqual(["zh-en", "en-zh", "zh-ja", "ja-zh"]);
   });
 
   test("the document model rejects options its fixed template cannot express", async () => {
@@ -374,7 +389,7 @@ describe("model selection", () => {
         ...extra,
       });
       expect(res.status).toBe(400);
-      expect(((await res.json()) as any).error.details.field).toBe(field);
+      expect((await errorOf(res)).details?.field).toBe(field);
     }
   });
 
@@ -390,7 +405,7 @@ describe("model selection", () => {
     });
     mock.failLaunch = undefined;
     expect(failed.status).toBe(502);
-    expect(((await failed.json()) as any).error.message).toContain("model file is corrupt");
+    expect((await errorOf(failed)).message).toContain("model file is corrupt");
 
     const retried = await post("/api/v1/translate", {
       text: "Hi",
@@ -410,20 +425,20 @@ describe("queueing and cancellation", () => {
     const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
     await Bun.sleep(30);
 
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(health.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     const third = await post("/api/v1/translate", { text: "three", target_lang: "en" });
     expect(third.status).toBe(429);
     expect(third.headers.get("retry-after")).toBe("10");
-    expect(((await third.json()) as any).error.code).toBe("queue_full");
+    expect((await errorOf(third)).code).toBe("queue_full");
 
     const [a, b] = await Promise.all([first.then(readSse), second.then(readSse)]);
     mock.delayMs = 0;
     expect(a.map((e) => e.event)).toStrictEqual(["start", "delta", "delta", "delta", "done"]);
     expect(b.map((e) => e.event)).toStrictEqual(["queued", "start", "delta", "delta", "delta", "done"]);
     expect(b[0]!.data).toStrictEqual({ position: 1 });
-    expect(b[1]!.data.queue_ms).toBeGreaterThan(0);
+    expect(dataOf(b, "start")[0]!.queue_ms).toBeGreaterThan(0);
   });
 
   test("disconnecting cancels the generation and frees the slot", async () => {
@@ -445,14 +460,14 @@ describe("queueing and cancellation", () => {
     mock.delayMs = 0;
     expect(mock.aborted).toBe(abortedBefore + 1);
 
-    const health = (await (await fetch(base + "/api/v1/health")).json()) as any;
+    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(health.queue.running).toBe(false);
     const next = await post("/api/v1/translate", { text: "next", target_lang: "en" });
     expect(next.status).toBe(200);
   });
 
   async function queueState(): Promise<{ running: boolean; waiting: number }> {
-    const { running, waiting } = ((await (await fetch(base + "/api/v1/health")).json()) as any).queue;
+    const { running, waiting } = (await bodyOf<Health>(await fetch(base + "/api/v1/health"))).queue;
     return { running, waiting };
   }
 
@@ -520,6 +535,7 @@ describe("queueing and cancellation", () => {
 
   test("cancelling a queued SSE request ends its handler and clears its keepalive", async () => {
     // Keepalive timers are the only thing a hung queued stream would leak, so track them directly.
+    /* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return -- patches the timers of globalThis, which has no type for that */
     const g = globalThis as any;
     const realSetInterval = g.setInterval;
     const realClearInterval = g.clearInterval;
@@ -562,6 +578,7 @@ describe("queueing and cancellation", () => {
       g.clearInterval = realClearInterval;
       mock.delayMs = 0;
     }
+    /* eslint-enable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return */
   });
 });
 
@@ -573,7 +590,7 @@ describe("engine availability", () => {
       const { origin } = loading.server.url;
       const health = await fetch(origin + "/api/v1/health");
       expect(health.status).toBe(503);
-      expect(((await health.json()) as any).status).toBe("loading");
+      expect((await bodyOf<Health>(health)).status).toBe("loading");
 
       const pending = fetch(origin + "/api/v1/translate", {
         method: "POST",
@@ -610,13 +627,13 @@ describe("engine availability", () => {
       const busy = await tokenize();
       expect(busy.status).toBe(503);
       expect(busy.headers.get("retry-after")).toBe("2");
-      expect(((await busy.json()) as any).error.code).toBe("engine_unavailable");
+      expect((await errorOf(busy)).code).toBe("engine_unavailable");
 
       mock.ready = true;
       await waitReady(loading);
       const ready = await tokenize();
       expect(ready.status).toBe(200);
-      expect(((await ready.json()) as any).counted_with).toBe(CHAT);
+      expect((await bodyOf<TokenizeResponse>(ready)).counted_with).toBe(CHAT);
     } finally {
       mock.ready = true;
       await loading.stop();
@@ -638,7 +655,7 @@ describe("engine availability", () => {
       });
       expect(res.status).toBe(503);
       expect(res.headers.get("retry-after")).toBe("2");
-      expect(((await res.json()) as any).error.code).toBe("engine_unavailable");
+      expect((await errorOf(res)).code).toBe("engine_unavailable");
     } finally {
       mock.failLaunch = undefined;
       await broken.stop();
@@ -664,7 +681,7 @@ describe("browser request checks", () => {
     for (const path of ["/api/v1/translate", "/api/v1/tokenize"]) {
       const res = await post(path, translateBody, { headers: { "content-type": "text/plain" } });
       expect(res.status).toBe(415);
-      expect(((await res.json()) as any).error.code).toBe("unsupported_media_type");
+      expect((await errorOf(res)).code).toBe("unsupported_media_type");
     }
     // A simple cross-site form POST carries no content-type at all.
     const bare = await fetch(base + "/api/v1/translate", {
@@ -696,7 +713,7 @@ describe("browser request checks", () => {
       },
     );
     expect(res.status).toBe(403);
-    expect(((await res.json()) as any).error.code).toBe("forbidden_origin");
+    expect((await errorOf(res)).code).toBe("forbidden_origin");
 
     const health = await fetch(base + "/api/v1/health", { headers: { origin: "null" } });
     expect(health.status).toBe(403);
@@ -745,7 +762,7 @@ describe("browser request checks", () => {
   test("a Host header that is not loopback or configured is refused with 403", async () => {
     const evil = await fetch(base + "/api/v1/health", { headers: { host: "rebind.example:3000" } });
     expect(evil.status).toBe(403);
-    expect(((await evil.json()) as any).error.code).toBe("forbidden_host");
+    expect((await errorOf(evil)).code).toBe("forbidden_host");
 
     for (const host of ["localhost:3000", "[::1]:3000", "127.0.0.1"]) {
       const ok = await fetch(base + "/api/v1/health", { headers: { host } });
@@ -812,7 +829,7 @@ describe("output budget", () => {
       body: JSON.stringify({ text, target_lang: "en" }),
       headers: { "content-type": "application/json" },
     });
-    return ((await res.json()) as any).prompt_tokens;
+    return (await bodyOf<TokenizeResponse>(res)).prompt_tokens;
   }
 
   async function textWithPromptTokens(origin: string, target: number): Promise<string> {

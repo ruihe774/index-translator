@@ -1,10 +1,9 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
-import { describe, expect, test } from "bun:test";
-import { join, resolve } from "node:path";
+// Lint of docs/openapi.yaml that no type can do. The codes of Error are not checked against the server
+// here: ApiError takes only the spec's codes (src/app.ts), so a code the spec lacks does not compile.
 
-const root = resolve(import.meta.dir, "..");
-const specText = await Bun.file(join(root, "docs", "openapi.yaml")).text();
-const spec = Bun.YAML.parse(specText) as any;
+import { describe, expect, test } from "bun:test";
+
+import { spec, specText } from "./helpers/spec";
 
 /** Paths of every object key called `key`, anywhere in the document. */
 function keysNamed(node: unknown, key: string, path = "$"): string[] {
@@ -22,23 +21,11 @@ function keysNamed(node: unknown, key: string, path = "$"): string[] {
 
 describe("docs/openapi.yaml", () => {
   test("parses as OpenAPI 3.1", () => {
-    expect(String(spec.openapi)).toStartWith("3.1");
+    expect(spec.openapi).toStartWith("3.1");
   });
 
   test("has no 3.0-only nullable keyword", () => {
     expect(keysNamed(spec, "nullable")).toStrictEqual([]);
     expect(specText).not.toContain("nullable:");
-  });
-
-  test("Error.code enum covers every error code the server can send", async () => {
-    const enumCodes = new Set<string>(spec.components.schemas.Error.properties.error.properties.code.enum);
-    const src = await Bun.file(join(root, "src", "app.ts")).text();
-    // invalid(...) is the helper for invalid_request; its own definition is excluded.
-    const used = new Set([...src.matchAll(/new ApiError\(\s*\d+,\s*"([a-z_]+)"/g)].map((m) => m[1]!));
-    if (/(?<!function )\binvalid\(/.test(src)) {
-      used.add("invalid_request");
-    }
-    expect(used.size).toBeGreaterThan(0);
-    expect([...used].filter((code) => !enumCodes.has(code))).toStrictEqual([]);
   });
 });

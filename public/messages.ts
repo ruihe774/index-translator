@@ -1,6 +1,7 @@
 // Sentences the page shows about model selection, engine status and finished translations.
 // Pure: no DOM access, so each branch can be unit tested.
 
+import type { DoneEvent, Health } from "../src/api.ts";
 import { mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
 import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type ModelId, type Selection } from "./select-model.ts";
 
@@ -114,15 +115,13 @@ export function imageAdviceMessage(documentChosen: boolean, from: string, to: st
   return parts.join(" ");
 }
 
-export interface Health {
-  status: string;
-  error?: string;
-  model: string | null;
-  queue: { running: boolean; waiting: number };
-}
-
 /** The engine status sentence, and whether a model load is in progress (which the page keeps polling). */
-export function healthMessage(h: Health): { text: string; loading: boolean } {
+export function healthMessage(
+  h: Pick<Health, "status" | "error" | "model"> & { queue: Pick<Health["queue"], "waiting"> },
+): {
+  text: string;
+  loading: boolean;
+} {
   const model = h.model ? modelLabel(h.model) : null;
   if (h.status === "ready") {
     let text = `Engine ready${model ? `, ${model} loaded` : ""}.`;
@@ -141,11 +140,10 @@ export function seconds(ms: number): string {
   return `${(ms / 1000).toFixed(ms < 10_000 ? 1 : 0)} s`;
 }
 
-export interface Done {
-  finish_reason: string;
-  usage: { prompt_tokens: number; completion_tokens: number };
-  timings: { queue_ms: number; generation_ms: number };
-}
+/** The parts of a `done` event the page reads. */
+export type Done = Pick<DoneEvent, "finish_reason" | "usage"> & {
+  timings: Pick<DoneEvent["timings"], "queue_ms" | "generation_ms">;
+};
 
 export interface ResultContext {
   /** `null` for an image: there is no source text to compare the translation with. */

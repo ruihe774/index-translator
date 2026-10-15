@@ -10,7 +10,7 @@ coveragePathIgnorePatterns = ["test/**", "e2e/**", "public/vendor/**"]
 dots = true
 
 [lint]
-ignorePatterns = ["vendor/", "models/", "dist/", "playwright-report/", "test-results/"]
+ignorePatterns = ["src/api-schema.d.ts", "vendor/", "models/", "dist/", "playwright-report/", "test-results/"]
 maxWarnings = 0
 typeAware = true
 typeCheck = true
@@ -352,7 +352,7 @@ correctness = "error"
 printWidth = 120
 htmlWhitespaceSensitivity = "ignore"
 sortImports = true
-ignorePatterns = ["*.md", "docs/"]
+ignorePatterns = ["*.md", "docs/", "src/api-schema.d.ts"]
 
 [run]
 noOrphans = true

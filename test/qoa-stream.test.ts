@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable */
 // The QOA form of the speech stream: how a client asks for it, what the server sends, and that
 // the codec's own decoder gets the audio back. The codec is a file of public/vendor/qoa (fetched by
 // scripts/fetch_web_libs.ts); tests that need it are skipped where it was not fetched.
@@ -14,6 +14,7 @@ import { acceptsQoa, type QoaCodec, qoaLoader, qoaResponse } from "../src/qoa-st
 import type { Pcm } from "../src/wav";
 import {
   config,
+  errorOf,
   launcher,
   mockSpeech,
   postTo,
@@ -202,7 +203,7 @@ describe("POST /speech", () => {
     mockSpeech.failWith = "out of memory";
     const res = await speak(base, "audio/qoa");
     expect(res.status).toBe(502);
-    expect(((await res.json()) as any).error).toStrictEqual({ code: "speech_error", message: "out of memory" });
+    await expect(errorOf(res)).resolves.toStrictEqual({ code: "speech_error", message: "out of memory" });
     resetMockSpeech();
   });
 });

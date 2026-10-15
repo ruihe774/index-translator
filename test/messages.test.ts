@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 
 import {
   adviceMessage,
+  type Done,
   healthMessage,
   imageAdviceMessage,
   INTERRUPTED_NOTE,
@@ -121,7 +122,7 @@ describe("healthMessage", () => {
     expect(healthMessage({ status: "ready", model: CHAT_MODEL, queue }).text).toBe(
       "Engine ready, Index-Translate-9B loaded.",
     );
-    expect(healthMessage({ status: "ready", model: "other-model", queue: { running: true, waiting: 2 } }).text).toBe(
+    expect(healthMessage({ status: "ready", model: "other-model", queue: { waiting: 2 } }).text).toBe(
       "Engine ready, other-model loaded. 2 waiting in the queue.",
     );
   });
@@ -135,8 +136,8 @@ describe("healthMessage", () => {
       text: "Engine error: bad file.",
       loading: false,
     });
-    expect(healthMessage({ status: "idle", model: null, queue })).toStrictEqual({
-      text: "Engine idle.",
+    expect(healthMessage({ status: "stopped", model: null, queue })).toStrictEqual({
+      text: "Engine stopped.",
       loading: false,
     });
   });
@@ -214,7 +215,7 @@ describe("resultNotes for an image", () => {
 
 describe("metaLine", () => {
   test("labels the model and adds queue and generation time", () => {
-    const done = {
+    const done: Done = {
       finish_reason: "stop",
       usage: { prompt_tokens: 1234, completion_tokens: 56 },
       timings: { queue_ms: 500, generation_ms: 1000 },

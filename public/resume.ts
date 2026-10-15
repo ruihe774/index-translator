@@ -2,7 +2,7 @@
 // the user leaves it; the server keeps a resumable translation running for a while and replays its
 // events from any point, so the page reconnects and carries on. No DOM access: unit tested.
 
-import { type SseEvent, sseEvents } from "./sse.ts";
+import { sseEvents, type TranslateSseEvent } from "./sse.ts";
 
 export interface ResumeOptions {
   /** Opens the stream: the first call (`lastId` 0) starts the translation, later ones read it again from after `lastId`. */
@@ -70,7 +70,7 @@ function whenVisible(o: ResumeOptions): Promise<void> {
  * page comes back is replaced by a new one that starts after the last event seen. Errors from the
  * first connection (a refused request) and from a server that does not support resuming are thrown.
  */
-export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<SseEvent> {
+export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<TranslateSseEvent> {
   const delays = o.delays ?? RETRY_DELAYS;
   let lastId = 0;
   let resumable = false;
@@ -93,7 +93,7 @@ export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<SseEven
         reconnecting = false;
         o.onReconnected?.();
       }
-      for await (const ev of sseEvents(res.body)) {
+      for await (const ev of sseEvents<TranslateSseEvent>(res.body)) {
         failures = 0;
         const n = Number(ev.id);
         if (Number.isInteger(n) && n > lastId) {

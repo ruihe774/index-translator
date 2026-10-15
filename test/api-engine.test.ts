@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-return, @typescript-eslint/await-thenable */
 // Engine lifecycle, queue and streaming edge cases against fake models. Each describe starts its
 // own app, so none of this touches the shared app of api.test.ts.
 //
@@ -10,13 +10,16 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 
+import type { Health, TokenizeResponse, TranslateResponse } from "../src/api";
 import { type App, startApp } from "../src/app";
 import type { Config } from "../src/config";
 import { EngineError, type Launcher } from "../src/llama";
 import {
+  bodyOf,
   CHAT,
   config,
   DOCUMENT,
+  errorOf,
   fakeModel,
   mock,
   postTo,
@@ -173,21 +176,21 @@ function tokenize(origin: string, body: unknown): Promise<Response> {
   return postTo(origin, "/api/v1/tokenize", body);
 }
 
-async function jsonOf(p: Promise<Response>): Promise<any> {
-  return (await p).json();
+async function jsonOf(p: Promise<Response>): Promise<TranslateResponse> {
+  return bodyOf<TranslateResponse>(await p);
 }
 
-async function getHealth(origin: string): Promise<{ status: number; body: any }> {
+async function getHealth(origin: string): Promise<{ status: number; body: Health }> {
   const res = await fetch(origin + "/api/v1/health");
-  return { status: res.status, body: await res.json() };
+  return { status: res.status, body: await bodyOf<Health>(res) };
 }
 
 async function queueOf(origin: string): Promise<{ running: boolean; waiting: number; max_waiting: number }> {
   return (await getHealth(origin)).body.queue;
 }
 
-async function getJson(origin: string, path: string): Promise<any> {
-  return (await fetch(origin + path)).json();
+async function getJson<T>(origin: string, path: string): Promise<T> {
+  return bodyOf<T>(await fetch(origin + path));
 }
 
 /** Loads `model` with a tiny request, so the next test starts from a known engine. */
@@ -215,7 +218,7 @@ async function* sseEvents(res: Response): AsyncGenerator<SseEvent> {
         const event = /^event: (.*)$/m.exec(frame)?.[1];
         const data = /^data: (.*)$/m.exec(frame)?.[1];
         if (event && data) {
-          yield { event, data: JSON.parse(data) };
+          yield { event, data: JSON.parse(data) } as SseEvent;
         }
       }
     }
@@ -290,7 +293,7 @@ describe("engine thread dies", () => {
     const launchesBefore = h.ctl.launches.length;
     const next = await translate(h.origin, { text: "你好", target_lang: "en" });
     expect(next.status).toBe(200);
-    expect(((await next.json()) as any).model).toBe(CHAT);
+    expect((await bodyOf<TranslateResponse>(next)).model).toBe(CHAT);
     expect(h.ctl.launches.slice(launchesBefore)).toStrictEqual([CHAT]);
     expect((await getHealth(h.origin)).status).toBe(200);
   }
@@ -362,7 +365,7 @@ describe("default model fails to load at startup", () => {
       mock.failLaunch = undefined;
       const ok = await translate(origin, chatBody);
       expect(ok.status).toBe(200);
-      expect(((await ok.json()) as any).model).toBe(CHAT);
+      expect((await bodyOf<TranslateResponse>(ok)).model).toBe(CHAT);
       const recovered = await getHealth(origin);
       expect(recovered.status).toBe(200);
       expect(recovered.body).toMatchObject({ status: "ready", model: CHAT });
@@ -394,7 +397,7 @@ describe("model swaps", () => {
     const busy = await tokenize(h.origin, chatBody);
     expect(busy.status).toBe(503);
     expect(busy.headers.get("retry-after")).toBe("2");
-    expect(((await busy.json()) as any).error.code).toBe("engine_unavailable");
+    expect((await errorOf(busy)).code).toBe("engine_unavailable");
 
     release();
     expect((await pending).model).toBe(DOCUMENT);
@@ -447,7 +450,7 @@ describe("model swaps", () => {
 
     const next = await translate(h.origin, { text: "你好", target_lang: "en" });
     expect(next.status).toBe(200);
-    expect(((await next.json()) as any).model).toBe(CHAT);
+    expect((await bodyOf<TranslateResponse>(next)).model).toBe(CHAT);
     expect(h.ctl.launches.slice(before)).toStrictEqual([DOCUMENT, CHAT]);
   });
 
@@ -619,7 +622,7 @@ describe("streaming and output details", () => {
     expect(json.finish_reason).toBe("length");
 
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
-    expect(events.at(-1)!.data.finish_reason).toBe("length");
+    expect(events.at(-1)).toMatchObject({ event: "done", data: { finish_reason: "length" } });
   });
 
   test("a model that emits only an empty think block gives an empty translation, with no delta events", async () => {
@@ -683,14 +686,14 @@ describe("streaming and output details", () => {
 
   test("usage.prompt_tokens falls back to the measured prompt size when the engine reports 0", async () => {
     h.ctl.zeroPromptUsage = true;
-    const counted = ((await (await tokenize(h.origin, chatBody)).json()) as any).prompt_tokens;
+    const counted = (await bodyOf<TokenizeResponse>(await tokenize(h.origin, chatBody))).prompt_tokens;
     expect(counted).toBeGreaterThan(0);
 
     const json = await jsonOf(translate(h.origin, chatBody));
     expect(json.usage).toStrictEqual({ prompt_tokens: counted, completion_tokens: mock.chunks.length });
 
     const events = await collect(sseEvents(await translate(h.origin, { ...chatBody, stream: true })));
-    expect(events.at(-1)!.data.usage.prompt_tokens).toBe(counted);
+    expect(events.at(-1)).toMatchObject({ event: "done", data: { usage: { prompt_tokens: counted } } });
   });
 
   test("a failed generation releases the slot: queue is idle and the next request succeeds", async () => {

@@ -2,6 +2,7 @@
 // becomes a mono 16-bit WAV that the server hands to the speech model as the reference voice.
 // The recording itself and the WAV writer are in mic-recorder.ts (no DOM types, tested with fakes).
 
+import type { ErrorResponse, Voice } from "../src/api.ts";
 import { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS } from "./mic-recorder.ts";
 
 export { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS, MicRecorder } from "./mic-recorder.ts";
@@ -34,17 +35,15 @@ export async function audioToWav(data: ArrayBuffer): Promise<ArrayBuffer> {
   return encodeWav(rendered.getChannelData(0), RATE);
 }
 
-export async function uploadVoice(api: string, name: string, wav: ArrayBuffer): Promise<{ id: string; name: string }> {
+export async function uploadVoice(api: string, name: string, wav: ArrayBuffer): Promise<Voice> {
   const res = await fetch(`${api}/voices?name=${encodeURIComponent(name)}`, {
     method: "POST",
     headers: { "content-type": "audio/wav" },
     body: wav,
   });
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- any assigned to any
-  const body = await res.json().catch(() => null);
   if (!res.ok) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- according to api spec
-    throw new Error((body?.error?.message as string) ?? `The server answered HTTP ${res.status}.`);
+    const body = (await res.json().catch(() => null)) as Partial<ErrorResponse> | null;
+    throw new Error(body?.error?.message ?? `The server answered HTTP ${res.status}.`);
   }
-  return body as { id: string; name: string };
+  return (await res.json()) as Voice;
 }

@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/await-thenable */
 // DEV_RELOAD=1: the reload stream, the injected client script, and nothing of it without the flag.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";

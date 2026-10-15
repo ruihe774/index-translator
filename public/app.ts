@@ -1,8 +1,8 @@
-/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 // The web app: one page, talking to the REST/SSE API of the same server.
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
+import type { Health, Language } from "../src/api.ts";
 import { API, ApiFailure, failureMessage } from "./api.ts";
 // eslint-disable-next-line import/no-unassigned-import -- custom element definitions
 import "./elements/index.ts";
@@ -21,7 +21,6 @@ import { looksLikeMarkdown } from "./markdown.ts";
 import {
   adviceMessage,
   type Done,
-  type Health,
   healthMessage,
   imageAdviceMessage,
   interruption,
@@ -207,20 +206,15 @@ function refreshSoon() {
 
 // ---- languages and engine status -------------------------------------------------------------
 
-interface Language {
-  code: string;
-  name: string;
-}
-
 async function loadLanguages() {
   let languages: Language[];
   try {
     const res = await fetch(`${API}/languages`);
-    const body = (await res.json()) as { languages?: unknown };
-    if (!Array.isArray(body.languages)) {
+    const { languages: list } = (await res.json()) as { languages?: Language[] };
+    if (!Array.isArray(list)) {
       throw new TypeError("no language list");
     }
-    languages = body.languages as Language[];
+    languages = list;
   } catch {
     languages = [
       { code: "en", name: "English" },
@@ -602,19 +596,19 @@ async function translate() {
       if (event === "queued") {
         metaEl.show(`Waiting in the queue, position ${data.position}…`);
       } else if (event === "start") {
-        metaEl.show(`Translating with ${modelLabel(data.model as string)}…`);
+        metaEl.show(`Translating with ${modelLabel(data.model)}…`);
       } else if (event === "delta") {
         // Only the first token changes what the controls show; the rest just grows the copied text.
         if (state.translation.length === 0) {
-          setState({ translation: data.text as string });
+          setState({ translation: data.text });
         } else {
-          state.translation += data.text as string;
+          state.translation += data.text;
         }
-        output!.append(data.text as string);
+        output!.append(data.text);
       } else if (event === "done") {
-        done = data as Done;
+        done = data;
       } else if (event === "error") {
-        throw new ApiFailure(data as ApiErrorBody, 0);
+        throw new ApiFailure(data, 0);
       }
     }
     if (!done) {

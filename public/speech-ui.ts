@@ -11,6 +11,7 @@
 // Markdown, the panes' elements) comes in through `SpeechUiDeps`. What the controls look like
 // follows `state` (state.ts), so `refresh` is what `render()` runs after it writes the rest.
 
+import type { VoiceList } from "../src/api.ts";
 import { API, ApiFailure, failureMessage } from "./api.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
@@ -253,11 +254,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     voicesCheck ??= (async () => {
       try {
         const res = await fetch(`${API}/voices`);
-        const body = (await res.json()) as {
-          status: string;
-          error?: string;
-          voices: { id: string; name: string }[];
-        };
+        const body = (await res.json()) as Pick<VoiceList, "status" | "error" | "voices">;
         if (body.status === "unavailable") {
           state.speechProblem = `Reading aloud is not available: ${body.error ?? "it is not installed"}.`;
         } else {

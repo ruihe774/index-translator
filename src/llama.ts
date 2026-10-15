@@ -4,6 +4,7 @@
 
 import { join } from "node:path";
 
+import type { FinishReason, Usage } from "./api";
 import type { Config } from "./config";
 import type { WorkerReply, WorkerRequest } from "./llama-worker";
 import type { ModelSpec } from "./models";
@@ -11,12 +12,7 @@ import { fetchCommand } from "./preflight";
 
 export type EngineState = "stopped" | "loading" | "ready" | "error";
 
-export type FinishReason = "stop" | "length";
-
-export interface Usage {
-  prompt_tokens: number;
-  completion_tokens: number;
-}
+export type { FinishReason, Usage };
 
 export interface EngineTimings {
   prompt_ms: number;

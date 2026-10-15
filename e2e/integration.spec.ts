@@ -3,6 +3,7 @@
 // These cover what the mock engine cannot produce on demand: error envelopes, status codes, an
 // unreachable server, SSE framing and the health polling.
 
+import type { TranslateRequest } from "../src/api";
 import { type AppPage, expect, test } from "./fixtures";
 
 const sse = (events: [string, unknown][]) =>
@@ -51,9 +52,9 @@ test("queued, start and delta events drive the progress line and output", async 
 });
 
 test("sends stream:true and the chosen languages", async ({ app }) => {
-  let sent: any;
+  let sent: Partial<TranslateRequest> | undefined;
   await app.page.route("**/api/v1/translate", async (route) => {
-    sent = route.request().postDataJSON();
+    sent = route.request().postDataJSON() as Partial<TranslateRequest>;
     await route.fulfill({ status: 200, contentType: "text/event-stream", body: sse([["done", done]]) });
   });
   await app.open();

@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment */
 // Shared harness for API tests and the Playwright mock server (e2e/mock-server.ts): a fake model that
 // stands in for the one libllama would load, a launcher that makes one per model load, and small
 // request/SSE helpers. No GPU, library or model files are needed.
@@ -9,6 +8,7 @@
 
 import { join, resolve } from "node:path";
 
+import type { ErrorBody, ErrorResponse, TranslateEvents } from "../../src/api";
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
 import {
@@ -360,9 +360,12 @@ export function postTo(base: string, path: string, body: unknown, init: RequestI
   });
 }
 
-export interface SseEvent {
-  event: string;
-  data: any;
+/** One event of a translation stream; `event` tells which schema `data` has. */
+export type SseEvent = { [E in keyof TranslateEvents]: { event: E; data: TranslateEvents[E] } }[keyof TranslateEvents];
+
+/** The `data` of the events called `name`, in order. */
+export function dataOf<E extends keyof TranslateEvents>(events: SseEvent[], name: E): TranslateEvents[E][] {
+  return events.flatMap((e) => (e.event === name ? [e.data as TranslateEvents[E]] : []));
 }
 
 export async function readSse(res: Response): Promise<SseEvent[]> {
@@ -371,8 +374,22 @@ export async function readSse(res: Response): Promise<SseEvent[]> {
     const event = /^event: (.*)$/m.exec(frame)?.[1];
     const data = /^data: (.*)$/m.exec(frame)?.[1];
     if (event && data) {
-      events.push({ event, data: JSON.parse(data) });
+      const parsed: unknown = JSON.parse(data);
+      events.push({ event, data: parsed } as SseEvent);
     }
   }
   return events;
+}
+
+/**
+ * The JSON body of a response as `T`, the type of its schema in docs/openapi.yaml. A cast, since the
+ * wire holds no types: what keeps the server to the spec is that it builds each body as that type.
+ */
+export async function bodyOf<T>(res: Response): Promise<T> {
+  return (await res.json()) as T;
+}
+
+/** The `error` of an error response. */
+export async function errorOf(res: Response): Promise<ErrorBody> {
+  return (await bodyOf<ErrorResponse>(res)).error;
 }

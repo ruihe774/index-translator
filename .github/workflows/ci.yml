@@ -34,6 +34,9 @@ jobs:
       - name: Install the development tools
         run: bun install --frozen-lockfile
 
+      - name: Generated API types match the spec
+        run: bun run gen:api && git diff --exit-code src/api-schema.d.ts
+
       - name: Lint, typecheck and format
         run: bun run lint:ts && bun run format:check
 

@@ -13,6 +13,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
+import type { SpeechLanguage, SpeechStatus, Voice } from "./api";
 import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
 import { fetchCommand } from "./preflight";
@@ -20,7 +21,13 @@ import type { SpeechWorkerReply, SpeechWorkerRequest } from "./speech-worker";
 import { type Pcm, readWav } from "./wav";
 
 /** The languages IndexTTS-2.5 speaks. Any other text comes out as noise, so it is refused. */
-export const SPEECH_LANGUAGES = ["zh", "en", "ja", "es", "ar"];
+const SPEECH_LANGUAGE_SET: Record<SpeechLanguage, true> = { zh: true, en: true, ja: true, es: true, ar: true };
+/** Keyed by the API's languages: one the spec adds or drops is a type error here. */
+export const SPEECH_LANGUAGES = Object.keys(SPEECH_LANGUAGE_SET) as SpeechLanguage[];
+
+export function isSpeechLanguage(lang: string): lang is SpeechLanguage {
+  return Object.hasOwn(SPEECH_LANGUAGE_SET, lang);
+}
 /** Longest text of one request, in code points. Clients send a document sentence by sentence. */
 export const MAX_SPEECH_CHARS = 1000;
 /** Range of the model's duration control: speed 2 halves the duration, 0.5 doubles it. */
@@ -49,14 +56,11 @@ export class SpeechError extends Error {}
 /** Separating the voice from an uploaded sample failed in the engine; the sample itself may be fine. */
 export class SeparationError extends SpeechError {}
 
-export interface Voice {
-  id: string;
-  name: string;
-}
+export type { Voice };
 
 export interface SpeechRequest {
   text: string;
-  lang: string;
+  lang: SpeechLanguage;
   /** A voice id from `voices()`. */
   voice: string;
   speed: number;
@@ -67,7 +71,7 @@ export interface SpeechRequest {
  * `stopped`: installed, the model is not loaded; `starting`: loading it; `ready`; `error`: the
  * last load failed.
  */
-export type SpeechState = "unavailable" | "stopped" | "starting" | "ready" | "error";
+export type SpeechState = SpeechStatus;
 
 export interface Speech {
   readonly state: SpeechState;

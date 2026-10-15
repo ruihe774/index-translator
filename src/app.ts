@@ -3,20 +3,24 @@
 import type { Server } from "bun";
 
 import { hostAllowed, type HostRule, originAllowed, type OriginRule, parseHostRule, parseOriginRule } from "./access";
+import type {
+  ErrorCode,
+  ErrorDetails,
+  ErrorEvent,
+  ErrorResponse,
+  Health,
+  Language,
+  ModelList,
+  TokenizeResponse,
+  TranslateEvents,
+  TranslateResponse,
+  Voice,
+  VoiceList,
+} from "./api";
 import { type Config, CONTEXT_MARGIN } from "./config";
 import { createDevReload, DEV_PREFIX } from "./dev-reload";
 import { IMAGE_FORMATS, ImageRejected, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, prepareImage } from "./image";
-import {
-  Engine,
-  EngineError,
-  type EngineTimings,
-  type FinishReason,
-  ImageInputError,
-  ImageUnavailableError,
-  type Launcher,
-  launchNative,
-  type Usage,
-} from "./llama";
+import { Engine, EngineError, ImageInputError, ImageUnavailableError, type Launcher, launchNative } from "./llama";
 import { findModel, MODELS, type ModelSpec } from "./models";
 import {
   buildDocumentPrompt,
@@ -29,6 +33,7 @@ import {
 import { acceptsQoa, qoaLoader, qoaResponse } from "./qoa-stream";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 import {
+  isSpeechLanguage,
   MAX_SAMPLE_BYTES,
   MAX_SAMPLE_RATE,
   MAX_SAMPLE_SECONDS,
@@ -64,9 +69,9 @@ const MAX_KEPT_JOBS = 16;
 class ApiError extends Error {
   constructor(
     public status: number,
-    public code: string,
+    public code: ErrorCode | ErrorEvent["code"],
     message: string,
-    public details?: Record<string, unknown>,
+    public details?: ErrorDetails,
     public headers?: Record<string, string>,
   ) {
     super(message);
@@ -92,26 +97,31 @@ function imageError(e: unknown): ApiError | undefined {
   return undefined;
 }
 
-function json(body: unknown, status = 200, headers?: Record<string, string>): Response {
+/** `T` is the schema of docs/openapi.yaml the body must have; name it at every call. */
+function json<T>(body: T, status = 200, headers?: Record<string, string>): Response {
   return Response.json(body, { status, headers });
 }
 
 function errorResponse(e: unknown): Response {
   if (e instanceof ApiError) {
-    return json({ error: { code: e.code, message: e.message, details: e.details } }, e.status, e.headers);
+    return json<ErrorResponse>(
+      { error: { code: e.code, message: e.message, details: e.details } },
+      e.status,
+      e.headers,
+    );
   }
   const image = imageError(e);
   if (image) {
     return errorResponse(image);
   }
   if (e instanceof EngineError) {
-    return json({ error: { code: "engine_error", message: e.message } }, 502);
+    return json<ErrorResponse>({ error: { code: "engine_error", message: e.message } }, 502);
   }
   if (e instanceof SpeechError) {
-    return json({ error: { code: "speech_error", message: e.message } }, 502);
+    return json<ErrorResponse>({ error: { code: "speech_error", message: e.message } }, 502);
   }
   console.error("[api] unexpected error:", e);
-  return json({ error: { code: "internal_error", message: "internal server error" } }, 500);
+  return json<ErrorResponse>({ error: { code: "internal_error", message: "internal server error" } }, 500);
 }
 
 interface TranslateRequest extends PromptInput {
@@ -425,14 +435,6 @@ interface Budget {
   maxOutputTokens: number;
 }
 
-interface Result {
-  translation: string;
-  finish_reason: FinishReason;
-  model: string;
-  usage: Usage;
-  timings: EngineTimings & { queue_ms: number };
-}
-
 export interface App {
   server: Server<undefined>;
   engine: Engine;
@@ -570,7 +572,7 @@ export async function startApp(
     signal.addEventListener("abort", onAbort);
     try {
       let translation = "";
-      let result: Result | undefined;
+      let result: TranslateResponse | undefined;
       for await (const ev of run(input, ticket, signal)) {
         if (ev.type === "delta") {
           translation += ev.text;
@@ -587,7 +589,7 @@ export async function startApp(
       if (!result) {
         throw cancelled();
       }
-      return json(result);
+      return json<TranslateResponse>(result);
     } catch (e) {
       // An aborted engine call throws a raw AbortError; for a gone client that is a cancellation, not a failure.
       throw signal.aborted ? cancelled() : e;
@@ -722,7 +724,7 @@ export async function startApp(
       finished: false,
       abort: new AbortController(),
     };
-    const emit = (event: string, data: unknown) => {
+    const emit = <E extends keyof TranslateEvents>(event: E, data: TranslateEvents[E]) => {
       const frame = `id: ${job.frames.length + 1}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
       job.frames.push(frame);
       job.reader?.(frame);
@@ -804,7 +806,7 @@ export async function startApp(
    * tokenizer. This assumes the two 9B checkpoints share a tokenizer family; `counted_with` says
    * which model did the counting.
    */
-  async function tokenize(input: TranslateRequest): Promise<Record<string, unknown>> {
+  async function tokenize(input: TranslateRequest): Promise<TokenizeResponse> {
     const unavailable = () =>
       new ApiError(
         503,
@@ -847,7 +849,7 @@ export async function startApp(
     }
     const text = optionalString(body, "text", MAX_SPEECH_CHARS)!;
     const lang = optionalString(body, "lang", 16)?.trim().toLowerCase();
-    if (!lang || !SPEECH_LANGUAGES.includes(lang)) {
+    if (!lang || !isSpeechLanguage(lang)) {
       throw new ApiError(400, "invalid_request", `lang must be one of ${SPEECH_LANGUAGES.join(", ")}`, {
         field: "lang",
         supported: SPEECH_LANGUAGES,
@@ -891,7 +893,7 @@ export async function startApp(
     }
     const name = (url.searchParams.get("name") ?? "").replaceAll(/\s+/g, " ").trim().slice(0, 60) || "Uploaded voice";
     try {
-      return json(await speech.addVoice(name, wav), 201);
+      return json<Voice>(await speech.addVoice(name, wav), 201);
     } catch (e) {
       // Not the client's doing: the sample was fine, the engine could not separate it. Mapped by onError.
       if (e instanceof SpeechError && !(e instanceof SeparationError)) {
@@ -979,7 +981,7 @@ export async function startApp(
             if (req.method !== "GET") {
               return methodNotAllowed("GET");
             }
-            return json(
+            return json<Health>(
               {
                 status: engine.state,
                 error: engine.error,
@@ -995,7 +997,7 @@ export async function startApp(
             if (req.method !== "GET") {
               return methodNotAllowed("GET");
             }
-            return json({
+            return json<ModelList>({
               default: defaultModel.id,
               loaded: engine.loaded?.id ?? null,
               models: MODELS.map((m) => ({
@@ -1016,7 +1018,7 @@ export async function startApp(
             if (req.method !== "GET") {
               return methodNotAllowed("GET");
             }
-            return json({ languages: LANGUAGES.map(({ code, name }) => ({ code, name })) });
+            return json<{ languages: Language[] }>({ languages: LANGUAGES.map(({ code, name }) => ({ code, name })) });
           }
           case "/voices": {
             if (req.method === "POST") {
@@ -1025,7 +1027,7 @@ export async function startApp(
             if (req.method !== "GET") {
               return methodNotAllowed("GET, POST");
             }
-            return json({
+            return json<VoiceList>({
               status: speech.state,
               error: speech.error,
               languages: SPEECH_LANGUAGES,
@@ -1062,7 +1064,7 @@ export async function startApp(
               throw invalid("image is not supported by /tokenize", "image");
             }
             const input = parseTranslateRequest(req, body, cfg.defaultModel);
-            return json(await tokenize(input));
+            return json<TokenizeResponse>(await tokenize(input));
           }
           case "/translate": {
             if (req.method !== "POST") {

@@ -1,6 +1,7 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access */
 // End to end: the web app in a real browser against the real server, with the mock engine.
 
+import type { Health } from "../src/api";
 import { CHAT, DOCUMENT, expect, test, THINK } from "./fixtures";
 
 test("the page loads languages and reports a ready engine", async ({ app }) => {
@@ -198,7 +199,9 @@ test("a full queue shows the busy message", async ({ app, mock, request, baseURL
   await expect.poll(async () => (await mock.state()).requests.length).toBe(1);
   const second = call(); // waits (max_queue is 1)
   await expect(app.engine).toBeVisible();
-  await expect.poll(async () => (await (await request.get(`${baseURL}/api/v1/health`)).json()).queue.waiting).toBe(1);
+  await expect
+    .poll(async () => ((await (await request.get(`${baseURL}/api/v1/health`)).json()) as Health).queue.waiting)
+    .toBe(1);
 
   await app.text.fill("third");
   await app.translate.click();

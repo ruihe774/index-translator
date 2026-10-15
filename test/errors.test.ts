@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { describeError } from "../public/errors";
+import { type ApiErrorBody, describeError } from "../public/errors";
 
 // The same grouping the browser uses, so the expected numbers match on any locale.
 const fmt = (n: number) => n.toLocaleString();
@@ -106,7 +106,7 @@ describe("describeError: other recognised codes keep the server message", () => 
     "forbidden_origin",
     "forbidden_host",
     "cancelled",
-  ]) {
+  ] as const) {
     test(`${code} with a message`, () => {
       expect(describeError({ code, message: "server says so" }, 400)).toBe("server says so");
     });
@@ -117,13 +117,16 @@ describe("describeError: other recognised codes keep the server message", () => 
   }
 });
 
+/** An error with a code this page's spec does not have, as a newer server could send. */
+const newerServer = (code: string, message: string) => ({ code, message }) as ApiErrorBody;
+
 describe("describeError: bare 429 and 503 (no recognised code)", () => {
   test("429 without a body says the translator is busy", () => {
     expect(describeError(undefined, 429)).toBe("The translator is busy. Try again in a minute.");
   });
 
   test("429 with an unrecognised code says the translator is busy", () => {
-    expect(describeError({ code: "rate_limited", message: "slow down" }, 429)).toBe(
+    expect(describeError(newerServer("rate_limited", "slow down"), 429)).toBe(
       "The translator is busy. Try again in a minute.",
     );
   });
@@ -133,7 +136,7 @@ describe("describeError: bare 429 and 503 (no recognised code)", () => {
   });
 
   test("503 with an unrecognised code says the translator is not ready or busy", () => {
-    expect(describeError({ code: "maintenance", message: "down for upkeep" }, 503)).toBe(
+    expect(describeError(newerServer("maintenance", "down for upkeep"), 503)).toBe(
       "The translator is not ready or is busy. Try again in a moment.",
     );
   });

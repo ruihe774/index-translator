@@ -1,16 +1,19 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-return, @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/await-thenable */
 // Request parsing, validation, input budget, static files and the error envelope, against the mock
 // engine. Complements api.test.ts: each case here is about how a request is read or refused.
 // Findings the server gets wrong are written as test.failing and listed in the report.
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 
+import type { ErrorResponse, TokenizeResponse, TranslateResponse } from "../src/api";
 import { type App, startApp } from "../src/app";
 import { buildDocumentPrompt, buildPrompt } from "../src/prompt";
 import {
+  bodyOf,
   CHAT,
   config,
   DOCUMENT,
+  errorOf,
   launcher,
   mock,
   postTo,
@@ -36,7 +39,6 @@ afterEach(() => resetMock());
 afterAll(() => app.stop());
 
 const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
-const json = async (res: Response): Promise<any> => res.json();
 const lastUpstreamContent = (): string => mock.requests.at(-1)!.prompt;
 
 /** A translate request body the mock engine accepts. */
@@ -55,7 +57,7 @@ describe("max_output_tokens", () => {
   ])("%s is rejected with 400 naming the field", async (_name, value) => {
     const res = await post("/api/v1/translate", { ...plain, max_output_tokens: value });
     expect(res.status).toBe(400);
-    const { error } = await json(res);
+    const error = await errorOf(res);
     expect(error.code).toBe("invalid_request");
     expect(error.details).toStrictEqual({ field: "max_output_tokens" });
   });
@@ -63,7 +65,7 @@ describe("max_output_tokens", () => {
   test("1e400 parses to Infinity in JSON and is rejected like any non-integer", async () => {
     const res = await post("/api/v1/translate", '{"text":"Hi","target_lang":"zh","max_output_tokens":1e400}');
     expect(res.status).toBe(400);
-    expect((await json(res)).error.details).toStrictEqual({ field: "max_output_tokens" });
+    expect((await errorOf(res)).details).toStrictEqual({ field: "max_output_tokens" });
   });
 
   test("null is allowed and means the default budget", async () => {
@@ -98,7 +100,7 @@ describe("string length limits", () => {
 
     const long = await post("/api/v1/translate", { text: "Hi", target_lang: chars(65) });
     expect(long.status).toBe(400);
-    const { error } = await json(long);
+    const error = await errorOf(long);
     expect(error.details).toStrictEqual({ field: "target_lang" });
     expect(error.message).toContain("at most 64");
   });
@@ -110,7 +112,7 @@ describe("string length limits", () => {
 
     const long = await post("/api/v1/translate", { ...plain, source_lang: chars(65) });
     expect(long.status).toBe(400);
-    expect((await json(long)).error.details).toStrictEqual({ field: "source_lang" });
+    expect((await errorOf(long)).details).toStrictEqual({ field: "source_lang" });
   });
 
   test("genre of 64 characters is accepted, 65 is refused even without constraints", async () => {
@@ -120,22 +122,22 @@ describe("string length limits", () => {
 
     const long = await post("/api/v1/translate", { ...plain, genre: chars(65) });
     expect(long.status).toBe(400);
-    expect((await json(long)).error.details).toStrictEqual({ field: "genre" });
+    expect((await errorOf(long)).details).toStrictEqual({ field: "genre" });
   });
 
   test("model of 65 characters is refused with the field; 64 characters gets past the length check", async () => {
     const long = await post("/api/v1/translate", { ...plain, model: chars(65) });
     expect(long.status).toBe(400);
-    const longBody = await json(long);
-    expect(longBody.error.details).toStrictEqual({ field: "model" });
-    expect(longBody.error.message).toContain("at most 64");
+    const longBody = await errorOf(long);
+    expect(longBody.details).toStrictEqual({ field: "model" });
+    expect(longBody.message).toContain("at most 64");
 
     // 64 characters is the right shape but no such model exists, so the failure is the unknown-model one.
     const shaped = await post("/api/v1/translate", { ...plain, model: chars(64) });
     expect(shaped.status).toBe(400);
-    const shapedBody = await json(shaped);
-    expect(shapedBody.error.details).toStrictEqual({ field: "model" });
-    expect(shapedBody.error.message).toContain("unknown model");
+    const shapedBody = await errorOf(shaped);
+    expect(shapedBody.details).toStrictEqual({ field: "model" });
+    expect(shapedBody.message).toContain("unknown model");
   });
 
   test("target_lang maxLength counts code points as JSON Schema does, so 40 emoji (80 UTF-16 units) are accepted", async () => {
@@ -155,7 +157,7 @@ describe("type validation of scalar fields", () => {
   ])("target_lang as %s is refused with 400 naming the field", async (_name, value) => {
     const res = await post("/api/v1/translate", { text: "Hi", target_lang: value });
     expect(res.status).toBe(400);
-    const { error } = await json(res);
+    const error = await errorOf(res);
     expect(error.code).toBe("invalid_request");
     expect(error.details).toStrictEqual({ field: "target_lang" });
   });
@@ -163,13 +165,13 @@ describe("type validation of scalar fields", () => {
   test("a whitespace-only target_lang is refused as empty", async () => {
     const res = await post("/api/v1/translate", { text: "Hi", target_lang: "   " });
     expect(res.status).toBe(400);
-    expect((await json(res)).error.details).toStrictEqual({ field: "target_lang" });
+    expect((await errorOf(res)).details).toStrictEqual({ field: "target_lang" });
   });
 
   test("model: null uses the default model", async () => {
     const res = await post("/api/v1/translate", { ...plain, model: null });
     expect(res.status).toBe(200);
-    expect((await json(res)).model).toBe(CHAT);
+    expect((await bodyOf<TranslateResponse>(res)).model).toBe(CHAT);
   });
 });
 
@@ -179,7 +181,7 @@ describe("document model field rules", () => {
   test("an empty glossary object is accepted, since it expresses no constraint", async () => {
     const res = await post("/api/v1/translate", { ...doc, glossary: {} });
     expect(res.status).toBe(200);
-    expect((await json(res)).model).toBe(DOCUMENT);
+    expect((await bodyOf<TranslateResponse>(res)).model).toBe(DOCUMENT);
   });
 
   test("empty hard and soft constraint lists are accepted", async () => {
@@ -196,7 +198,7 @@ describe("document model field rules", () => {
   ])("source_lang %s is refused, since the model has no detection", async (_name, source) => {
     const res = await post("/api/v1/translate", { ...doc, source_lang: source });
     expect(res.status).toBe(400);
-    const { error } = await json(res);
+    const error = await errorOf(res);
     expect(error.details).toStrictEqual({ field: "source_lang" });
   });
 
@@ -215,16 +217,16 @@ describe("document model field rules", () => {
     ]) {
       const res = await post("/api/v1/translate", { ...doc, source_lang: source, target_lang: target });
       expect(res.status).toBe(400);
-      const { error } = await json(res);
+      const error = await errorOf(res);
       expect(error.code).toBe("unsupported_language_pair");
-      expect(error.details.field).toBe("target_lang");
+      expect(error.details?.field).toBe("target_lang");
     }
   });
 
   test("the chat model accepts source equal to target", async () => {
     const res = await post("/api/v1/translate", { text: "你好", source_lang: "zh", target_lang: "zh" });
     expect(res.status).toBe(200);
-    expect((await json(res)).model).toBe(CHAT);
+    expect((await bodyOf<TranslateResponse>(res)).model).toBe(CHAT);
   });
 });
 
@@ -285,7 +287,7 @@ describe("request body size", () => {
   test("a body one byte over 4 MiB is refused with body_too_large before parsing", async () => {
     const res = await post("/api/v1/translate", paddedTo(4 * MiB + 1));
     expect(res.status).toBe(413);
-    const { error } = await json(res);
+    const error = await errorOf(res);
     expect(error.code).toBe("body_too_large");
     expect(error.message).toContain(String(4 * MiB));
   });
@@ -366,7 +368,7 @@ describe("request body shape", () => {
   ])("%s is refused with 400 invalid_request", async (_name, body, message) => {
     const res = await post("/api/v1/translate", body);
     expect(res.status).toBe(400);
-    const { error } = await json(res);
+    const error = await errorOf(res);
     expect(error.code).toBe("invalid_request");
     expect(error.message).toMatch(message);
   });
@@ -375,7 +377,7 @@ describe("request body shape", () => {
     for (const body of ["", "null", '"str"', "123"]) {
       const res = await post("/api/v1/tokenize", body);
       expect(res.status).toBe(400);
-      expect((await json(res)).error.code).toBe("invalid_request");
+      expect((await errorOf(res)).code).toBe("invalid_request");
     }
   });
 });
@@ -386,7 +388,7 @@ describe("unicode and replacement patterns", () => {
     mock.chunks = ["Hello 🌏 ", "世界"];
     const res = await post("/api/v1/translate", { text, target_lang: "en" });
     expect(res.status).toBe(200);
-    expect((await json(res)).translation).toBe("Hello 🌏 世界");
+    expect((await bodyOf<TranslateResponse>(res)).translation).toBe("Hello 🌏 世界");
     expect(lastUpstreamContent()).toBe(buildPrompt({ text, targetLang: "en" }));
   });
 
@@ -424,10 +426,14 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
   });
 
   test("tokenize reports fits at exactly the input limit and not one token over", async () => {
-    const at = await json(await post("/api/v1/tokenize", { text: textFor(400), target_lang: "en" }));
+    const at = await bodyOf<TokenizeResponse>(
+      await post("/api/v1/tokenize", { text: textFor(400), target_lang: "en" }),
+    );
     expect(at).toMatchObject({ prompt_tokens: 400, fits: true, max_output_tokens: 536 });
 
-    const over = await json(await post("/api/v1/tokenize", { text: textFor(401), target_lang: "en" }));
+    const over = await bodyOf<TokenizeResponse>(
+      await post("/api/v1/tokenize", { text: textFor(401), target_lang: "en" }),
+    );
     expect(over).toMatchObject({ prompt_tokens: 401, fits: false, max_output_tokens: 535 });
   });
 
@@ -442,14 +448,14 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
     const before = mock.requests.length;
     const res = await post("/api/v1/translate", { text: textFor(401), target_lang: "en" });
     expect(res.status).toBe(413);
-    const { error } = await json(res);
+    const error = await errorOf(res);
     expect(error.code).toBe("input_too_long");
     expect(error.details).toStrictEqual({ prompt_tokens: 401, max_input_tokens: 400 });
     expect(mock.requests).toHaveLength(before);
   });
 
   test("tokenize ignores stream and max_output_tokens and always answers JSON", async () => {
-    const plainBody = await json(await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" }));
+    const plainBody = await bodyOf<TokenizeResponse>(await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" }));
     const withIgnored = await post(
       "/api/v1/tokenize",
       { text: "Hi", target_lang: "zh", stream: true, max_output_tokens: 7 },
@@ -457,7 +463,7 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
     );
     expect(withIgnored.status).toBe(200);
     expect(withIgnored.headers.get("content-type")).toStartWith("application/json");
-    await expect(json(withIgnored)).resolves.toStrictEqual(plainBody);
+    await expect(bodyOf<TokenizeResponse>(withIgnored)).resolves.toStrictEqual(plainBody);
   });
 
   test.each([
@@ -479,7 +485,7 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
   ])("validates like /translate: %s is a 400", async (_name, body, field) => {
     const res = await post("/api/v1/tokenize", body);
     expect(res.status).toBe(400);
-    expect((await json(res)).error.details?.field).toBe(field);
+    expect((await errorOf(res)).details?.field).toBe(field);
   });
 });
 
@@ -567,7 +573,7 @@ describe("static files", () => {
     const res = await fetch(base + "/api/v1/");
     expect(res.status).toBe(404);
     expect(res.headers.get("content-type")).toStartWith("application/json");
-    expect((await json(res)).error.code).toBe("not_found");
+    expect((await errorOf(res)).code).toBe("not_found");
   });
 
   test.failing("a null byte in the path is a 400 or 404, not a 500", async () => {
@@ -591,7 +597,7 @@ describe("static files", () => {
       const res = await fetch(base + "/%00");
       expect(res.status).toBe(500);
       expect(res.headers.get("content-type")).toStartWith("application/json");
-      expect((await json(res)).error).toStrictEqual({ code: "internal_error", message: "internal server error" });
+      await expect(errorOf(res)).resolves.toStrictEqual({ code: "internal_error", message: "internal server error" });
     } finally {
       spy.mockRestore();
     }
@@ -602,10 +608,10 @@ describe("static files", () => {
 });
 
 describe("error envelope", () => {
-  function expectEnvelope(body: any, code: string): void {
+  function expectEnvelope(body: ErrorResponse, code: string): void {
     expect(Object.keys(body)).toStrictEqual(["error"]);
     expect(body.error.code).toBeTypeOf("string");
-    expect(body.error.code).toBe(code);
+    expect<string>(body.error.code).toBe(code);
     expect(body.error.message).toBeTypeOf("string");
   }
 
@@ -649,7 +655,7 @@ describe("error envelope", () => {
       const res = await pending;
       expect({ label, status: res.status }).toStrictEqual({ label, status });
       expect(res.headers.get("content-type")).toStartWith("application/json");
-      expectEnvelope(await json(res), code);
+      expectEnvelope(await bodyOf<ErrorResponse>(res), code);
     }
   });
 
@@ -675,7 +681,7 @@ describe("error envelope", () => {
       expect(res.status).toBe(405);
       expect(res.headers.get("allow")).toBe(allow);
       expect(res.headers.get("content-type")).toStartWith("application/json");
-      expectEnvelope(await json(res), "method_not_allowed");
+      expectEnvelope(await bodyOf<ErrorResponse>(res), "method_not_allowed");
     }
   });
 
