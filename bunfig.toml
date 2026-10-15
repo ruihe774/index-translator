@@ -34,7 +34,9 @@ correctness = "error"
 "@typescript-eslint/dot-notation" = "warn"
 "@typescript-eslint/no-confusing-non-null-assertion" = "warn"
 "@typescript-eslint/no-deprecated" = "warn"
+"@typescript-eslint/no-dupe-class-members" = "warn"
 "@typescript-eslint/no-dynamic-delete" = "warn"
+"@typescript-eslint/no-empty-function" = ["warn", { allow = ["arrowFunctions", "asyncMethods", "methods"] }]
 "@typescript-eslint/no-empty-object-type" = "warn"
 "@typescript-eslint/no-explicit-any" = "warn"
 "@typescript-eslint/no-extraneous-class" = "warn"
@@ -62,7 +64,12 @@ correctness = "error"
 "@typescript-eslint/no-unsafe-function-type" = "warn"
 "@typescript-eslint/no-unsafe-member-access" = "warn"
 "@typescript-eslint/no-unsafe-return" = "warn"
-"@typescript-eslint/no-unused-vars" = ["warn", { argsIgnorePattern = "^_", varsIgnorePattern = "^_", caughtErrorsIgnorePattern = "^_" }]
+"@typescript-eslint/no-unused-expressions" = "warn"
+"@typescript-eslint/no-unused-private-class-members" = "warn"
+"@typescript-eslint/no-unused-vars" = [
+  "warn",
+  { argsIgnorePattern = "^_", varsIgnorePattern = "^_", caughtErrorsIgnorePattern = "^_" },
+]
 "@typescript-eslint/non-nullable-type-assertion-style" = "warn"
 "@typescript-eslint/only-throw-error" = "warn"
 "@typescript-eslint/prefer-find" = "warn"
@@ -86,6 +93,7 @@ correctness = "error"
 "@typescript-eslint/switch-exhaustiveness-check" = ["warn", { considerDefaultExhaustiveForUnions = true }]
 "@typescript-eslint/unified-signatures" = "warn"
 "accessor-pairs" = "warn"
+"arrow-body-style" = "warn"
 "block-scoped-var" = "warn"
 "bun:test/consistent-test-filename" = "warn"
 "bun:test/consistent-test-it" = ["warn", { withinDescribe = "test" }]
@@ -144,6 +152,7 @@ correctness = "error"
 "default-param-last" = "warn"
 "eqeqeq" = ["warn", "smart"]
 "func-name-matching" = "warn"
+"func-names" = "warn"
 "grouped-accessor-pairs" = "warn"
 "guard-for-in" = "warn"
 "import/default" = "off"
@@ -156,12 +165,14 @@ correctness = "error"
 "import/no-duplicates" = "warn"
 "import/no-dynamic-require" = "warn"
 "import/no-empty-named-blocks" = "warn"
+"import/no-extraneous-dependencies" = "warn"
 "import/no-mutable-exports" = "warn"
 "import/no-named-as-default-member" = "warn"
 "import/no-named-as-default" = "warn"
 "import/no-named-default" = "warn"
 "import/no-self-import" = "warn"
 "import/no-unassigned-import" = "warn"
+"import/no-useless-path-segments" = "warn"
 "import/no-webpack-loader-syntax" = "warn"
 "new-cap" = ["warn", { capIsNew = false }]
 "no-alert" = "warn"
@@ -175,6 +186,7 @@ correctness = "error"
 "no-extra-bind" = "warn"
 "no-extra-label" = "warn"
 "no-fallthrough" = "warn"
+"no-implicit-coercion" = ["warn", { boolean = false }]
 "no-implicit-globals" = "warn"
 "no-implied-eval" = "warn"
 "no-inner-declarations" = "warn"
@@ -188,6 +200,8 @@ correctness = "error"
 "no-new-wrappers" = "warn"
 "no-new" = "warn"
 "no-object-constructor" = "warn"
+"no-octal-escape" = "warn"
+"no-octal" = "warn"
 "no-promise-executor-return" = ["warn", { allowVoid = true }]
 "no-proto" = "warn"
 "no-prototype-builtins" = "warn"
@@ -202,6 +216,7 @@ correctness = "error"
 "no-sequences" = "warn"
 "no-template-curly-in-string" = "warn"
 "no-throw-literal" = "warn"
+"no-undef-init" = "warn"
 "no-undef" = "warn"
 "no-underscore-dangle" = "warn"
 "no-unexpected-multiline" = "warn"
@@ -252,7 +267,6 @@ correctness = "error"
 "unicorn/no-anonymous-default-export" = "warn"
 "unicorn/no-array-fill-with-reference-type" = "warn"
 "unicorn/no-array-method-this-argument" = "warn"
-"unicorn/no-array-reverse" = "warn"
 "unicorn/no-confusing-array-with" = "warn"
 "unicorn/no-console-spaces" = "warn"
 "unicorn/no-document-cookie" = "warn"
@@ -290,7 +304,6 @@ correctness = "error"
 "unicorn/prefer-classlist-toggle" = "warn"
 "unicorn/prefer-date-now" = "warn"
 "unicorn/prefer-default-parameters" = "warn"
-"unicorn/prefer-dom-node-append" = "warn"
 "unicorn/prefer-dom-node-text-content" = "warn"
 "unicorn/prefer-event-target" = "warn"
 "unicorn/prefer-export-from" = ["warn", { checkUsedVariables = false }]
@@ -329,7 +342,11 @@ correctness = "error"
 "unicorn/text-encoding-identifier-case" = "warn"
 "unicorn/throw-new-error" = "warn"
 "yoda" = "warn"
-"no-restricted-syntax" = ["warn", "ClassDeclaration[superClass.name!='HTMLElement'] > ClassBody > PropertyDefinition > PrivateIdentifier", "ClassDeclaration[superClass.name='HTMLElement'] > ClassBody > PropertyDefinition[accessibility='private']"]
+"no-restricted-syntax" = [
+  "warn",
+  "ClassDeclaration[superClass.name!='HTMLElement'] > ClassBody > PropertyDefinition > PrivateIdentifier",
+  "ClassDeclaration[superClass.name='HTMLElement'] > ClassBody > PropertyDefinition[accessibility='private']",
+]
 
 [fmt]
 printWidth = 120
