@@ -4,27 +4,27 @@ import { mkdir, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
+import { $ } from "bun";
+
 /** Runs a command with its output on the terminal and throws when it fails. */
 export async function run(command: string[], cwd?: string, env?: Record<string, string>): Promise<void> {
   console.log(`$ ${command.join(" ")}`);
-  const child = Bun.spawn(command, {
-    cwd,
-    env: { ...Bun.env, ...env },
-    stdin: "ignore",
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  const code = await child.exited;
-  if (code !== 0) {
-    throw new Error(`${command[0]} failed with exit code ${code}`);
+  const result = await $`${command}`
+    .cwd(cwd ?? process.cwd())
+    .env({ ...Bun.env, ...env })
+    .nothrow();
+  if (result.exitCode !== 0) {
+    throw new Error(`${command[0]} failed with exit code ${result.exitCode}`);
   }
 }
 
 /** What a command prints, trimmed; empty when it fails. */
 export async function output(command: string[], cwd?: string): Promise<string> {
-  const child = Bun.spawn(command, { cwd, stdin: "ignore", stdout: "pipe", stderr: "ignore" });
-  const text = await new Response(child.stdout).text();
-  return (await child.exited) === 0 ? text.trim() : "";
+  const result = await $`${command}`
+    .cwd(cwd ?? process.cwd())
+    .quiet()
+    .nothrow();
+  return result.exitCode === 0 ? result.text().trim() : "";
 }
 
 /** Makes `dir` a checkout of exactly `commit`, fetching nothing else of the repository's history. */

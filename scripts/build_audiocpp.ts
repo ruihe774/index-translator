@@ -22,6 +22,8 @@
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
+import { $ } from "bun";
+
 import { libraryPath, libraryVersion } from "../src/audiocpp-ffi";
 import { checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
 
@@ -63,11 +65,8 @@ if (!keep) {
 }
 await checkout(REPO, COMMIT, source);
 // A tree kept by --keep has the patch already: taking it out again would then work.
-const reverse = Bun.spawn(["git", "apply", "--reverse", "--check", "--ignore-whitespace", PATCH], {
-  cwd: source,
-  stdio: ["ignore", "ignore", "ignore"],
-});
-if ((await reverse.exited) !== 0) {
+const reverse = await $`git apply --reverse --check --ignore-whitespace ${PATCH}`.cwd(source).quiet().nothrow();
+if (reverse.exitCode !== 0) {
   await run(["git", "apply", "--ignore-whitespace", PATCH], source);
 }
 
