@@ -63,7 +63,7 @@ for (const scheme of ["light", "dark"] as const) {
 }
 
 for (const scheme of ["light", "dark"] as const) {
-  test(`reading aloud passes axe in ${scheme} mode, with the controls out, one block shaded and at 320 px`, async ({
+  test(`reading aloud passes axe in ${scheme} mode, with the controls and read-from buttons out, one block shaded and at 320 px`, async ({
     app,
     mock,
   }) => {
@@ -79,7 +79,7 @@ for (const scheme of ["light", "dark"] as const) {
     await app.translate.click();
     await expect(app.meta).toContainText("generated");
     const listen = app.page.locator("#listen-output");
-    await listen.click();
+    await app.readAloud("output");
     await expect(app.output.locator(".speaking")).toHaveAttribute("aria-current", "true", { timeout: 10_000 });
     await expect(listen).toHaveAttribute("data-state", "playing", { timeout: 10_000 });
     await app.page.locator("#next-output").click();
@@ -100,8 +100,29 @@ for (const scheme of ["light", "dark"] as const) {
     expect(
       await app.page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth),
     ).toBeLessThanOrEqual(0);
+    // The read-from buttons, at the narrowest: at least 24 px each way (2.5.8), apart, and clear of the text.
+    const gutter = app.gutter("output");
+    await expect(gutter).toHaveCount(3);
+    const boxes = await gutter.evaluateAll((bs) => bs.map((b) => b.getBoundingClientRect().toJSON() as DOMRect));
+    const text = await app.output.locator(":scope > [data-line]").first().boundingBox();
+    boxes.forEach((box, i) => {
+      expect(box.width).toBeGreaterThanOrEqual(24);
+      expect(box.height).toBeGreaterThanOrEqual(24);
+      expect(box.right).toBeLessThanOrEqual(text!.x);
+      if (i > 0) {
+        expect(box.top).toBeGreaterThanOrEqual(boxes[i - 1]!.bottom);
+      }
+    });
+    // The block being read has its button filled like the pressed Read aloud (axe checks no icon contrast).
+    await app.page.mouse.move(0, 0);
+    await app.page.waitForTimeout(300);
+    const colours = (el: Element) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color];
+    expect(await gutter.and(app.page.locator("[aria-current='true']")).evaluate(colours)).toStrictEqual(
+      await listen.evaluate(colours),
+    );
     await listen.click();
     await expect(app.page.locator("#pause-output")).toBeHidden();
+    await expect(gutter.first()).toBeHidden();
   });
 }
 
@@ -155,14 +176,32 @@ test("the speech controls are reached in order and focus does not get lost when 
   await app.open();
   await app.from.selectOption("en");
   await app.text.fill("One.\n\nTwo.");
+  await app.previewSource();
   await app.page.locator("#listen-source").focus();
+  // Read aloud puts focus in the column of read-from buttons; Enter reads from the first block.
   await app.page.keyboard.press("Enter");
+  await expect(app.gutter("source").first()).toBeFocused();
+  await app.page.keyboard.press("Enter");
+  // The column is one tab stop, before the controls of the panel.
   const order: string[] = [];
-  for (let i = 0; i < 4; i++) {
+  for (let i = 0; i < 5; i++) {
     await app.page.keyboard.press("Tab");
     order.push(await app.page.evaluate(() => document.activeElement?.id ?? ""));
   }
-  expect(order).toStrictEqual(["prev-source", "pause-source", "next-source", "clear"]);
+  expect(order).toStrictEqual(["listen-source", "prev-source", "pause-source", "next-source", "clear"]);
+  await app.page.keyboard.press("Shift+Tab");
+  await app.page.keyboard.press("Shift+Tab");
+  await app.page.keyboard.press("Shift+Tab");
+  await app.page.keyboard.press("Shift+Tab");
+  await app.page.keyboard.press("Shift+Tab");
+  await expect(app.gutter("source").first()).toBeFocused();
+  // Hidden under focus (the source back in Raw), the column hands focus to Read aloud.
+  await app.page.evaluate(() =>
+    document.querySelector<HTMLButtonElement>("#source-switch [data-value='raw']")!.click(),
+  );
+  await expect(app.page.locator("#listen-source")).toBeFocused();
+  await app.previewSource();
+  await app.readAloud("source");
   await app.page.locator("#pause-source").focus();
   await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   expect(await app.page.evaluate(() => document.activeElement?.id)).toBe("listen-source");
@@ -206,6 +245,32 @@ test("text spacing overrides clip nothing", async ({ app }) => {
       .map((el) => el.id || el.textContent),
   );
   expect(clipped).toStrictEqual([]);
+});
+
+test("under text spacing overrides the read-from buttons stay beside their blocks", async ({ app }) => {
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(
+    "# Title\n\nA paragraph long enough to wrap onto more than one line in the pane, and then some more.\n\nEnd.\n",
+  );
+  await app.previewSource();
+  await app.page.locator("#listen-source").click();
+  await expect(app.gutter("source")).toHaveCount(3);
+  await app.page.evaluate((css) => {
+    const sheet = new CSSStyleSheet();
+    sheet.replaceSync(css);
+    document.adoptedStyleSheets.push(sheet);
+  }, "* { line-height: 1.5 !important; letter-spacing: 0.12em !important; word-spacing: 0.16em !important; } p { margin-block-end: 2em !important; }");
+  const blocks = app.page.locator("#source-view > [data-line]");
+  for (let i = 0; i < 3; i++) {
+    await expect
+      .poll(async () => {
+        const button = (await app.gutter("source").nth(i).boundingBox())!;
+        const block = (await blocks.nth(i).boundingBox())!;
+        return Math.abs(button.y - block.y) < 2 && Math.abs(button.height - block.height) < 2;
+      })
+      .toBe(true);
+  }
 });
 
 test("skip link is first in the tab order and the whole form is reachable in reading order", async ({ app }) => {

@@ -379,6 +379,10 @@ function wireSwitch(el: ViewSwitch, side: keyof typeof views, show: () => void) 
       views.source.available = looksLikeMarkdown(textInput.value);
     }
     views[side].view = el.value as View;
+    // The source is read only from Preview: its Raw text box is for writing.
+    if (side === "source" && el.value === "raw") {
+      speech.stop("source");
+    }
     show();
   });
 }
@@ -826,8 +830,8 @@ function advancedOpen() {
 
 // ---- reading aloud ---------------------------------------------------------------------------
 //
-// speech-ui.ts: the Listen buttons, the voice list and what a reading does to the page. This file
-// tells it what each side holds and how it is shown.
+// speech-ui.ts: the Read aloud toggles and their gutters, the voice list and what a reading does to
+// the page. This file tells it what each side holds and how it is shown.
 
 const speech: SpeechUi = initSpeechUi({
   controls: {
@@ -846,6 +850,7 @@ const speech: SpeechUi = initSpeechUi({
       ? { text: textInput.value, lang: sourceLangOf() }
       : { text: state.translation, lang: outputEl.lang || undefined },
   isMarkdown: (side: Side) => (side === "source" ? looksLikeMarkdown(textInput.value) : views.output.available),
+  shown: (side: Side) => side === "output" || !sourceArea.hidden,
 });
 
 // ---- wiring ----------------------------------------------------------------------------------

@@ -1,4 +1,5 @@
-/* Listen / Stop and Pause / Resume: square, one glyph each; `data-state` picks the glyph. */
+/* Read aloud, Previous, Pause / Resume and Next: square, one glyph each; on Pause `data-state`
+   picks the glyph. */
 button.icon {
   display: inline-grid;
   place-items: center;
@@ -11,8 +12,17 @@ button.icon {
     fill: currentcolor;
   }
 
-  &[data-state="idle"] .when-active,
-  &:not([data-state="idle"]) .when-idle,
+  /* Read aloud while its gutter is shown: pressed, as the view switches show it. */
+  &[aria-pressed="true"]:not([aria-disabled="true"]) {
+    color: var(--on-accent);
+    background: var(--accent);
+    border-color: var(--accent);
+
+    &:hover {
+      background: color-mix(in srgb, var(--accent) 88%, var(--text));
+    }
+  }
+
   &[data-state="paused"] .when-playing,
   &:not([data-state="paused"]) .when-paused,
   &[data-state="loading"] .when-playing,
@@ -26,7 +36,7 @@ button.icon {
   }
 
   /* Waiting for the first audio: the speech model may still be loading. The state is also in the
-     button's name ("Stop reading…"); without the animation (reduced motion) the glyph is static. */
+     button's name ("Preparing the audio…"); without the animation (reduced motion) the glyph is static. */
   @media (prefers-reduced-motion: no-preference) {
     &[data-state="loading"] .when-loading {
       animation: speech-spin 0.8s linear infinite;
@@ -53,5 +63,63 @@ button.icon {
 
   @media (forced-colors: active) {
     outline: 2px solid Highlight;
+  }
+}
+
+/* The "read from here" buttons (read-gutter.ts): a column at the scroller's left, one button per
+   block, as tall as the block and placed at its height by script. The column is on the left
+   whatever the text's direction, so its room is `padding-left`, not a logical side. The room also
+   keeps the shade's bar (above) clear of the buttons; 0.375rem at the edge leaves the focus
+   outline (3px, offset 2px) unclipped by the scroller. */
+.output-area {
+  --read-gutter: 2rem;
+
+  &.with-gutter > .output {
+    padding-left: calc(var(--read-gutter) + 0.375rem + 0.75rem);
+  }
+}
+
+.read-gutter {
+  position: absolute;
+  inset-block-start: 0;
+  left: 0.375rem;
+  inline-size: var(--read-gutter);
+  z-index: 1;
+}
+
+/* At least 24 px each way (2.5.8): one Raw line on a phone is 24 px, and blocks never overlap.
+   `button.` so that the current one's colours beat the generic button hover. */
+button.read-from {
+  position: absolute;
+  inset-inline: 0;
+  display: grid;
+  justify-items: center;
+  align-content: start;
+  min-inline-size: 0;
+  min-block-size: 1.5rem;
+  padding: 0.125rem 0 0;
+  color: var(--accent);
+  background: transparent;
+  border-color: transparent;
+  border-radius: var(--radius-min);
+
+  svg {
+    inline-size: 1.25rem;
+    block-size: 1.25rem;
+    fill: currentcolor;
+  }
+
+  &:hover {
+    background: color-mix(in srgb, var(--accent) 14%, var(--surface-sunken));
+  }
+
+  /* The block being read. */
+  &[aria-current="true"] {
+    color: var(--on-accent);
+    background: var(--accent);
+
+    @media (forced-colors: active) {
+      outline: 2px solid Highlight;
+    }
   }
 }

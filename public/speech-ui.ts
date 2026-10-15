@@ -1,9 +1,12 @@
-// Reading aloud, as the page sees it: the Listen buttons of both panels, the voice list, the block
-// being read, and what a reading does to the page.
+// Reading aloud, as the page sees it: the Read aloud toggles of both panels, the gutter of "read
+// from here" buttons, the voice list, the block being read, and what a reading does to the page.
 //
-// Each side has a Listen button; one side is read at a time. What is spoken comes from
-// `speechSegments`: the parsed Markdown when the text is shown rendered, never its raw markers.
-// The block being read is shaded in the rendered view. Voice and speed are shared by both sides.
+// Each side has a Read aloud toggle; pressed, it shows that side's gutter (read-gutter.ts) and a
+// reading starts from the block whose button is pressed. One side is open and read at a time.
+// Released, the gutter goes and the reading stops. A side can be read only while its text is shown
+// in its view, so not the source in its Raw text box. What is spoken comes from `speechSegments`:
+// the parsed Markdown when the text is shown rendered, never its raw markers. The block being read
+// is shaded in the view (in Raw, each of its lines). Voice and speed are shared by both sides.
 // The audio is the `SpeechBuffer`'s business and playback the `SpeechPlayer`'s (speech.ts); this
 // module only starts and stops them and shows where they are.
 //
@@ -17,9 +20,11 @@ import type { MetaLine } from "./elements/meta-line.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.ts";
 import type { ApiErrorBody } from "./errors.ts";
+import { parseLines } from "./markdown.ts";
 import { giveUpQoa, QOA_TYPE, qoaDecoder, QoaError } from "./qoa.ts";
+import { ReadGutter } from "./read-gutter.ts";
 import type { SpeechAudio } from "./speech-audio.ts";
-import { canSpeak, speechSegments } from "./speech-text.ts";
+import { canSpeak, type Segment, speechSegments } from "./speech-text.ts";
 import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
 import { setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
@@ -30,6 +35,52 @@ const SIDE_NAME: Record<Side, string> = { source: "source text", output: "transl
 
 /** Events (focus, visibility) can come in bursts; a passive re-check is at most this often. */
 const VOICES_RECHECK_MS = 3000;
+/** A gutter button is named after this many characters of its block. */
+const LABEL_CHARS = 48;
+
+/** What a side's text is read as: its pieces, and each block that has any with its lines. */
+interface Reading {
+  key: string;
+  segments: Segment[];
+  /** Per block: the first line, the line after its last one, its first piece and its name. */
+  blocks: { line: number; end: number; index: number; label: string }[];
+}
+
+function readingOf(text: string, markdown: boolean, lang: string): Reading {
+  const segments = speechSegments(text, markdown, lang);
+  const lines = text.split("\n");
+  // Where each block of the text starts, also the blocks that are not read (code): a block ends
+  // where the next one starts. Plain text is read line by line.
+  const starts = markdown ? parseLines(lines).map((b) => b.line) : null;
+  const blocks: Reading["blocks"] = [];
+  segments.forEach((s, index) => {
+    if (blocks.at(-1)?.line === s.line) {
+      return;
+    }
+    const end = starts ? (starts.find((l) => l > s.line) ?? lines.length) : s.line + 1;
+    const label = s.text.length > LABEL_CHARS ? `${s.text.slice(0, LABEL_CHARS).trimEnd()}…` : s.text;
+    blocks.push({ line: s.line, end, index, label });
+  });
+  return { key: `${lang}\n${markdown}\n${text}`, segments, blocks };
+}
+
+/** The top-level elements of `view` that show lines `line` to `end` (exclusive) and hold any text. */
+function elementsOf(view: HTMLElement, line: number, end: number): HTMLElement[] {
+  const out: HTMLElement[] = [];
+  for (const child of view.children) {
+    if (!(child instanceof HTMLElement) || child.dataset.line === undefined) {
+      continue;
+    }
+    const at = Number(child.dataset.line);
+    if (at >= end) {
+      break;
+    }
+    if (at >= line && child.textContent.trim()) {
+      out.push(child);
+    }
+  }
+  return out;
+}
 
 export interface SpeechUiDeps {
   controls: Record<Side, SpeechControls>;
@@ -43,14 +94,16 @@ export interface SpeechUiDeps {
   target(side: Side): { text: string; lang: string | undefined };
   /** Whether the side is shown as rendered Markdown, which is then read as such. */
   isMarkdown(side: Side): boolean;
+  /** Whether the side's text is in its view (`panes[side].view`), not in the source's text box. */
+  shown(side: Side): boolean;
 }
 
 export interface SpeechUi {
-  /** Writes the Listen buttons from the state and the player. */
+  /** Writes the Read aloud toggles from the state and the player. */
   refresh(): void;
-  /** Shades the block being read, and scrolls its pane to it when asked. */
+  /** Shades the block being read and lays out the gutter; scrolls the pane to the block when asked. */
   showSpeaking(scroll?: boolean): void;
-  /** Stops the reading, of one side or of whichever is read. */
+  /** Stops the reading and hides the gutter, of one side or of both. */
   stop(side?: Side): void;
   /** Asks the server for the voices and brings the buttons and the list in line with the answer. */
   loadVoices(): Promise<void>;
@@ -109,6 +162,28 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   let voicesCheck: Promise<void> | null = null;
   let voicesCheckedAt = 0;
   let scrolledTo: string | null = null;
+  /** The side whose Read aloud is pressed and whose gutter is shown. */
+  let open: Side | null = null;
+  const readings: Partial<Record<Side, Reading>> = {};
+  const gutters: Record<Side, ReadGutter> = {
+    source: new ReadGutter(panes.source.area, `Read the ${SIDE_NAME.source} aloud from`, (l) => pick("source", l)),
+    output: new ReadGutter(panes.output.area, `Read the ${SIDE_NAME.output} aloud from`, (l) => pick("output", l)),
+  };
+
+  /** What the side's text is read as now; the same object while the text, language and view are unchanged. */
+  function reading(side: Side): Reading | null {
+    const { text, lang } = deps.target(side);
+    if (!lang) {
+      return null;
+    }
+    const markdown = deps.isMarkdown(side);
+    const key = `${lang}\n${markdown}\n${text}`;
+    const known = readings[side];
+    if (known?.key === key) {
+      return known;
+    }
+    return (readings[side] = readingOf(text, markdown, lang));
+  }
 
   const player = new SpeechPlayer(synthesize, {
     onState(playerState) {
@@ -149,13 +224,32 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     if (!canSpeak(lang)) {
       return "Reading aloud is available for Chinese, English, Japanese, Spanish and Arabic.";
     }
+    // Last: the one obstacle the reader removes with a click, once nothing else stands in the way.
+    if (!deps.shown(side)) {
+      return `Switch the ${SIDE_NAME[side]} to Preview to have it read aloud.`;
+    }
     return "";
   }
 
+  /** Hides the side's gutter; focus that was in it goes back to its Read aloud. */
+  function close(side: Side) {
+    if (open === side) {
+      open = null;
+    }
+    if (gutters[side].hide()) {
+      controls[side].focusToggle();
+    }
+  }
+
   function refresh() {
+    // What opened the gutter may be gone (no voices any more, the text emptied): nothing to choose from.
+    if (open && state.speaking?.side !== open && blocked(open)) {
+      close(open);
+    }
     for (const side of SIDES) {
       const mine = state.speaking?.side === side;
       controls[side].show({
+        open: open === side,
         reading: mine,
         state: mine ? player.state : "idle",
         blocked: mine ? "" : blocked(side),
@@ -165,11 +259,27 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     }
   }
 
+  /** Builds or places the open side's gutter for its view as it is now. */
+  function showGutter() {
+    if (!open) {
+      return;
+    }
+    const r = reading(open);
+    const { view } = panes[open];
+    const blocks = (r?.blocks ?? []).map(({ line, end, label }) => ({
+      line,
+      label,
+      elements: elementsOf(view, line, end),
+    }));
+    gutters[open].show(blocks, state.speaking?.side === open ? state.speaking.line : null);
+  }
+
   function showSpeaking(scroll = false) {
-    for (const el of document.querySelectorAll(".speaking")) {
+    for (const el of document.querySelectorAll(".output .speaking")) {
       el.classList.remove("speaking");
       el.removeAttribute("aria-current");
     }
+    showGutter();
     const { speaking } = state;
     if (!speaking) {
       scrolledTo = null;
@@ -178,17 +288,24 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
       return;
     }
     const { view, area } = panes[speaking.side];
-    const block = view.querySelector<HTMLElement>(`:scope > [data-line="${speaking.line}"]`);
-    if (!block) {
+    const block = reading(speaking.side)?.blocks.find((b) => b.line === speaking.line);
+    const elements = block ? elementsOf(view, block.line, block.end) : [];
+    if (elements.length === 0) {
       return;
     }
-    block.classList.add("speaking");
-    block.setAttribute("aria-current", "true");
+    for (const el of elements) {
+      el.classList.add("speaking");
+    }
+    // Named once for assistive technology: the block, or its first line in Raw.
+    elements[0]!.setAttribute("aria-current", "true");
     if (!scroll) {
       return;
     }
     const pane = area.getBoundingClientRect();
-    const box = block.getBoundingClientRect();
+    const box = {
+      top: elements[0]!.getBoundingClientRect().top,
+      bottom: elements.at(-1)!.getBoundingClientRect().bottom,
+    };
     // A later piece of the block already being followed may sit anywhere in it, and a block taller
     // than the pane would be pulled back to its top each time; only a block that left the pane
     // entirely is brought back.
@@ -202,9 +319,10 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     }
   }
 
+  /** Read aloud: shows the side's gutter and puts focus in it, or hides it and stops the reading. */
   function toggle(side: Side) {
-    if (state.speaking?.side === side) {
-      player.stop();
+    if (open === side) {
+      stop(side);
       return;
     }
     const reason = blocked(side);
@@ -220,27 +338,72 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     if (state.voicesStale) {
       void loadVoices();
     }
-    const { text, lang } = deps.target(side);
     // Read as it is shown: rendered Markdown when the text looks like Markdown, else line by line.
-    const segments = speechSegments(text, deps.isMarkdown(side), lang!);
-    if (segments.length === 0) {
+    if (!reading(side)?.segments.length) {
       meta.flash("There is nothing to read aloud in this text.");
       return;
     }
-    player.stop();
-    setState({ speaking: { side, line: null } });
-    player.start(segments, { lang: lang!, voice: voiceSettings.voice, speed: Number(voiceSettings.speed) });
+    for (const other of SIDES) {
+      if (other !== side) {
+        stop(other);
+      }
+    }
+    open = side;
+    showGutter();
+    refresh();
+    gutters[side].focus();
   }
 
-  /** Jumps a block back or forward and says where that is, since the shaded block may be out of view. */
-  function jump(direction: -1 | 1) {
-    if (!player.jump(direction)) {
+  /** A gutter button: reads from that block, or jumps there when the side is being read. */
+  function pick(side: Side, line: number) {
+    const r = reading(side);
+    const index = r?.blocks.find((b) => b.line === line)?.index;
+    if (!r || index === undefined) {
       return;
     }
+    if (state.speaking?.side === side && player.state !== "idle") {
+      if (player.jumpTo(index)) {
+        sayWhere();
+        refresh();
+      }
+      return;
+    }
+    const reason = blocked(side);
+    if (reason) {
+      meta.flash(reason);
+      return;
+    }
+    // After a failure the voice list may be out of date; the reading goes on with what is selected.
+    if (state.voicesStale) {
+      void loadVoices();
+    }
+    player.stop();
+    setState({ speaking: { side, line } });
+    showSpeaking();
+    player.start(
+      r.segments,
+      {
+        lang: deps.target(side).lang!,
+        voice: voiceSettings.voice,
+        speed: Number(voiceSettings.speed),
+      },
+      index,
+    );
+  }
+
+  /** Says which block is read after a jump, since the shaded block may be out of view. */
+  function sayWhere() {
     const at = player.position();
     if (at) {
       meta.flash(`Block ${at.block} of ${at.blocks}`);
     }
+  }
+
+  function jump(direction: -1 | 1) {
+    if (!player.jump(direction)) {
+      return;
+    }
+    sayWhere();
     refresh();
   }
 
@@ -248,6 +411,12 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     if (state.speaking && (side === undefined || state.speaking.side === side)) {
       player.stop();
     }
+    for (const s of SIDES) {
+      if (side === undefined || s === side) {
+        close(s);
+      }
+    }
+    refresh();
   }
 
   function loadVoices(): Promise<void> {
@@ -293,7 +462,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     const had = state.speechProblem;
     await loadVoices();
     if (announce && had && !state.speechProblem) {
-      meta.flash("Reading aloud is available now. Press Listen to start.");
+      meta.flash("Reading aloud is available now. Press Read aloud to start.");
     }
   }
 

@@ -142,4 +142,20 @@ export class AppPage {
   async openAdvanced() {
     await this.page.getByText("Glossary and constraints").click();
   }
+
+  /** Shows the source rendered: it is read aloud only from Preview, not from its text box. */
+  async previewSource() {
+    await this.page.getByRole("group", { name: "Source view" }).getByRole("button", { name: "Preview" }).click();
+  }
+
+  /** The "read from here" buttons beside a side's blocks, shown while its Read aloud is pressed. */
+  gutter(side: "source" | "output") {
+    return this.page.locator(`#${side}-area .read-from`);
+  }
+
+  /** Presses Read aloud, then the read-from button of block `block` (0 is the first). */
+  async readAloud(side: "source" | "output", block = 0) {
+    await this.page.locator(`#listen-${side}`).click();
+    await this.gutter(side).nth(block).click();
+  }
 }

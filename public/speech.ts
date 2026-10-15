@@ -66,10 +66,13 @@ export class SpeechPlayer {
     return buffer;
   }
 
-  /** Must be called from a click (or key) handler: browsers only let a page start audio then. */
-  start(segments: Segment[], settings: SpeechSettings): void {
+  /**
+   * Reads `segments` from piece `from` on. Must be called from a click (or key) handler: browsers
+   * only let a page start audio then.
+   */
+  start(segments: Segment[], settings: SpeechSettings, from = 0): void {
     this.stop();
-    if (segments.length === 0) {
+    if (from < 0 || from >= segments.length) {
       return;
     }
     if (!this.ctx) {
@@ -87,7 +90,7 @@ export class SpeechPlayer {
     this.settings = settings;
     this.active = true;
     this.buffer.open(segments, settings);
-    void this.play(0, 0);
+    void this.play(from, 0);
   }
 
   pause(): void {
@@ -148,11 +151,13 @@ export class SpeechPlayer {
    * for it.
    */
   jump(direction: -1 | 1): boolean {
-    if (!this.active) {
-      return false;
-    }
-    const target = this.blockStart(direction);
-    if (target === null) {
+    const target = this.active ? this.blockStart(direction) : null;
+    return target !== null && this.jumpTo(target);
+  }
+
+  /** Goes on from piece `i`, as a jump does. Returns false when nothing is being read or there is no such piece. */
+  jumpTo(i: number): boolean {
+    if (!this.active || i < 0 || i >= this.segments.length) {
       return false;
     }
     this.silence();
@@ -161,9 +166,9 @@ export class SpeechPlayer {
       this.paused = false;
       void this.ctx?.resume();
     }
-    this.hooks.onSegment(this.segments[target]!);
+    this.hooks.onSegment(this.segments[i]!);
     // Shows "loading" only if the block's audio is not there.
-    void this.play(target, 0);
+    void this.play(i, 0);
     return true;
   }
 

@@ -228,6 +228,25 @@ describe("starting and the state", () => {
     expect(t.player.state).toBe("idle");
     expect(t.segments.at(-1)).toBeNull();
   });
+
+  test("a start from a later piece asks for that piece first and reads on from it", async () => {
+    const t = setup();
+    t.player.start(SEGMENTS, SETTINGS, 2);
+    await flush();
+    expect(t.requests.map((r) => r.text)).toStrictEqual(["b1"]);
+    t.requests[0]!.resolve();
+    await flush();
+    expect(t.segments).toStrictEqual([SEGMENTS[2]]);
+    expect(t.player.position()).toStrictEqual({ block: 2, blocks: 3 });
+    expect(t.player.canJump(-1)).toBe(true);
+  });
+
+  test("a start from a piece that is not there starts nothing", () => {
+    const t = setup();
+    t.player.start(SEGMENTS, SETTINGS, SEGMENTS.length);
+    expect(t.player.state).toBe("idle");
+    expect(t.requests).toStrictEqual([]);
+  });
 });
 
 describe("the play state between pieces", () => {
@@ -442,6 +461,22 @@ describe("jumping", () => {
     expect(t.player.canJump(1)).toBe(false);
     const idle = setup();
     expect(idle.player.jump(1)).toBe(false);
+  });
+
+  test("a jump to any piece goes there, keeps the audio made and resumes a paused reading", async () => {
+    const t = setup(true);
+    t.player.start(SEGMENTS, SETTINGS);
+    await flush();
+    t.player.pause();
+    expect(t.player.jumpTo(3)).toBe(true);
+    expect(t.segments.at(-1)).toBe(SEGMENTS[3]);
+    await flush();
+    expect(t.player.state).toBe("playing");
+    expect(t.player.position()).toStrictEqual({ block: 3, blocks: 3 });
+    expect(t.requests).toHaveLength(4);
+    expect(t.player.jumpTo(-1)).toBe(false);
+    expect(t.player.jumpTo(SEGMENTS.length)).toBe(false);
+    expect(setup().player.jumpTo(0)).toBe(false);
   });
 
   test("a jump while paused resumes the reading", async () => {

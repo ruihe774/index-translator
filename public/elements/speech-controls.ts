@@ -1,19 +1,24 @@
-// <speech-controls side="source" subject="source text">: Listen / Stop, and while that side is read
-// Previous, Pause / Resume and Next. One element per panel; both are the same buttons, so they are
-// built here once instead of being written out twice in index.html.
+// <speech-controls side="source" subject="source text">: the Read aloud toggle, and while that side
+// is read Previous, Pause / Resume and Next. One element per panel; both are the same buttons, so
+// they are built here once instead of being written out twice in index.html.
+//
+// Read aloud does not start a reading: pressed, it shows the gutter of "read from here" buttons
+// beside the side's blocks (read-gutter.ts); released, it hides the gutter and stops the reading.
 //
 // A light-DOM element (the page gives it `role="group"`; the label comes from `subject`): the buttons keep the ids `listen-<side>`, `prev-<side>`,
 // `pause-<side>`, `next-<side>`, which the stylesheet's `data-state` rules and the tests use. The
 // page tells it what to show with `show()`; the element writes the attributes and says what was
 // pressed with events: `listen`, `prev`, `pause`, `next`. Nothing here knows about the player.
 //
-// Buttons are `aria-disabled`, never `disabled`. Listen always sends its event, even when blocked:
-// the page answers by saying why, which is how a keyboard or touch user learns the reason.
+// Buttons are `aria-disabled`, never `disabled`. Read aloud always sends its event, even when
+// blocked: the page answers by saying why, which is how a keyboard or touch user learns the reason.
 
 export type ReadingState = "idle" | "loading" | "playing" | "paused";
 
 /** What one side's controls show. */
 export interface SpeechView {
+  /** This side's gutter is shown: Read aloud is pressed. */
+  open: boolean;
   /** This side is the one being read. */
   reading: boolean;
   /** The player's state while `reading`; `idle` otherwise. */
@@ -74,18 +79,19 @@ export class SpeechControls extends HTMLElement {
     }
     this.#built = true;
     const side = this.getAttribute("side") ?? "";
-    this.setAttribute("aria-label", `Read the ${this.#subject} aloud`);
+    this.setAttribute("aria-label", `Reading the ${this.#subject} aloud`);
 
     this.#listen = button(
       `listen-${side}`,
       icon(
-        "when-idle",
+        null,
         path(
           "M3 9v6h4l5 5V4L7 9H3zm13.5 3A4.5 4.5 0 0 0 14 8v8a4.5 4.5 0 0 0 2.5-4zM14 3.2v2.1a7 7 0 0 1 0 13.4v2.1a9 9 0 0 0 0-17.6z",
         ),
       ),
-      icon("when-active", path("M6 6h12v12H6z")),
     );
+    // A toggle keeps one name; whether it is on is `aria-pressed`.
+    this.#listen.setAttribute("aria-label", `Read the ${this.#subject} aloud`);
     this.#listen.setAttribute("aria-describedby", `listen-${side}-why`);
     this.#prev = button(`prev-${side}`, icon(null, path("M6 6h2v12H6zm3.5 6 8.5 6V6z")));
     this.#pause = button(
@@ -116,7 +122,7 @@ export class SpeechControls extends HTMLElement {
     this.#prev.title = "Previous block (from inside a block, its start)";
     this.#next.setAttribute("aria-label", "Next block");
     this.#next.title = "Next block";
-    this.show({ reading: false, state: "idle", blocked: "", canPrev: false, canNext: false });
+    this.show({ open: false, reading: false, state: "idle", blocked: "", canPrev: false, canNext: false });
 
     this.#listen.addEventListener("click", () => void this.dispatchEvent(new Event("listen")));
     for (const [b, name] of [
@@ -137,17 +143,21 @@ export class SpeechControls extends HTMLElement {
     return this.getAttribute("subject") ?? "text";
   }
 
-  show({ reading, state, blocked, canPrev, canNext }: SpeechView) {
-    const subject = this.#subject;
+  /** Puts focus on Read aloud, as when the gutter it opened goes away under focus. */
+  focusToggle() {
+    this.#listen.focus();
+  }
+
+  show({ open, reading, state, blocked, canPrev, canNext }: SpeechView) {
     // The controls that appear while reading go away when it ends: do not leave focus on one.
     if (!reading && [this.#pause, this.#prev, this.#next].includes(document.activeElement as HTMLButtonElement)) {
       this.#listen.focus();
     }
-    const label = reading ? `Stop reading the ${subject}` : `Listen to the ${subject}`;
     setAttr(this.#listen, "data-state", state);
+    setAttr(this.#listen, "aria-pressed", String(open));
     setAttr(this.#listen, "aria-disabled", String(blocked !== ""));
-    setAttr(this.#listen, "aria-label", label);
-    this.#listen.title = blocked || label;
+    this.#listen.title =
+      blocked || (open ? "Hide the read-from buttons and stop reading" : "Choose a block to read aloud from");
     // The reason is also the button's description: `title` alone is not reachable by keyboard or touch.
     if (this.#why.textContent !== blocked) {
       this.#why.textContent = blocked;
@@ -158,7 +168,7 @@ export class SpeechControls extends HTMLElement {
         b.hidden = !reading;
       }
     }
-    // While the next audio is being made, only Stop works.
+    // While the next audio is being made, only Read aloud (which stops) and the gutter work.
     const waiting = state === "loading";
     setAttr(this.#prev, "aria-disabled", String(waiting || !(reading && canPrev)));
     setAttr(this.#next, "aria-disabled", String(waiting || !(reading && canNext)));

@@ -48,7 +48,7 @@ service. It runs the Index-Translate 9B models on your GPU, with no accounts, qu
 | 📄 **Built for whole documents** | A long-document model translates a full text in one pass (Chinese ↔ English, Chinese ↔ Japanese). The app picks it for you by length. |
 | 🖼️ **Reads pictures** | Drop a screenshot or photo (JPEG, PNG, WebP); the model reads and translates the text in it. No separate OCR step. |
 | 📑 **Opens PDFs locally** | Text, Markdown, PDF and Word files are read in your browser. One click on a page thumbnail turns it into Markdown. |
-| 🔊 **Reads aloud** | Listen to the source or the translation in Chinese, English, Japanese, Spanish or Arabic, with voices and speed (IndexTTS-2.5, also local). |
+| 🔊 **Reads aloud** | Hear the source or the translation, from any paragraph, in Chinese, English, Japanese, Spanish or Arabic, with voices and speed (IndexTTS-2.5, also local). |
 | 📚 **Terminology and style** | Glossary, hard rules ("keep placeholders unchanged"), soft style guidance and a genre such as academic paper or subtitles. |
 | ✅ **Tells you what went missing** | Models can silently drop or repeat paragraphs. The app counts paragraphs and warns you; when they match, click one side to jump to the same paragraph on the other. |
 | ✍️ **Markdown stays Markdown** | Headings, lists, tables and code are shown formatted as they stream in, with Raw / Preview per side. Copy returns the Markdown. |
@@ -312,10 +312,15 @@ browser clears it too.
 ## Listen to a text
 
 
-Each side has a **Listen** button (the loudspeaker) under its text. Click it to hear the source
-text or the finished translation. While it reads, the button becomes **Stop**, and a **Pause**
-button next to it holds the reading and resumes it at the same place. The paragraph being read is
-highlighted in the formatted view.
+Each side has a **Read aloud** button (the loudspeaker) under its text. Click it and a ▶ button
+appears beside every paragraph, heading and list of that side; click the one where you want to
+start, the first one to hear everything. While it reads, **Previous**, **Pause** and **Next** appear
+next to Read aloud, and another ▶ jumps straight to its paragraph. Click Read aloud again to stop
+and hide the ▶ buttons. The paragraph being read is highlighted, and so is its ▶. With the
+keyboard: Read aloud puts you on the ▶ buttons, the arrow keys move between them, and Enter starts.
+
+The source text is read from its **Preview**, not from the text box you type in: switch to Preview
+first (the button tells you so). Clicking a paragraph itself still scrolls the other side to it.
 
 - **Languages:** Chinese, English, Japanese, Spanish and Arabic. For other languages the button
   is switched off. For the source text, choose its language under **From** if the app cannot tell
@@ -343,7 +348,8 @@ first listen. It needs about 5.7 GiB of GPU memory beside the translation model 
 again after five minutes without listening. Speech is generated sentence by sentence, about four
 times faster than it is spoken, so long texts start right away. While you listen, the sentences
 that follow are generated in the background (up to a minute and a half ahead), and what you have
-heard is kept, so **Previous** and **Next** usually start at once.
+heard is kept, so **Previous** and **Next** usually start at once (a far ▶ waits for its first
+sentence).
 
 Known limits: numbers written in digits are read correctly in Chinese, English, Spanish and
 Japanese, but not reliably in Arabic, and unusual formats (for example `$1,200`) may be read
