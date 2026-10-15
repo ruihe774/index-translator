@@ -239,11 +239,10 @@ describe("streaming selection", () => {
     expect(res.status).toBe(200);
     if (sse) {
       expect(res.headers.get("content-type")).toStartWith("text/event-stream");
-      await res.text();
     } else {
       expect(res.headers.get("content-type")).toStartWith("application/json");
-      await res.text();
     }
+    await res.text();
   });
 
   test("stream: false does not stop an Accept: text/event-stream request from streaming", async () => {
