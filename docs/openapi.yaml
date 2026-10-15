@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Index Translator API
-  version: 1.3.0
+  version: 2.0.0
   summary: Text and image translation backed by locally deployed Index-Translate models.
   description: |
     The backend runs Index-Translate models through llama.cpp and exposes them over REST.
@@ -31,12 +31,15 @@ info:
     a few seconds), and then runs. Consecutive requests for the same model do not reload.
 
     **Streaming.** `POST /translate` returns either one JSON document or a Server-Sent Events
-    stream. Because the request needs a body, the stream is consumed with `fetch` (or any HTTP
-    client that can read a streamed response), not with the browser `EventSource` API.
+    stream. The body field `stream` is the only selector: `stream: true` gives SSE, anything else
+    gives JSON, and the `Accept` header is not consulted. Because the request needs a body, the
+    stream is consumed with `fetch` (or any HTTP client that can read a streamed response), not
+    with the browser `EventSource` API.
 
     **Concurrency.** One request at a time uses the engine. Further requests wait in a bounded
     FIFO queue; when it is full the backend answers `429`. Closing the connection cancels a
-    waiting or running translation.
+    waiting or running translation, except for a streamed request with `resumable: true`,
+    which keeps running for a while without a reader (see `GET /translations/{id}/events`).
 
     **Reading aloud.** `POST /speech` turns one short text into speech with IndexTTS-2.5, which
     runs with its own engine (audio.cpp) beside the translation model. It speaks
@@ -45,10 +48,13 @@ info:
     one utterance, returned whole; a client reads a document by sending it sentence by sentence.
     The speech model is loaded by the first request, which therefore takes a few seconds longer,
     and is unloaded again after a while without requests. Speech requests have their own queue of
-    the same size. Closing the connection cancels the utterance: the engine stops within a few
-    hundredths of a second and the next request starts. An utterance not yet started is dropped.
+    the same size. Closing the connection cancels the utterance; what that does depends on how
+    far it got, see `POST /speech`.
 
-    **Errors.** Every error response has the same JSON envelope, see `Error`.
+    **Errors.** Every error response has the same JSON envelope, see `Error`. Any `/api/v1`
+    path called with a method it does not have answers `405` (`method_not_allowed`, with an
+    `Allow` header), and an unknown path `404` (`not_found`). Every operation can also answer
+    `500` (`internal_error`).
 servers:
   - url: /api/v1
 tags:
@@ -64,8 +70,21 @@ paths:
       description: |
         Returns the audio of the whole text as one WAV file (22.05 kHz, mono, 16-bit PCM). The
         text is spoken as it is given: the server does not strip Markdown or split long input.
-        Closing the connection gives up the request's place in the queue. An utterance that is
-        already being synthesized is finished and thrown away, and the next request waits for it.
+
+        **Closing the connection.** What it does depends on how far the utterance got:
+
+        - *Waiting in the queue, or handed to the engine but not started:* the utterance is
+          dropped and its place is released at once.
+        - *Being synthesized:* the server stops answering at once and the engine aborts within a
+          few hundredths of a second (it checks before every decoding step, diffusion step and
+          the vocoder). The request keeps its place in the speech queue until the engine has
+          confirmed the stop, so the next request starts only after that, never beside the
+          stopping one. Three phases cannot be interrupted and run to their end first: the
+          conditioning before the first step, a model load (the first request, or after an idle
+          unload) and a voice separation started by `POST /voices`.
+        - *Finished:* there is nothing to cancel. With `audio/qoa` the first byte is sent only
+          after the synthesis is over, so a disconnect during the synthesis is the cancel case
+          above.
 
         A client that names `audio/qoa` in `Accept` gets the same audio as a
         [QOA](https://qoaformat.org) stream instead: lossy, about a fifth of the size, sent in
@@ -114,10 +133,18 @@ paths:
           $ref: "#/components/responses/InvalidRequest"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "413":
+          description: The request body exceeds 4 MiB (`body_too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
         "429":
           $ref: "#/components/responses/QueueFull"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           description: The speech engine failed to load its model or to synthesize the text (`speech_error`).
           content:
@@ -144,6 +171,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/VoiceList"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
     post:
       tags: [speech]
       operationId: addVoice
@@ -152,7 +183,9 @@ paths:
         The body is a WAV recording (`audio/wav`, at most `max_sample_bytes`) of the voice to
         imitate. It must last between `sample_seconds.min` and `sample_seconds.max` seconds and have a
         sample rate within `sample_rate` (`400` otherwise). It becomes a voice in `GET /voices`
-        until the server stops; nothing is persisted. At most 16 uploads are kept.
+        until the server stops; nothing is persisted. At most `max_voices` uploads exist at once:
+        once that many are stored, the next upload is refused with `400` (`invalid_request`,
+        `details.field` `body`) and nothing is evicted.
 
         When the voice separation model (BS-RoFormer) is installed, the voice is first taken out of
         music and background noise, and the separated voice is what is kept. The speech model is
@@ -164,7 +197,10 @@ paths:
           in: query
           schema:
             type: string
-          description: Display name, at most 60 characters.
+          description: |
+            Display name. Runs of whitespace are collapsed to one space, the ends are trimmed and
+            anything beyond `max_name_chars` characters (see `GET /voices`) is cut off, not
+            rejected. A blank or missing name becomes `Uploaded voice`.
       requestBody:
         required: true
         content:
@@ -184,9 +220,15 @@ paths:
         "403":
           $ref: "#/components/responses/Forbidden"
         "413":
-          $ref: "#/components/responses/TooLarge"
+          description: The sample exceeds `max_sample_bytes` (`body_too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           description: The engine failed to separate the voice from the recording (`speech_error`).
           content:
@@ -205,21 +247,36 @@ paths:
       operationId: translate
       summary: Translate text
       description: |
-        Returns JSON by default. Set `stream: true` in the body, or send
-        `Accept: text/event-stream`, to receive Server-Sent Events instead.
+        Returns JSON by default. Set `stream: true` in the body to receive Server-Sent Events
+        instead. `stream` is the only selector: the `Accept` header is ignored, so a request that
+        asks for `text/event-stream` without `stream: true` gets JSON. The `Content-Type` of the
+        answer says which format it is.
 
         Request validation (`400`) and the queue (`429`) are checked before the response
         starts, so they are reported with an HTTP status in both modes. The body must be declared
         as `application/json` (`415`), and browser requests must pass the Host and Origin checks
         (`403`); see `ALLOWED_ORIGINS` and `ALLOWED_HOSTS` in the README. Everything after that
-        happens in the queue or the engine: an input over the token limit, a model that fails to
-        load, an image encoder that is not installed and an engine failure are reported as `413`,
-        `503` or `502` in JSON mode, and as an `error` event in SSE mode, because the stream has
-        already started by then.
+        happens in the queue or the engine, and is reported with an HTTP status in JSON mode and
+        as an `error` event in SSE mode, because the stream has already started by then:
+
+        | Condition | Status | Code | Retry |
+        |---|---|---|---|
+        | The prompt exceeds the input limit, or leaves no room for a translation | `413` | `input_too_long` | No; shorten the input |
+        | An `image` was sent and the model's image encoder file is not installed | `503` | `image_unavailable` | After installing the file |
+        | The engine failed to generate, or the requested model failed to load | `502` | `engine_error` | Yes; a failed load is attempted again by the next request |
+        | The engine's own image decoder rejects the image | `400` | `invalid_request` (`details.field` is `image`) | No; send another image |
+        | Anything unexpected | `500` | `internal_error` | Maybe |
+
+        `engine_unavailable` is not used here; it belongs to `POST /tokenize`. A translation
+        request never fails because a model is loading: it waits in the queue.
 
         With an `image` the request translates the text in that image; see `TranslateRequest`.
-        An upload that is not a JPEG, PNG or WebP image the server can decode is a `400`, one
-        that is too large a `413` (`image_too_large`), both before the response starts.
+        The image is checked in two stages. Before the queue the server decodes it: an upload
+        that is not a JPEG, PNG or WebP image it can decode is a `400` (`invalid_request`), one
+        that is too large a `413` (`image_too_large`), in both modes. The image is then handed to
+        the model's own decoder after the request has waited its turn; a failure there is the
+        `400` in the table (an `error` event with code `invalid_request` in SSE mode). It is
+        rare, because the server re-encodes every upload itself.
       requestBody:
         required: true
         content:
@@ -259,7 +316,15 @@ paths:
                   target_lang: zh
       responses:
         "200":
-          description: The translation, as one JSON document or as an event stream.
+          description: "The translation, as one JSON document (`stream` false or absent) or as an event stream (`stream: true`)."
+          headers:
+            X-Translation-Id:
+              description: |
+                Only on an event stream started with `resumable: true`: the id for
+                `GET /translations/{id}/events` and `DELETE /translations/{id}`.
+              schema:
+                type: string
+                format: uuid
           content:
             application/json:
               schema:
@@ -284,7 +349,17 @@ paths:
                   | `start` | once, when generation begins | `StartEvent` |
                   | `delta` | zero or more times | `DeltaEvent` |
                   | `done` | once, on success; last event | `DoneEvent` |
-                  | `error` | once, on failure; last event | `ErrorEvent` |
+                  | `error` | once, on failure or cancellation; last event | `ErrorEvent` |
+
+                  Every event also carries an `id:` line before `event:`: a number counting up
+                  from 1 with no gaps, on every stream, resumable or not. Only a resumable
+                  stream can be read again with it.
+
+                  A stream always ends with `done` or `error`. A stream that ends without
+                  either was cut by the network, not finished: a resumable one can be read
+                  again, any other cannot. A resumable translation that is cancelled (by
+                  `DELETE /translations/{id}` or because nobody read it for two minutes) ends
+                  with an `error` event with code `cancelled`.
 
                   The translation is the concatenation of all `delta.text` values; it has no
                   leading or trailing whitespace. Comment lines (starting with `:`) are sent as
@@ -304,14 +379,16 @@ paths:
 
         "400":
           $ref: "#/components/responses/InvalidRequest"
-        "429":
-          $ref: "#/components/responses/QueueFull"
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "413":
           $ref: "#/components/responses/TooLarge"
         "415":
           $ref: "#/components/responses/UnsupportedMediaType"
-        "403":
-          $ref: "#/components/responses/Forbidden"
+        "429":
+          $ref: "#/components/responses/QueueFull"
+        "500":
+          $ref: "#/components/responses/InternalError"
         "502":
           $ref: "#/components/responses/EngineError"
         "503":
@@ -332,8 +409,23 @@ paths:
         drops (for example when a phone puts the page in the background) and its events are kept.
         This returns them again as Server-Sent Events, starting after the event numbered by the
         `Last-Event-ID` header (or the `after` query parameter); with neither, from the first.
-        Every event carries an `id:` line, a number counting up from 1. A translation that nobody
-        reads for two minutes is cancelled, and a finished one is kept for ten.
+        Every event carries an `id:` line, a number counting up from 1 with no gaps.
+
+        - **Position.** Only events after the given number are sent, never the given one again.
+          If both `Last-Event-ID` and `after` are present, the header wins. A value that is not a
+          non-negative integer is read as 0 (from the first event), not refused. A number beyond
+          the last event so far sends nothing yet, then every event that follows.
+        - **Live or finished.** A running translation is replayed and then followed live until its
+          last event; a finished one is replayed and the stream closes.
+        - **One reader.** A new reader takes the translation over: a connection that was still
+          reading it is closed by the server.
+        - **No reader.** A running translation that nobody reads for two minutes is cancelled, and
+          a finished or cancelled one is kept for ten minutes (the server also keeps only a
+          limited number of finished ones). A cancelled translation, whether by this timeout or by
+          `DELETE`, ends its events with an `error` event with code `cancelled`, so a reader that
+          reconnects after a cancellation receives the events so far and that terminal event.
+        - **Gone.** After that, or for an id that never existed or was not resumable, the answer
+          is `404` (`not_found`).
       parameters:
         - name: id
           in: path
@@ -359,14 +451,23 @@ paths:
             text/event-stream:
               schema:
                 type: string
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /translations/{id}:
     delete:
       tags: [translation]
       operationId: cancelTranslation
       summary: Cancel a resumable translation
-      description: "Stops a translation started with `resumable: true` now, instead of after the grace period."
+      description: |
+        Stops a translation started with `resumable: true` now, instead of after the two-minute
+        grace period. A reader that is attached receives the `error` event with code `cancelled`
+        and the stream closes. Cancelling a translation that has already finished or been
+        cancelled changes nothing and is also a `204`, until the server forgets it (ten minutes
+        after it ended), after which it is a `404`.
       parameters:
         - name: id
           in: path
@@ -375,19 +476,25 @@ paths:
             type: string
       responses:
         "204":
-          description: Cancelled (or already finished).
+          description: Cancelled (or already finished or cancelled).
+        "403":
+          $ref: "#/components/responses/Forbidden"
         "404":
           $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /tokenize:
     post:
       tags: [translation]
       operationId: tokenize
       summary: Count the tokens a translation request would use
       description: |
-        Accepts the same body as `POST /translate` (`stream` and `max_output_tokens` are
-        ignored) and reports the size of the resulting prompt without translating anything.
-        A request with an `image` is refused (`400`): an image is counted by preparing it for
-        the model, which only a translation waits for.
+        Accepts the text fields of a `POST /translate` body (`TokenizeRequest`, the same rules
+        for `model`, `source_lang`, glossary, constraints and `genre`) and reports the size of
+        the resulting prompt without translating anything. It has no `image`: an image is counted
+        by preparing it for the model, which only a translation waits for. A body that carries
+        one is refused (`400`, `details.field` `image`). The output and streaming fields of a
+        translation (`max_output_tokens`, `stream`, `resumable`) are not part of this request.
         An input that is too long is reported with `fits: false`, not with an error.
 
         Tokenizing never waits in the queue, never uses a slot and never loads or swaps a model,
@@ -404,10 +511,10 @@ paths:
         content:
           application/json:
             schema:
-              $ref: "#/components/schemas/TranslateRequest"
+              $ref: "#/components/schemas/TokenizeRequest"
       responses:
         "200":
-          description: Token count and remaining budget.
+          description: Token count and the output room left in the context window.
           content:
             application/json:
               schema:
@@ -435,6 +542,8 @@ paths:
           $ref: "#/components/responses/UnsupportedMediaType"
         "403":
           $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /models:
     get:
       tags: [service]
@@ -447,6 +556,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/ModelList"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /languages:
     get:
       tags: [service]
@@ -471,6 +584,10 @@ paths:
                     type: array
                     items:
                       $ref: "#/components/schemas/Language"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /health:
     get:
       tags: [service]
@@ -494,6 +611,10 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Health"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /openapi.yaml:
     get:
       tags: [service]
@@ -506,6 +627,10 @@ paths:
             application/yaml:
               schema:
                 type: string
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "500":
+          $ref: "#/components/responses/InternalError"
 components:
   responses:
     InvalidRequest:
@@ -525,10 +650,15 @@ components:
                 field: text
     TooLarge:
       description: |
-        Either the prompt exceeds the input token limit (`input_too_long`, with
-        `details.prompt_tokens` and `details.max_input_tokens`), or the request body without its
-        `image` exceeds 4 MiB (`body_too_large`), or the image is over 8 MiB or 50 million pixels
-        (`image_too_large`).
+        One of:
+
+        - the prompt exceeds the input token limit (`input_too_long`, with `details.prompt_tokens`
+          and `details.max_input_tokens`);
+        - the prompt is within that limit but leaves no room for a translation in the context
+          window (`input_too_long`, with `details.prompt_tokens` and `details.context_tokens`);
+        - the request body without its `image` exceeds 4 MiB (`body_too_large`);
+        - the image is over 8 MiB or 50 million pixels (`image_too_large`, with
+          `details.field` `image`; `details.max_image_bytes` when it is the size).
       content:
         application/json:
           schema:
@@ -554,7 +684,27 @@ components:
     EngineError:
       description: |
         The inference engine failed while handling the request (`engine_error`): a generation
-        failed, or the requested model could not be loaded. The message says which.
+        failed, or the requested model could not be loaded. The message says which. A failed load
+        is attempted again by the next request.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    InternalError:
+      description: An unexpected server failure (`internal_error`); the details are in the server log.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    MethodNotAllowed:
+      description: |
+        The path exists but not for this method (`method_not_allowed`). Not listed per operation;
+        it can answer any `/api/v1` path.
+      headers:
+        Allow:
+          description: The methods the path accepts.
+          schema:
+            type: string
       content:
         application/json:
           schema:
@@ -583,7 +733,70 @@ components:
     TranslateRequest:
       type: object
       required: [target_lang]
-      description: Either `text` or `image` is required.
+      description: |
+        Either `text` or `image` is required. A text-only request needs a `text` with a
+        non-whitespace character; with an `image` the `text` is optional and only says what to
+        look at.
+
+        The conditional rules below are enforced by the server (`400`, `details.field` names the
+        field). They apply to the model the request names, or to the default model of
+        `GET /models` when it names none:
+
+        - `index-nailong-9b` needs a `source_lang` other than `auto`, takes no `glossary`,
+          `hard_constraints`, `soft_constraints`, `genre` or `image`, and only translates the
+          directions listed in `GET /models` (`400`, `unsupported_language_pair`, otherwise).
+        - An `image` request takes no `genre`.
+        - `resumable: true` needs `stream: true`.
+      allOf:
+        - anyOf:
+            - required: [image]
+              properties:
+                image:
+                  type: string
+            - required: [text]
+              properties:
+                text:
+                  type: string
+                  pattern: '\S'
+        - if:
+            required: [model]
+            properties:
+              model:
+                const: index-nailong-9b
+          then:
+            required: [source_lang]
+            properties:
+              source_lang:
+                pattern: '\S'
+                not:
+                  pattern: '^\s*[Aa][Uu][Tt][Oo]\s*$'
+              glossary:
+                maxProperties: 0
+              hard_constraints:
+                maxItems: 0
+              soft_constraints:
+                maxItems: 0
+              genre: false
+              image: false
+        - if:
+            required: [image]
+            properties:
+              image:
+                type: string
+          then:
+            properties:
+              genre:
+                maxLength: 0
+        - if:
+            required: [resumable]
+            properties:
+              resumable:
+                const: true
+          then:
+            required: [stream]
+            properties:
+              stream:
+                const: true
       properties:
         model:
           type: string
@@ -647,11 +860,10 @@ components:
         genre:
           type: string
           maxLength: 64
-          default: 文本
           description: |
             Genre or domain of the source, such as `专栏文章`, `学术论文`, `小说` or `字幕`.
-            Only used when a glossary or constraint is present. Not accepted by `index-nailong-9b`
-            or together with an `image`.
+            Only used when a glossary or constraint is present, and then `文本` is assumed when
+            it is left out. Not accepted by `index-nailong-9b` or together with an `image`.
         max_output_tokens:
           type: integer
           minimum: 1
@@ -662,14 +874,17 @@ components:
         stream:
           type: boolean
           default: false
-          description: Respond with Server-Sent Events.
+          description: |
+            Respond with Server-Sent Events. This is the only selector of the response format: the
+            `Accept` header of `POST /translate` is ignored.
         resumable:
           type: boolean
           default: false
           description: |
-            With `stream: true`: the translation survives a dropped connection. The response carries
-            an `X-Translation-Id` header and numbered events, and `GET /translations/{id}/events`
-            reads it again. Without it, closing the connection cancels the translation at once.
+            Requires `stream: true` (`400` otherwise). The translation survives a dropped
+            connection: the response carries an `X-Translation-Id` header, and
+            `GET /translations/{id}/events` reads the events again. Without it, closing the
+            connection cancels the translation at once.
     TranslateResponse:
       type: object
       required: [translation, finish_reason, model, usage, timings]
@@ -685,9 +900,56 @@ components:
           $ref: "#/components/schemas/Usage"
         timings:
           $ref: "#/components/schemas/Timings"
+    TokenizeRequest:
+      type: object
+      required: [text, target_lang]
+      description: |
+        The text fields of `TranslateRequest`, with the same meaning and the same conditional
+        rules for `index-nailong-9b`. There is no `image` (a body that carries one is refused with
+        `400`), and no `max_output_tokens`, `stream` or `resumable`: nothing is generated.
+        `text` is required and needs a non-whitespace character.
+      allOf:
+        - if:
+            required: [model]
+            properties:
+              model:
+                const: index-nailong-9b
+          then:
+            required: [source_lang]
+            properties:
+              source_lang:
+                pattern: '\S'
+                not:
+                  pattern: '^\s*[Aa][Uu][Tt][Oo]\s*$'
+              glossary:
+                maxProperties: 0
+              hard_constraints:
+                maxItems: 0
+              soft_constraints:
+                maxItems: 0
+              genre: false
+      properties:
+        model:
+          $ref: "#/components/schemas/TranslateRequest/properties/model"
+        text:
+          type: string
+          pattern: '\S'
+          description: Source text; surrounding whitespace is ignored.
+        target_lang:
+          $ref: "#/components/schemas/TranslateRequest/properties/target_lang"
+        source_lang:
+          $ref: "#/components/schemas/TranslateRequest/properties/source_lang"
+        glossary:
+          $ref: "#/components/schemas/TranslateRequest/properties/glossary"
+        hard_constraints:
+          $ref: "#/components/schemas/TranslateRequest/properties/hard_constraints"
+        soft_constraints:
+          $ref: "#/components/schemas/TranslateRequest/properties/soft_constraints"
+        genre:
+          $ref: "#/components/schemas/TranslateRequest/properties/genre"
     TokenizeResponse:
       type: object
-      required: [model, counted_with, prompt_tokens, fits, max_output_tokens, limits]
+      required: [model, counted_with, prompt_tokens, fits, available_output_tokens, limits]
       properties:
         model:
           type: string
@@ -701,9 +963,15 @@ components:
         fits:
           type: boolean
           description: Whether `prompt_tokens` is within `limits.max_input_tokens`.
-        max_output_tokens:
+        available_output_tokens:
           type: integer
-          description: Context space left for the translation.
+          minimum: 0
+          description: |
+            The most tokens a translation of this prompt could generate: `limits.context_tokens`
+            minus `prompt_tokens` minus a small safety margin the server keeps free, never below
+            0. It is a ceiling, not the budget a translation gets by default (four times the
+            prompt plus 512, clamped to this), which a request can also lower with
+            `max_output_tokens`; the `start` event reports the budget in effect.
         limits:
           $ref: "#/components/schemas/Limits"
     ModelList:
@@ -896,12 +1164,26 @@ components:
           type: string
     VoiceList:
       type: object
-      required: [status, languages, speed, max_chars, voices]
+      description: |
+        The limits are always present, also while speech is `unavailable`, so a client can
+        validate a recording before it uploads it.
+      required:
+        - status
+        - languages
+        - speed
+        - max_chars
+        - max_sample_bytes
+        - sample_seconds
+        - sample_rate
+        - max_voices
+        - max_name_chars
+        - voices
       properties:
         status:
           $ref: "#/components/schemas/SpeechStatus"
         error:
           type: string
+          description: Why speech is `unavailable`, or why the model could not be loaded last time.
         languages:
           type: array
           items:
@@ -917,6 +1199,14 @@ components:
         max_chars:
           type: integer
           description: Longest `text` of one `POST /speech`.
+        max_voices:
+          type: integer
+          description: How many uploaded voices can exist at once; the next `POST /voices` is refused.
+          examples: [16]
+        max_name_chars:
+          type: integer
+          description: Longest voice name kept by `POST /voices`; a longer `name` is cut off.
+          examples: [60]
         max_sample_bytes:
           type: integer
           description: Largest body of `POST /voices`.
@@ -943,6 +1233,37 @@ components:
           description: Empty when speech is unavailable or the voices directory holds no WAV file.
           items:
             $ref: "#/components/schemas/Voice"
+    ErrorDetails:
+      type: object
+      description: |
+        Extra facts about an error. The keys below are the ones the server sets; others may be
+        added later, so clients ignore keys they do not know. Which keys appear depends on the
+        error `code`, see the operations.
+      additionalProperties: true
+      properties:
+        field:
+          type: string
+          description: The request field (or `body`) that caused a `400`, or an `image` problem.
+        prompt_tokens:
+          type: integer
+          description: Tokens the prompt occupies (with `input_too_long`).
+        max_input_tokens:
+          type: integer
+          description: The largest accepted prompt (with `input_too_long`).
+        context_tokens:
+          type: integer
+          description: With `input_too_long` when the prompt leaves no room for a translation; the context window.
+        max_image_bytes:
+          type: integer
+          description: With `image_too_large` when the file is too big; the largest image file.
+        max_queue:
+          type: integer
+          description: How many requests may wait (with `queue_full`).
+        supported:
+          type: array
+          items:
+            type: string
+          description: With `unsupported_language_pair` (the accepted directions) or a bad speech `lang` (the accepted languages).
     Error:
       type: object
       required: [error]
@@ -950,6 +1271,20 @@ components:
         error:
           type: object
           required: [code, message]
+          allOf:
+            - if:
+                required: [code]
+                properties:
+                  code:
+                    const: input_too_long
+              then:
+                required: [details]
+                properties:
+                  details:
+                    required: [prompt_tokens]
+                    anyOf:
+                      - required: [max_input_tokens]
+                      - required: [context_tokens]
           properties:
             code:
               type: string
@@ -971,12 +1306,15 @@ components:
                 - forbidden_origin
                 - forbidden_host
                 - internal_error
-                - cancelled
+              description: |
+                Every code the server can put in an HTTP error response. Each operation lists
+                the ones it can return. `cancelled` exists only as the code of an `error` event
+                (see `ErrorEvent`): a client that closed its connection never sees a response.
             message:
               type: string
+              description: For people, not for programs; its wording can change. Go by `code`.
             details:
-              type: object
-              additionalProperties: true
+              $ref: "#/components/schemas/ErrorDetails"
     QueuedEvent:
       type: object
       required: [position]
@@ -1019,16 +1357,33 @@ components:
     ErrorEvent:
       type: object
       required: [code, message]
+      allOf:
+        - if:
+            required: [code]
+            properties:
+              code:
+                const: input_too_long
+          then:
+            required: [details]
+            properties:
+              details:
+                required: [prompt_tokens]
+                anyOf:
+                  - required: [max_input_tokens]
+                  - required: [context_tokens]
       properties:
         code:
           type: string
-          enum: [input_too_long, engine_error, image_unavailable, invalid_request, internal_error]
+          enum: [input_too_long, engine_error, image_unavailable, invalid_request, internal_error, cancelled]
           description: |
+            The code the same failure has in JSON mode (see the table in `POST /translate`):
             `input_too_long` carries the same `details` as the JSON `413`. `engine_error` covers
             both failed generations and failed model loads. `image_unavailable` is the JSON `503`.
-            `invalid_request` here means the engine could not read the image.
+            `invalid_request` here is the second image stage: the model's own decoder could not
+            read an image the server had accepted (`details.field` is `image`). `cancelled`:
+            the resumable translation was cancelled, by `DELETE /translations/{id}` or because
+            nobody read it for two minutes; there is no result.
         message:
           type: string
         details:
-          type: object
-          additionalProperties: true
+          $ref: "#/components/schemas/ErrorDetails"
