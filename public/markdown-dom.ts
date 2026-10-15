@@ -8,6 +8,9 @@
 import { LINK_NOTE, linkProblem, type LinkReference } from "./links.ts";
 import { type Align, type Block, type Inline, MarkdownStream, type ParsedBlock } from "./markdown.ts";
 
+/** What the rendered tree holds: elements and text; nothing else is ever created. */
+type Child = Element | Text;
+
 export interface OutputView {
   /** Adds streamed text. Rendering may be deferred to the next frame. */
   append(text: string): void;
@@ -20,7 +23,7 @@ const SAFE_URL = /^(?:https?:\/\/|mailto:)/i;
 
 function el<K extends keyof HTMLElementTagNameMap>(
   tag: K,
-  children: Node[] = [],
+  children: Child[] = [],
   className = "",
 ): HTMLElementTagNameMap[K] {
   const e = document.createElement(tag);
@@ -31,7 +34,7 @@ function el<K extends keyof HTMLElementTagNameMap>(
   return e;
 }
 
-function link(href: string, title: string, children: Node[]): Node {
+function link(href: string, title: string, children: Child[]): Child {
   if (!SAFE_URL.test(href)) {
     return el("span", children);
   }
@@ -45,8 +48,8 @@ function link(href: string, title: string, children: Node[]): Node {
   return a;
 }
 
-function inlineNodes(nodes: Inline[]): Node[] {
-  return nodes.map((n): Node => {
+function inlineNodes(nodes: Inline[]): Child[] {
+  return nodes.map((n): Child => {
     switch (n.type) {
       case "text": {
         return document.createTextNode(n.text);
@@ -105,7 +108,7 @@ function keyboardScrollable(box: HTMLElement, label: string) {
   scrollWatch.observe(box);
 }
 
-function blockNode(b: Block, tight = false): Node[] {
+function blockNode(b: Block, tight = false): Child[] {
   switch (b.type) {
     case "heading": {
       // Two levels down, below the page's own h1 and h2; the class keeps the source level for styling.
@@ -177,7 +180,7 @@ function blockNode(b: Block, tight = false): Node[] {
   }
 }
 
-function blockNodes(blocks: Block[], tight = false): Node[] {
+function blockNodes(blocks: Block[], tight = false): Child[] {
   return blocks.flatMap((b) => blockNode(b, tight));
 }
 
@@ -238,7 +241,7 @@ function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
 }
 
 /** `settled` marks blocks that will not change again; the stylesheet's costly text layout waits for it. */
-function lineNodes(parsed: ParsedBlock[], settled: boolean): Node[] {
+function lineNodes(parsed: ParsedBlock[], settled: boolean): Child[] {
   return parsed.flatMap(({ block, line }) => {
     const nodes = blockNode(block);
     for (const n of nodes) {
@@ -261,7 +264,7 @@ function lineNodes(parsed: ParsedBlock[], settled: boolean): Node[] {
 function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
   target.replaceChildren();
   const stream = new MarkdownStream();
-  let tail: Node[] = [];
+  let tail: Child[] = [];
   let frame = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
 
@@ -272,7 +275,7 @@ function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
     timer = undefined;
     const { done, tail: open } = stream.takeParsed();
     for (const node of tail) {
-      node.parentNode?.removeChild(node);
+      node.remove();
     }
     tail = lineNodes(open, final);
     target.append(...lineNodes(done, true), ...tail);

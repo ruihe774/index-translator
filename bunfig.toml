@@ -303,6 +303,8 @@ correctness = "error"
 "unicorn/prefer-classlist-toggle" = "warn"
 "unicorn/prefer-date-now" = "warn"
 "unicorn/prefer-default-parameters" = "warn"
+"unicorn/prefer-dom-node-append" = "warn"
+"unicorn/prefer-dom-node-remove" = "warn"
 "unicorn/prefer-dom-node-text-content" = "warn"
 "unicorn/prefer-event-target" = "warn"
 "unicorn/prefer-export-from" = ["warn", { checkUsedVariables = false }]
