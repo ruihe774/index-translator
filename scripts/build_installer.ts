@@ -112,6 +112,7 @@ await cp(join(root, "prompts"), join(stage, "prompts"), { recursive: true });
 await cp(join(root, "docs", "openapi.yaml"), join(stage, "docs", "openapi.yaml"));
 await cp(join(root, "THIRD_PARTY_NOTICES.md"), join(stage, "THIRD_PARTY_NOTICES.md"));
 await cp(join(root, "scripts", "fetch_models.ts"), join(stage, "scripts", "fetch_models.ts"));
+await cp(join(root, "packaging", "bunfig.toml"), join(stage, "bunfig.toml"));
 await Bun.write(join(stage, "package.json"), `${JSON.stringify({ name: "index-translator", type: "module" })}\n`);
 await copyEngine(llama, join(stage, "vendor", "llama.cpp"));
 await copyEngine(audio, join(stage, "vendor", "audio.cpp"));
@@ -140,6 +141,13 @@ await run([
 ]);
 
 // The packed Bun starts and reads the packed files.
-await run([join(stage, "bun.exe"), "--no-env-file", join(stage, "src", "server.ts"), "--help"]);
+await run([
+  join(stage, "bun.exe"),
+  "--config",
+  join(stage, "bunfig.toml"),
+  "--disallow-code-generation-from-strings=strict",
+  join(stage, "src", "server.ts"),
+  "--help",
+]);
 const megabytes = Math.round(Bun.file(out).size / 1e6);
 console.log(`ok ${out} (${megabytes} MB)`);

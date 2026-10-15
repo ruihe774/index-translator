@@ -18,8 +18,7 @@ export INDEX_TRANSLATOR_APPIMAGE="$self"
 case "${1:-}" in
   fetch)
     shift
-    # A .env file in the directory the user happens to be in is not this program's.
-    exec "$bun" --no-env-file "$app/scripts/fetch_models.ts" "$@"
+    exec "$bun" --config "$app/bunfig.toml" --disallow-code-generation-from-strings=strict "$app/scripts/fetch_models.ts" "$@"
     ;;
   notices | licenses)
     cat "$app/THIRD_PARTY_NOTICES.md"
@@ -65,4 +64,4 @@ components) and, in the browser, pdf-inspector (MIT) and pdf.js (Apache-2.0, wit
 decoders under their own licenses) for PDF files, undoc (MIT) for Word files and the QOA codec (public domain) for speech. Models are not bundled; \`fetch\` shows their licenses before it downloads them.
 Full notices: $self notices
 EOF
-exec "$bun" --no-env-file "$app/src/server.ts" "$@"
+exec "$bun" --config "$app/bunfig.toml" --disallow-code-generation-from-strings=strict "$app/src/server.ts" "$@"

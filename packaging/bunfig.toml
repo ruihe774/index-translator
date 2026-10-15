@@ -1,0 +1,7 @@
+# Bun's settings for the packaged app (AppImage and Windows installer); copied next to src/ by the
+# build scripts. Not the repository's own bunfig.toml (lint, test and format settings).
+
+# A .env file in the directory the user happens to be in is not this program's.
+env = false
+# The user may not consent to sending telemetry to Anthropic.
+telemetry = false

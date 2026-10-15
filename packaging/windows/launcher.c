@@ -148,18 +148,18 @@ static LRESULT CALLBACK proc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
           WCHAR port[8] = L"", line[256];
           GetDlgItemTextW(w, ID_PORT, port, 8);
           if (!port[0]) wcscpy(port, L"3000");
-          swprintf(line, 256, L"bun --no-env-file src\\server.ts --port %s", port);
+          swprintf(line, 256, L"bun --disallow-code-generation-from-strings=strict src\\server.ts --port %s", port);
           if (run(w, line)) DestroyWindow(w); /* the console carries on on its own */
           break;
         }
         case ID_FETCH:
-          if (run(w, L"bun --no-env-file scripts\\fetch_models.ts")) DestroyWindow(w);
+          if (run(w, L"bun --disallow-code-generation-from-strings=strict scripts\\fetch_models.ts")) DestroyWindow(w);
           break;
         case ID_NOTICES:
           if (run(w, L"type THIRD_PARTY_NOTICES.md | more")) DestroyWindow(w);
           break;
         case ID_HELP:
-          if (run(w, L"bun --no-env-file src\\server.ts --help")) DestroyWindow(w);
+          if (run(w, L"bun --disallow-code-generation-from-strings=strict src\\server.ts --help")) DestroyWindow(w);
           break;
         case ID_QUIT:
           DestroyWindow(w);
