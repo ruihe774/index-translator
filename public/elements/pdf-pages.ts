@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 // <pdf-pages>: the strip of page thumbnails beside the source box while a PDF is open.
 //
 // A light-DOM element that enhances the markup in index.html (an empty list) and fills the list
@@ -16,11 +17,11 @@ export interface PageSource {
 }
 
 export class PdfPages extends HTMLElement {
-  private source: PageSource | null = null;
-  private observer: IntersectionObserver | null = null;
-  private queue: HTMLCanvasElement[] = [];
-  private drawing = false;
-  private off = false;
+  #source: PageSource | null = null;
+  #observer: IntersectionObserver | null = null;
+  #queue: HTMLCanvasElement[] = [];
+  #drawing = false;
+  #off = false;
 
   constructor() {
     super();
@@ -33,30 +34,30 @@ export class PdfPages extends HTMLElement {
     });
   }
 
-  private get list(): HTMLElement {
+  get #list(): HTMLElement {
     return this.querySelector("ol")!;
   }
 
-  private pageButton(page: number | null): HTMLButtonElement | null {
+  #pageButton(page: number | null): HTMLButtonElement | null {
     return page === null ? null : this.querySelector<HTMLButtonElement>(`button[data-page="${page}"]`);
   }
 
   /** Shows the strip with a button per page of `source`, in place of what it showed before. */
   show(source: PageSource) {
     this.clear();
-    this.source = source;
-    this.observer = new IntersectionObserver(
+    this.#source = source;
+    this.#observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (!entry.isIntersecting) {
             continue;
           }
-          this.observer?.unobserve(entry.target);
-          this.queue.push(entry.target as HTMLCanvasElement);
+          this.#observer?.unobserve(entry.target);
+          this.#queue.push(entry.target as HTMLCanvasElement);
         }
-        void this.draw();
+        void this.#draw();
       },
-      { root: this.list, rootMargin: "50%" },
+      { root: this.#list, rootMargin: "50%" },
     );
     const items: HTMLLIElement[] = [];
     for (let page = 1; page <= source.pageCount; page++) {
@@ -64,7 +65,7 @@ export class PdfPages extends HTMLElement {
       button.type = "button";
       button.dataset.page = String(page);
       button.setAttribute("aria-label", `Page ${page}`);
-      button.setAttribute("aria-disabled", String(this.off));
+      button.setAttribute("aria-disabled", String(this.#off));
       // A portrait sheet until the page is drawn, so the strip's length is about right from the start.
       const canvas = document.createElement("canvas");
       canvas.width = 3;
@@ -79,31 +80,31 @@ export class PdfPages extends HTMLElement {
       const li = document.createElement("li");
       li.append(button);
       items.push(li);
-      this.observer.observe(canvas);
+      this.#observer.observe(canvas);
     }
-    this.list.replaceChildren(...items);
+    this.#list.replaceChildren(...items);
     this.hidden = false;
-    this.list.scrollTop = 0;
+    this.#list.scrollTop = 0;
   }
 
   /** Empties and hides the strip. */
   clear() {
-    this.observer?.disconnect();
-    this.observer = null;
-    this.source = null;
-    this.queue = [];
-    this.list.replaceChildren();
+    this.#observer?.disconnect();
+    this.#observer = null;
+    this.#source = null;
+    this.#queue = [];
+    this.#list.replaceChildren();
     this.hidden = true;
   }
 
-  private async draw() {
-    if (this.drawing) {
+  async #draw() {
+    if (this.#drawing) {
       return;
     }
-    this.drawing = true;
+    this.#drawing = true;
     try {
-      for (let canvas = this.queue.shift(); canvas; canvas = this.queue.shift()) {
-        const { source } = this;
+      for (let canvas = this.#queue.shift(); canvas; canvas = this.#queue.shift()) {
+        const source = this.#source;
         if (!source || !canvas.isConnected) {
           continue;
         }
@@ -113,13 +114,13 @@ export class PdfPages extends HTMLElement {
           canvas.dataset.drawn = "";
         } catch (e) {
           // A page that cannot be drawn keeps its blank sheet and can still be extracted.
-          if (this.source === source) {
+          if (this.#source === source) {
             console.warn(`page ${page} was not drawn:`, e);
           }
         }
       }
     } finally {
-      this.drawing = false;
+      this.#drawing = false;
     }
   }
 
@@ -132,7 +133,7 @@ export class PdfPages extends HTMLElement {
     for (const b of this.querySelectorAll('button[aria-current="true"]')) {
       b.removeAttribute("aria-current");
     }
-    const button = this.pageButton(page);
+    const button = this.#pageButton(page);
     button?.setAttribute("aria-current", "true");
     button?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
@@ -142,15 +143,15 @@ export class PdfPages extends HTMLElement {
     for (const b of this.querySelectorAll('button[aria-busy="true"]')) {
       b.removeAttribute("aria-busy");
     }
-    this.pageButton(page)?.setAttribute("aria-busy", "true");
+    this.#pageButton(page)?.setAttribute("aria-busy", "true");
   }
 
   get disabled(): boolean {
-    return this.off;
+    return this.#off;
   }
 
   set disabled(disabled: boolean) {
-    this.off = disabled;
+    this.#off = disabled;
     const text = String(disabled);
     for (const b of this.getElementsByTagName("button")) {
       if (b.getAttribute("aria-disabled") !== text) {

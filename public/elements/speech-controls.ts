@@ -75,8 +75,7 @@ export class SpeechControls extends HTMLElement {
     }
     this.#built = true;
     const side = this.getAttribute("side") ?? "";
-    const { subject } = this;
-    this.setAttribute("aria-label", `Read the ${subject} aloud`);
+    this.setAttribute("aria-label", `Read the ${this.#subject} aloud`);
 
     this.#listen = button(
       `listen-${side}`,
@@ -135,12 +134,12 @@ export class SpeechControls extends HTMLElement {
   }
 
   /** What the side's text is called in the labels: "source text", "translation". */
-  private get subject(): string {
+  get #subject(): string {
     return this.getAttribute("subject") ?? "text";
   }
 
   show({ reading, state, blocked, canPrev, canNext }: SpeechView) {
-    const { subject } = this;
+    const subject = this.#subject;
     // The controls that appear while reading go away when it ends: do not leave focus on one.
     if (!reading && [this.#pause, this.#prev, this.#next].includes(document.activeElement as HTMLButtonElement)) {
       this.#listen.focus();

@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 // <view-switch>: a group of buttons of which one is pressed (Raw / Preview, the model choice).
 //
 // A light-DOM element (the page gives it `role="group"` and an `aria-label`): it enhances the buttons
@@ -27,13 +28,13 @@ export class ViewSwitch extends HTMLElement {
     });
   }
 
-  private get buttons(): HTMLCollectionOf<HTMLButtonElement> {
+  get #buttons(): HTMLCollectionOf<HTMLButtonElement> {
     return this.getElementsByTagName("button");
   }
 
   /** The `data-value` of the pressed button; empty when none is. */
   get value(): string {
-    for (const b of this.buttons) {
+    for (const b of this.#buttons) {
       if (b.getAttribute("aria-pressed") === "true") {
         return b.dataset.value ?? "";
       }
@@ -42,7 +43,7 @@ export class ViewSwitch extends HTMLElement {
   }
 
   set value(value: string) {
-    for (const b of this.buttons) {
+    for (const b of this.#buttons) {
       const pressed = String(b.dataset.value === value);
       if (b.getAttribute("aria-pressed") !== pressed) {
         b.setAttribute("aria-pressed", pressed);
@@ -51,12 +52,12 @@ export class ViewSwitch extends HTMLElement {
   }
 
   get disabled(): boolean {
-    return this.buttons[0]?.getAttribute("aria-disabled") === "true";
+    return this.#buttons[0]?.getAttribute("aria-disabled") === "true";
   }
 
   set disabled(disabled: boolean) {
     const text = String(disabled);
-    for (const b of this.buttons) {
+    for (const b of this.#buttons) {
       if (b.getAttribute("aria-disabled") !== text) {
         b.setAttribute("aria-disabled", text);
       }
