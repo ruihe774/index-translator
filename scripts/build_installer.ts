@@ -143,8 +143,7 @@ await run([
 // The packed Bun starts and reads the packed files.
 await run([
   join(stage, "bun.exe"),
-  "--config",
-  join(stage, "bunfig.toml"),
+  `--config=${join(stage, "bunfig.toml")}`,
   "--disallow-code-generation-from-strings=strict",
   join(stage, "src", "server.ts"),
   "--help",

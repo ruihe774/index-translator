@@ -9,9 +9,13 @@ import { $ } from "bun";
 /** Runs a command with its output on the terminal and throws when it fails. */
 export async function run(command: string[], cwd?: string, env?: Record<string, string>): Promise<void> {
   console.log(`$ ${command.join(" ")}`);
-  const result = await $`${command}`
+  const merged = { ...Bun.env, ...env };
+  // The shell looks a command up on the PATH of this process, not of `env` (`cl` is only on the latter).
+  const pathKey = Object.keys(merged).find((key) => key.toUpperCase() === "PATH");
+  const program = Bun.which(command[0] ?? "", { PATH: pathKey ? merged[pathKey] : undefined }) ?? command[0] ?? "";
+  const result = await $`${[program, ...command.slice(1)]}`
     .cwd(cwd ?? process.cwd())
-    .env({ ...Bun.env, ...env })
+    .env(merged)
     .nothrow();
   if (result.exitCode !== 0) {
     throw new Error(`${command[0]} failed with exit code ${result.exitCode}`);
