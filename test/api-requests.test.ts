@@ -232,30 +232,26 @@ describe("document model field rules", () => {
 
 describe("streaming selection", () => {
   test.each([
-    ["application/json", false],
-    ["*/*", false],
-    ["text/event-stream;q=0.9", true],
-    ["application/json, text/event-stream", true],
-  ])("Accept: %s returns %s", async (accept, sse) => {
+    "application/json",
+    "*/*",
+    "text/event-stream",
+    "text/event-stream;q=0.9",
+    "application/json, text/event-stream",
+  ])("Accept: %s without stream: true returns JSON, the header is not consulted", async (accept) => {
     const res = await post("/api/v1/translate", plain, { headers: { accept } });
     expect(res.status).toBe(200);
-    if (sse) {
-      expect(res.headers.get("content-type")).toStartWith("text/event-stream");
-    } else {
-      expect(res.headers.get("content-type")).toStartWith("application/json");
-    }
+    expect(res.headers.get("content-type")).toStartWith("application/json");
     await res.text();
   });
 
-  test("stream: false does not stop an Accept: text/event-stream request from streaming", async () => {
-    // Actual behaviour: the Accept header wins over an explicit stream:false (the server ORs the two).
+  test("stream: false with Accept: text/event-stream returns JSON", async () => {
     const res = await post(
       "/api/v1/translate",
       { ...plain, stream: false },
       { headers: { accept: "text/event-stream" } },
     );
-    expect(res.headers.get("content-type")).toStartWith("text/event-stream");
-    expect((await readSse(res)).at(-1)!.event).toBe("done");
+    expect(res.headers.get("content-type")).toStartWith("application/json");
+    await res.text();
   });
 
   test("stream: true with Accept: application/json still streams, because the body field wins", async () => {
@@ -429,12 +425,12 @@ describe("POST /tokenize budget at the default limits (context 1000, max input 4
     const at = await bodyOf<TokenizeResponse>(
       await post("/api/v1/tokenize", { text: textFor(400), target_lang: "en" }),
     );
-    expect(at).toMatchObject({ prompt_tokens: 400, fits: true, max_output_tokens: 536 });
+    expect(at).toMatchObject({ prompt_tokens: 400, fits: true, available_output_tokens: 536 });
 
     const over = await bodyOf<TokenizeResponse>(
       await post("/api/v1/tokenize", { text: textFor(401), target_lang: "en" }),
     );
-    expect(over).toMatchObject({ prompt_tokens: 401, fits: false, max_output_tokens: 535 });
+    expect(over).toMatchObject({ prompt_tokens: 401, fits: false, available_output_tokens: 535 });
   });
 
   test("translate accepts a prompt of exactly the input limit and gives it the rest of the context", async () => {
@@ -736,14 +732,15 @@ describe("resumable streams", () => {
       await reader.read();
       const gone = await fetch(`${base}/api/v1/translations/${id}`, { method: "DELETE" });
       expect(gone.status).toBe(204);
-      const events: string[] = [];
-      for (;;) {
-        const { done } = await reader.read();
-        if (done) {
-          break;
-        }
+      // The attached reader is told why the stream stops, and so is one that comes later.
+      const rest = new TextDecoder();
+      let seen = "";
+      for (let r = await reader.read(); !r.done; r = await reader.read()) {
+        seen += rest.decode(r.value);
       }
-      expect(events).toStrictEqual([]);
+      expect(seen).toContain('event: error\ndata: {"code":"cancelled"');
+      const later = await readSse(await fetch(`${base}/api/v1/translations/${id}/events`));
+      expect(later.at(-1)).toMatchObject({ event: "error", data: { code: "cancelled" } });
       const plain = await post("/api/v1/translate", { text: "你好", target_lang: "en", stream: true });
       expect(plain.headers.get("x-translation-id")).toBeNull();
       await plain.text();
@@ -752,6 +749,16 @@ describe("resumable streams", () => {
     }
     const missing = await fetch(`${base}/api/v1/translations/00000000-0000-4000-8000-000000000000/events`);
     expect(missing.status).toBe(404);
+  });
+
+  test("resumable needs stream: true", async () => {
+    for (const stream of [false, undefined]) {
+      const res = await start({ stream });
+      expect(res.status).toBe(400);
+      const error = await errorOf(res);
+      expect(error.code).toBe("invalid_request");
+      expect(error.details).toStrictEqual({ field: "resumable" });
+    }
   });
 
   test("resumable must be a boolean", async () => {

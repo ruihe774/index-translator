@@ -99,7 +99,7 @@ describe("POST /tokenize", () => {
       counted_with: CHAT,
       prompt_tokens: promptChars + TEMPLATE.length,
       fits: true,
-      max_output_tokens: 1000 - promptChars - TEMPLATE.length - 64,
+      available_output_tokens: 1000 - promptChars - TEMPLATE.length - 64,
       limits: { context_tokens: 1000, max_input_tokens: 400 },
     });
   });
@@ -286,16 +286,6 @@ describe("POST /translate (SSE)", () => {
       usage: { prompt_tokens: 42, completion_tokens: 5 },
       timings: { queue_ms: expect.any(Number), prompt_ms: 12, generation_ms: 100, tokens_per_second: 70.12 },
     });
-  });
-
-  test("the Accept header alone selects streaming", async () => {
-    const res = await post(
-      "/api/v1/translate",
-      { text: "你好", target_lang: "en" },
-      { headers: { accept: "text/event-stream" } },
-    );
-    expect(res.headers.get("content-type")).toStartWith("text/event-stream");
-    await res.text();
   });
 
   test("validation errors are plain JSON responses even when streaming is requested", async () => {

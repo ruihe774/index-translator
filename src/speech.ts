@@ -44,6 +44,8 @@ const THREADS = 4;
 /** Largest uploaded voice sample, and how many uploads are kept until the server stops. */
 export const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
 export const MAX_UPLOADED_VOICES = 16;
+/** Longest name `POST /voices` keeps; a longer one is cut off. */
+export const MAX_VOICE_NAME_CHARS = 60;
 
 /** Recording limits of an uploaded sample: a few seconds suffice, a long one only slows every utterance. */
 export const MIN_SAMPLE_SECONDS = 1;

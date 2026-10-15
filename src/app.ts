@@ -39,6 +39,8 @@ import {
   MAX_SAMPLE_SECONDS,
   MAX_SPEECH_CHARS,
   MAX_SPEED,
+  MAX_UPLOADED_VOICES,
+  MAX_VOICE_NAME_CHARS,
   MIN_SAMPLE_RATE,
   MIN_SAMPLE_SECONDS,
   MIN_SPEED,
@@ -65,6 +67,14 @@ const RESUME_GRACE_MS = 120_000;
 /** How long a finished resumable translation can still be fetched. */
 const RESUME_KEEP_MS = 10 * 60_000;
 const MAX_KEPT_JOBS = 16;
+/** The codes an `error` event can carry for a failure other than cancellation. */
+const EVENT_CODES = [
+  "input_too_long",
+  "engine_error",
+  "image_unavailable",
+  "invalid_request",
+  "internal_error",
+] as const;
 
 class ApiError extends Error {
   constructor(
@@ -104,6 +114,10 @@ function json<T>(body: T, status = 200, headers?: Record<string, string>): Respo
 
 function errorResponse(e: unknown): Response {
   if (e instanceof ApiError) {
+    // `cancelled` is only ever the code of an `error` event; a response nobody reads has no body.
+    if (e.code === "cancelled") {
+      return new Response(null, { status: e.status });
+    }
     return json<ErrorResponse>(
       { error: { code: e.code, message: e.message, details: e.details } },
       e.status,
@@ -325,9 +339,12 @@ function parseTranslateRequest(req: Request, body: Record<string, unknown>, defa
     softConstraints: optionalStringArray(body, "soft_constraints"),
     genre: optionalString(body, "genre", 64),
     maxOutputTokens: (maxOutputTokens as number | null) ?? undefined,
-    stream: body.stream === true || (req.headers.get("accept") ?? "").includes("text/event-stream"),
+    stream: body.stream === true,
     resumable: body.resumable === true,
   };
+  if (input.resumable && !input.stream) {
+    throw invalid("resumable requires stream: true", "resumable");
+  }
   if (image) {
     if (!model.mmproj) {
       throw invalid(`image is not supported by ${model.id}`, "image");
@@ -752,10 +769,16 @@ export async function startApp(
           }
         }
       } catch (e) {
-        if (!job.abort.signal.aborted) {
+        if (job.abort.signal.aborted) {
+          // A reader of a resumable job (now or later) learns why the stream stops; for any other job nobody is left.
+          if (job.resumable) {
+            emit("error", { code: "cancelled", message: "the translation was cancelled" });
+          }
+        } else {
           const known = e instanceof ApiError ? e : imageError(e);
-          if (known) {
-            emit("error", { code: known.code, message: known.message, details: known.details });
+          const code = known && EVENT_CODES.find((c) => c === known.code);
+          if (known && code) {
+            emit("error", { code, message: known.message, details: known.details });
           } else {
             const code = e instanceof EngineError ? "engine_error" : "internal_error";
             if (code === "internal_error") {
@@ -834,7 +857,7 @@ export async function startApp(
       counted_with: counter.id,
       prompt_tokens: promptTokens,
       fits: promptTokens <= cfg.maxInputTokens,
-      max_output_tokens: Math.max(0, cfg.ctxSize - promptTokens - CONTEXT_MARGIN),
+      available_output_tokens: Math.max(0, cfg.ctxSize - promptTokens - CONTEXT_MARGIN),
       limits: limits(),
     };
   }
@@ -891,7 +914,9 @@ export async function startApp(
     if (wav.byteLength > MAX_SAMPLE_BYTES) {
       throw new ApiError(413, "body_too_large", "the sample is too large");
     }
-    const name = (url.searchParams.get("name") ?? "").replaceAll(/\s+/g, " ").trim().slice(0, 60) || "Uploaded voice";
+    const name =
+      (url.searchParams.get("name") ?? "").replaceAll(/\s+/g, " ").trim().slice(0, MAX_VOICE_NAME_CHARS) ||
+      "Uploaded voice";
     try {
       return json<Voice>(await speech.addVoice(name, wav), 201);
     } catch (e) {
@@ -1033,6 +1058,8 @@ export async function startApp(
               languages: SPEECH_LANGUAGES,
               speed: { min: MIN_SPEED, max: MAX_SPEED },
               max_chars: MAX_SPEECH_CHARS,
+              max_voices: MAX_UPLOADED_VOICES,
+              max_name_chars: MAX_VOICE_NAME_CHARS,
               max_sample_bytes: MAX_SAMPLE_BYTES,
               sample_seconds: { min: MIN_SAMPLE_SECONDS, max: MAX_SAMPLE_SECONDS },
               sample_rate: { min: MIN_SAMPLE_RATE, max: MAX_SAMPLE_RATE },

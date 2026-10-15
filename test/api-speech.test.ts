@@ -195,6 +195,8 @@ describe("GET /voices and health", () => {
       languages: ["zh", "en", "ja", "es", "ar"],
       speed: { min: 0.5, max: 2 },
       max_chars: 1000,
+      max_voices: MAX_UPLOADED_VOICES,
+      max_name_chars: 60,
       max_sample_bytes: 8 * 1024 * 1024,
       sample_seconds: { min: 1, max: 60 },
       sample_rate: { min: 8000, max: 192_000 },
@@ -820,6 +822,19 @@ describe("POST /voices", () => {
     await expect(errorOf(res)).resolves.toStrictEqual({
       code: "speech_error",
       message: "separating the voice failed: out of memory",
+    });
+    expect(mockSpeech.voices).toHaveLength(before);
+  });
+
+  test("an upload beyond max_voices is a 400 on the body, and nothing is evicted", async () => {
+    const before = mockSpeech.voices.length;
+    mockSpeech.voicesFull = true;
+    const res = await upload(sample());
+    expect(res.status).toBe(400);
+    await expect(errorOf(res)).resolves.toStrictEqual({
+      code: "invalid_request",
+      message: "too many uploaded voices",
+      details: { field: "body" },
     });
     expect(mockSpeech.voices).toHaveLength(before);
   });

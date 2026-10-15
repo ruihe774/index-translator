@@ -226,6 +226,8 @@ export const mockSpeech = {
   failWith: undefined as string | undefined,
   /** Makes an upload fail as when the engine cannot separate the voice from the recording. */
   separationFailWith: undefined as string | undefined,
+  /** The upload slots are all taken, as the real engine reports it. */
+  voicesFull: false,
   /** Every utterance asked for. */
   requests: [] as SpeechRequest[],
   aborted: 0,
@@ -246,6 +248,7 @@ export function resetMockSpeech(): void {
   mockSpeech.audioSeconds = 0.1;
   mockSpeech.failWith = undefined;
   mockSpeech.separationFailWith = undefined;
+  mockSpeech.voicesFull = false;
   mockSpeech.requests.length = 0;
   mockSpeech.aborted = 0;
   mockSpeech.ignoreAbort = false;
@@ -264,6 +267,9 @@ export const speechLauncher: SpeechLauncher = () => ({
   // eslint-disable-next-line @typescript-eslint/require-await -- a bad sample rejects, as the real engine does, rather than throwing
   async addVoice(name, wav) {
     validateSample(wav);
+    if (mockSpeech.voicesFull) {
+      throw new SpeechError("too many uploaded voices");
+    }
     if (mockSpeech.separationFailWith) {
       throw new SeparationError(mockSpeech.separationFailWith);
     }
