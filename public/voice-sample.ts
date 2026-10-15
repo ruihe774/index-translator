@@ -40,9 +40,11 @@ export async function uploadVoice(api: string, name: string, wav: ArrayBuffer): 
     headers: { "content-type": "audio/wav" },
     body: wav,
   });
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- any assigned to any
   const body = await res.json().catch(() => null);
   if (!res.ok) {
-    throw new Error(body?.error?.message ?? `The server answered HTTP ${res.status}.`);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access -- according to api spec
+    throw new Error((body?.error?.message as string) ?? `The server answered HTTP ${res.status}.`);
   }
-  return body;
+  return body as { id: string; name: string };
 }

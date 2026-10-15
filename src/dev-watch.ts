@@ -10,4 +10,4 @@ import shim from "./llama-shim.c" with { type: "text" };
 // @ts-expect-error
 import worker from "./llama-worker.ts" with { type: "text" };
 
-export const watched: number[] = [worker.length, ffi.length, shim.length];
+export const watched: number[] = [(worker as string).length, (ffi as string).length, (shim as string).length];

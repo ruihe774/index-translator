@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // A small Server-Sent Events reader: turns a byte stream into { event, data } records.
 // Pure apart from the stream it is given; no DOM access, so it can be unit tested.
 
@@ -71,6 +72,7 @@ function parseBlock(block: string): SseEvent | null {
     return null;
   }
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- any assigned to any
     const eventObj: SseEvent = { event, data: JSON.parse(data.join("\n")) };
     if (id !== undefined) {
       eventObj.id = id;

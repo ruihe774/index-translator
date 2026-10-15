@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 // The web app: one page, talking to the REST/SSE API of the same server.
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
@@ -602,19 +603,19 @@ async function translate() {
       if (event === "queued") {
         metaEl.show(`Waiting in the queue, position ${data.position}…`);
       } else if (event === "start") {
-        metaEl.show(`Translating with ${modelLabel(data.model)}…`);
+        metaEl.show(`Translating with ${modelLabel(data.model as string)}…`);
       } else if (event === "delta") {
         // Only the first token changes what the controls show; the rest just grows the copied text.
         if (state.translation.length === 0) {
-          setState({ translation: data.text });
+          setState({ translation: data.text as string });
         } else {
-          state.translation += data.text;
+          state.translation += data.text as string;
         }
-        output!.append(data.text);
+        output!.append(data.text as string);
       } else if (event === "done") {
-        done = data;
+        done = data as Done;
       } else if (event === "error") {
-        throw new ApiFailure(data, 0);
+        throw new ApiFailure(data as ApiErrorBody, 0);
       }
     }
     if (!done) {

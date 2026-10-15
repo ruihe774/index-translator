@@ -220,7 +220,7 @@ export class NativeSpeech implements Speech {
     }
     const dir = this.cfg.separationModelDir;
     const file = existsSync(dir)
-      ? new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().value
+      ? (new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().value as string | undefined)
       : undefined;
     return file ? join(dir, file) : undefined;
   }

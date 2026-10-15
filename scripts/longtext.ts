@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-argument */
 // Long-input check against a running backend. Translates a 16K-letter English document to
 // Chinese in a single generation, translates the result back, and verifies after each pass
 // that no paragraph was dropped or repeated.

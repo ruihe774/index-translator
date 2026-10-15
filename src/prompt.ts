@@ -110,6 +110,7 @@ function isJsonObject(text: string): boolean {
     return false;
   }
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment -- any assigned to any
     const v = JSON.parse(text);
     return typeof v === "object" && v !== null && !Array.isArray(v);
   } catch {

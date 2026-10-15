@@ -19,7 +19,7 @@ export interface GlossaryResult {
 
 /** Splits on the first "=", so the target term may itself contain "=". Line numbers are 1-based. */
 export function parseGlossary(value: string): GlossaryResult {
-  const glossary: Record<string, string> = Object.create(null);
+  const glossary = Object.create(null) as Record<string, string>;
   const all = value.split("\n");
   for (let i = 0; i < all.length; i++) {
     const line = all[i]!.trim();

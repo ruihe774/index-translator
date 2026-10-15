@@ -134,14 +134,14 @@ const normalizeBreaks = (h: string) => normalize(h.replaceAll(/<br \/>\n?/g, "\n
 
 const args = Bun.argv.slice(2);
 const file = args[0] && !args[0].startsWith("--") ? args.shift()! : null;
-const spec: Example[] = file
-  ? await Bun.file(file).json()
-  : await fetch(`https://spec.commonmark.org/${SPEC_VERSION}/spec.json`).then((r) => {
+const spec = file
+  ? ((await Bun.file(file).json()) as Example[])
+  : ((await fetch(`https://spec.commonmark.org/${SPEC_VERSION}/spec.json`).then((r) => {
       if (!r.ok) {
         throw new Error(`spec download failed: HTTP ${r.status}`);
       }
       return r.json();
-    });
+    })) as Example[]);
 
 const reasonOf = new Map<number, string>();
 for (const [reason, ids] of Object.entries(KNOWN)) {
