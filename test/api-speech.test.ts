@@ -41,9 +41,7 @@ beforeAll(async () => {
 
 afterEach(resetMockSpeech);
 
-afterAll(async () => {
-  await app.stop();
-});
+afterAll(() => app.stop());
 
 const speak = (body: unknown, init: RequestInit = {}) => postTo(base, "/api/v1/speech", body, init);
 

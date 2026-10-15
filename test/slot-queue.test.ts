@@ -10,9 +10,7 @@ describe("SlotQueue admission", () => {
   test("with no waiting room the first request runs and the second is refused", () => {
     const q = new SlotQueue(0);
     const calls: number[] = [];
-    const a = q.enter((p) => {
-      calls.push(p);
-    });
+    const a = q.enter((p) => void calls.push(p));
     expect(q.running).toBe(true);
     expect(q.depth).toBe(0);
     expect(calls).toStrictEqual([]);

@@ -82,18 +82,12 @@ function startDecoder(): Promise<QoaDecoder | null> {
         }
         const id = next++;
         const reader = body.getReader();
-        const result = new Promise<Pcm16>((resolve, reject) => {
-          waiting.set(id, { resolve, reject });
-        });
+        const result = new Promise<Pcm16>((resolve, reject) => void waiting.set(id, { resolve, reject }));
         // Settled by the worker, or by the abort below; checked between chunks to stop reading early.
         let settled = false;
         result.then(
-          () => {
-            settled = true;
-          },
-          () => {
-            settled = true;
-          },
+          () => void (settled = true),
+          () => void (settled = true),
         );
         const abort = () => {
           waiting.get(id)?.reject(signal.reason);

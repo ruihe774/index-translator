@@ -19,9 +19,7 @@ beforeAll(async () => {
   await waitReady(app);
 });
 
-afterAll(async () => {
-  await app.stop();
-});
+afterAll(() => app.stop());
 
 const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
 
@@ -841,9 +839,7 @@ describe("output budget", () => {
       await waitReady(app);
     });
 
-    afterAll(async () => {
-      await app.stop();
-    });
+    afterAll(() => app.stop());
 
     test("a prompt at the input limit gets the remaining context as its budget", async () => {
       const text = await textWithPromptTokens(origin, 200);

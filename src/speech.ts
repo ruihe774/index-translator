@@ -239,9 +239,7 @@ export class NativeSpeech implements Speech {
       await this.separating;
     }
     let finished!: () => void;
-    this.separating = new Promise<void>((resolve) => {
-      finished = resolve;
-    });
+    this.separating = new Promise<void>((resolve) => void (finished = resolve));
     try {
       // A load in progress ends first, or it would report a model that is gone.
       await this.loading?.catch(() => {});
@@ -342,9 +340,7 @@ export class NativeSpeech implements Speech {
     if (this.loaded) {
       return Promise.resolve();
     }
-    this.loading ??= this.load().finally(() => {
-      this.loading = null;
-    });
+    this.loading ??= this.load().finally(() => void (this.loading = null));
     return this.loading;
   }
 

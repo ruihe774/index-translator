@@ -439,9 +439,7 @@ outputArea.addEventListener("mouseleave", () => clearLinked(sourceView));
 
 /** While a translation streams, the output stays scrolled to its end until the user scrolls. */
 let following = true;
-const stopFollowing = () => {
-  following = false;
-};
+const stopFollowing = () => void (following = false);
 for (const type of ["wheel", "touchmove", "pointerdown", "keydown"]) {
   outputArea.addEventListener(type, stopFollowing, { passive: true });
 }

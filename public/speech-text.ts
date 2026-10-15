@@ -280,9 +280,9 @@ export function speechSegments(text: string, markdown: boolean, lang: string): S
   for (const { line, utterances } of blocks) {
     for (const u of utterances) {
       const parts = pieces(clean(u.text, lang), lang);
-      parts.forEach((part, k) => {
-        out.push({ text: part, line, pause: k === parts.length - 1 ? u.pause : PAUSE_SENTENCE });
-      });
+      parts.forEach(
+        (part, k) => void out.push({ text: part, line, pause: k === parts.length - 1 ? u.pause : PAUSE_SENTENCE }),
+      );
     }
   }
   return out;

@@ -565,9 +565,7 @@ test.describe("recording a voice sample", () => {
       const w = window as unknown as { __streams: MediaStream[]; __release: () => void };
       w.__streams = [];
       let release = () => {};
-      const gate = new Promise<void>((r) => {
-        release = r;
-      });
+      const gate = new Promise<void>((r) => void (release = r));
       w.__release = release;
       navigator.mediaDevices.getUserMedia = async (c) => {
         await gate;

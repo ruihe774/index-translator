@@ -277,9 +277,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
       }
       voicesCheckedAt = Date.now();
       refresh();
-    })().finally(() => {
-      voicesCheck = null;
-    });
+    })().finally(() => void (voicesCheck = null));
     return voicesCheck;
   }
 

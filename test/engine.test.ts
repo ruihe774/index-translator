@@ -40,9 +40,7 @@ const launcher: Launcher = async (model) => {
 
 function gate(): { promise: Promise<void>; open(): void } {
   let open!: () => void;
-  const promise = new Promise<void>((resolve) => {
-    open = resolve;
-  });
+  const promise = new Promise<void>((resolve) => void (open = resolve));
   return { promise, open };
 }
 
@@ -93,9 +91,7 @@ const stopped = () => fake.models.filter((m) => m.stopped).length;
 
 let silence: ReturnType<typeof spyOn>;
 
-beforeEach(() => {
-  silence = spyOn(console, "error").mockImplementation(() => {});
-});
+beforeEach(() => void (silence = spyOn(console, "error").mockImplementation(() => {})));
 
 afterEach(async () => {
   for (const engine of engines.splice(0)) {

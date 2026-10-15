@@ -131,12 +131,8 @@ function setup(auto = false) {
 }
 
 const realContext = (globalThis as { AudioContext?: unknown }).AudioContext;
-beforeEach(() => {
-  (globalThis as { AudioContext?: unknown }).AudioContext = FakeAudioContext;
-});
-afterEach(() => {
-  (globalThis as { AudioContext?: unknown }).AudioContext = realContext;
-});
+beforeEach(() => void ((globalThis as { AudioContext?: unknown }).AudioContext = FakeAudioContext));
+afterEach(() => void ((globalThis as { AudioContext?: unknown }).AudioContext = realContext));
 
 // ---- tests -----------------------------------------------------------------------------------
 

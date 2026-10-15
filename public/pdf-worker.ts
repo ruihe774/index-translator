@@ -52,6 +52,8 @@ async function answer(request: WorkerRequest): Promise<WorkerReply> {
 
 // Answered in arrival order: `open` is awaited before the pages that follow it.
 let last: Promise<void> = Promise.resolve();
-self.addEventListener("message", (event: MessageEvent<WorkerRequest>) => {
-  last = last.then(async () => self.postMessage(await answer(event.data)));
-});
+self.addEventListener(
+  "message",
+  (event: MessageEvent<WorkerRequest>) =>
+    void (last = last.then(async () => self.postMessage(await answer(event.data)))),
+);

@@ -99,9 +99,7 @@ export interface FakeModel extends Running {
 /** A loaded model that plays `mock.chunks`. Stopping or killing it fails the generations in flight. */
 export function fakeModel(hooks: FakeHooks = {}): FakeModel {
   let finish!: (reason: string | undefined) => void;
-  const exited = new Promise<string | undefined>((resolve) => {
-    finish = resolve;
-  });
+  const exited = new Promise<string | undefined>((resolve) => void (finish = resolve));
   const gone = new AbortController();
   const end = (reason: string | undefined) => {
     if (model.stopped) {
@@ -116,9 +114,7 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
   async function alive(p: Promise<void> | undefined, signal: AbortSignal): Promise<void> {
     if (p && !signal.aborted) {
       let wake!: () => void;
-      const aborted = new Promise<void>((resolve) => {
-        wake = resolve;
-      });
+      const aborted = new Promise<void>((resolve) => void (wake = resolve));
       signal.addEventListener("abort", wake);
       await Promise.race([p, aborted]).finally(() => signal.removeEventListener("abort", wake));
     }
@@ -288,9 +284,7 @@ export const speechLauncher: SpeechLauncher = () => ({
         if (mockSpeech.delayMs) {
           const abort = mockSpeech.ignoreAbort
             ? new Promise(() => {})
-            : new Promise((wake) => {
-                signal.addEventListener("abort", wake);
-              });
+            : new Promise((wake) => void signal.addEventListener("abort", wake));
           await Promise.race([Bun.sleep(mockSpeech.delayMs), abort]);
         }
         if (signal.aborted && !mockSpeech.ignoreAbort) {

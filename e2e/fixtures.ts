@@ -75,9 +75,7 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
     await coverage.add(await page.coverage.stopJSCoverage());
   },
   // Worker n talks to the n-th server of `e2e/playwright.config.ts` (ports step by 2).
-  baseURL: async ({}, use, testInfo) => {
-    await use(`http://127.0.0.1:${PORT + 2 * testInfo.parallelIndex}`);
-  },
+  baseURL: ({}, use, testInfo) => use(`http://127.0.0.1:${PORT + 2 * testInfo.parallelIndex}`),
   mock: async ({}, use, testInfo) => {
     const CONTROL = `http://127.0.0.1:${CONTROL_PORT + 2 * testInfo.parallelIndex}/mock`;
     const call = (method: string, body?: unknown, path = ""): Promise<any> =>
@@ -94,15 +92,11 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
         });
       },
       state: () => call("GET"),
-      unload: async () => {
-        await call("POST", undefined, "/restart");
-      },
+      unload: () => call("POST", undefined, "/restart"),
     });
     await call("DELETE");
   },
-  app: async ({ page }, use) => {
-    await use(new AppPage(page));
-  },
+  app: ({ page }, use) => use(new AppPage(page)),
 });
 
 export { expect };

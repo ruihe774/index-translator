@@ -103,9 +103,7 @@ function problems(schemaNode: any, value: unknown, at = "$", out: string[] = [])
     }
   }
   if (Array.isArray(value) && schema.items !== undefined) {
-    value.forEach((item, i) => {
-      problems(schema.items, item, `${at}[${i}]`, out);
-    });
+    value.forEach((item, i) => void problems(schema.items, item, `${at}[${i}]`, out));
   }
   if (isObject(value)) {
     for (const key of schema.required ?? []) {
@@ -153,13 +151,9 @@ beforeAll(async () => {
   await waitReady(app);
 });
 
-afterEach(() => {
-  resetMock();
-});
+afterEach(() => resetMock());
 
-afterAll(async () => {
-  await app.stop();
-});
+afterAll(() => app.stop());
 
 const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
 const plain = { text: "Hi", target_lang: "zh" };

@@ -141,9 +141,7 @@ class NativeWorker {
     });
 
     let finish!: (reason: string | undefined) => void;
-    const exited = new Promise<string | undefined>((resolve) => {
-      finish = resolve;
-    });
+    const exited = new Promise<string | undefined>((resolve) => void (finish = resolve));
     void this.lost.then(finish);
     return {
       exited,
@@ -183,9 +181,7 @@ class NativeWorker {
     try {
       for (;;) {
         while (replies.length === 0 && !signal?.aborted) {
-          await new Promise<void>((resolve) => {
-            wake = resolve;
-          });
+          await new Promise<void>((resolve) => void (wake = resolve));
         }
         signal?.throwIfAborted();
         const reply = replies.shift()!;

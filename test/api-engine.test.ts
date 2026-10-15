@@ -63,9 +63,7 @@ class Control {
 
   private hold(field: "launchGate" | "generationGate"): () => void {
     let open!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      open = resolve;
-    });
+    const gate = new Promise<void>((resolve) => void (open = resolve));
     this[field] = gate;
     const release = () => {
       if (this[field] === gate) {
@@ -140,9 +138,7 @@ function fixture(overrides: Partial<Config> = {}) {
   });
   afterEach(() => ctl.reset());
 
-  afterAll(async () => {
-    await h.app?.stop();
-  });
+  afterAll(() => h.app?.stop());
   return h;
 }
 
@@ -163,9 +159,9 @@ async function until(check: () => boolean | Promise<boolean>, what = "condition"
 
 function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`timed out: ${what}`)), ms);
-  });
+  const timeout = new Promise<never>(
+    (_, reject) => void (timer = setTimeout(() => reject(new Error(`timed out: ${what}`)), ms)),
+  );
   return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
 }
 

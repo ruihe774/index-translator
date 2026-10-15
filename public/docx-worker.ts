@@ -44,6 +44,7 @@ async function answer({ bytes }: DocxRequest): Promise<DocxReply> {
   }
 }
 
-self.addEventListener("message", (event: MessageEvent<DocxRequest>) => {
-  void answer(event.data).then((reply) => self.postMessage(reply));
-});
+self.addEventListener(
+  "message",
+  (event: MessageEvent<DocxRequest>) => void answer(event.data).then((reply) => self.postMessage(reply)),
+);

@@ -31,13 +31,9 @@ beforeAll(async () => {
   await waitReady(app);
 });
 
-afterEach(() => {
-  resetMock();
-});
+afterEach(() => resetMock());
 
-afterAll(async () => {
-  await app.stop();
-});
+afterAll(() => app.stop());
 
 const post = (path: string, body: unknown, init: RequestInit = {}) => postTo(base, path, body, init);
 const json = async (res: Response): Promise<any> => res.json();

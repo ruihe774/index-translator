@@ -157,7 +157,7 @@ correctness = "error"
 "no-constructor-return" = "warn"
 "no-else-return" = "warn"
 "no-object-constructor" = "warn"
-"no-promise-executor-return" = "warn"
+"no-promise-executor-return" = ["warn", { allowVoid = true }]
 "no-self-compare" = "warn"
 "no-useless-return" = "warn"
 "no-warning-comments" = "warn"

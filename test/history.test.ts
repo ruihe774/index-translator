@@ -59,9 +59,7 @@ describe("withEntry", () => {
 
 describe("storage", () => {
   const g = globalThis as { localStorage?: unknown };
-  afterEach(() => {
-    delete g.localStorage;
-  });
+  afterEach(() => delete g.localStorage);
 
   function fake(limit: number) {
     const data = new Map<string, string>();

@@ -176,9 +176,7 @@ export class MicRecorder {
         finish(e);
       }
     });
-    const clear = () => {
-      this.pending = null;
-    };
+    const clear = () => void (this.pending = null);
     this.pending = done;
     done.then(clear, clear);
     return done;

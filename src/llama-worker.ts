@@ -26,10 +26,7 @@ export type WorkerReply =
 declare var self: Worker;
 
 const post = (reply: WorkerReply) => self.postMessage(reply);
-const tick = () =>
-  new Promise<void>((resolve) => {
-    setImmediate(resolve);
-  });
+const tick = () => new Promise<void>((resolve) => void setImmediate(resolve));
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 let model: Model | undefined;

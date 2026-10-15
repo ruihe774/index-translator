@@ -51,9 +51,7 @@ function stripWhitespace(html: Response): Response {
     .on("pre, textarea, script, style", {
       element(el) {
         literal++;
-        el.onEndTag(() => {
-          literal--;
-        });
+        el.onEndTag(() => void literal--);
       },
     })
     .onDocument({

@@ -62,9 +62,7 @@ export class SpeechPlayer {
     }
     const channels = splitChannels(audio);
     const buffer = ctx.createBuffer(audio.channels, channels[0]!.length, audio.sampleRate);
-    channels.forEach((data, c) => {
-      buffer.copyToChannel(data, c);
-    });
+    channels.forEach((data, c) => buffer.copyToChannel(data, c));
     return buffer;
   }
 

@@ -26,9 +26,7 @@ function get(path: string, init: RequestInit = {}, publicDir?: string): Promise<
   return handler(path, new Request("http://127.0.0.1" + path, init));
 }
 
-beforeAll(() => {
-  dir = mkdtempSync(join(tmpdir(), "static-test-"));
-});
+beforeAll(() => void (dir = mkdtempSync(join(tmpdir(), "static-test-"))));
 
 beforeEach(async () => {
   rmSync(dir, { recursive: true, force: true });
@@ -41,9 +39,7 @@ beforeEach(async () => {
   serve = createStaticServer(dir);
 });
 
-afterAll(() => {
-  rmSync(dir, { recursive: true, force: true });
-});
+afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("HTML whitespace", () => {
   test("whitespace between tags is dropped, text keeps one space, literal elements are untouched", async () => {
