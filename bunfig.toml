@@ -345,8 +345,8 @@ correctness = "error"
 "yoda" = "warn"
 "no-restricted-syntax" = [
   "warn",
-  "ClassDeclaration[superClass.name!='HTMLElement'] > ClassBody > PropertyDefinition > PrivateIdentifier",
-  "ClassDeclaration[superClass.name='HTMLElement'] > ClassBody > PropertyDefinition[accessibility='private']",
+  { selector = "ClassDeclaration[superClass.name!='HTMLElement'] > ClassBody > :matches(PropertyDefinition, MethodDefinition, AccessorProperty) > PrivateIdentifier.key", message = "Outside custom elements, mark a class member `private`, not `#`. Only HTMLElement subclasses use `#` members (this project keeps the two styles apart)." },
+  { selector = "ClassDeclaration[superClass.name='HTMLElement'] > ClassBody > :matches(PropertyDefinition, MethodDefinition, AccessorProperty)[accessibility='private']", message = "In a custom element (HTMLElement subclass), use a `#` member, not TypeScript `private`. Other classes use `private` (this project keeps the two styles apart)." },
 ]
 
 [fmt]
