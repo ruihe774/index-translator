@@ -30,7 +30,7 @@ describe("looksLikeMarkdown", () => {
   test("plain prose is not Markdown", async () => {
     expect(looksLikeMarkdown("Hello, world")).toBe(false);
     expect(looksLikeMarkdown("#hashtag and 5 * 3 = 15, 2023. A year.")).toBe(false);
-    expect(looksLikeMarkdown(await Bun.file(new URL("./fixtures/essays.en.txt", import.meta.url)).text())).toBe(false);
+    expect(looksLikeMarkdown(await Bun.file(new URL("fixtures/essays.en.txt", import.meta.url)).text())).toBe(false);
   });
 });
 

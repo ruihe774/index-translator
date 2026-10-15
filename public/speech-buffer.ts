@@ -49,9 +49,9 @@ export class SpeechBuffer {
   private starts: number[] = [];
   private settings: SpeechSettings = { lang: "", voice: "", speed: 1 };
   private cursor = 0;
-  private audio = new Map<number, AudioBuffer>();
-  private failed = new Map<number, Error>();
-  private waiters = new Map<number, Waiter[]>();
+  private readonly audio = new Map<number, AudioBuffer>();
+  private readonly failed = new Map<number, Error>();
+  private readonly waiters = new Map<number, Waiter[]>();
   private flight: { index: number; abort: AbortController } | null = null;
   /** Seconds of audio held. */
   private seconds = 0;
@@ -59,8 +59,8 @@ export class SpeechBuffer {
   private heard = { seconds: 0, chars: 0 };
 
   constructor(
-    private synthesize: Synthesize,
-    private decode: (audio: SpeechAudio) => Promise<AudioBuffer>,
+    private readonly synthesize: Synthesize,
+    private readonly decode: (audio: SpeechAudio) => Promise<AudioBuffer>,
   ) {}
 
   /** A new text, or new settings for the same one: nothing made so far can be used. */

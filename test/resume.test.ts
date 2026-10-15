@@ -35,8 +35,8 @@ async function run(connect: (last: number, signal: AbortSignal) => Promise<Respo
     signal: new AbortController().signal,
     wake: () => () => {},
     visible: () => true,
-    onReconnecting: () => notes.push("lost"),
-    onReconnected: () => notes.push("back"),
+    onReconnecting: () => void notes.push("lost"),
+    onReconnected: () => void notes.push("back"),
     delays: [0, 0],
     ...extra,
   })) {
@@ -87,7 +87,7 @@ describe("resumableEvents", () => {
       (last, signal) => {
         asked.push(last);
         if (last === 0) {
-          queueMicrotask(() => setTimeout(() => wakes.forEach((w) => w()), 10));
+          queueMicrotask(() => void setTimeout(() => wakes.forEach((w) => w()), 10));
           return Promise.resolve(response([frame(1, "start", {})], { hang: signal }));
         }
         return Promise.resolve(response([frame(2, "done", {})]));

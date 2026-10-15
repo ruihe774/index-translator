@@ -48,8 +48,8 @@ export class VoiceSettings extends HTMLElement {
     this.#record = find("#voice-record");
     this.#status = find("#clone-status");
 
-    this.#voice.addEventListener("change", () => this.dispatchEvent(new Event("voicechange")));
-    this.#speed.addEventListener("change", () => this.dispatchEvent(new Event("speedchange")));
+    this.#voice.addEventListener("change", () => void this.dispatchEvent(new Event("voicechange")));
+    this.#speed.addEventListener("change", () => void this.dispatchEvent(new Event("speedchange")));
     find("#voice-file-button").addEventListener("click", () => this.#file.click());
     this.#file.addEventListener("change", () => void this.#loadFile());
     this.#record.addEventListener("click", () => void this.#toggleRecording());
@@ -77,7 +77,7 @@ export class VoiceSettings extends HTMLElement {
   /** Selects a speed from the list, as stored; anything not offered is ignored. */
   set speed(speed: string | null) {
     if ([...this.#speed.options].some((o) => o.value === speed)) {
-      this.#speed.value = speed as string;
+      this.#speed.value = speed!;
     }
   }
 

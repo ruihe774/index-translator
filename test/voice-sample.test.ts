@@ -37,7 +37,7 @@ class FakeRecorder {
   onerror: (() => void) | null = null;
   constructor(
     readonly stream: FakeStream,
-    private rig: { mode: Rig["mode"] },
+    private readonly rig: { mode: Rig["mode"] },
   ) {
     if (rig.mode.construct) {
       throw rig.mode.construct;
@@ -214,7 +214,7 @@ describe("MicRecorder", () => {
   test("the length limit fires once, and stop cancels it", async () => {
     const r = rig(10);
     let limits = 0;
-    const started = r.mic.start(() => limits++);
+    const started = r.mic.start(() => void limits++);
     r.gum[0]!.resolve();
     await started;
     await Bun.sleep(40);
@@ -223,7 +223,7 @@ describe("MicRecorder", () => {
 
     const r2 = rig(10);
     let limits2 = 0;
-    const s2 = r2.mic.start(() => limits2++);
+    const s2 = r2.mic.start(() => void limits2++);
     r2.gum[0]!.resolve();
     await s2;
     await r2.mic.stop();

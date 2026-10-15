@@ -223,7 +223,7 @@ describe("the native speech engine without audio.cpp", () => {
     expect(nativeSpeech(config({ speech: false })).error).toContain("SPEECH=0");
     const request = { text: "Hi", lang: "en", voice: "a", speed: 1 };
     let released = 0;
-    await expect(speech.synthesize(request, new AbortController().signal, () => released++)).rejects.toThrow(
+    await expect(speech.synthesize(request, new AbortController().signal, () => void released++)).rejects.toThrow(
       "not installed",
     );
     expect(released).toBe(1);
@@ -278,7 +278,7 @@ describe("NativeSpeech with a fake worker", () => {
     try {
       const gone = new AbortController();
       let released = 0;
-      const result = speech.synthesize(request, gone.signal, () => released++);
+      const result = speech.synthesize(request, gone.signal, () => void released++);
       const rejected = result.then(
         () => null,
         (e) => e,
@@ -302,7 +302,7 @@ describe("NativeSpeech with a fake worker", () => {
     try {
       const gone = new AbortController();
       let released = 0;
-      const result = speech.synthesize(request, gone.signal, () => released++);
+      const result = speech.synthesize(request, gone.signal, () => void released++);
       const rejected = result.then(
         () => null,
         (e) => e,
@@ -334,7 +334,7 @@ describe("NativeSpeech with a fake worker", () => {
       const gone = new AbortController();
       let released = 0;
       const rejected = speech
-        .synthesize(request, gone.signal, () => released++)
+        .synthesize(request, gone.signal, () => void released++)
         .then(
           () => null,
           (e) => e,
@@ -391,7 +391,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       postMessage(m: any) {
         w.posted.push(m);
         if (!w.manual && !(holdLoads && m.type === "load")) {
-          setTimeout(() => w.answer(m), 1);
+          setTimeout(() => void w.answer(m), 1);
         }
       },
       answer(m: any) {

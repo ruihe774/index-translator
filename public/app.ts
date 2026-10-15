@@ -885,7 +885,7 @@ fromSelect.addEventListener("change", () => {
   refreshSelection();
   speech.refresh();
 });
-toSelect.addEventListener("change", refreshSelection);
+toSelect.addEventListener("change", () => void refreshSelection());
 modelSwitch.addEventListener("change", () => {
   setModelChoice(modelSwitch.value as Choice);
   refreshSelection();

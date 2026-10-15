@@ -90,8 +90,8 @@ describe("SlotQueue", () => {
     const positions: number[] = [];
 
     const a = q.enter();
-    const b = q.enter((p) => positions.push(p));
-    const c = q.enter((p) => positions.push(p * 10));
+    const b = q.enter((p) => void positions.push(p));
+    const c = q.enter((p) => void positions.push(p * 10));
     void b.ready.then(() => order.push("b"));
     void c.ready.then(() => order.push("c"));
 
@@ -143,9 +143,9 @@ describe("SlotQueue", () => {
     const q = new SlotQueue(3);
     const positions: Record<"b" | "c" | "d", number[]> = { b: [], c: [], d: [] };
     const a = q.enter();
-    const b = q.enter((p) => positions.b.push(p));
-    const c = q.enter((p) => positions.c.push(p));
-    const d = q.enter((p) => positions.d.push(p));
+    const b = q.enter((p) => void positions.b.push(p));
+    const c = q.enter((p) => void positions.c.push(p));
+    const d = q.enter((p) => void positions.d.push(p));
 
     b.leave();
     expect(positions).toStrictEqual({ b: [1], c: [2, 1], d: [3, 2] });

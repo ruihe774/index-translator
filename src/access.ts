@@ -49,7 +49,7 @@ function splitHostPort(value: string): { name: string; port: string | undefined 
   if (!m) {
     return undefined;
   }
-  return { name: m[1] as string, port: m[2] === undefined ? undefined : String(Number(m[2])) };
+  return { name: m[1]!, port: m[2] === undefined ? undefined : String(Number(m[2])) };
 }
 
 export function parseHostRule(entry: string): HostRule {
@@ -92,11 +92,11 @@ export function parseOriginRule(entry: string): OriginRule {
   const wildcard = m[2] !== undefined;
   let url: URL;
   try {
-    url = new URL(`${(m[1] as string).toLowerCase()}://${m[3]}`);
+    url = new URL(`${m[1]!.toLowerCase()}://${m[3]}`);
   } catch {
     fail(setting, entry, "is not a valid origin");
   }
-  if (!NAME_CHARS.test(m[3] as string) || url.pathname !== "/" || url.search || url.hash || url.username) {
+  if (!NAME_CHARS.test(m[3]!) || url.pathname !== "/" || url.search || url.hash || url.username) {
     fail(setting, entry, "must be scheme, host and port only, without a path");
   }
   const name = url.hostname;

@@ -122,8 +122,8 @@ class Loaded {
 
   protected constructor(
     protected lib: Lib,
-    private registry: Pointer,
-    private model: Pointer,
+    private readonly registry: Pointer,
+    private readonly model: Pointer,
     protected session: Pointer,
   ) {}
 

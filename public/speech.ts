@@ -38,7 +38,7 @@ export class SpeechPlayer {
   private index = 0;
   /** Counts up whenever what should be heard changes; work started for an earlier count is dropped. */
   private run = 0;
-  private buffer: SpeechBuffer;
+  private readonly buffer: SpeechBuffer;
   private source: AudioBufferSourceNode | null = null;
   /** The piece after the current one, already scheduled to start the moment the current one ends. */
   private queued: { index: number; source: AudioBufferSourceNode; end: number } | null = null;
@@ -49,7 +49,7 @@ export class SpeechPlayer {
 
   constructor(
     synthesize: Synthesize,
-    private hooks: PlayerHooks,
+    private readonly hooks: PlayerHooks,
   ) {
     this.buffer = new SpeechBuffer(synthesize, (audio) => this.decode(audio));
   }

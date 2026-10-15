@@ -169,7 +169,7 @@ export class ImagePrompt {
   private freed = false;
 
   constructor(
-    private lib: Lib,
+    private readonly lib: Lib,
     /** libmtmd's chunks: text, the image, text. */
     readonly handle: Handle,
   ) {}
@@ -199,9 +199,9 @@ export class Model {
   /** Tokens to hand to one decode() call: the prompt is fed in pieces so the caller can stop between them. */
   readonly promptStep: number;
 
-  private vocab: Handle;
-  private sampler: Handle;
-  private emptyThink: boolean;
+  private readonly vocab: Handle;
+  private readonly sampler: Handle;
+  private readonly emptyThink: boolean;
   private one = new Int32Array(1);
   /** The image encoder, once an image has asked for it. */
   private vision?: Handle;
@@ -212,12 +212,12 @@ export class Model {
   private freed = false;
 
   private constructor(
-    private lib: Lib,
-    private model: Handle,
-    private ctx: Handle,
-    private onGpu: boolean,
-    private threads: number,
-    private mmproj: string | undefined,
+    private readonly lib: Lib,
+    private readonly model: Handle,
+    private readonly ctx: Handle,
+    private readonly onGpu: boolean,
+    private readonly threads: number,
+    private readonly mmproj: string | undefined,
   ) {
     this.promptStep = onGpu ? BATCH_SIZE : CPU_PROMPT_STEP;
     this.ctxSize = lib.llama_n_ctx(ctx);

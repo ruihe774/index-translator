@@ -309,7 +309,6 @@ correctness = "error"
 "no-restricted-properties" = "warn"
 "no-sequences" = "warn"
 "no-var" = "warn"
-"no-void" = ["warn", { allowAsStatement = true }]
 "unicode-bom" = "warn"
 "import/no-amd" = "warn"
 "import/no-cycle" = "warn"
@@ -339,6 +338,7 @@ correctness = "error"
 "import/export" = "warn"
 "import/named" = "warn"
 "unicorn/no-useless-iterator-to-array" = "warn"
+"@typescript-eslint/no-meaningless-void-operator" = "off"
 
 [fmt]
 printWidth = 120

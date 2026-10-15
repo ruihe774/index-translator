@@ -53,7 +53,14 @@ function whenVisible(o: ResumeOptions): Promise<void> {
       off();
       resolve();
     });
-    o.signal.addEventListener("abort", () => (off(), resolve()), { once: true });
+    o.signal.addEventListener(
+      "abort",
+      () => {
+        off();
+        resolve();
+      },
+      { once: true },
+    );
   });
 }
 

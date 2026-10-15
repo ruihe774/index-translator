@@ -113,7 +113,7 @@ export function msvc(): Promise<Msvc> {
 @set
 `,
     );
-    const text = await output(["cmd", "/d", "/c", script]).finally(() => rm(script, { force: true }));
+    const text = await output(["cmd", "/d", "/c", script]).finally(() => void rm(script, { force: true }));
     if (!text) {
       throw new Error(`${bat} did not set up the build environment`);
     }

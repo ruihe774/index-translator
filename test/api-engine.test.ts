@@ -51,7 +51,7 @@ class Control {
   inFlight = 0;
   maxInFlight = 0;
   chunksSent = 0;
-  private openers = new Set<() => void>();
+  private readonly openers = new Set<() => void>();
 
   holdLaunches(): () => void {
     return this.hold("launchGate");
@@ -113,8 +113,8 @@ class Control {
         this.maxInFlight = Math.max(this.maxInFlight, this.inFlight);
       },
       gate: () => this.generationGate,
-      onChunk: () => this.chunksSent++,
-      onEnd: () => this.inFlight--,
+      onChunk: () => void this.chunksSent++,
+      onEnd: () => void this.inFlight--,
       promptTokens: () => (this.zeroPromptUsage ? 0 : 42),
     });
     this.upstreams.push({

@@ -119,7 +119,7 @@ export class SpeechControls extends HTMLElement {
     this.#next.title = "Next block";
     this.show({ reading: false, state: "idle", blocked: "", canPrev: false, canNext: false });
 
-    this.#listen.addEventListener("click", () => this.dispatchEvent(new Event("listen")));
+    this.#listen.addEventListener("click", () => void this.dispatchEvent(new Event("listen")));
     for (const [b, name] of [
       [this.#prev, "prev"],
       [this.#pause, "pause"],

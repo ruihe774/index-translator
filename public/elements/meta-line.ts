@@ -11,7 +11,7 @@ const FLASH_MS = 3000;
 export class MetaLine extends HTMLElement {
   #timer: ReturnType<typeof setTimeout> | undefined;
   #shown = { text: "", error: false };
-  #resize = new ResizeObserver(() => this.#markScrollable());
+  readonly #resize = new ResizeObserver(() => this.#markScrollable());
 
   connectedCallback() {
     this.#resize.observe(this);

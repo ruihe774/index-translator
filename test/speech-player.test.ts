@@ -123,9 +123,9 @@ function setup(auto = false) {
   const segments: (Segment | null | undefined)[] = [];
   const errors: unknown[] = [];
   const player = new SpeechPlayer(synth.synthesize, {
-    onState: (s) => states.push(s),
-    onSegment: (s) => segments.push(s),
-    onError: (e) => errors.push(e),
+    onState: (s) => void states.push(s),
+    onSegment: (s) => void segments.push(s),
+    onError: (e) => void errors.push(e),
   });
   return { player, states, segments, errors, ...synth, ctx: () => FakeAudioContext.last };
 }

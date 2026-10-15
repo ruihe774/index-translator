@@ -164,20 +164,20 @@ describe("SlotQueue onPosition", () => {
   test("the initial position is the number of requests ahead, including the running one", () => {
     const q = new SlotQueue(5);
     const pos = { a: [] as number[], b: [] as number[], c: [] as number[], d: [] as number[] };
-    q.enter((p) => pos.a.push(p));
-    q.enter((p) => pos.b.push(p));
-    q.enter((p) => pos.c.push(p));
-    q.enter((p) => pos.d.push(p));
+    q.enter((p) => void pos.a.push(p));
+    q.enter((p) => void pos.b.push(p));
+    q.enter((p) => void pos.c.push(p));
+    q.enter((p) => void pos.d.push(p));
     expect(pos).toStrictEqual({ a: [], b: [1], c: [2], d: [3] });
   });
 
   test("positions update when someone ahead leaves, whether waiting or active", () => {
     const q = new SlotQueue(5);
     const pos = { a: [] as number[], b: [] as number[], c: [] as number[], d: [] as number[] };
-    const a = q.enter((p) => pos.a.push(p));
-    const b = q.enter((p) => pos.b.push(p));
-    q.enter((p) => pos.c.push(p));
-    q.enter((p) => pos.d.push(p));
+    const a = q.enter((p) => void pos.a.push(p));
+    const b = q.enter((p) => void pos.b.push(p));
+    q.enter((p) => void pos.c.push(p));
+    q.enter((p) => void pos.d.push(p));
 
     b.leave();
     expect(pos).toStrictEqual({ a: [], b: [1], c: [2, 1], d: [3, 2] });
@@ -190,9 +190,9 @@ describe("SlotQueue onPosition", () => {
     const q = new SlotQueue(5);
     const pos = { b: [] as number[], c: [] as number[], d: [] as number[] };
     const a = q.enter();
-    const b = q.enter((p) => pos.b.push(p));
-    const c = q.enter((p) => pos.c.push(p));
-    q.enter((p) => pos.d.push(p));
+    const b = q.enter((p) => void pos.b.push(p));
+    const c = q.enter((p) => void pos.c.push(p));
+    q.enter((p) => void pos.d.push(p));
 
     b.leave();
     a.leave(); // c is granted; d moves up to 1

@@ -107,7 +107,7 @@ export function parseArgs(argv: readonly string[]): Env {
   const byFlag = new Map<string, string>(SETTING_NAMES.map((n) => [flagOf(n), n]));
   const out: Env = {};
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i] as string;
+    const arg = argv[i]!;
     const eq = arg.indexOf("=");
     const flag = arg.startsWith("--") && eq > 0 ? arg.slice(0, eq) : arg;
     const name = byFlag.get(flag);
@@ -149,8 +149,8 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
   const allowedOrigins = list(env, "ALLOWED_ORIGINS");
   const allowedHosts = list(env, "ALLOWED_HOSTS");
   // Fail at startup on an entry that could never match, rather than refuse requests later.
-  allowedOrigins.forEach(parseOriginRule);
-  allowedHosts.forEach(parseHostRule);
+  void allowedOrigins.map(parseOriginRule);
+  void allowedHosts.map(parseHostRule);
   return {
     host: env.HOST ?? "127.0.0.1",
     port: int(env, "PORT", 3000, { max: 65_535 }),

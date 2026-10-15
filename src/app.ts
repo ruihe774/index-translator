@@ -391,7 +391,7 @@ export class OutputCleaner {
       this.head = (this.head + text).trimStart();
       if (this.head.startsWith(THINK_OPEN)) {
         const end = this.head.indexOf(THINK_CLOSE);
-        if (end < 0) {
+        if (end === -1) {
           return "";
         }
         this.head = this.head.slice(end + THINK_CLOSE.length).trimStart();

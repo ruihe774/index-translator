@@ -28,7 +28,7 @@ export function parseGlossary(value: string): GlossaryResult {
     }
     const number = i + 1;
     const eq = line.indexOf("=");
-    if (eq < 0) {
+    if (eq === -1) {
       return { glossary, error: { line: number, kind: "format" } };
     }
     const source = line.slice(0, eq).trim();

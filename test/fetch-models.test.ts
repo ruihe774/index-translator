@@ -83,7 +83,7 @@ const file = (overrides: Partial<Download> = {}): Download => ({
 async function run(download: Download): Promise<{ error?: FetchError; log: string[] }> {
   const log: string[] = [];
   try {
-    await fetchFile(download, endpoint, curl!, (line) => log.push(line));
+    await fetchFile(download, endpoint, curl!, (line) => void log.push(line));
     return { log };
   } catch (e) {
     if (!(e instanceof FetchError)) {
@@ -238,7 +238,7 @@ describe.skipIf(!curl)("fetchFile", () => {
 
   test("a host that cannot be reached fails without a stack of retries", async () => {
     const log: string[] = [];
-    const attempt = fetchFile(file(), "http://127.0.0.1:9", curl!, (line) => log.push(line));
+    const attempt = fetchFile(file(), "http://127.0.0.1:9", curl!, (line) => void log.push(line));
     await expect(attempt).rejects.toThrow(/failed \(curl exit code 7\); check the network connection/);
   });
 });
@@ -267,7 +267,7 @@ describe("notices", () => {
       await acceptNotices(
         ["index-translate-9b", "bs-roformer"],
         dirs(),
-        (l) => log.push(l),
+        (l) => void log.push(l),
         (q) => {
           questions.push(q);
           return Promise.resolve(answer);
@@ -301,7 +301,7 @@ describe("notices", () => {
     await acceptNotices(
       ["bs-roformer"],
       d,
-      (l) => log.push(l),
+      (l) => void log.push(l),
       () => Promise.reject(new Error("asked")),
     );
     expect(log).toStrictEqual([]);

@@ -66,14 +66,14 @@ class NativeWorker {
   /** Resolves with the reason if the thread dies; every model it held is gone then. */
   readonly lost: Promise<string>;
 
-  private worker: Worker;
-  private waiting = new Map<number, (reply: WorkerReply) => void>();
+  private readonly worker: Worker;
+  private readonly waiting = new Map<number, (reply: WorkerReply) => void>();
   private lastReq = 0;
   private lastModel = 0;
 
   constructor(onLost: () => void) {
     // Not referenced: the server decides when the process ends, not an idle engine thread.
-    this.worker = new Worker(new URL("./llama-worker.ts", import.meta.url).href, { ref: false });
+    this.worker = new Worker(new URL("llama-worker.ts", import.meta.url).href, { ref: false });
     this.worker.onmessage = (event: MessageEvent<WorkerReply>) => this.waiting.get(event.data.req)?.(event.data);
     this.lost = new Promise((resolve) => {
       const fail = (reason: string) => {
@@ -242,8 +242,8 @@ export class Engine {
   private epoch = 0;
 
   constructor(
-    private cfg: Config,
-    private launch: Launcher = launchNative,
+    private readonly cfg: Config,
+    private readonly launch: Launcher = launchNative,
   ) {}
 
   /**

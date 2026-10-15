@@ -124,12 +124,12 @@ export type SpeechWorkerFactory = () => Worker;
 
 const defaultWorker: SpeechWorkerFactory = () =>
   // Not referenced: the server decides when the process ends, not an idle speech thread.
-  new Worker(new URL("./speech-worker.ts", import.meta.url).href, { ref: false });
+  new Worker(new URL("speech-worker.ts", import.meta.url).href, { ref: false });
 
 export class NativeSpeech implements Speech {
   /** The thread that owns libaudiocpp, started by the first request. */
   private worker: Worker | null = null;
-  private waiting = new Map<number, (reply: SpeechWorkerReply) => void>();
+  private readonly waiting = new Map<number, (reply: SpeechWorkerReply) => void>();
   private lastReq = 0;
 
   private loaded = false;
@@ -142,12 +142,12 @@ export class NativeSpeech implements Speech {
   private separating: Promise<void> | null = null;
 
   /** Uploaded voices: id to file. Ids never become paths. */
-  private uploads = new Map<string, { name: string; path: string }>();
+  private readonly uploads = new Map<string, { name: string; path: string }>();
   private readonly uploadDir = join(tmpdir(), `index-translator-voices-${process.pid}`);
 
   constructor(
-    private cfg: Config,
-    private makeWorker: SpeechWorkerFactory = defaultWorker,
+    private readonly cfg: Config,
+    private readonly makeWorker: SpeechWorkerFactory = defaultWorker,
   ) {}
 
   /** Why speech cannot run at all, checked each time so an install does not need a restart. */

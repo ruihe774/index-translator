@@ -133,7 +133,7 @@ export function parseArgs(argv: readonly string[]): { ids: string[]; rest: strin
   const ids: string[] = [];
   const rest: string[] = [];
   for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i] as string;
+    const arg = argv[i]!;
     if (arg === "--model") {
       const id = argv[++i];
       if (id === undefined) {

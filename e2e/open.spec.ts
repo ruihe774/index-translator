@@ -422,7 +422,7 @@ test.describe("PDF", () => {
       button.click();
       return {
         busy: button.getAttribute("aria-busy"),
-        spinner: getComputedStyle(button.querySelector(".picture") as Element, "::after").content,
+        spinner: getComputedStyle(button.querySelector(".picture")!, "::after").content,
         note: document.getElementById("file-note")?.textContent,
       };
     });
@@ -430,9 +430,7 @@ test.describe("PDF", () => {
     await expect(thumbnail(app.page, 1)).toHaveAttribute("aria-current", "true");
     await expect(thumbnail(app.page, 1)).not.toHaveAttribute("aria-busy");
     expect(
-      await thumbnail(app.page, 1).evaluate(
-        (b) => getComputedStyle(b.querySelector(".picture") as Element, "::after").content,
-      ),
+      await thumbnail(app.page, 1).evaluate((b) => getComputedStyle(b.querySelector(".picture")!, "::after").content),
     ).toBe("none");
   });
 
@@ -463,7 +461,7 @@ test.describe("PDF", () => {
       data.items.add(new File(["hello"], "a.txt", { type: "text/plain" }));
       input.files = data.files;
       input.dispatchEvent(new Event("change", { bubbles: true }));
-      const field = document.getElementById("source-field") as HTMLElement;
+      const field = document.getElementById("source-field")!;
       return { busy: field.getAttribute("aria-busy"), spinner: getComputedStyle(field, "::after").content };
     });
     expect(during).toStrictEqual({ busy: "true", spinner: '""' });

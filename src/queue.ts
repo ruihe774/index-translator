@@ -23,9 +23,9 @@ interface Entry {
 
 export class SlotQueue {
   private active: Entry | null = null;
-  private waiting: Entry[] = [];
+  private readonly waiting: Entry[] = [];
 
-  constructor(private maxWaiting: number) {}
+  constructor(private readonly maxWaiting: number) {}
 
   get running(): boolean {
     return this.active !== null;
@@ -74,7 +74,7 @@ export class SlotQueue {
           this.active?.settle(true);
         } else {
           const i = this.waiting.indexOf(entry);
-          if (i < 0) {
+          if (i === -1) {
             return;
           }
           this.waiting.splice(i, 1);

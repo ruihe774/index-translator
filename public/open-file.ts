@@ -36,7 +36,7 @@ const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
 /** The kind of a picked file, by its name's extension, else by its media type; `null` when neither is taken. */
 export function fileKind(name: string, type: string): FileKind | null {
   const dot = name.lastIndexOf(".");
-  const extension = dot < 0 ? "" : name.slice(dot + 1).toLowerCase();
+  const extension = dot === -1 ? "" : name.slice(dot + 1).toLowerCase();
   if (extension === "pdf") {
     return "pdf";
   }

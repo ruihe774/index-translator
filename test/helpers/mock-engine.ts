@@ -188,8 +188,8 @@ export const launcher: Launcher = async (model) => {
     await Bun.sleep(10);
   }
   return fakeModel({
-    onStart: (prompt, maxTokens, image) => mock.requests.push({ prompt, maxTokens, ...(image && { image }) }),
-    onAbort: () => mock.aborted++,
+    onStart: (prompt, maxTokens, image) => void mock.requests.push({ prompt, maxTokens, ...(image && { image }) }),
+    onAbort: () => void mock.aborted++,
   });
 };
 

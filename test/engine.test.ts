@@ -33,7 +33,7 @@ const launcher: Launcher = async (model) => {
   if (fake.gate) {
     await fake.gate;
   }
-  const loaded = fakeModel({ gate: () => fake.generationGate, onAbort: () => fake.aborted++ });
+  const loaded = fakeModel({ gate: () => fake.generationGate, onAbort: () => void fake.aborted++ });
   fake.models.push(loaded);
   return loaded;
 };

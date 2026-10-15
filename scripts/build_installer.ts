@@ -79,7 +79,7 @@ async function iscc(): Promise<string> {
   await mkdir(work, { recursive: true });
   await Bun.write(setup, await download(INNO.url, INNO.sha256));
   await run([setup, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER"]);
-  const installed = places[3] as string;
+  const installed = places[3]!;
   if (!(await Bun.file(installed).exists())) {
     throw new Error("Inno Setup was installed but ISCC.exe was not found");
   }
