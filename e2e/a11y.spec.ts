@@ -3,6 +3,7 @@
 // The acceptance record is A11Y-ACCEPTANCE.md.
 
 import { AxeBuilder } from "@axe-core/playwright";
+import type { Page } from "@playwright/test";
 
 import { expect, test, THINK } from "./fixtures";
 
@@ -373,3 +374,292 @@ test("the Model switch buttons report their state and are reachable by keyboard"
   await app.page.keyboard.press("Space");
   await expect(app.model("Index-NativeLong-9B")).toHaveAttribute("aria-pressed", "true");
 });
+
+// Views, Markdown output, Clear, click-to-sync, Open and the PDF strip, opening notes, History.
+
+const SWITCH = (page: Page, group: string, name: string) =>
+  page.getByRole("group", { name: group }).getByRole("button", { name, exact: true });
+
+// Waits for the button fades axe would read mid-blend, but not for endless ones (a spinner).
+const settle = (page: Page) =>
+  page.waitForFunction(() =>
+    document
+      .getAnimations()
+      .every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity),
+  );
+
+const overflow = (page: Page) =>
+  page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth);
+
+const COLUMNS = Array.from({ length: 12 }, (_, i) => `column${i}`);
+const TABLE = `| ${COLUMNS.join(" | ")} |\n| ${COLUMNS.map(() => "-").join(" | ")} |\n| ${COLUMNS.map((_, i) => i).join(" | ")} |`;
+const MD_SOURCE = [
+  "# Title",
+  "A paragraph with *emphasis*, `code` and [a link](https://a.example).",
+  "- [x] done\n- [ ] todo",
+  "> quoted text",
+  TABLE,
+  `\`\`\`\n${"x".repeat(300)}\n\`\`\``,
+].join("\n\n");
+const MD_OUTPUT = [
+  "# 标题",
+  "一段带有*强调*、`code`和[链接](https://a.example)的文字。",
+  "- [x] 完成\n- [ ] 待办",
+  "> 引用的文字",
+  TABLE,
+  `\`\`\`\n${"y".repeat(300)}\n\`\`\``,
+].join("\n\n");
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`rendered Markdown, both views and click-to-sync pass axe in ${scheme} mode`, async ({ app, mock }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await mock.set({ chunks: [MD_OUTPUT] });
+    await app.open();
+    await app.from.selectOption("en");
+    await app.to.selectOption("zh");
+    await app.text.fill(MD_SOURCE);
+    await app.translate.click();
+    await expect(app.meta).toContainText("generated");
+    await settle(app.page);
+
+    // Both sides rendered; each carries the language of its text.
+    await expect(app.page.locator("#source-view")).toBeVisible();
+    await expect(app.page.locator("#source-view")).toHaveAttribute("lang", "en");
+    await expect(app.output).toHaveAttribute("lang", "zh");
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    // Click-to-sync is on and its hover shade (a source block's counterpart in the translation) passes too.
+    await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
+    await app.page.locator("#source-view blockquote").hover();
+    await expect(app.output.locator(".linked")).toHaveCount(1);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+    await app.page.mouse.move(0, 0);
+
+    // Raw on both sides.
+    await SWITCH(app.page, "Source view", "Raw").click();
+    await SWITCH(app.page, "Translation view", "Raw").click();
+    await settle(app.page);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+  });
+}
+
+test("rendered Markdown: wide tables and code blocks are reachable by keyboard, nothing overflows at 320 px", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ chunks: [MD_OUTPUT] });
+  await app.page.setViewportSize({ width: 320, height: 640 });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(MD_SOURCE);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  expect(await overflow(app.page)).toBeLessThanOrEqual(0);
+  const results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+  expect(results.violations).toStrictEqual([]);
+  // Every horizontally scrolling region inside the two views is focusable (2.1.1) or holds a focusable element.
+  const unreachable = await app.page.evaluate(() =>
+    [...document.querySelectorAll<HTMLElement>("#output *, #source-view *")]
+      .filter((el) => el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX))
+      .filter((el) => el.tabIndex < 0 && !el.querySelector("a[href], button, input, select, textarea, [tabindex]"))
+      .map((el) => `${el.tagName}.${el.className}`),
+  );
+  expect(unreachable).toStrictEqual([]);
+});
+
+test("a pane with more text than room is focusable, scrolls by keyboard, and others add no tab stop", async ({
+  app,
+  mock,
+}) => {
+  const lines = Array.from({ length: 80 }, (_, i) => `Line ${i}`).join("\n");
+  await mock.set({ chunks: [THINK, lines] });
+  await app.open();
+  const area = app.page.locator("#output-area");
+  await expect(area).not.toHaveAttribute("tabindex", /.*/);
+  await app.text.fill("Short");
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  await expect(area).toHaveAttribute("tabindex", "0");
+  await expect(area).toHaveAccessibleName("Translation text");
+  await area.focus();
+  await app.page.keyboard.press("PageDown");
+  expect(await area.evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
+  // The source box (a short text) is no tab stop of this kind.
+  await expect(app.page.locator("#source-area")).not.toHaveAttribute("tabindex", /.*/);
+  // A short translation takes it away again.
+  await mock.set({ chunks: [THINK, "短"] });
+  await app.translate.click();
+  await expect(app.output).toHaveText("短");
+  await expect(area).not.toHaveAttribute("tabindex", /.*/);
+});
+
+test("the Raw/Preview switches: disabled without text, pressed state, keyboard, focus stays, 44 px", async ({
+  app,
+}) => {
+  await app.open();
+  const raw = SWITCH(app.page, "Source view", "Raw");
+  const preview = SWITCH(app.page, "Source view", "Preview");
+  for (const b of [
+    raw,
+    preview,
+    SWITCH(app.page, "Translation view", "Raw"),
+    SWITCH(app.page, "Translation view", "Preview"),
+  ]) {
+    await expect(b).toHaveAttribute("aria-disabled", "true");
+    const box = (await b.boundingBox())!;
+    expect(box.height).toBeGreaterThanOrEqual(44);
+    expect(box.width).toBeGreaterThanOrEqual(44);
+  }
+  // Pressing a disabled switch changes nothing.
+  await preview.click({ force: true });
+  await expect(raw).toHaveAttribute("aria-pressed", "true");
+
+  await app.text.fill("# Title\n\nSome *Markdown*.");
+  await expect(preview).toHaveAttribute("aria-disabled", "false");
+  await preview.focus();
+  await app.page.keyboard.press("Enter");
+  await expect(preview).toHaveAttribute("aria-pressed", "true");
+  await expect(raw).toHaveAttribute("aria-pressed", "false");
+  await expect(app.page.locator("#text")).toBeHidden();
+  await expect(app.page.locator("#source-view").getByRole("heading", { name: "Title" })).toBeVisible();
+  // The control that was used keeps focus although the box it switched has gone.
+  await expect(preview).toBeFocused();
+  await raw.focus();
+  await app.page.keyboard.press("Space");
+  await expect(app.text).toBeVisible();
+  await expect(raw).toBeFocused();
+});
+
+test("Clear: aria-disabled when idle, keyboard operable, focus goes to the emptied box", async ({ app, mock }) => {
+  await mock.set({ chunks: [THINK, "你好"] });
+  await app.open();
+  const clear = app.page.locator("#clear");
+  await expect(clear).toHaveAttribute("aria-disabled", "true");
+  await clear.focus();
+  await expect(clear).toBeFocused(); // still focusable, like Translate
+  expect((await clear.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+
+  await app.text.fill("Hello");
+  await app.translate.click();
+  await expect(app.output).toHaveText("你好");
+  await expect(clear).toHaveAttribute("aria-disabled", "false");
+  await clear.focus();
+  await app.page.keyboard.press("Enter");
+  await expect(app.text).toHaveValue("");
+  await expect(app.text).toBeFocused();
+  await expect(app.output).toHaveText("");
+  await expect(clear).toHaveAttribute("aria-disabled", "true");
+  await expect(app.copy).toHaveAttribute("aria-disabled", "true");
+  await expect(SWITCH(app.page, "Source view", "Preview")).toHaveAttribute("aria-disabled", "true");
+});
+
+test("Open and the PDF strip: names, keyboard, focus, Close, targets and axe", async ({ app }) => {
+  await app.open();
+  const open = app.page.locator("#open");
+  await expect(open).toHaveAccessibleName("Open a file");
+  await app.page.locator("#open-file").setInputFiles(`${import.meta.dirname}/../test/fixtures/sample.pdf`);
+  const note = app.page.locator("#file-note");
+  await expect(note).toHaveText(/sample\.pdf: 3 pages/);
+  await expect(note).toHaveAttribute("role", "status");
+  // The visible word is part of the name (2.5.3) and the name says what is closed.
+  await expect(open).toHaveText("Close");
+  await expect(open).toHaveAccessibleName("Close the PDF");
+  const pages = app.page.locator("#pdf-pages button[data-page]");
+  await expect(pages).toHaveCount(3);
+  await expect(app.page.locator("#pdf-pages canvas[data-drawn]")).toHaveCount(3);
+  for (let n = 1; n <= 3; n++) {
+    await expect(pages.nth(n - 1)).toHaveAccessibleName(`Page ${n}`);
+    const box = (await pages.nth(n - 1).boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(44);
+    expect(box.height).toBeGreaterThanOrEqual(44);
+  }
+
+  // By keyboard: Enter on a page puts its text in the box and marks it as the current page.
+  await pages.nth(0).focus();
+  await app.page.keyboard.press("Enter");
+  await expect(pages.nth(0)).toHaveAttribute("aria-current", "true");
+  await expect(note).toContainText("page 1");
+  await expect(pages.nth(0)).toBeFocused();
+  for (const scheme of ["light", "dark"] as const) {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await settle(app.page);
+    const results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+  }
+
+  // Page 3 comes with a warning (undecodable text): the warning style passes in both schemes.
+  await pages.nth(2).focus();
+  await app.page.keyboard.press("Enter");
+  await expect(note).toHaveClass(/advice/);
+  for (const scheme of ["light", "dark"] as const) {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await settle(app.page);
+    const results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+  }
+
+  await app.page.setViewportSize({ width: 320, height: 640 });
+  expect(await overflow(app.page)).toBeLessThanOrEqual(0);
+
+  // Close puts the PDF away; the button keeps focus and is named Open again.
+  await open.focus();
+  await app.page.keyboard.press("Enter");
+  await expect(app.page.locator("#pdf-pages")).toBeHidden();
+  await expect(open).toHaveAccessibleName("Open a file");
+  await expect(open).toBeFocused();
+  await expect(note).toBeHidden();
+});
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`the opening notes (error, Word document) pass axe in ${scheme} mode`, async ({ app }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await app.open();
+    const note = app.page.locator("#file-note");
+    await app.page
+      .locator("#open-file")
+      .setInputFiles({ name: "gbk.txt", mimeType: "", buffer: Buffer.from([0xc4, 0xe3, 0xba, 0xc3]) });
+    await expect(note).toHaveClass(/error/);
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    await app.page.locator("#open-file").setInputFiles(`${import.meta.dirname}/../test/fixtures/sample.docx`);
+    await expect(note).toContainText("sample.docx");
+    await expect(app.page.locator("#source-view")).toBeVisible();
+    await settle(app.page);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+  });
+
+  test(`the History panel passes axe in ${scheme} mode, with entries and paused`, async ({ app, mock }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await mock.set({ chunks: [THINK, "你好，世界"] });
+    await app.open();
+    await app.text.fill("Hello, world");
+    await app.translate.click();
+    await expect(app.page.locator("#history-list li")).toHaveCount(1);
+    await settle(app.page);
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    // Each action link is at least 24 px (2.5.8) and shows a focus outline.
+    for (const link of await app.page.locator("#history-list a").all()) {
+      const box = (await link.boundingBox())!;
+      expect(box.width).toBeGreaterThanOrEqual(24);
+      expect(box.height).toBeGreaterThanOrEqual(24);
+      await link.focus();
+      expect(await link.evaluate((n) => parseFloat(getComputedStyle(n).outlineWidth))).toBeGreaterThanOrEqual(2);
+    }
+
+    await app.page.locator("#history-pause").click();
+    await expect(app.page.locator("#history-pause")).toHaveAccessibleName("Resume history");
+    await settle(app.page);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    await app.page.setViewportSize({ width: 320, height: 640 });
+    expect(await overflow(app.page)).toBeLessThanOrEqual(0);
+  });
+}

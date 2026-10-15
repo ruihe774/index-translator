@@ -100,7 +100,7 @@ repeats paragraphs by about 16K letters (model property; "translate everything" 
 
 ## Notes for changes
 
-- UI changes keep `A11Y-ACCEPTANCE.md` (WCAG 2.2 AA) true and `e2e/a11y.spec.ts` green. CSS may use only what `.browserslistrc` supports. Not yet reviewed there: Markdown output, source preview, views, Clear, sync scrolling, Open/Close and the PDF strip.
+- UI changes keep `A11Y-ACCEPTANCE.md` (WCAG 2.2 AA) true and `e2e/a11y.spec.ts` green. CSS may use only what `.browserslistrc` supports. Reviewed there since 2026-10-15: Markdown output, source preview, views, Clear, Open/Close, the PDF strip and History (axe, keyboard, 320 px in `e2e/a11y.spec.ts`); click-to-sync has no keyboard route (A11Y-13 FAIL). Anything that scrolls must be focusable while it overflows (`public/scroll-focus.ts`).
 - The web app must keep working with the server's error codes (`public/errors.ts`) and the paragraph-loss check (`public/paragraphs.ts`, in the source's own unit).
 - README.md is for user-visible behaviour only.
 

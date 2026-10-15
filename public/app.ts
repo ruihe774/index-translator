@@ -35,6 +35,7 @@ import { registerServiceWorker } from "./pwa.ts";
 import { createRender } from "./render.ts";
 import { buildImageRequest, buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.ts";
 import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
+import { focusableWhenScrolling } from "./scroll-focus.ts";
 import { CHAT_MODEL, type Choice, detectSource, DOCUMENT_MODEL, type Selection, selectModel } from "./select-model.ts";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
 import { bindRender, setState, type Side, state } from "./state.ts";
@@ -79,6 +80,9 @@ const outputArea = $("output-area");
 const engineEl = $("engine");
 const outputEl = $("output");
 const placeholderEl = $("placeholder");
+// The panes scroll when the text is longer than they are: then they take focus, so the keyboard can scroll them.
+focusableWhenScrolling(sourceArea, "Source text, rendered", true);
+focusableWhenScrolling(outputArea, "Translation text", true);
 /** The one line under the translation: progress, the result's numbers, a stop or an error. */
 const metaEl = $<MetaLine>("meta");
 const notesEl = $("notes");

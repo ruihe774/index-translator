@@ -77,6 +77,34 @@ function inlineNodes(nodes: Inline[]): Node[] {
 
 const ALIGN_CLASS = (a: Align) => (a ? `align-${a}` : "");
 
+/**
+ * A code block or table that is wider than its room scrolls sideways; only then is it focusable
+ * (a named group; `scroll-focus.ts` does the same for the panes), so keyboard users can scroll it and the others add no tab stop.
+ */
+let scrollWatch: ResizeObserver | undefined;
+
+function keyboardScrollable(box: HTMLElement, label: string) {
+  scrollWatch ??= new ResizeObserver((entries) => {
+    for (const { target } of entries) {
+      const scrolls = target.scrollWidth > target.clientWidth;
+      if (scrolls === target.hasAttribute("tabindex")) {
+        continue;
+      }
+      if (scrolls) {
+        target.setAttribute("tabindex", "0");
+        target.setAttribute("role", "group");
+        target.setAttribute("aria-label", (target as HTMLElement).dataset.scrollLabel ?? "");
+      } else {
+        for (const name of ["tabindex", "role", "aria-label"]) {
+          target.removeAttribute(name);
+        }
+      }
+    }
+  });
+  box.dataset.scrollLabel = label;
+  scrollWatch.observe(box);
+}
+
 function blockNode(b: Block, tight = false): Node[] {
   switch (b.type) {
     case "heading": {
@@ -92,7 +120,9 @@ function blockNode(b: Block, tight = false): Node[] {
       if (/^[\w+#.-]+$/.test(b.lang)) {
         code.className = `language-${b.lang}`;
       }
-      return [el("pre", [code])];
+      const pre = el("pre", [code]);
+      keyboardScrollable(pre, "Code");
+      return [pre];
     }
     case "quote": {
       return [el("blockquote", blockNodes(b.children))];
@@ -112,6 +142,9 @@ function blockNode(b: Block, tight = false): Node[] {
           box.type = "checkbox";
           box.checked = item.task;
           box.disabled = true;
+          // The item's own text follows it; the box says only its state.
+          box.lang = "en";
+          box.setAttribute("aria-label", item.task ? "Done" : "Not done");
           li.prepend(box, " ");
           li.className = "task";
         }
@@ -137,7 +170,9 @@ function blockNode(b: Block, tight = false): Node[] {
           ),
         ),
       );
-      return [el("div", [el("table", [head, body])], "table-scroll")];
+      const scroll = el("div", [el("table", [head, body])], "table-scroll");
+      keyboardScrollable(scroll, "Table");
+      return [scroll];
     }
   }
 }
