@@ -58,6 +58,7 @@ function blockHrefs(b: Block, into: Set<string>) {
       }
       break;
     }
+    // no default
   }
 }
 

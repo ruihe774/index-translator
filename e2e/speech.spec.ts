@@ -1,3 +1,4 @@
+/* eslint-disable no-underscore-dangle */
 // Reading aloud, with the mock speech engine: it answers every utterance with a tenth of a second
 // of silence and records what it was asked to say.
 

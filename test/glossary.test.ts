@@ -57,6 +57,7 @@ describe("parseGlossary", () => {
     expect(error).toBeUndefined();
     expect(Object.hasOwn(glossary, "__proto__")).toBe(true);
     expect(Object.getPrototypeOf(glossary)).toBeNull();
+    // eslint-disable-next-line no-proto -- deliberate test
     expect(glossary.__proto__).toBe("原型");
   });
 
@@ -72,6 +73,7 @@ describe("parseGlossary", () => {
     expect(wire).toBe('{"glossary":{"__proto__":"原型","apple":"苹果"}}');
     const back = JSON.parse(wire) as { glossary: Record<string, string> };
     expect(Object.hasOwn(back.glossary, "__proto__")).toBe(true);
+    // eslint-disable-next-line no-proto -- deliberate test
     expect(back.glossary.__proto__).toBe("原型");
   });
 

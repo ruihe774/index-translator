@@ -102,6 +102,7 @@ describe("buildRequest", () => {
         form({ glossary: "cat = 猫\n dog=犬", hard: "keep names\n", soft: " formal \n\nshort", genre: " novel " }),
       ),
     );
+    // eslint-disable-next-line unicorn/prefer-structured-clone -- this is testing JSON roundtrip
     expect(JSON.parse(JSON.stringify(body))).toStrictEqual({
       model: CHAT_MODEL,
       text: "hello",
@@ -154,7 +155,9 @@ describe("buildRequest", () => {
 
   test("__proto__ stays a glossary term in the serialized body", () => {
     const body = bodyOf(buildRequest(CHAT_MODEL, undefined, form({ glossary: "__proto__ = x" })));
+    // eslint-disable-next-line unicorn/prefer-structured-clone -- this is testing JSON roundtrip
     expect(JSON.parse(JSON.stringify(body)).glossary).toStrictEqual(JSON.parse('{"__proto__":"x"}'));
+    // eslint-disable-next-line unicorn/prefer-structured-clone -- this is testing JSON roundtrip
     expect(Object.keys(JSON.parse(JSON.stringify(body)).glossary)).toStrictEqual(["__proto__"]);
   });
 });

@@ -4,6 +4,7 @@
 // reads the form, calls the API and writes the results to the page.
 
 import { API, ApiFailure, failureMessage } from "./api.ts";
+// eslint-disable-next-line import/no-unassigned-import -- custom element definitions
 import "./elements/index.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { PdfPages } from "./elements/pdf-pages.ts";

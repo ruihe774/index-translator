@@ -108,6 +108,7 @@ function startDecoder(): Promise<QoaDecoder | null> {
         signal.addEventListener("abort", abort, { once: true });
         post({ type: "open", id });
         try {
+          // eslint-disable-next-line no-unmodified-loop-condition -- modified in promises
           while (!settled) {
             const { done, value } = await reader.read();
             if (settled) {

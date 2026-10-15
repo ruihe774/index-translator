@@ -137,6 +137,7 @@ export class PdfPages extends HTMLElement {
     button?.scrollIntoView({ block: "nearest", inline: "nearest" });
   }
 
+  // eslint-disable-next-line accessor-pairs -- no user for a getter for now
   set busy(page: number | null) {
     for (const b of this.querySelectorAll('button[aria-busy="true"]')) {
       b.removeAttribute("aria-busy");

@@ -11,6 +11,7 @@ const number = new Intl.NumberFormat();
 
 export function describeError(e: ApiErrorBody | undefined, status?: number): string {
   const d = e?.details ?? {};
+  // eslint-disable-next-line @typescript-eslint/switch-exhaustiveness-check -- untyped string
   switch (e?.code) {
     case "input_too_long": {
       return d.prompt_tokens && d.max_input_tokens

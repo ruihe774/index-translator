@@ -82,6 +82,7 @@ export class VoiceSettings extends HTMLElement {
   }
 
   /** Text under the clone row: progress, the result, or why it failed. */
+  // eslint-disable-next-line accessor-pairs -- no user for a getter for now
   set status(text: string) {
     this.#status.textContent = text;
   }
