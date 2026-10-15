@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax */
 // <view-switch>: a group of buttons of which one is pressed (Raw / Preview, the model choice).
 //
 // A light-DOM element (the page gives it `role="group"` and an `aria-label`): it enhances the buttons

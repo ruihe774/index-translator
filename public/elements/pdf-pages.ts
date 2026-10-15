@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax */
 // <pdf-pages>: the strip of page thumbnails beside the source box while a PDF is open.
 //
 // A light-DOM element that enhances the markup in index.html (an empty list) and fills the list

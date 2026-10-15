@@ -330,7 +330,7 @@ correctness = "error"
 "unicorn/text-encoding-identifier-case" = "warn"
 "unicorn/throw-new-error" = "warn"
 "yoda" = "warn"
-"no-restricted-syntax" = ["warn", "PrivateIdentifier"]
+"no-restricted-syntax" = ["warn", "ClassDeclaration[superClass.name!='HTMLElement'] > ClassBody > PropertyDefinition > PrivateIdentifier", "ClassDeclaration[superClass.name='HTMLElement'] > ClassBody > PropertyDefinition[accessibility='private']"]
 
 [fmt]
 printWidth = 120

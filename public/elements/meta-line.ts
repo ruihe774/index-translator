@@ -1,4 +1,3 @@
-/* eslint-disable no-restricted-syntax */
 // <meta-line>: the one status line of the translation panel (progress, the result's numbers, a stop
 // or an error), and the short messages that borrow it.
 //
