@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 // <speech-controls side="source" subject="source text">: Listen / Stop, and while that side is read
 // Previous, Pause / Resume and Next. One element per panel; both are the same buttons, so they are
 // built here once instead of being written out twice in index.html.

@@ -312,7 +312,6 @@ correctness = "error"
 "unicorn/prefer-reflect-apply" = "warn"
 "unicorn/prefer-regexp-test" = "warn"
 "unicorn/prefer-response-static-json" = "warn"
-"unicorn/prefer-set-has" = "warn"
 "unicorn/prefer-single-call" = "warn"
 "unicorn/prefer-string-raw" = "warn"
 "unicorn/prefer-string-replace-all" = "warn"
@@ -331,6 +330,7 @@ correctness = "error"
 "unicorn/text-encoding-identifier-case" = "warn"
 "unicorn/throw-new-error" = "warn"
 "yoda" = "warn"
+"no-restricted-syntax" = ["warn", "PrivateIdentifier"]
 
 [fmt]
 printWidth = 120

@@ -28,10 +28,10 @@ export const MAX_DOCX_BYTES = 64 * 2 ** 20;
 /** What the server takes (MAX_IMAGE_BYTES in src/image.ts). */
 export const MAX_IMAGE_BYTES = 8 * 2 ** 20;
 
-const TEXT_EXTENSIONS = new Set(["txt", "text", "md", "markdown"]);
-const TEXT_TYPES = new Set(["text/plain", "text/markdown", "text/x-markdown"]);
-const IMAGE_EXTENSIONS = new Set(["jpg", "jpeg", "png", "webp"]);
-const IMAGE_TYPES = new Set(["image/jpeg", "image/png", "image/webp"]);
+const TEXT_EXTENSIONS = ["txt", "text", "md", "markdown"];
+const TEXT_TYPES = ["text/plain", "text/markdown", "text/x-markdown"];
+const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
+const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
 /** The kind of a picked file, by its name's extension, else by its media type; `null` when neither is taken. */
 export function fileKind(name: string, type: string): FileKind | null {
@@ -43,10 +43,10 @@ export function fileKind(name: string, type: string): FileKind | null {
   if (extension === "docx") {
     return "docx";
   }
-  if (TEXT_EXTENSIONS.has(extension)) {
+  if (TEXT_EXTENSIONS.includes(extension)) {
     return "text";
   }
-  if (IMAGE_EXTENSIONS.has(extension)) {
+  if (IMAGE_EXTENSIONS.includes(extension)) {
     return "image";
   }
   const media = type.split(";")[0]!.trim().toLowerCase();
@@ -56,10 +56,10 @@ export function fileKind(name: string, type: string): FileKind | null {
   if (media === DOCX_TYPE) {
     return "docx";
   }
-  if (TEXT_TYPES.has(media)) {
+  if (TEXT_TYPES.includes(media)) {
     return "text";
   }
-  if (IMAGE_TYPES.has(media)) {
+  if (IMAGE_TYPES.includes(media)) {
     return "image";
   }
   return null;

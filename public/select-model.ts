@@ -150,7 +150,7 @@ export function countLetters(text: string): number {
   return scan(text, false).letters;
 }
 
-const ENGLISH_WORDS = new Set(["the", "and", "of", "to", "in", "is", "that", "it", "was", "for", "with", "as", "on"]);
+const ENGLISH_WORDS = ["the", "and", "of", "to", "in", "is", "that", "it", "was", "for", "with", "as", "on"];
 
 /**
  * True when the lower-cased text has more than 10% common English words among its words. A word is
@@ -172,7 +172,7 @@ function hasCommonEnglish(lower: string): boolean {
     if (start >= 0) {
       words++;
       const len = i - start;
-      if (len >= 2 && len <= 4 && ENGLISH_WORDS.has(lower.slice(start, i))) {
+      if (len >= 2 && len <= 4 && ENGLISH_WORDS.includes(lower.slice(start, i))) {
         common++;
       }
       start = -1;

@@ -50,10 +50,10 @@ const BASELINE = process.arch === "x64" && !windows ? ["-march=x86-64"] : [];
 /** The import libraries the shim is linked against on Windows; they stay beside the DLLs so `--shim` works. */
 const IMPORT_LIBS = ["llama", "mtmd", "ggml", "ggml-base"];
 
-const OPTIONS = new Set(["--native", "--keep", "--shim"]);
+const OPTIONS = ["--native", "--keep", "--shim"];
 const flags = new Set(Bun.argv.slice(2));
 for (const flag of flags) {
-  if (!OPTIONS.has(flag)) {
+  if (!OPTIONS.includes(flag)) {
     throw new Error(`unknown option ${flag}; see the head of this file`);
   }
 }

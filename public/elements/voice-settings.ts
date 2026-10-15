@@ -1,3 +1,4 @@
+/* eslint-disable no-restricted-syntax */
 // <voice-settings>: the voice and speed selects and the "Clone a voice" row (upload a file or record
 // from the microphone), over the markup in index.html (`#voice`, `#speed`, `#voice-file-button`,
 // `#voice-file`, `#voice-record`, `#clone-status`).
