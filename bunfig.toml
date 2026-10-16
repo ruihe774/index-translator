@@ -19,6 +19,7 @@ typeCheck = true
 correctness = "error"
 
 [lint.rules]
+"import/namespace" = "off"
 "@next/next/no-assign-module-variable" = "off"
 "@typescript-eslint/adjacent-overload-signatures" = "warn"
 "@typescript-eslint/array-type" = "warn"
