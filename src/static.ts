@@ -39,7 +39,7 @@ function cacheControl(relativePath: string): string {
 }
 
 /**
- * Whitespace between tags is dropped from pages: the layout is flex or grid wherever it holds several
+ * Whitespace between tags is dropped from pages, and between attributes reduced to one space: the layout is flex or grid wherever it holds several
  * elements, so none of it is rendered (measured on every element of index.html at five widths, both
  * colour schemes). Text keeps one space where it had any, and elements whose text is literal are left alone.
  * A page that relied on a space between inline elements would need `&#32;`.
@@ -52,6 +52,15 @@ function stripWhitespace(html: Response): Response {
       element(el) {
         literal++;
         el.onEndTag(() => void literal--);
+      },
+    })
+    .on("*", {
+      element(el) {
+        // Touching an attribute makes the rewriter write the start tag afresh: one space between attributes.
+        const first = el.attributes.next();
+        if (!first.done) {
+          el.setAttribute(first.value[0], first.value[1]);
+        }
       },
     })
     .onDocument({
