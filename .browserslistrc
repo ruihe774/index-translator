@@ -1,10 +1,2 @@
-# Recent, non-rare browsers (about two years back), none past end of life. `bun run lint:css`
-# checks public/style.css against this list; update it together with the CSS features the
-# stylesheet uses.
-chrome >= 130
-edge >= 130
-firefox esr
-firefox >= 153
-safari >= 18
-ios_saf >= 18
-samsung >= 28
+# `bun run lint:css` checks public/style.css against this query; CSS may use only what it covers.
+baseline widely available
