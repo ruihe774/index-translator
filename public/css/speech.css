@@ -53,11 +53,11 @@ button.icon {
 /* The block being read aloud. */
 .output .speaking {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
-  border-radius: var(--radius-min);
-  /* A bar at the start edge, so the block is not marked by shade alone (1.4.1). */
-  box-shadow: inset 0.25rem 0 0 var(--accent);
-  /* The bar sits in padding that the negative margin takes back out of the layout (the pane
-     has at least 0.75rem of side padding), so the text neither moves nor touches the bar. */
+  /* The shade starts where the gutter ends and meets the current button (solid, so the block is
+     not marked by shade alone, 1.4.1): square at that edge, rounded at the other. */
+  border-radius: 0 var(--radius-min) var(--radius-min) 0;
+  /* The padding is taken back out of the layout by the negative margin (the pane has at least
+     0.75rem of side padding), so the text does not move. */
   padding-inline: 0.75rem 0.5rem;
   margin-inline: -0.75rem -0.5rem;
 
@@ -98,7 +98,8 @@ button.read-from {
   min-inline-size: 0;
   min-block-size: 1.5rem;
   padding: 0.125rem 0 0;
-  color: var(--accent);
+  /* Quiet until hovered or current, so the column does not pull the eye from the text. */
+  color: color-mix(in srgb, var(--accent) 70%, var(--surface-sunken));
   background: transparent;
   border-color: transparent;
   border-radius: var(--radius-min);
@@ -110,13 +111,15 @@ button.read-from {
   }
 
   &:hover {
+    color: var(--accent);
     background: color-mix(in srgb, var(--accent) 14%, var(--surface-sunken));
   }
 
-  /* The block being read. */
+  /* The block being read: flush with the shade, so square on its side. */
   &[aria-current="true"] {
     color: var(--on-accent);
     background: var(--accent);
+    border-radius: var(--radius-min) 0 0 var(--radius-min);
 
     @media (forced-colors: active) {
       outline: 2px solid Highlight;
