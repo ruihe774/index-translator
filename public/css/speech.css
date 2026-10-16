@@ -73,6 +73,9 @@ button.icon {
    outline (3px, offset 2px) unclipped by the scroller. */
 .output-area {
   --read-gutter: 2rem;
+  /* The height of a plain text line of the output (`--text-size` times its line-height), which the
+     button's glyph is centred on; a block starting with a heading is not matched. */
+  --first-line: calc(var(--text-size) * 1.6);
 
   &.with-gutter > .output {
     padding-left: calc(var(--read-gutter) + 0.375rem + 0.75rem);
@@ -97,7 +100,8 @@ button.read-from {
   align-content: start;
   min-inline-size: 0;
   min-block-size: 1.5rem;
-  padding: 0.125rem 0 0;
+  /* Less the 1px border above the padding. */
+  padding: calc((var(--first-line) - 1.25rem) / 2 - 1px) 0 0;
   /* Quiet until hovered or current, so the column does not pull the eye from the text. */
   color: color-mix(in srgb, var(--accent) 70%, var(--surface-sunken));
   background: transparent;

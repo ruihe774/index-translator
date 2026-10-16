@@ -45,6 +45,10 @@
     line-height: 1.5;
   }
 
+  .output-area {
+    --first-line: calc(var(--text-size) * 1.5);
+  }
+
   .pane-head {
     flex-wrap: nowrap;
     align-items: center;
