@@ -135,6 +135,8 @@ export function healthMessage(
   text: string;
   loading: boolean;
   vram: Vram | null;
+  /** The engine is not usable and not loading: the sentence is shown as a warning. */
+  problem: boolean;
 } {
   const model = h.model ? modelLabel(h.model) : null;
   if (h.status === "ready") {
@@ -154,12 +156,12 @@ export function healthMessage(
         tight,
       };
     }
-    return { text, loading: false, vram };
+    return { text, loading: false, vram, problem: false };
   }
   if (h.status === "loading") {
-    return { text: "Engine loading a model…", loading: true, vram: null };
+    return { text: "Engine loading a model…", loading: true, vram: null, problem: false };
   }
-  return { text: `Engine ${h.status}${h.error ? `: ${h.error}` : ""}.`, loading: false, vram: null };
+  return { text: `Engine ${h.status}${h.error ? `: ${h.error}` : ""}.`, loading: false, vram: null, problem: true };
 }
 
 export function seconds(ms: number): string {

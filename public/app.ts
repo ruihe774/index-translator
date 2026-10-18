@@ -272,11 +272,13 @@ async function pollHealth() {
   let text: string;
   let loading = false;
   let vram: Vram | null = null;
+  let problem: boolean;
   try {
     const res = await fetch(`${API}/health`);
-    ({ text, loading, vram } = healthMessage((await res.json()) as Health));
+    ({ text, loading, vram, problem } = healthMessage((await res.json()) as Health));
   } catch {
     text = "The server cannot be reached.";
+    problem = true;
   }
   if (seq !== healthSeq) {
     return;
@@ -285,19 +287,31 @@ async function pollHealth() {
   // check at the top) and `visibilitychange` starts it again. Page load and each finished
   // translation poll at once besides.
   healthTimer = setTimeout(pollHealth, loading ? HEALTH_LOADING_POLL_MS : HEALTH_POLL_MS);
-  showEngine(text, loading, vram);
+  showEngine(text, loading, vram, problem);
 }
 
-/** The engine status: a bar when the GPU memory is known or while a model loads (indeterminate), the sentence otherwise. The words are the link's name and tooltip. */
-function showEngine(text: string, loading: boolean, vram: Vram | null) {
-  const key = `${text}|${loading}|${vram?.label}|${vram?.used}`;
+/**
+ * The engine status: a bar when the GPU memory is known or while a model loads (indeterminate), the
+ * sentence otherwise (a warning when `problem`). The words are the link's name and tooltip. The page
+ * starts with an indeterminate bar (`index.html`), which a load keeps, so its animation does not restart.
+ */
+function showEngine(text: string, loading: boolean, vram: Vram | null, problem: boolean) {
+  const key = `${text}|${loading}|${vram?.label}|${vram?.used}|${problem}`;
   if (engineEl.dataset.shown === key) {
     return;
   }
   engineEl.dataset.shown = key;
+  engineEl.classList.toggle("problem", problem);
   if (!loading && !vram) {
     engineEl.replaceChildren(text);
     engineEl.removeAttribute("title");
+    return;
+  }
+  const words = vram ? `${text} ${vram.label}.` : text;
+  const running = engineEl.querySelector(".bar.indeterminate");
+  if (loading && running) {
+    engineEl.querySelector(".sr-only")!.textContent = words;
+    engineEl.title = words;
     return;
   }
   const bar = document.createElement("span");
@@ -309,7 +323,6 @@ function showEngine(text: string, loading: boolean, vram: Vram | null) {
     fill.style.inlineSize = `${((vram.used / vram.total) * 100).toFixed(1)}%`;
   }
   bar.append(fill);
-  const words = vram ? `${text} ${vram.label}.` : text;
   const name = document.createElement("span");
   name.className = "sr-only";
   name.textContent = words;

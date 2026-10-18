@@ -119,6 +119,7 @@ describe("healthMessage", () => {
       text: "Engine ready.",
       loading: false,
       vram: null,
+      problem: false,
     });
     expect(healthMessage({ status: "ready", model: CHAT_MODEL, queue }).text).toBe(
       "Engine ready, Index-Translate-9B loaded.",
@@ -133,16 +134,19 @@ describe("healthMessage", () => {
       text: "Engine loading a model…",
       loading: true,
       vram: null,
+      problem: false,
     });
     expect(healthMessage({ status: "error", error: "bad file", model: null, queue })).toStrictEqual({
       text: "Engine error: bad file.",
       loading: false,
       vram: null,
+      problem: true,
     });
     expect(healthMessage({ status: "stopped", model: null, queue })).toStrictEqual({
       text: "Engine stopped.",
       loading: false,
       vram: null,
+      problem: true,
     });
   });
 

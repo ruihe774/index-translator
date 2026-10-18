@@ -42,6 +42,12 @@ for (const scheme of ["light", "dark"] as const) {
     });
     await app.page.goto("/");
     await expect(app.engine.locator(".bar.indeterminate")).toHaveCount(1);
+    // The bar of the first poll is the one the page started with: its animation never restarts.
+    await app.page.evaluate(() => {
+      document.querySelector("#engine .bar")!.setAttribute("data-first", "");
+    });
+    await expect(app.engine).toHaveAttribute("title", "Engine loading a model…");
+    await expect(app.engine.locator(".bar[data-first].indeterminate")).toHaveCount(1);
     let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
 
@@ -56,6 +62,16 @@ for (const scheme of ["light", "dark"] as const) {
     await app.page.reload();
     await expect(app.engine.locator(".bar.tight")).toHaveCount(1);
     await expect(app.engine).toHaveAttribute("title", /VRAM 7\.5 \/ 8\.0 GiB, free memory is tight\.$/);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    // Error, stopped and unreachable are sentences in the warning colour, bold.
+    await app.page.unroute("**/api/v1/health");
+    await app.page.route("**/api/v1/health", (route) => route.abort());
+    await app.page.reload();
+    await expect(app.engine).toHaveText("The server cannot be reached.");
+    await expect(app.engine).toHaveClass("problem");
+    await expect(app.engine).toHaveCSS("font-weight", "700");
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
   });

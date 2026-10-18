@@ -10,6 +10,12 @@
   font-weight: 300;
 }
 
+/* The engine cannot be used (error, stopped, unreachable): the sentence in the warning colour, bold. */
+.engine .problem {
+  color: var(--warn-border);
+  font-weight: 700;
+}
+
 /* The engine status: a bar of the GPU memory in use, or an indeterminate one while a model loads. Both
    share the track and the fill; the words are the link's name and tooltip. */
 .engine .bar {

@@ -24,7 +24,12 @@
         <img class="logo" src="/icons/icon.svg" alt="" width="32" height="32" />
         Index Translator
       </h1>
-      <p role="status" class="engine"><a id="engine" href="/api/v1/health">Checking the translation engine…</a></p>
+      <p role="status" class="engine">
+        <a id="engine" href="/api/v1/health" title="Checking the translation engine…">
+          <span class="bar indeterminate" aria-hidden="true"><span class="fill"></span></span>
+          <span class="sr-only">Checking the translation engine…</span>
+        </a>
+      </p>
     </header>
 
     <main id="main" tabindex="-1">
