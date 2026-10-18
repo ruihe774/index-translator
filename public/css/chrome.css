@@ -3,8 +3,55 @@
 }
 
 .engine a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: 1.5rem; /* a bar alone is still a 24 px target (2.5.8) */
   color: inherit;
   font-weight: 300;
+}
+
+/* The engine status: a bar of the GPU memory in use, or an indeterminate one while a model loads. Both
+   share the track and the fill; the words are the link's name and tooltip. */
+.engine .bar {
+  --bar-size: 0.5rem;
+  flex: none;
+  inline-size: 8rem;
+  block-size: var(--bar-size);
+  overflow: hidden;
+  background: var(--surface-sunken);
+  border: 1px solid var(--border);
+  border-radius: var(--bar-size);
+  box-sizing: content-box;
+}
+
+.engine .fill {
+  display: block;
+  block-size: 100%;
+  background: var(--accent);
+  /* Only the free end is rounded: the start is cut by the track, so no sliver of the track's
+     background shows between two curves that antialias separately. */
+  border-start-end-radius: var(--bar-size);
+  border-end-end-radius: var(--bar-size);
+}
+
+/* Free memory is tight (the words say so too). */
+.engine .tight .fill {
+  background: var(--warn-border);
+}
+
+.engine .indeterminate .fill {
+  inline-size: 40%;
+  border-radius: var(--bar-size); /* it slides away from the start, so both ends show */
+
+  @media (prefers-reduced-motion: no-preference) {
+    animation: engine-bar 1.4s ease-in-out infinite alternate;
+  }
+}
+
+@keyframes engine-bar {
+  to {
+    margin-inline-start: 60%;
+  }
 }
 
 .hint {

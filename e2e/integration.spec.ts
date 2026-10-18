@@ -126,6 +126,49 @@ test("health: loading is polled until ready", async ({ app }) => {
   await expect(app.engine).toHaveText("Engine ready, Index-Translate-9B loaded.", { timeout: 10_000 });
 });
 
+test("health: a bar of the VRAM in use when ready, an indeterminate one while loading", async ({ app }) => {
+  const gib = 1024 ** 3;
+  let loading = true;
+  await app.page.route("**/api/v1/health", (route) =>
+    route.fulfill({
+      json: loading
+        ? health({ status: "loading", model: null })
+        : { ...health(), gpu_memory: { total_bytes: 8 * gib, free_bytes: 2 * gib } },
+    }),
+  );
+  await app.page.goto("/");
+  await expect(app.engine).toHaveText("Engine loading a model…");
+  await expect(app.engine.locator(".bar.indeterminate")).toHaveCount(1);
+
+  loading = false;
+  await expect(app.engine.locator(".bar:not(.indeterminate)")).toHaveCount(1, { timeout: 10_000 });
+  await expect(app.engine).toHaveAttribute("title", "Engine ready, Index-Translate-9B loaded. VRAM 6.0 / 8.0 GiB.");
+  await expect(app.engine).toHaveText("Engine ready, Index-Translate-9B loaded. VRAM 6.0 / 8.0 GiB.");
+  await expect(app.engine.locator(".bar")).toHaveAttribute("aria-hidden", "true");
+  expect(await app.engine.locator(".fill").evaluate((el) => (el as HTMLElement).style.inlineSize)).toBe("75%");
+});
+
+test("health: a ready engine is polled every 5 s while the tab is visible", async ({ app }) => {
+  const gib = 1024 ** 3;
+  let free = 6;
+  let calls = 0;
+  await app.page.route("**/api/v1/health", (route) => {
+    calls++;
+    return route.fulfill({ json: { ...health(), gpu_memory: { total_bytes: 8 * gib, free_bytes: free * gib } } });
+  });
+  await app.page.clock.install();
+  await app.page.goto("/");
+  await expect(app.engine).toContainText("VRAM 2.0 / 8.0 GiB");
+  const first = calls;
+
+  await app.page.clock.runFor(4000);
+  expect(calls).toBe(first);
+  free = 2;
+  await app.page.clock.runFor(1500);
+  await expect(app.engine).toContainText("VRAM 6.0 / 8.0 GiB");
+  expect(calls).toBeGreaterThan(first);
+});
+
 test("health: an unreachable server and an engine error", async ({ app }) => {
   await app.page.route("**/api/v1/health", (route) => route.abort());
   await app.page.goto("/");

@@ -118,6 +118,7 @@ describe("healthMessage", () => {
     expect(healthMessage({ status: "ready", model: null, queue })).toStrictEqual({
       text: "Engine ready.",
       loading: false,
+      vram: null,
     });
     expect(healthMessage({ status: "ready", model: CHAT_MODEL, queue }).text).toBe(
       "Engine ready, Index-Translate-9B loaded.",
@@ -131,15 +132,41 @@ describe("healthMessage", () => {
     expect(healthMessage({ status: "loading", model: null, queue })).toStrictEqual({
       text: "Engine loading a model…",
       loading: true,
+      vram: null,
     });
     expect(healthMessage({ status: "error", error: "bad file", model: null, queue })).toStrictEqual({
       text: "Engine error: bad file.",
       loading: false,
+      vram: null,
     });
     expect(healthMessage({ status: "stopped", model: null, queue })).toStrictEqual({
       text: "Engine stopped.",
       loading: false,
+      vram: null,
     });
+  });
+
+  test("a ready engine reports the GPU memory in use", () => {
+    const gib = 1024 ** 3;
+    const gpu_memory = { total_bytes: 12 * gib, free_bytes: 5.5 * gib };
+    expect(healthMessage({ status: "ready", model: null, queue, gpu_memory }).vram).toStrictEqual({
+      used: 6.5 * gib,
+      total: 12 * gib,
+      label: "VRAM 6.5 / 12.0 GiB",
+      tight: false,
+    });
+    expect(
+      healthMessage({ status: "ready", model: null, queue, gpu_memory: { total_bytes: 0, free_bytes: 0 } }).vram,
+    ).toBeNull();
+    expect(healthMessage({ status: "loading", model: null, queue, gpu_memory }).vram).toBeNull();
+    expect(healthMessage({ status: "ready", model: null, queue, gpu_memory }).vram?.tight).toBe(false);
+    const tight = healthMessage({
+      status: "ready",
+      model: null,
+      queue,
+      gpu_memory: { total_bytes: 10 * gib, free_bytes: gib },
+    }).vram;
+    expect(tight).toMatchObject({ tight: true, label: "VRAM 9.0 / 10.0 GiB, free memory is tight" });
   });
 });
 

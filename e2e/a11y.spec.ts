@@ -27,6 +27,39 @@ for (const scheme of ["light", "dark"] as const) {
     expect(results.violations).toStrictEqual([]);
   });
 
+  test(`the engine bars (VRAM, loading) pass axe in ${scheme} mode and fit 320 px`, async ({ app }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await app.page.setViewportSize({ width: 320, height: 640 });
+    let loading = true;
+    let freeGiB = 2;
+    await app.page.route("**/api/v1/health", async (route) => {
+      const real = (await (await route.fetch()).json()) as object;
+      await route.fulfill({
+        json: loading
+          ? { ...real, status: "loading", model: null }
+          : { ...real, gpu_memory: { total_bytes: 8 * 1024 ** 3, free_bytes: freeGiB * 1024 ** 3 } },
+      });
+    });
+    await app.page.goto("/");
+    await expect(app.engine.locator(".bar.indeterminate")).toHaveCount(1);
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    loading = false;
+    await app.page.reload();
+    await expect(app.engine.locator(".bar:not(.indeterminate)")).toHaveCount(1);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+    expect(await app.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+
+    freeGiB = 0.5;
+    await app.page.reload();
+    await expect(app.engine.locator(".bar.tight")).toHaveCount(1);
+    await expect(app.engine).toHaveAttribute("title", /VRAM 7\.5 \/ 8\.0 GiB, free memory is tight\.$/);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+  });
+
   test(`an image as the source passes axe in ${scheme} mode and is named for assistive technology`, async ({
     app,
     mock,

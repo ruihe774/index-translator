@@ -28,6 +28,7 @@ import {
   modelLabel,
   resultNotes,
   selectionMessage,
+  type Vram,
 } from "./messages.ts";
 import { initOpenUi } from "./open-ui.ts";
 import { alignBlocks, type Alignment } from "./paragraphs.ts";
@@ -43,6 +44,7 @@ import { store, stored } from "./storage.ts";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
 
 const HEALTH_LOADING_POLL_MS = 2000;
+const HEALTH_POLL_MS = 5000;
 let healthTimer: ReturnType<typeof setTimeout> | undefined;
 const number = new Intl.NumberFormat();
 
@@ -269,21 +271,50 @@ async function pollHealth() {
   }
   let text: string;
   let loading = false;
+  let vram: Vram | null = null;
   try {
     const res = await fetch(`${API}/health`);
-    ({ text, loading } = healthMessage((await res.json()) as Health));
+    ({ text, loading, vram } = healthMessage((await res.json()) as Health));
   } catch {
     text = "The server cannot be reached.";
   }
   if (seq !== healthSeq) {
     return;
   }
-  // Only a load in progress is followed automatically; otherwise the status is refreshed on
-  // page load, on return to the tab and after each translation, so nothing updates by itself.
-  if (loading) {
-    healthTimer = setTimeout(pollHealth, HEALTH_LOADING_POLL_MS);
+  // The next poll follows by itself, faster during a load; a hidden tab stops the chain (the
+  // check at the top) and `visibilitychange` starts it again. Page load and each finished
+  // translation poll at once besides.
+  healthTimer = setTimeout(pollHealth, loading ? HEALTH_LOADING_POLL_MS : HEALTH_POLL_MS);
+  showEngine(text, loading, vram);
+}
+
+/** The engine status: a bar when the GPU memory is known or while a model loads (indeterminate), the sentence otherwise. The words are the link's name and tooltip. */
+function showEngine(text: string, loading: boolean, vram: Vram | null) {
+  const key = `${text}|${loading}|${vram?.label}|${vram?.used}`;
+  if (engineEl.dataset.shown === key) {
+    return;
   }
-  setText(engineEl, text);
+  engineEl.dataset.shown = key;
+  if (!loading && !vram) {
+    engineEl.replaceChildren(text);
+    engineEl.removeAttribute("title");
+    return;
+  }
+  const bar = document.createElement("span");
+  bar.className = loading ? "bar indeterminate" : vram?.tight ? "bar tight" : "bar";
+  bar.setAttribute("aria-hidden", "true");
+  const fill = document.createElement("span");
+  fill.className = "fill";
+  if (vram) {
+    fill.style.inlineSize = `${((vram.used / vram.total) * 100).toFixed(1)}%`;
+  }
+  bar.append(fill);
+  const words = vram ? `${text} ${vram.label}.` : text;
+  const name = document.createElement("span");
+  name.className = "sr-only";
+  name.textContent = words;
+  engineEl.replaceChildren(bar, name);
+  engineEl.title = words;
 }
 
 // ---- translating -----------------------------------------------------------------------------

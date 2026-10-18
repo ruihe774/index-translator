@@ -115,12 +115,26 @@ export function imageAdviceMessage(documentChosen: boolean, from: string, to: st
   return parts.join(" ");
 }
 
-/** The engine status sentence, and whether a model load is in progress (which the page keeps polling). */
+const GIB = 1024 ** 3;
+
+/** From this share of the GPU memory in use, free memory is tight. */
+export const VRAM_TIGHT = 0.9;
+
+export interface Vram {
+  used: number;
+  total: number;
+  label: string;
+  /** Free memory is tight: the bar changes colour, and the label says so (colour alone is not enough). */
+  tight: boolean;
+}
+
+/** The engine status sentence, whether a model load is in progress (which the page keeps polling), and the GPU memory in use. */
 export function healthMessage(
-  h: Pick<Health, "status" | "error" | "model"> & { queue: Pick<Health["queue"], "waiting"> },
+  h: Pick<Health, "status" | "error" | "model" | "gpu_memory"> & { queue: Pick<Health["queue"], "waiting"> },
 ): {
   text: string;
   loading: boolean;
+  vram: Vram | null;
 } {
   const model = h.model ? modelLabel(h.model) : null;
   if (h.status === "ready") {
@@ -128,12 +142,24 @@ export function healthMessage(
     if (h.queue.waiting > 0) {
       text += ` ${h.queue.waiting} waiting in the queue.`;
     }
-    return { text, loading: false };
+    const memory = h.gpu_memory;
+    let vram: Vram | null = null;
+    if (memory && memory.total_bytes > 0) {
+      const used = Math.min(memory.total_bytes, Math.max(0, memory.total_bytes - memory.free_bytes));
+      const tight = used / memory.total_bytes >= VRAM_TIGHT;
+      vram = {
+        used,
+        total: memory.total_bytes,
+        label: `VRAM ${(used / GIB).toFixed(1)} / ${(memory.total_bytes / GIB).toFixed(1)} GiB${tight ? ", free memory is tight" : ""}`,
+        tight,
+      };
+    }
+    return { text, loading: false, vram };
   }
   if (h.status === "loading") {
-    return { text: "Engine loading a model…", loading: true };
+    return { text: "Engine loading a model…", loading: true, vram: null };
   }
-  return { text: `Engine ${h.status}${h.error ? `: ${h.error}` : ""}.`, loading: false };
+  return { text: `Engine ${h.status}${h.error ? `: ${h.error}` : ""}.`, loading: false, vram: null };
 }
 
 export function seconds(ms: number): string {
