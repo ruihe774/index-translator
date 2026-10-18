@@ -24,9 +24,9 @@ import { join, resolve } from "node:path";
 import { devices, libraryPath, shimPath } from "../src/llama-ffi";
 import { checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
 
-const TAG = "b11552";
+const TAG = "v0.7.0";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
-const COMMIT = "23b0202a189c44a54625aadcb37a946dd1d6278d";
+const COMMIT = "620d2225cc436ab0b001e3200e590e3b286ef9ab";
 const REPO = "https://github.com/ggml-org/llama.cpp.git";
 /** llama.h, libmtmd's headers and everything they include, relative to the source tree. The shim is compiled against them. */
 const HEADERS = [

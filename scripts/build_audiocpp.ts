@@ -27,9 +27,9 @@ import { $ } from "bun";
 import { libraryPath, libraryVersion } from "../src/audiocpp-ffi";
 import { checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
 
-const TAG = "v0.9.1";
+const TAG = "v0.9.2";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
-const COMMIT = "cf124a67cc55d8f65a9a15eec69edbff0fb212c8";
+const COMMIT = "0097d365a00b52a6991ad7618f0a04e8d2935e47";
 const REPO = "https://github.com/0xShug0/audio.cpp.git";
 /**
  * audio.cpp's CMake names of the model families to compile in; all of them take about ten times as long.
