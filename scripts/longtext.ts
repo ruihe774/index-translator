@@ -18,8 +18,8 @@ import {
 export async function translateStream(baseUrl: string, body: Record<string, unknown>) {
   const res = await fetch(`${baseUrl}/api/v1/translate`, {
     method: "POST",
-    headers: { "content-type": "application/json", accept: "text/event-stream" },
-    body: JSON.stringify(body),
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({ ...body, stream: true }),
   });
   if (!res.ok) {
     throw new Error(`HTTP ${res.status}: ${await res.text()}`);
