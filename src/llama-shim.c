@@ -63,6 +63,33 @@ SHIM_API int32_t shim_devices(char * out, int32_t size) {
     return count;
 }
 
+// Free and total memory in bytes, summed over the devices of type gpu and igpu, the ones a model is
+// offloaded to. What the backend reports for a device, not what this process holds. Returns how many
+// devices were counted; 0 leaves the outputs alone.
+SHIM_API int32_t shim_gpu_memory(uint64_t * free_bytes, uint64_t * total_bytes) {
+    int32_t counted = 0;
+    uint64_t free_sum = 0;
+    uint64_t total_sum = 0;
+    for (size_t i = 0; i < ggml_backend_dev_count(); i++) {
+        ggml_backend_dev_t dev = ggml_backend_dev_get(i);
+        enum ggml_backend_dev_type type = ggml_backend_dev_type(dev);
+        if (type != GGML_BACKEND_DEVICE_TYPE_GPU && type != GGML_BACKEND_DEVICE_TYPE_IGPU) {
+            continue;
+        }
+        size_t device_free = 0;
+        size_t device_total = 0;
+        ggml_backend_dev_memory(dev, &device_free, &device_total);
+        free_sum += device_free;
+        total_sum += device_total;
+        counted++;
+    }
+    if (counted > 0) {
+        *free_bytes = free_sum;
+        *total_bytes = total_sum;
+    }
+    return counted;
+}
+
 // A negative `n_gpu_layers` offloads every layer.
 SHIM_API struct llama_model * shim_load_model(const char * path, int32_t n_gpu_layers) {
     struct llama_model_params params = llama_model_default_params();

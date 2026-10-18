@@ -1100,6 +1100,21 @@ components:
           description: The loaded model, or null when none is loaded.
         limits:
           $ref: "#/components/schemas/Limits"
+        gpu_memory:
+          type: object
+          description: |
+            Memory of the GPU the model runs on (several GPUs added up), as the Vulkan driver reports
+            it for the whole device: it includes other programs and the speech engine. Absent while no
+            model is ready, without a GPU, and when the engine thread cannot answer within half a
+            second (a model is loading). A reading is up to a second old.
+          required: [total_bytes, free_bytes]
+          properties:
+            total_bytes:
+              type: integer
+              format: int64
+            free_bytes:
+              type: integer
+              format: int64
         queue:
           type: object
           required: [running, waiting, max_waiting]

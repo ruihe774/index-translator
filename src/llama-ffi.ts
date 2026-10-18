@@ -46,6 +46,7 @@ function bind(dir: string) {
   const shim = dlopen(shimPath(dir), {
     shim_init: { args: ["ptr"], returns: "void" },
     shim_devices: { args: ["ptr", "i32"], returns: "i32" },
+    shim_gpu_memory: { args: ["ptr", "ptr"], returns: "i32" },
     shim_load_model: { args: ["ptr", "i32"], returns: "ptr" },
     shim_new_context: { args: ["ptr", "u32", "u32", "i32"], returns: "ptr" },
     shim_decode: { args: ["ptr", "ptr", "i32"], returns: "i32" },
@@ -108,6 +109,24 @@ export function devices(dir: string): Device[] {
     const space = line.indexOf(" ");
     return { type: line.slice(0, space) as Device["type"], label: line.slice(space + 1) };
   });
+}
+
+/** Bytes of GPU memory, as the backend reports them for the whole device. */
+export interface GpuMemory {
+  free: number;
+  total: number;
+}
+
+/** The GPUs' memory summed, or undefined without a GPU or before the libraries are open. */
+export function gpuMemory(): GpuMemory | undefined {
+  if (!lib) {
+    return undefined;
+  }
+  const out = new BigUint64Array(2);
+  if (lib.shim_gpu_memory(out.subarray(0, 1), out.subarray(1)) === 0) {
+    return undefined;
+  }
+  return { free: Number(out[0]), total: Number(out[1]) };
 }
 
 /**

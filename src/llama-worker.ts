@@ -4,10 +4,12 @@
 // cancellations are seen.
 
 import type { EngineTimings, FinishReason, Usage } from "./llama";
-import { ImageError, type ImagePrompt, Model, type ModelOptions } from "./llama-ffi";
+import { type GpuMemory, gpuMemory, ImageError, type ImagePrompt, Model, type ModelOptions } from "./llama-ffi";
 
 export type WorkerRequest =
   | { type: "load"; req: number; model: number; options: ModelOptions }
+  // Answered between decodes, like `count`; waits for a load in progress.
+  | { type: "memory"; req: number }
   | { type: "unload"; req: number; model: number }
   // `image`: a PNG file that follows the content in the user message.
   | { type: "count"; req: number; model: number; content: string; image?: Uint8Array }
@@ -17,6 +19,7 @@ export type WorkerRequest =
 export type WorkerReply =
   | { type: "ok"; req: number }
   | { type: "count"; req: number; tokens: number }
+  | { type: "memory"; req: number; memory?: GpuMemory }
   | { type: "delta"; req: number; text: string }
   | { type: "done"; req: number; finishReason: FinishReason; usage: Usage; timings: EngineTimings }
   // `image`: the image itself is at fault, not the engine.
@@ -166,6 +169,14 @@ self.onmessage = (event: MessageEvent<WorkerRequest>) => {
         }
         post({ type: "ok", req: msg.req });
       });
+      break;
+    }
+    case "memory": {
+      try {
+        post({ type: "memory", req: msg.req, memory: gpuMemory() });
+      } catch (e) {
+        postError(msg.req, e);
+      }
       break;
     }
     case "count": {

@@ -62,6 +62,8 @@ export const mock = {
   requests: [] as { prompt: string; maxTokens: number; image?: Uint8Array }[],
   aborted: 0,
   launches: [] as string[],
+  /** What the loaded model reports as GPU memory; undefined as on a machine without a GPU. */
+  gpuMemory: undefined as { free: number; total: number } | undefined,
 };
 
 /** Puts the behaviour knobs back to their defaults; counters (requests, aborted, launches) are kept. */
@@ -74,6 +76,7 @@ export function resetMock(): void {
   mock.failLaunch = undefined;
   mock.imageFailWith = undefined;
   mock.imageUnavailable = undefined;
+  mock.gpuMemory = undefined;
 }
 
 export interface FakeHooks {
@@ -141,6 +144,10 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
         throw new ImageUnavailableError(mock.imageUnavailable);
       }
       return Array.from(content).length + TEMPLATE.length + (image ? IMAGE_TOKENS : 0);
+    },
+    // eslint-disable-next-line @typescript-eslint/require-await -- same signature as the engine's
+    async memory() {
+      return mock.gpuMemory;
     },
     async *generate(prompt, maxTokens, client, image): AsyncGenerator<GenerationEvent> {
       const signal = client ? AbortSignal.any([client, gone.signal]) : gone.signal;

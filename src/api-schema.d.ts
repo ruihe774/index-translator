@@ -556,6 +556,18 @@ export interface components {
             /** @description The loaded model, or null when none is loaded. */
             model: string | null;
             limits: components["schemas"]["Limits"];
+            /**
+             * @description Memory of the GPU the model runs on (several GPUs added up), as the Vulkan driver reports
+             *     it for the whole device: it includes other programs and the speech engine. Absent while no
+             *     model is ready, without a GPU, and when the engine thread cannot answer within half a
+             *     second (a model is loading). A reading is up to a second old.
+             */
+            gpu_memory?: {
+                /** Format: int64 */
+                total_bytes: number;
+                /** Format: int64 */
+                free_bytes: number;
+            };
             queue: {
                 /** @description Whether a translation is in progress. */
                 running: boolean;

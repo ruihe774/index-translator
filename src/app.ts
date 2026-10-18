@@ -1006,12 +1006,14 @@ export async function startApp(
             if (req.method !== "GET") {
               return methodNotAllowed("GET");
             }
+            const memory = await engine.gpuMemory();
             return json<Health>(
               {
                 status: engine.state,
                 error: engine.error,
                 model: engine.loaded?.id ?? null,
                 limits: limits(),
+                ...(memory && { gpu_memory: { total_bytes: memory.total, free_bytes: memory.free } }),
                 queue: { running: queue.running, waiting: queue.depth, max_waiting: cfg.maxQueue },
                 speech: { status: speech.state, error: speech.error },
               },

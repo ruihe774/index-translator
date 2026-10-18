@@ -245,6 +245,24 @@ async function collect(it: AsyncGenerator<SseEvent>): Promise<SseEvent[]> {
 
 const queuedPositions = (events: SseEvent[]) => events.filter((e) => e.event === "queued").map((e) => e.data.position);
 
+describe("health gpu_memory", () => {
+  const h = fixture();
+
+  test("is the loaded model's reading, and absent without a GPU", async () => {
+    await warm(h.origin, CHAT);
+    expect((await getHealth(h.origin)).body.gpu_memory).toBeUndefined();
+
+    mock.gpuMemory = { free: 3, total: 10 };
+    expect((await getHealth(h.origin)).body.gpu_memory).toStrictEqual({ total_bytes: 10, free_bytes: 3 });
+  });
+
+  test("is absent while no model is loaded", async () => {
+    mock.gpuMemory = { free: 3, total: 10 };
+    await h.app.engine.unload();
+    expect((await getHealth(h.origin)).body.gpu_memory).toBeUndefined();
+  });
+});
+
 // ---- engine thread failures ----
 
 describe("engine thread dies", () => {

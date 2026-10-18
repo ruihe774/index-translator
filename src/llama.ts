@@ -6,13 +6,18 @@ import { join } from "node:path";
 
 import type { FinishReason, Usage } from "./api";
 import type { Config } from "./config";
+import type { GpuMemory } from "./llama-ffi";
 import type { WorkerReply, WorkerRequest } from "./llama-worker";
 import type { ModelSpec } from "./models";
 import { fetchCommand } from "./preflight";
 
 export type EngineState = "stopped" | "loading" | "ready" | "error";
 
-export type { FinishReason, Usage };
+export type { FinishReason, GpuMemory, Usage };
+
+/** How long a memory reading is reused, and how long a health check waits for the engine thread. */
+const MEMORY_TTL_MS = 1000;
+const MEMORY_WAIT_MS = 500;
 
 export interface EngineTimings {
   prompt_ms: number;
@@ -43,6 +48,8 @@ export interface Running {
    * generation, counting text alone does not.
    */
   countTokens(content: string, image?: Uint8Array): Promise<number>;
+  /** Free and total GPU memory, or undefined when there is no GPU or the engine thread is too busy to say. */
+  memory(): Promise<GpuMemory | undefined>;
   /** Answers one user message, greedily, with at most `maxTokens` tokens. Aborting rejects with the signal's reason. */
   generate(
     content: string,
@@ -105,6 +112,29 @@ class NativeWorker {
     });
   }
 
+  private memoryReading?: { at: number; pending: Promise<GpuMemory | undefined> };
+
+  /**
+   * Shared by concurrent callers and reused for a second, so polling `/health` does not queue a
+   * request per call. A loading model blocks the thread: that reading is given up after a moment.
+   */
+  private memory(): Promise<GpuMemory | undefined> {
+    const now = performance.now();
+    if (!this.memoryReading || now - this.memoryReading.at > MEMORY_TTL_MS) {
+      const ask = async (): Promise<GpuMemory | undefined> => {
+        try {
+          const reply = await this.call({ type: "memory" });
+          return reply.type === "memory" ? reply.memory : undefined;
+        } catch {
+          return undefined;
+        }
+      };
+      const timeout = new Promise<undefined>((resolve) => void setTimeout(resolve, MEMORY_WAIT_MS));
+      this.memoryReading = { at: now, pending: Promise.race([ask(), timeout]) };
+    }
+    return this.memoryReading.pending;
+  }
+
   async load(model: ModelSpec, cfg: Config): Promise<Running> {
     const no = ++this.lastModel;
     const mmproj = model.mmproj && join(cfg.modelsDir, model.mmproj);
@@ -150,6 +180,7 @@ class NativeWorker {
         }
         return reply.tokens;
       },
+      memory: () => this.memory(),
       generate: (content, maxTokens, signal, image) => this.generate(no, content, maxTokens, signal, image, checkImage),
     };
   }
@@ -320,6 +351,18 @@ export class Engine {
    */
   async countPromptTokens(content: string, image?: Uint8Array): Promise<number> {
     return this.ready().countTokens(content, image);
+  }
+
+  /** GPU memory of the machine, from the loaded model's engine thread; undefined when no model is ready. */
+  async gpuMemory(): Promise<GpuMemory | undefined> {
+    if (this.state !== "ready" || !this.running) {
+      return undefined;
+    }
+    try {
+      return await this.running.memory();
+    } catch {
+      return undefined;
+    }
   }
 
   /** `image` is a PNG file that follows the prompt in the user message. */
