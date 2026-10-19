@@ -183,3 +183,91 @@ pub fn encode_pulses(_y: &[i32], N: i32, K: i32, enc: &mut ec_enc) {
     debug_assert!(K > 0);
     ec_enc_uint(enc, icwrs(N, _y), CELT_PVQ_V(N, K));
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{same_enc, Rng};
+    use core::ffi::c_void;
+    use minicelt_oracle as c;
+    use crate::celt::entcode::ec_enc;
+    use crate::celt::entenc::{ec_enc_done, ec_enc_init};
+    use crate::celt::modes::mode48000_960_120 as MODE;
+    use crate::celt::rate::get_pulses;
+
+    #[test]
+    fn table_matches_c() {
+        let t = unsafe { core::slice::from_raw_parts(c::oracle_CELT_PVQ_U_DATA(), 1272) };
+        assert_eq!(&CELT_PVQ_U_DATA[..], t);
+    }
+
+    /// All (N, K) pairs the static mode can use: N from the band sizes (also after splitting),
+    /// K from the pulse cache.
+    fn nk_pairs() -> Vec<(i32, i32)> {
+        let mut v = Vec::new();
+        for lm in 0..=4 {
+            for j in 0..MODE.nbEBands as usize {
+                let n = ((MODE.eBands[j + 1] - MODE.eBands[j]) as i32) << lm >> 1;
+                if n < 2 {
+                    continue;
+                }
+                let idx = MODE.cache.index[(lm as usize) * MODE.nbEBands as usize + j];
+                if idx < 0 {
+                    continue;
+                }
+                let kmax = MODE.cache.bits[idx as usize] as i32;
+                for i in 1..=kmax {
+                    let p = (n, get_pulses(i));
+                    if !v.contains(&p) {
+                        v.push(p);
+                    }
+                }
+            }
+        }
+        v
+    }
+
+    fn rand_pulses(rng: &mut Rng, n: i32, k: i32) -> Vec<i32> {
+        let mut y = vec![0i32; n as usize];
+        let mode = rng.range(0, 3);
+        for _ in 0..k {
+            let pos = match mode {
+                0 => rng.range(0, n - 1),
+                1 => rng.range(0, n.min(3) - 1), // concentrated at the start
+                2 => n - 1 - rng.range(0, n.min(3) - 1),
+                _ => rng.range(0, n - 1) / 2 * 2,
+            } as usize;
+            y[pos] += if rng.range(0, 1) == 0 { 1 } else { -1 };
+        }
+        y
+    }
+
+    #[test]
+    fn encode_pulses_matches_c() {
+        let mut rng = Rng::new(777);
+        let pairs = nk_pairs();
+        assert!(pairs.len() > 50);
+        for iter in 0..4000 {
+            let size = 200usize;
+            let mut bufr = vec![0x55u8; size];
+            let mut bufc = vec![0x55u8; size];
+            let mut er: ec_enc = unsafe { core::mem::zeroed() };
+            let mut ec: ec_enc = unsafe { core::mem::zeroed() };
+            ec_enc_init(&mut er, bufr.as_mut_ptr(), size as u32);
+            unsafe { c::ec_enc_init(&mut ec as *mut ec_enc as *mut c_void, bufc.as_mut_ptr(), size as u32) };
+            let nsyms = if iter % 2 == 0 { 1 } else { rng.range(2, 6) };
+            for _ in 0..nsyms {
+                let (n, k) = if iter < pairs.len() * 2 { pairs[(iter / 2) % pairs.len()] } else { pairs[rng.range(0, pairs.len() as i32 - 1) as usize] };
+                let y = rand_pulses(&mut rng, n, k);
+                assert_eq!(icwrs(n, &y), unsafe { c::oracle_icwrs(n, y.as_ptr()) }, "icwrs n={n} k={k}");
+                encode_pulses(&y, n, k, &mut er);
+                unsafe { c::encode_pulses(y.as_ptr(), n, k, &mut ec as *mut ec_enc as *mut c_void) };
+                same_enc(&er, &ec);
+            }
+            ec_enc_done(&mut er);
+            unsafe { c::ec_enc_done(&mut ec as *mut ec_enc as *mut c_void) };
+            same_enc(&er, &ec);
+            assert_eq!(bufr, bufc);
+        }
+    }
+}
