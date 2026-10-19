@@ -1,1 +1,93 @@
 //! Port of silk/HP_variable_cutoff.c.
+
+use crate::silk::define::*;
+use crate::silk::float::structs_flp::silk_encoder_state_FLP;
+use crate::silk::lin2log::silk_lin2log;
+use crate::silk::macros::*;
+use crate::silk::tuning_parameters::*;
+
+/// High-pass filter with cutoff frequency adaptation based on pitch lag statistics
+pub fn silk_HP_variable_cutoff(
+    state_Fxx: &mut [silk_encoder_state_FLP], /* I/O  Encoder states                              */
+) {
+    let psEncC1 = &mut state_Fxx[0].sCmn;
+
+    /* Adaptive cutoff frequency: estimate low end of pitch frequency range */
+    if psEncC1.prevSignalType as i32 == TYPE_VOICED {
+        /* difference, in log domain */
+        let pitch_freq_Hz_Q16 = silk_DIV32_16(silk_LSHIFT(silk_MUL(psEncC1.fs_kHz, 1000), 16), psEncC1.prevLag);
+        let mut pitch_freq_log_Q7 = silk_lin2log(pitch_freq_Hz_Q16) - (16 << 7);
+
+        /* adjustment based on quality */
+        let quality_Q15 = psEncC1.input_quality_bands_Q15[0];
+        pitch_freq_log_Q7 = silk_SMLAWB(
+            pitch_freq_log_Q7,
+            silk_SMULWB(silk_LSHIFT(-quality_Q15, 2), quality_Q15),
+            pitch_freq_log_Q7 - (silk_lin2log(SILK_FIX_CONST(VARIABLE_HP_MIN_CUTOFF_HZ as f64, 16)) - (16 << 7)),
+        );
+
+        /* delta_freq = pitch_freq_log - psEnc->variable_HP_smth1; */
+        let mut delta_freq_Q7 = pitch_freq_log_Q7 - silk_RSHIFT(psEncC1.variable_HP_smth1_Q15, 8);
+        if delta_freq_Q7 < 0 {
+            /* less smoothing for decreasing pitch frequency, to track something close to the minimum */
+            delta_freq_Q7 = silk_MUL(delta_freq_Q7, 3);
+        }
+
+        /* limit delta, to reduce impact of outliers in pitch estimation */
+        delta_freq_Q7 = silk_LIMIT_32!(
+            delta_freq_Q7,
+            -SILK_FIX_CONST(VARIABLE_HP_MAX_DELTA_FREQ as f64, 7),
+            SILK_FIX_CONST(VARIABLE_HP_MAX_DELTA_FREQ as f64, 7)
+        );
+
+        /* update smoother */
+        psEncC1.variable_HP_smth1_Q15 = silk_SMLAWB(
+            psEncC1.variable_HP_smth1_Q15,
+            silk_SMULBB(psEncC1.speech_activity_Q8, delta_freq_Q7),
+            SILK_FIX_CONST(VARIABLE_HP_SMTH_COEF1 as f64, 16),
+        );
+
+        /* limit frequency range */
+        psEncC1.variable_HP_smth1_Q15 = silk_LIMIT_32!(
+            psEncC1.variable_HP_smth1_Q15,
+            silk_LSHIFT(silk_lin2log(VARIABLE_HP_MIN_CUTOFF_HZ), 8),
+            silk_LSHIFT(silk_lin2log(VARIABLE_HP_MAX_CUTOFF_HZ), 8)
+        );
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{CSilkEncoder, Rng, SpeechGen};
+
+    mod c {
+        use crate::silk::float::structs_flp::silk_encoder_state_FLP;
+        unsafe extern "C" {
+            pub fn silk_HP_variable_cutoff(state_Fxx: *mut silk_encoder_state_FLP);
+        }
+    }
+
+    #[test]
+    fn matches_c() {
+        let mut rng = Rng::new(5);
+        let mut enc = CSilkEncoder::new(20000, 5, false);
+        let mut sig = SpeechGen::new(5);
+        for f in 0..200 {
+            enc.encode(&sig.frame_i16());
+            let mut r = std::boxed::Box::new(enc.st.state_Fxx[0]);
+            if f % 2 == 1 {
+                r.sCmn.prevSignalType = TYPE_VOICED as i8;
+                r.sCmn.prevLag = rng.range(32, 288);
+                r.sCmn.speech_activity_Q8 = rng.range(0, 256);
+                r.sCmn.input_quality_bands_Q15[0] = rng.range(0, 32767);
+                r.sCmn.variable_HP_smth1_Q15 = rng.range(200000, 220000);
+            }
+            let mut c = r.clone();
+            silk_HP_variable_cutoff(core::slice::from_mut(&mut *r));
+            unsafe { c::silk_HP_variable_cutoff(&mut *c) };
+            assert_eq!(r.sCmn.variable_HP_smth1_Q15, c.sCmn.variable_HP_smth1_Q15, "frame {f}");
+            assert_eq!(r.sCmn.variable_HP_smth2_Q15, c.sCmn.variable_HP_smth2_Q15, "frame {f}");
+        }
+    }
+}

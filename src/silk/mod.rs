@@ -65,6 +65,7 @@ pub mod control_audio_bandwidth;
 pub mod check_control_input;
 pub mod HP_variable_cutoff;
 pub mod quant_LTP_gains;
+pub mod resampler;
 
 /// tables.h: all SILK tables in one namespace.
 pub mod tables {
