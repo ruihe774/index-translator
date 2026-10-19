@@ -1,11 +1,14 @@
 # minicelt porting guide
 
 minicelt is a mechanical Rust port of the libopus CELT-only float encoder
-(`OPUS_APPLICATION_RESTRICTED_CELT`), for wasm32 only. C source: libopus 1.6.1
-plus a fork's WASM SIMD / relaxed SIMD kernels (https://github.com/ruihe774/opus,
-branch `v1.6.1-wasm-simd`; checked out at `/home/user/opus-wasm-simd` in the
-development container). The reference for testing is plain upstream libopus
-(`third_party/opus`) for the WASM 2.0 build; see Tests for WASM 3.0.
+(`OPUS_APPLICATION_RESTRICTED_CELT`), for wasm32 only. C source: upstream
+libopus 1.6.1 (`third_party/opus`) for all scalar code, plus the WASM SIMD /
+relaxed SIMD kernels (`celt/wasm/*_wasm.c`) of a fork
+(https://github.com/ruihe774/opus-wasm-simd, branch `wasm-simd`). The fork's
+scalar code is newer than 1.6.1 and behaves differently (e.g. `remove_doubling`,
+`dynalloc_analysis`, the MDCT twiddle layout), so take only its kernels. The
+reference for testing is plain upstream libopus 1.6.1 for the WASM 2.0 build;
+see Tests for WASM 3.0.
 
 ## Fixed configuration
 
@@ -125,7 +128,7 @@ There are no Rust unit tests in the final tree. Two layers:
 
 1. **Per-function oracle** (`minicelt/oracle`, during development; dropped
    before the port is finished, and kept at a git tag). A wasm32-wasip1 build
-   of the fork's C (`-msimd128 -ffp-contract=off`, plus `-mrelaxed-simd` for
+   of upstream 1.6.1 with the fork's kernels overlaid (`-msimd128 -ffp-contract=off`, plus `-mrelaxed-simd` for
    the WASM 3.0 variant, with the analysis stub instead of `src/analysis.c`) is
    linked into `cargo test` binaries that run under Node's WASI. Each ported
    function has a `#[cfg(test)] mod tests` that calls the C function and the
@@ -141,5 +144,5 @@ There are no Rust unit tests in the final tree. Two layers:
 **Relaxed SIMD and FMA**: `f32x4.relaxed_madd` is fused on x86 with FMA (V8
 emits `vfmadd`), so the WASM 3.0 build's float kernels round differently from
 scalar C. The WASM 3.0 build is therefore compared end to end against the fork's
-C built for wasm with `-mrelaxed-simd` (run in the same engine); the native
+C (upstream 1.6.1 plus the fork's kernels) built for wasm with `-mrelaxed-simd` (run in the same engine); the native
 scalar build is the bit-exact reference for WASM 2.0 only.
