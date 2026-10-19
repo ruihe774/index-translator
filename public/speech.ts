@@ -54,7 +54,7 @@ export class SpeechPlayer {
     this.buffer = new SpeechBuffer(synthesize, (audio) => this.decode(audio));
   }
 
-  /** A WAV file is decoded by the browser; samples that arrived decoded (QOA) only need a buffer to sit in. */
+  /** A WAV or Ogg Opus file is decoded by the browser; samples that arrived decoded (QOA) only need a buffer to sit in. */
   private async decode(audio: SpeechAudio): Promise<AudioBuffer> {
     const ctx = this.ctx!;
     if (audio instanceof ArrayBuffer) {

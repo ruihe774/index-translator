@@ -77,7 +77,7 @@ export const LIBRARIES: Library[] = [
 ];
 
 /** A library that is a few files of a git commit, downloaded one by one (a commit's raw files never change; its archive's bytes may). */
-interface FileLibrary {
+export interface FileLibrary {
   /** Directory under public/vendor/. */
   dir: string;
   /** The commit; every URL names it. */
@@ -204,12 +204,12 @@ export function untar(tgz: Uint8Array): Map<string, Uint8Array> {
   return files;
 }
 
-async function isPresent(lib: Library | FileLibrary, vendor: string): Promise<boolean> {
+export async function isPresent(lib: Library | FileLibrary, vendor: string): Promise<boolean> {
   const present = Bun.file(join(vendor, lib.dir, STAMP));
   return (await present.exists()) && (await present.text()) === stampOf(lib);
 }
 
-async function fetchFileLibrary(lib: FileLibrary, vendor: string): Promise<void> {
+export async function fetchFileLibrary(lib: FileLibrary, vendor: string): Promise<void> {
   const dir = join(vendor, lib.dir);
   if (await isPresent(lib, vendor)) {
     console.log(`ok ${lib.dir} ${lib.version.slice(0, 7)} (already there)`);

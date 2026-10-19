@@ -12,6 +12,8 @@
 //   POST   /mock/restart   unload the engine so the next request loads its model again
 // Tests call it through e2e/fixtures.ts.
 
+import { join } from "node:path";
+
 import { startApp } from "../src/app";
 import {
   CHAT,
@@ -30,7 +32,15 @@ const port = Number(process.env.E2E_PORT ?? 3100);
 const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 3101);
 
 const app = await startApp(
-  config({ port, ctxSize: 65_536, maxInputTokens: 28_000, maxQueue: 1, defaultModel: CHAT }),
+  // No engine is loaded, but speech is encoded as Opus with the libsoxr and minisilk found beside audioDir.
+  config({
+    port,
+    ctxSize: 65_536,
+    maxInputTokens: 28_000,
+    maxQueue: 1,
+    defaultModel: CHAT,
+    audioDir: join(import.meta.dir, "..", "vendor", "audio.cpp"),
+  }),
   launcher,
   speechLauncher,
 );

@@ -2,6 +2,7 @@
 
 import type { Server } from "bun";
 
+import { acceptWeight } from "./accept";
 import { hostAllowed, type HostRule, originAllowed, type OriginRule, parseHostRule, parseOriginRule } from "./access";
 import type {
   ErrorCode,
@@ -17,11 +18,13 @@ import type {
   Voice,
   VoiceList,
 } from "./api";
+import { soxrDir } from "./audiocpp-ffi";
 import { type Config, CONTEXT_MARGIN } from "./config";
 import { createDevReload, DEV_PREFIX } from "./dev-reload";
 import { IMAGE_FORMATS, ImageRejected, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, prepareImage } from "./image";
 import { Engine, EngineError, ImageInputError, ImageUnavailableError, type Launcher, launchNative } from "./llama";
 import { findModel, MODELS, type ModelSpec } from "./models";
+import { OPUS_TYPE, opusLoader, opusResponse } from "./opus-stream";
 import {
   buildDocumentPrompt,
   buildImagePrompt,
@@ -30,8 +33,9 @@ import {
   LANGUAGES,
   type PromptInput,
 } from "./prompt";
-import { acceptsQoa, qoaLoader, qoaResponse } from "./qoa-stream";
+import { QOA_TYPE, qoaLoader, qoaResponse } from "./qoa-stream";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
+import { soxrResampler } from "./resample";
 import {
   isSpeechLanguage,
   MAX_SAMPLE_BYTES,
@@ -52,7 +56,7 @@ import {
   type SpeechRequest,
 } from "./speech";
 import { createStaticServer } from "./static";
-import { readWav } from "./wav";
+import { type Pcm, readWav } from "./wav";
 
 const API = "/api/v1";
 const DEFAULT_OUTPUT_RATIO = 4;
@@ -928,18 +932,49 @@ export async function startApp(
   }
 
   const qoaCodec = qoaLoader(cfg.publicDir);
+  const opusCodec = opusLoader(cfg.audioDir, soxrResampler(soxrDir(cfg.audioDir)));
 
-  /** The engine's WAV as the client asked for it: a QOA stream when it names audio/qoa and the codec runs here, else the WAV. */
+  /**
+   * The engine's WAV as the client asked for it: Ogg Opus or QOA when `Accept` names the type and the
+   * codec runs here (the heavier weight first, Opus on a tie), else the WAV.
+   */
+  const speechEncoders = [
+    {
+      type: OPUS_TYPE,
+      async encode(pcm: Pcm) {
+        const codec = await opusCodec();
+        return codec && opusResponse(codec, pcm);
+      },
+    },
+    {
+      type: QOA_TYPE,
+      async encode(pcm: Pcm) {
+        const codec = await qoaCodec();
+        return codec && qoaResponse(codec, pcm);
+      },
+    },
+  ];
+
   async function speechResponse(wav: ArrayBuffer, accept: string | null): Promise<Response> {
-    if (acceptsQoa(accept)) {
-      const codec = await qoaCodec();
+    const wanted = speechEncoders
+      .map((encoder) => ({ encoder, weight: acceptWeight(accept, encoder.type) }))
+      .filter(({ weight }) => weight > 0)
+      .sort((a, b) => b.weight - a.weight);
+    if (wanted.length > 0) {
       try {
         const pcm = readWav(new Uint8Array(wav));
-        if (codec && pcm.samples.length > 0) {
-          return qoaResponse(codec, pcm);
+        for (const { encoder } of pcm.samples.length > 0 ? wanted : []) {
+          try {
+            const response = await encoder.encode(pcm);
+            if (response) {
+              return response;
+            }
+          } catch (e) {
+            console.error(`[speech] the utterance could not be encoded as ${encoder.type}: ${String(e)}`);
+          }
         }
       } catch (e) {
-        console.error(`[speech] the utterance could not be encoded as QOA, sending WAV: ${String(e)}`);
+        console.error(`[speech] the utterance could not be read for encoding, sending WAV: ${String(e)}`);
       }
     }
     return new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store", vary: "accept" } });

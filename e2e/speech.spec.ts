@@ -2,9 +2,22 @@
 // Reading aloud, with the mock speech engine: it answers every utterance with a tenth of a second
 // of silence and records what it was asked to say.
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
+
+// The server encodes Opus with minisilk, resampled by libsoxr (bun scripts/fetch_minisilk.ts, build_soxr.ts).
+const VENDOR = join(import.meta.dirname, "..", "vendor");
+const opusInstalled = existsSync(join(VENDOR, "minisilk", "VERSION")) && existsSync(join(VENDOR, "soxr", "VERSION"));
+
+/** A browser that cannot decode Ogg Opus, as far as the page's probe can tell. */
+const withoutOpus = (page: Page) =>
+  page.addInitScript(() => {
+    Object.defineProperty(window, "OfflineAudioContext", { value: undefined });
+  });
 
 const MARKDOWN = `# Release notes
 
@@ -504,7 +517,64 @@ function watchSpeech(page: Page) {
   return seen;
 }
 
+test("speech arrives as Ogg Opus, decoded by the browser, and plays to its end", async ({ app, mock }) => {
+  test.skip(!opusInstalled, "run: bun scripts/fetch_minisilk.ts and bun scripts/build_soxr.ts");
+  // Several pages of a second each.
+  await mock.set({ speech: { audioSeconds: 2.5 } });
+  const seen = watchSpeech(app.page);
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill("Hello there. Goodbye now.");
+  await app.previewSource();
+  const listen = app.page.locator("#listen-source");
+  await app.readAloud("source");
+  await expect(listen).toHaveAttribute("data-state", "playing");
+  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  expect(seen.length).toBeGreaterThan(0);
+  for (const s of seen) {
+    expect(s.accept).toMatch(/^audio\/ogg, audio\/qoa;q=0\.8, audio\/wav;q=0\.5$/);
+    expect(s.type).toBe("audio/ogg; codecs=opus");
+  }
+  await expect(app.meta).toHaveText("");
+});
+
+test("the Opus the server sends decodes to the length of the utterance", async ({ app, mock }) => {
+  test.skip(!opusInstalled, "run: bun scripts/fetch_minisilk.ts and bun scripts/build_soxr.ts");
+  await mock.set({ speech: { audioSeconds: 2.5 } });
+  await app.open();
+  const decoded = await app.page.evaluate(async () => {
+    const res = await fetch("/api/v1/speech", {
+      method: "POST",
+      headers: { "content-type": "application/json", accept: "audio/ogg" },
+      body: JSON.stringify({ text: "Hello there.", lang: "en" }),
+    });
+    const audio = await new OfflineAudioContext(1, 1, 48_000).decodeAudioData(await res.arrayBuffer());
+    return { type: res.headers.get("content-type"), seconds: audio.duration, rate: audio.sampleRate };
+  });
+  expect(decoded.type).toBe("audio/ogg; codecs=opus");
+  expect(decoded.rate).toBe(48_000);
+  // The pre-skip and the padding are trimmed: what comes out is as long as what went in.
+  expect(decoded.seconds).toBeCloseTo(2.5, 2);
+});
+
+test("a browser that cannot decode Opus is sent QOA", async ({ app, mock }) => {
+  await withoutOpus(app.page);
+  const seen = watchSpeech(app.page);
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill("Hello there.");
+  await app.previewSource();
+  const listen = app.page.locator("#listen-source");
+  await app.readAloud("source");
+  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  expect((await mock.state()).speech.requests).toHaveLength(1);
+  expect(seen[0]!.accept).toBe("audio/qoa, audio/wav;q=0.5");
+  expect(seen[0]!.type).toBe("audio/qoa");
+  await expect(app.meta).toHaveText("");
+});
+
 test("speech arrives as a QOA stream, decoded in the worker, and plays to its end", async ({ app, mock }) => {
+  await withoutOpus(app.page);
   // Longer than a QOA frame (5,120 samples is 0.23 s), so the stream has several.
   await mock.set({ speech: { audioSeconds: 1.5 } });
   const seen = watchSpeech(app.page);
@@ -525,6 +595,7 @@ test("speech arrives as a QOA stream, decoded in the worker, and plays to its en
 });
 
 test("without the QOA codec the page reads from WAV", async ({ app, mock }) => {
+  await withoutOpus(app.page);
   await app.page.context().route("**/vendor/qoa/**", (route) => route.abort());
   const seen = watchSpeech(app.page);
   await app.open();
@@ -542,6 +613,7 @@ test("without the QOA codec the page reads from WAV", async ({ app, mock }) => {
 });
 
 test("a QOA stream that cannot be decoded is asked for again as WAV, and QOA is given up", async ({ app, mock }) => {
+  await withoutOpus(app.page);
   let calls = 0;
   await app.page.route("**/api/v1/speech", (route) => {
     if (calls++ > 0) {

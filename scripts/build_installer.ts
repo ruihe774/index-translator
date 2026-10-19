@@ -8,7 +8,7 @@
 // Usage: bun scripts/build_installer.ts
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts && bun scripts/build_soxr.ts, and
-// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries and QOA codec). The Bun that is packed is
+// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries and QOA codec) and bun scripts/fetch_minisilk.ts (the Opus encoder). The Bun that is packed is
 // the one running this script. Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
@@ -18,6 +18,7 @@ import { join, resolve } from "node:path";
 import { libraryPath as audioLibrary, soxrLibraryPath } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { download, output, run } from "./build_tools";
+import { requireMinisilk } from "./fetch_minisilk";
 import { requireWebLibs } from "./fetch_web_libs";
 
 if (process.platform !== "win32" || process.arch !== "x64") {
@@ -53,6 +54,8 @@ for (const [file, script] of [
 }
 // The web app's libraries are packed with public/; an installation without them could not open PDF or Word files, and would send speech as WAV.
 await requireWebLibs(join(root, "public", "vendor"));
+// Likewise the Opus encoder of the speech stream.
+await requireMinisilk(join(root, "vendor"));
 
 /** Copies an engine's directory as it is: the DLLs and licenses, not the headers or import libraries. */
 async function copyEngine(from: string, to: string): Promise<void> {
@@ -119,6 +122,7 @@ await Bun.write(join(stage, "package.json"), `${JSON.stringify({ name: "index-tr
 await copyEngine(llama, join(stage, "vendor", "llama.cpp"));
 await copyEngine(audio, join(stage, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(stage, "vendor", "soxr"));
+await cp(join(root, "vendor", "minisilk"), join(stage, "vendor", "minisilk"), { recursive: true });
 await cp(launcher, join(stage, "launcher.exe"));
 await cp(process.execPath, join(stage, "bun.exe"));
 

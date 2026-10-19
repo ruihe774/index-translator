@@ -13,6 +13,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { acceptWeight } from "./accept";
 import type { Pcm } from "./wav";
 
 export const QOA_TYPE = "audio/qoa";
@@ -27,20 +28,9 @@ const FRAME_LEN = 5120;
 /** Frames encoded and sent per chunk of the response. */
 const FRAMES_PER_CHUNK = 4;
 
-/**
- * Whether an `Accept` header asks for QOA: only by naming it. `*` and `audio/*` are answered with
- * WAV, which every client can play, and so is a header that gives QOA no weight.
- */
+/** Whether an `Accept` header asks for QOA: only by naming it, with a weight above 0. */
 export function acceptsQoa(accept: string | null): boolean {
-  for (const range of (accept ?? "").split(",")) {
-    const [type, ...params] = range.split(";").map((part) => part.trim().toLowerCase());
-    if (type !== QOA_TYPE) {
-      continue;
-    }
-    const q = params.find((p) => p.startsWith("q="));
-    return q === undefined || Number(q.slice(2)) > 0;
-  }
-  return false;
+  return acceptWeight(accept, QOA_TYPE) > 0;
 }
 
 /** Loads the codec on first use; undefined while it is not installed or does not run here. */

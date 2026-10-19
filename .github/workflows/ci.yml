@@ -51,6 +51,21 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
+      # The speech tests encode Opus on the server (minisilk, resampled with libsoxr), and the browser decodes it.
+      - name: Fetch the Opus encoder
+        run: bun scripts/fetch_minisilk.ts
+
+      - name: Cache libsoxr
+        id: soxr
+        uses: actions/cache@v6
+        with:
+          path: vendor/soxr
+          key: soxr-ubuntu-24.04-x64-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libsoxr
+        if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_soxr.ts
+
       # Both use the mock engines: no GPU, no models.
       - name: Unit and API integration tests
         run: bun run test:coverage
@@ -177,6 +192,9 @@ jobs:
 
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
+
+      - name: Fetch the Opus encoder
+        run: bun scripts/fetch_minisilk.ts
 
       - name: Build the AppImage
         run: bun scripts/build_appimage.ts
@@ -405,6 +423,9 @@ jobs:
 
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
+
+      - name: Fetch the Opus encoder
+        run: bun scripts/fetch_minisilk.ts
 
       - name: Build the installer
         run: bun scripts/build_installer.ts
