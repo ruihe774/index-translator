@@ -51,9 +51,9 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
-      # The speech tests encode Opus on the server (minisilk, resampled with libsoxr), and the browser decodes it.
+      # The speech tests encode Opus on the server (minicelt, resampled with libsoxr), and the browser decodes it.
       - name: Fetch the Opus encoder
-        run: bun scripts/fetch_minisilk.ts
+        run: bun scripts/fetch_minicelt.ts
 
       - name: Cache libsoxr
         id: soxr
@@ -194,7 +194,7 @@ jobs:
         run: bun scripts/fetch_web_libs.ts
 
       - name: Fetch the Opus encoder
-        run: bun scripts/fetch_minisilk.ts
+        run: bun scripts/fetch_minicelt.ts
 
       - name: Build the AppImage
         run: bun scripts/build_appimage.ts
@@ -425,7 +425,7 @@ jobs:
         run: bun scripts/fetch_web_libs.ts
 
       - name: Fetch the Opus encoder
-        run: bun scripts/fetch_minisilk.ts
+        run: bun scripts/fetch_minicelt.ts
 
       - name: Build the installer
         run: bun scripts/build_installer.ts

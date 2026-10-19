@@ -1,16 +1,16 @@
 // The Ogg Opus form of the speech stream: how a client asks for it, the muxer's pages, and what the
 // server sends. That a browser decodes it is e2e/speech.spec.ts's test; Bun has no Opus decoder.
-// The tests that encode need minisilk (bun scripts/fetch_minisilk.ts) and are skipped without it.
+// The tests that encode need minicelt (bun scripts/fetch_minicelt.ts) and are skipped without it.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { MINISILK } from "../scripts/fetch_minisilk";
+import { MINICELT } from "../scripts/fetch_minicelt";
 import { acceptWeight } from "../src/accept";
 import { type App, startApp } from "../src/app";
 import { OggOpusMuxer, type OpusPacket } from "../src/ogg-opus";
-import { minisilkPath, opusLoader, opusResponse } from "../src/opus-stream";
+import { miniceltPath, opusLoader, opusResponse } from "../src/opus-stream";
 import type { Pcm } from "../src/wav";
 import {
   config,
@@ -23,7 +23,7 @@ import {
 } from "./helpers/mock-engine";
 
 const audioDir = join(import.meta.dir, "..", "vendor", "audio.cpp");
-const installed = existsSync(minisilkPath(audioDir)) && existsSync(join(audioDir, "..", "soxr", "VERSION"));
+const installed = existsSync(miniceltPath(audioDir)) && existsSync(join(audioDir, "..", "soxr", "VERSION"));
 const identity = (samples: Float32Array) => samples;
 
 interface Page {
@@ -188,13 +188,13 @@ describe("the muxer", () => {
   });
 });
 
-describe("the pinned minisilk", () => {
+describe("the pinned minicelt", () => {
   test("is the commit's wasm and its license, by checksum", () => {
-    expect(MINISILK.version).toMatch(/^[0-9a-f]{40}$/);
-    expect(MINISILK.files.map((f) => f.to)).toStrictEqual(["minisilk-wasm3.wasm", "COPYING"]);
-    for (const file of MINISILK.files) {
+    expect(MINICELT.version).toMatch(/^[0-9a-f]{40}$/);
+    expect(MINICELT.files.map((f) => f.to)).toStrictEqual(["minicelt-wasm3.wasm", "COPYING"]);
+    for (const file of MINICELT.files) {
       expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(file.url).toContain(`/${MINISILK.version}/`);
+      expect(file.url).toContain(`/${MINICELT.version}/`);
     }
   });
 });
@@ -204,7 +204,7 @@ describe.skipIf(!installed)("opusResponse", () => {
 
   test("is an Ogg Opus stream in several chunks, as long as the audio plus the encoder's delay", async () => {
     const codec = (await load())!;
-    const pcm = tone(2.5, 16_000);
+    const pcm = tone(2.5, 48_000);
     const res = opusResponse(codec, pcm);
     expect(res.headers.get("content-type")).toBe("audio/ogg; codecs=opus");
     expect(res.headers.get("cache-control")).toBe("no-store");
@@ -212,7 +212,7 @@ describe.skipIf(!installed)("opusResponse", () => {
     const chunks = await bodyChunks(res);
     expect(chunks.length).toBeGreaterThan(2);
     const bytes = concat(chunks);
-    // About 24 kbit/s: a tenth of 16-bit PCM at 16 kHz.
+    // About 64 kbit/s: less than a tenth of 16-bit PCM at 48 kHz.
     expect(bytes.length).toBeLessThan(pcm.samples.length * 2 * 0.15);
 
     const all = pages(bytes);
@@ -226,10 +226,10 @@ describe.skipIf(!installed)("opusResponse", () => {
     expect(preSkip % 3).toBe(0);
     // The decoder drops preSkip: 2.5 s at 48 kHz remain.
     expect(all.at(-1)!.granule - preSkip).toBe(2.5 * 48_000);
-    // Every packet is a 20 ms wideband SILK frame: TOC config 9 (SILK wideband, 20 ms), code 0.
+    // Every packet is a 20 ms CELT frame: TOC config 31, code 0.
     for (const p of all.slice(2)) {
       for (const data of p.packets) {
-        expect(data[0]! >> 3).toBe(9);
+        expect(data[0]! >> 3).toBe(31);
         expect(data[0]! & 3).toBe(0);
       }
     }
@@ -237,10 +237,10 @@ describe.skipIf(!installed)("opusResponse", () => {
 
   test("two streams at once do not share an encoder", async () => {
     const codec = (await load())!;
-    const pcm = tone(1, 16_000);
+    const pcm = tone(1, 48_000);
     const alone = concat(await bodyChunks(opusResponse(codec, pcm)));
     const a = opusResponse(codec, pcm);
-    const b = opusResponse(codec, tone(1, 16_000));
+    const b = opusResponse(codec, tone(1, 48_000));
     const ra = a.body!.getReader();
     const rb = b.body!.getReader();
     const parts: Uint8Array[] = [];
@@ -259,13 +259,13 @@ describe.skipIf(!installed)("opusResponse", () => {
     let seen: { length: number; channels: number; from: number; to: number } | undefined;
     const resample = (samples: Float32Array, channels: number, from: number, to: number) => {
       seen = { length: samples.length, channels, from, to };
-      return samples.subarray(0, Math.floor((samples.length * to) / from));
+      return new Float32Array(Math.floor((samples.length * to) / from));
     };
     const res = opusResponse({ ...codec, resample }, tone(0.5, 22_050, 2));
     const all = pages(concat(await bodyChunks(res)));
-    expect(seen).toStrictEqual({ length: 11_025, channels: 1, from: 22_050, to: 16_000 });
+    expect(seen).toStrictEqual({ length: 11_025, channels: 1, from: 22_050, to: 48_000 });
     const preSkip = new DataView(all[0]!.packets[0]!.buffer).getUint16(10, true);
-    expect(all.at(-1)!.granule - preSkip).toBe(Math.floor((11_025 * 16_000) / 22_050) * 3);
+    expect(all.at(-1)!.granule - preSkip).toBe(Math.floor((11_025 * 48_000) / 22_050));
   });
 
   test("is undefined while the encoder is not installed", async () => {
@@ -304,7 +304,7 @@ describe("POST /speech", () => {
       expect(res.headers.get("content-type")).toBe("audio/ogg; codecs=opus");
       const all = pages(new Uint8Array(await res.arrayBuffer()));
       expect(all.at(-1)!.flags).toBe(0x04);
-      // 22.05 kHz to 16 kHz and on to 48: one second, give or take the resampler's edge.
+      // 22.05 kHz to 48 kHz: one second, give or take the resampler's edge.
       const preSkip = new DataView(all[0]!.packets[0]!.buffer).getUint16(10, true);
       expect(Math.abs(all.at(-1)!.granule - preSkip - 48_000)).toBeLessThan(200);
     }

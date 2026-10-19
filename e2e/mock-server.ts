@@ -32,7 +32,7 @@ const port = Number(process.env.E2E_PORT ?? 3100);
 const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 3101);
 
 const app = await startApp(
-  // No engine is loaded, but speech is encoded as Opus with the libsoxr and minisilk found beside audioDir.
+  // No engine is loaded, but speech is encoded as Opus with the libsoxr and minicelt found beside audioDir.
   config({
     port,
     ctxSize: 65_536,

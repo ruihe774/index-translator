@@ -146,7 +146,7 @@ bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and
 
 Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
 Markdown files, and says that PDF and Word support is not installed. Reading aloud then sends its audio
-as QOA or WAV instead of the smaller Opus (`bun scripts/fetch_minisilk.ts` installs the Opus encoder; it needs
+as QOA or WAV instead of the smaller Opus (`bun scripts/fetch_minicelt.ts` installs the Opus encoder; it needs
 the libsoxr that `build_soxr.ts` builds).
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and `build_soxr.ts` and download only the

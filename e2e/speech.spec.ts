@@ -9,9 +9,9 @@ import type { Page } from "@playwright/test";
 
 import { expect, test } from "./fixtures";
 
-// The server encodes Opus with minisilk, resampled by libsoxr (bun scripts/fetch_minisilk.ts, build_soxr.ts).
+// The server encodes Opus with minicelt, resampled by libsoxr (bun scripts/fetch_minicelt.ts, build_soxr.ts).
 const VENDOR = join(import.meta.dirname, "..", "vendor");
-const opusInstalled = existsSync(join(VENDOR, "minisilk", "VERSION")) && existsSync(join(VENDOR, "soxr", "VERSION"));
+const opusInstalled = existsSync(join(VENDOR, "minicelt", "VERSION")) && existsSync(join(VENDOR, "soxr", "VERSION"));
 
 /** A browser that cannot decode Ogg Opus, as far as the page's probe can tell. */
 const withoutOpus = (page: Page) =>
@@ -518,7 +518,7 @@ function watchSpeech(page: Page) {
 }
 
 test("speech arrives as Ogg Opus, decoded by the browser, and plays to its end", async ({ app, mock }) => {
-  test.skip(!opusInstalled, "run: bun scripts/fetch_minisilk.ts and bun scripts/build_soxr.ts");
+  test.skip(!opusInstalled, "run: bun scripts/fetch_minicelt.ts and bun scripts/build_soxr.ts");
   // Several pages of a second each.
   await mock.set({ speech: { audioSeconds: 2.5 } });
   const seen = watchSpeech(app.page);
@@ -539,7 +539,7 @@ test("speech arrives as Ogg Opus, decoded by the browser, and plays to its end",
 });
 
 test("the Opus the server sends decodes to the length of the utterance", async ({ app, mock }) => {
-  test.skip(!opusInstalled, "run: bun scripts/fetch_minisilk.ts and bun scripts/build_soxr.ts");
+  test.skip(!opusInstalled, "run: bun scripts/fetch_minicelt.ts and bun scripts/build_soxr.ts");
   await mock.set({ speech: { audioSeconds: 2.5 } });
   await app.open();
   const decoded = await app.page.evaluate(async () => {

@@ -34,15 +34,15 @@ export interface paths {
          *       above.
          *
          *     A client that names `audio/ogg` in `Accept` gets the same audio as Ogg Opus instead
-         *     (`Content-Type: audio/ogg; codecs=opus`): mono, 16 kHz wideband (the audio is resampled
-         *     to it), about 24 kbit/s, a tenth of the size, sent in pages of about a second. One that
+         *     (`Content-Type: audio/ogg; codecs=opus`): mono, 48 kHz CELT (the audio is resampled
+         *     to it), about 64 kbit/s, about a twelfth of the size, sent in pages of about a second. One that
          *     names `audio/qoa` gets a [QOA](https://qoaformat.org) stream: lossy, about a fifth of the
          *     size, sent in chunks of whole frames (a streaming file, sample count 0 in its header) so
          *     that the client can decode while it receives. The engine still returns the utterance
          *     whole, so the first byte of either is sent when the synthesis is over. Only a header
          *     that names the type with a weight above 0 selects it, the heavier of the two first and
          *     Opus on a tie; `*\/*`, `audio/*` and no header give WAV, and so does a server whose
-         *     encoder is not installed (`vendor/minisilk`, `public/vendor/qoa`) when no other named
+         *     encoder is not installed (`vendor/minicelt`, `public/vendor/qoa`) when no other named
          *     type can be sent, so a client must go by the `Content-Type` of the answer. The web app
          *     asks for Opus when its browser decodes it, then QOA, and uses WAV only when neither
          *     works.
