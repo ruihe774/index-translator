@@ -58,6 +58,8 @@ fn main() {
         files.extend(mk_list(&src, mk, var).iter().map(|f| src.join(f)));
     }
 
+    files.push(here.join("csrc/layout.c"));
+
     let clang = sdk.join("bin/clang");
     let mut args: Vec<String> = vec![
         "--target=wasm32-wasip1".into(),
@@ -78,7 +80,7 @@ fn main() {
     let objs: Vec<PathBuf> = files
         .iter()
         .map(|f| {
-            let rel = f.strip_prefix(&src).unwrap();
+            let rel = f.strip_prefix(&src).unwrap_or_else(|_| f.strip_prefix(&here).unwrap());
             out.join(rel.to_string_lossy().replace('/', "_")).with_extension("o")
         })
         .collect();

@@ -1,21 +1,26 @@
+//! Minimal Opus encoder: a mechanical Rust port of the libopus SILK-only float encoder
+//! (OPUS_APPLICATION_RESTRICTED_SILK) for wasm32, fixed to 16 kHz mono wideband, 20 ms
+//! frames and VBR, with DTX. `no_std`, no allocation; scratch memory is a static
+//! pseudostack (see `stack`).
+
 #![cfg_attr(not(test), no_std)]
+#![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
+#![allow(clippy::all)]
+
+#[cfg(not(target_arch = "wasm32"))]
+compile_error!("minisilk only supports wasm32 (build with -Ctarget-feature=+simd128)");
+#[cfg(not(target_feature = "simd128"))]
+compile_error!("minisilk requires -Ctarget-feature=+simd128");
 
 #[cfg(test)]
 extern crate oracle;
 
+pub mod celt;
+pub mod opus;
+pub mod silk;
+pub mod stack;
+
 #[cfg(test)]
-mod tests {
-    #[test]
-    fn oracle_links() {
-        let mut enc = oracle::RefEncoder::new(24000, 5, false);
-        let mut dec = oracle::RefDecoder::new();
-        let pcm: [i16; 320] = core::array::from_fn(|i| ((i as f32 * 0.2).sin() * 8000.0) as i16);
-        let mut pkt = [0u8; 1500];
-        let mut out = [0i16; 320];
-        for _ in 0..5 {
-            let n = enc.encode(&pcm, &mut pkt);
-            assert!(n > 0);
-            assert_eq!(dec.decode(&pkt[..n as usize], &mut out), 320);
-        }
-    }
-}
+mod layout_tests;
+#[cfg(test)]
+mod testutil;

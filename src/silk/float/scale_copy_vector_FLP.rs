@@ -1,0 +1,1 @@
+//! Port of silk/float/scale_copy_vector_FLP.c.

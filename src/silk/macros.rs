@@ -1,0 +1,663 @@
+//! Port of the fixed-point macro layer: silk/macros.h, the macro part of silk/SigProc_FIX.h,
+//! and silk/Inlines.h.
+//!
+//! Conventions:
+//! - C `opus_int`/`int` arguments are `i32`. Callers do the C integer promotions explicitly
+//!   (e.g. `silk_SMULBB(a as i32, b as i32)` for `opus_int16` operands).
+//! - Plain C arithmetic (`silk_ADD32`, `silk_MUL`, ...) uses plain Rust operators, so debug
+//!   builds trap where C would hit signed overflow. The `_ovflw` variants wrap.
+//! - wasm32 has `OPUS_FAST_INT64 == 0`, so the SMULWx/SMLAWx macros use the 32-bit
+//!   formulations. This matters for `silk_SMULWW`/`silk_SMLAWW`, which round differently.
+//! - Type-generic C macros (`silk_min`, `silk_max`, `silk_LIMIT`, `silk_abs`, `silk_sign`) are
+//!   `macro_rules!` macros; everything else is an `#[inline(always)]` function.
+
+#![allow(non_snake_case, dead_code)]
+
+pub const silk_int64_MAX: i64 = i64::MAX;
+pub const silk_int64_MIN: i64 = i64::MIN;
+pub const silk_int32_MAX: i32 = i32::MAX;
+pub const silk_int32_MIN: i32 = i32::MIN;
+pub const silk_int16_MAX: i32 = i16::MAX as i32;
+pub const silk_int16_MIN: i32 = i16::MIN as i32;
+pub const silk_int8_MAX: i32 = i8::MAX as i32;
+pub const silk_int8_MIN: i32 = i8::MIN as i32;
+pub const silk_uint8_MAX: i32 = u8::MAX as i32;
+pub const silk_float_MAX: f32 = f32::MAX;
+
+pub const RAND_MULTIPLIER: i32 = 196314165;
+pub const RAND_INCREMENT: i32 = 907633515;
+
+/* silk/macros.h */
+
+/// (a32 * (opus_int32)((opus_int16)(b32))) >> 16
+#[inline(always)]
+pub fn silk_SMULWB(a32: i32, b32: i32) -> i32 {
+    ((a32 >> 16) * (b32 as i16 as i32)) + (((a32 & 0x0000FFFF) * (b32 as i16 as i32)) >> 16)
+}
+
+/// a32 + (b32 * (opus_int32)((opus_int16)(c32))) >> 16
+#[inline(always)]
+pub fn silk_SMLAWB(a32: i32, b32: i32, c32: i32) -> i32 {
+    a32 + silk_SMULWB(b32, c32)
+}
+
+/// (a32 * (b32 >> 16)) >> 16
+#[inline(always)]
+pub fn silk_SMULWT(a32: i32, b32: i32) -> i32 {
+    (a32 >> 16) * (b32 >> 16) + (((a32 & 0x0000FFFF) * (b32 >> 16)) >> 16)
+}
+
+/// a32 + (b32 * (c32 >> 16)) >> 16
+#[inline(always)]
+pub fn silk_SMLAWT(a32: i32, b32: i32, c32: i32) -> i32 {
+    a32 + ((b32 >> 16) * (c32 >> 16)) + (((b32 & 0x0000FFFF) * (c32 >> 16)) >> 16)
+}
+
+/// (opus_int32)((opus_int16)(a32)) * (opus_int32)((opus_int16)(b32))
+#[inline(always)]
+pub fn silk_SMULBB(a32: i32, b32: i32) -> i32 {
+    (a32 as i16 as i32) * (b32 as i16 as i32)
+}
+
+/// a32 + (opus_int32)((opus_int16)(b32)) * (opus_int32)((opus_int16)(c32))
+#[inline(always)]
+pub fn silk_SMLABB(a32: i32, b32: i32, c32: i32) -> i32 {
+    a32 + (b32 as i16 as i32) * (c32 as i16 as i32)
+}
+
+/// (opus_int32)((opus_int16)(a32)) * (b32 >> 16)
+#[inline(always)]
+pub fn silk_SMULBT(a32: i32, b32: i32) -> i32 {
+    (a32 as i16 as i32) * (b32 >> 16)
+}
+
+/// a32 + (opus_int32)((opus_int16)(b32)) * (c32 >> 16)
+#[inline(always)]
+pub fn silk_SMLABT(a32: i32, b32: i32, c32: i32) -> i32 {
+    a32 + (b32 as i16 as i32) * (c32 >> 16)
+}
+
+/// a64 + (b32 * c32)
+#[inline(always)]
+pub fn silk_SMLAL(a64: i64, b32: i32, c32: i32) -> i64 {
+    silk_ADD64(a64, (b32 as i64) * (c32 as i64))
+}
+
+/// (a32 * b32) >> 16, 32-bit formulation (OPUS_FAST_INT64 == 0)
+#[inline(always)]
+pub fn silk_SMULWW(a32: i32, b32: i32) -> i32 {
+    silk_MLA(silk_SMULWB(a32, b32), a32, silk_RSHIFT_ROUND(b32, 16))
+}
+
+/// a32 + ((b32 * c32) >> 16), 32-bit formulation (OPUS_FAST_INT64 == 0)
+#[inline(always)]
+pub fn silk_SMLAWW(a32: i32, b32: i32, c32: i32) -> i32 {
+    silk_MLA(silk_SMLAWB(a32, b32, c32), b32, silk_RSHIFT_ROUND(c32, 16))
+}
+
+/// add with output saturated
+#[inline(always)]
+pub fn silk_ADD_SAT32(a: i32, b: i32) -> i32 {
+    a.saturating_add(b)
+}
+
+/// subtract with output saturated
+#[inline(always)]
+pub fn silk_SUB_SAT32(a: i32, b: i32) -> i32 {
+    a.saturating_sub(b)
+}
+
+#[inline(always)]
+pub fn silk_CLZ16(in16: i16) -> i32 {
+    ((((in16 as i32) << 16) | 0x8000) as u32).leading_zeros() as i32
+}
+
+#[inline(always)]
+pub fn silk_CLZ32(in32: i32) -> i32 {
+    (in32 as u32).leading_zeros() as i32
+}
+
+/* silk/SigProc_FIX.h */
+
+/// Rotate a32 right by 'rot' bits. Negative rot values result in rotating left.
+#[inline(always)]
+pub fn silk_ROR32(a32: i32, rot: i32) -> i32 {
+    let x = a32 as u32;
+    let r = rot as u32;
+    let m = (rot as u32).wrapping_neg();
+    if rot == 0 {
+        a32
+    } else if rot < 0 {
+        ((x << m) | (x >> (32 - m))) as i32
+    } else {
+        ((x << (32 - r)) | (x >> r)) as i32
+    }
+}
+
+/// (a32 * b32) output have to be 32bit int
+#[inline(always)]
+pub fn silk_MUL(a32: i32, b32: i32) -> i32 {
+    a32 * b32
+}
+
+/// (a32 * b32) output have to be 32bit uint
+#[inline(always)]
+pub fn silk_MUL_uint(a32: u32, b32: u32) -> u32 {
+    a32 * b32
+}
+
+/// a32 + (b32 * c32) output have to be 32bit int
+#[inline(always)]
+pub fn silk_MLA(a32: i32, b32: i32, c32: i32) -> i32 {
+    silk_ADD32(a32, b32 * c32)
+}
+
+/// a32 + (b32 * c32) output have to be 32bit uint
+#[inline(always)]
+pub fn silk_MLA_uint(a32: u32, b32: u32, c32: u32) -> u32 {
+    a32 + b32 * c32
+}
+
+/// ((a32 >> 16) * (b32 >> 16)) output have to be 32bit int
+#[inline(always)]
+pub fn silk_SMULTT(a32: i32, b32: i32) -> i32 {
+    (a32 >> 16) * (b32 >> 16)
+}
+
+/// a32 + ((b32 >> 16) * (c32 >> 16)) output have to be 32bit int
+#[inline(always)]
+pub fn silk_SMLATT(a32: i32, b32: i32, c32: i32) -> i32 {
+    silk_ADD32(a32, (b32 >> 16) * (c32 >> 16))
+}
+
+#[inline(always)]
+pub fn silk_SMLALBB(a64: i64, b16: i32, c16: i32) -> i64 {
+    silk_ADD64(a64, (b16 * c16) as i64)
+}
+
+/// (a32 * b32)
+#[inline(always)]
+pub fn silk_SMULL(a32: i32, b32: i32) -> i64 {
+    (a32 as i64) * (b32 as i64)
+}
+
+/// Adds two signed 32-bit values in a way that can overflow
+#[inline(always)]
+pub fn silk_ADD32_ovflw(a: i32, b: i32) -> i32 {
+    a.wrapping_add(b)
+}
+
+/// Subtracts two signed 32-bit values in a way that can overflow
+#[inline(always)]
+pub fn silk_SUB32_ovflw(a: i32, b: i32) -> i32 {
+    a.wrapping_sub(b)
+}
+
+/// Multiply-accumulate that allows overflow in the addition
+#[inline(always)]
+pub fn silk_MLA_ovflw(a32: i32, b32: i32, c32: i32) -> i32 {
+    silk_ADD32_ovflw(a32, (b32 as u32).wrapping_mul(c32 as u32) as i32)
+}
+
+#[inline(always)]
+pub fn silk_SMLABB_ovflw(a32: i32, b32: i32, c32: i32) -> i32 {
+    silk_ADD32_ovflw(a32, (b32 as i16 as i32) * (c32 as i16 as i32))
+}
+
+#[inline(always)]
+pub fn silk_DIV32_16(a32: i32, b16: i32) -> i32 {
+    a32 / b16
+}
+
+#[inline(always)]
+pub fn silk_DIV32(a32: i32, b32: i32) -> i32 {
+    a32 / b32
+}
+
+#[inline(always)]
+pub fn silk_ADD32(a: i32, b: i32) -> i32 {
+    a + b
+}
+
+#[inline(always)]
+pub fn silk_ADD64(a: i64, b: i64) -> i64 {
+    a + b
+}
+
+#[inline(always)]
+pub fn silk_SUB32(a: i32, b: i32) -> i32 {
+    a - b
+}
+
+#[inline(always)]
+pub fn silk_SUB64(a: i64, b: i64) -> i64 {
+    a - b
+}
+
+#[inline(always)]
+pub fn silk_SAT8(a: i32) -> i32 {
+    a.clamp(silk_int8_MIN, silk_int8_MAX)
+}
+
+#[inline(always)]
+pub fn silk_SAT16(a: i32) -> i32 {
+    a.clamp(silk_int16_MIN, silk_int16_MAX)
+}
+
+/// Saturates a 64-bit value to the 32-bit range.
+#[inline(always)]
+pub fn silk_SAT32(a: i64) -> i32 {
+    a.clamp(silk_int32_MIN as i64, silk_int32_MAX as i64) as i32
+}
+
+#[inline(always)]
+pub fn silk_ADD_SAT16(a: i32, b: i32) -> i16 {
+    silk_SAT16(silk_ADD32(a, b)) as i16
+}
+
+#[inline(always)]
+pub fn silk_ADD_SAT64(a: i64, b: i64) -> i64 {
+    a.saturating_add(b)
+}
+
+#[inline(always)]
+pub fn silk_SUB_SAT16(a: i32, b: i32) -> i16 {
+    silk_SAT16(silk_SUB32(a, b)) as i16
+}
+
+#[inline(always)]
+pub fn silk_SUB_SAT64(a: i64, b: i64) -> i64 {
+    a.saturating_sub(b)
+}
+
+/// Saturation for positive input values
+#[inline(always)]
+pub fn silk_POS_SAT32(a: i64) -> i32 {
+    if a > silk_int32_MAX as i64 { silk_int32_MAX } else { a as i32 }
+}
+
+/// Add with saturation for positive input values
+#[inline(always)]
+pub fn silk_ADD_POS_SAT8(a: i32, b: i32) -> i32 {
+    if (a + b) & 0x80 != 0 { silk_int8_MAX } else { a + b }
+}
+
+#[inline(always)]
+pub fn silk_ADD_POS_SAT16(a: i32, b: i32) -> i32 {
+    if (a + b) & 0x8000 != 0 { silk_int16_MAX } else { a + b }
+}
+
+#[inline(always)]
+pub fn silk_ADD_POS_SAT32(a: i32, b: i32) -> i32 {
+    let s = (a as u32).wrapping_add(b as u32);
+    if s & 0x80000000 != 0 { silk_int32_MAX } else { s as i32 }
+}
+
+/// shift >= 0, shift < 8
+#[inline(always)]
+pub fn silk_LSHIFT8(a: i32, shift: i32) -> i8 {
+    ((a as u8) << shift) as i8
+}
+
+/// shift >= 0, shift < 16
+#[inline(always)]
+pub fn silk_LSHIFT16(a: i32, shift: i32) -> i16 {
+    ((a as u16) << shift) as i16
+}
+
+/// shift >= 0, shift < 32
+#[inline(always)]
+pub fn silk_LSHIFT32(a: i32, shift: i32) -> i32 {
+    ((a as u32) << shift) as i32
+}
+
+/// shift >= 0, shift < 64
+#[inline(always)]
+pub fn silk_LSHIFT64(a: i64, shift: i32) -> i64 {
+    ((a as u64) << shift) as i64
+}
+
+/// shift >= 0, shift < 32
+#[inline(always)]
+pub fn silk_LSHIFT(a: i32, shift: i32) -> i32 {
+    silk_LSHIFT32(a, shift)
+}
+
+/// shift >= 0, shift < 32
+#[inline(always)]
+pub fn silk_RSHIFT32(a: i32, shift: i32) -> i32 {
+    a >> shift
+}
+
+/// shift >= 0, shift < 64
+#[inline(always)]
+pub fn silk_RSHIFT64(a: i64, shift: i32) -> i64 {
+    a >> shift
+}
+
+/// shift >= 0, shift < 32
+#[inline(always)]
+pub fn silk_RSHIFT(a: i32, shift: i32) -> i32 {
+    a >> shift
+}
+
+/// saturates before shifting
+#[inline(always)]
+pub fn silk_LSHIFT_SAT32(a: i32, shift: i32) -> i32 {
+    silk_LSHIFT32(silk_LIMIT!(a, silk_RSHIFT32(silk_int32_MIN, shift), silk_RSHIFT32(silk_int32_MAX, shift)), shift)
+}
+
+/// shift >= 0, allowed to overflow
+#[inline(always)]
+pub fn silk_LSHIFT_ovflw(a: i32, shift: i32) -> i32 {
+    ((a as u32) << shift) as i32
+}
+
+#[inline(always)]
+pub fn silk_LSHIFT_uint(a: u32, shift: i32) -> u32 {
+    a << shift
+}
+
+#[inline(always)]
+pub fn silk_RSHIFT_uint(a: u32, shift: i32) -> u32 {
+    a >> shift
+}
+
+#[inline(always)]
+pub fn silk_ADD_LSHIFT(a: i32, b: i32, shift: i32) -> i32 {
+    a + silk_LSHIFT(b, shift)
+}
+
+#[inline(always)]
+pub fn silk_ADD_LSHIFT32(a: i32, b: i32, shift: i32) -> i32 {
+    silk_ADD32(a, silk_LSHIFT32(b, shift))
+}
+
+#[inline(always)]
+pub fn silk_ADD_LSHIFT_uint(a: u32, b: u32, shift: i32) -> u32 {
+    a + silk_LSHIFT_uint(b, shift)
+}
+
+#[inline(always)]
+pub fn silk_ADD_RSHIFT(a: i32, b: i32, shift: i32) -> i32 {
+    a + silk_RSHIFT(b, shift)
+}
+
+#[inline(always)]
+pub fn silk_ADD_RSHIFT32(a: i32, b: i32, shift: i32) -> i32 {
+    silk_ADD32(a, silk_RSHIFT32(b, shift))
+}
+
+#[inline(always)]
+pub fn silk_ADD_RSHIFT_uint(a: u32, b: u32, shift: i32) -> u32 {
+    a + silk_RSHIFT_uint(b, shift)
+}
+
+#[inline(always)]
+pub fn silk_SUB_LSHIFT32(a: i32, b: i32, shift: i32) -> i32 {
+    silk_SUB32(a, silk_LSHIFT32(b, shift))
+}
+
+#[inline(always)]
+pub fn silk_SUB_RSHIFT32(a: i32, b: i32, shift: i32) -> i32 {
+    silk_SUB32(a, silk_RSHIFT32(b, shift))
+}
+
+/// Requires that shift > 0
+#[inline(always)]
+pub fn silk_RSHIFT_ROUND(a: i32, shift: i32) -> i32 {
+    if shift == 1 { (a >> 1) + (a & 1) } else { ((a >> (shift - 1)) + 1) >> 1 }
+}
+
+/// Requires that shift > 0
+#[inline(always)]
+pub fn silk_RSHIFT_ROUND64(a: i64, shift: i32) -> i64 {
+    if shift == 1 { (a >> 1) + (a & 1) } else { ((a >> (shift - 1)) + 1) >> 1 }
+}
+
+/// Number of rightshift required to fit the multiplication
+#[inline(always)]
+pub fn silk_NSHIFT_MUL_32_32(a: i32, b: i32) -> i32 {
+    -(31 - (32 - silk_CLZ32(silk_abs!(a)) + (32 - silk_CLZ32(silk_abs!(b)))))
+}
+
+#[inline(always)]
+pub fn silk_NSHIFT_MUL_16_16(a: i16, b: i16) -> i32 {
+    -(15 - (16 - silk_CLZ16(silk_abs!(a)) + (16 - silk_CLZ16(silk_abs!(b)))))
+}
+
+/// Macro to convert floating-point constants to fixed-point.
+/// For a C `float` literal (`0.1f`), pass `0.1f32 as f64` so the constant is rounded as in C.
+#[inline(always)]
+pub const fn SILK_FIX_CONST(c: f64, q: i32) -> i32 {
+    (c * ((1i64 << q) as f64) + 0.5) as i32
+}
+
+#[inline(always)]
+pub fn silk_min_int(a: i32, b: i32) -> i32 {
+    if a < b { a } else { b }
+}
+
+#[inline(always)]
+pub fn silk_min_16(a: i16, b: i16) -> i16 {
+    if a < b { a } else { b }
+}
+
+#[inline(always)]
+pub fn silk_min_32(a: i32, b: i32) -> i32 {
+    if a < b { a } else { b }
+}
+
+#[inline(always)]
+pub fn silk_min_64(a: i64, b: i64) -> i64 {
+    if a < b { a } else { b }
+}
+
+#[inline(always)]
+pub fn silk_max_int(a: i32, b: i32) -> i32 {
+    if a > b { a } else { b }
+}
+
+#[inline(always)]
+pub fn silk_max_16(a: i16, b: i16) -> i16 {
+    if a > b { a } else { b }
+}
+
+#[inline(always)]
+pub fn silk_max_32(a: i32, b: i32) -> i32 {
+    if a > b { a } else { b }
+}
+
+#[inline(always)]
+pub fn silk_max_64(a: i64, b: i64) -> i64 {
+    if a > b { a } else { b }
+}
+
+#[inline(always)]
+pub fn silk_abs_int32(a: i32) -> i32 {
+    (a ^ (a >> 31)) - (a >> 31)
+}
+
+#[inline(always)]
+pub fn silk_abs_int64(a: i64) -> i64 {
+    if a > 0 { a } else { -a }
+}
+
+/// PSEUDO-RANDOM GENERATOR. Store the result as the seed for the next call.
+#[inline(always)]
+pub fn silk_RAND(seed: i32) -> i32 {
+    silk_MLA_ovflw(RAND_INCREMENT, seed, RAND_MULTIPLIER)
+}
+
+/// Signed top word multiply.
+#[inline(always)]
+pub fn silk_SMMUL(a32: i32, b32: i32) -> i32 {
+    silk_RSHIFT64(silk_SMULL(a32, b32), 32) as i32
+}
+
+/* Type-generic macros */
+
+#[macro_export]
+macro_rules! silk_min {
+    ($a:expr, $b:expr) => {{
+        let (a, b) = ($a, $b);
+        if a < b { a } else { b }
+    }};
+}
+
+#[macro_export]
+macro_rules! silk_max {
+    ($a:expr, $b:expr) => {{
+        let (a, b) = ($a, $b);
+        if a > b { a } else { b }
+    }};
+}
+
+/// Clamps `a` between the two limits, in whichever order they are given.
+#[macro_export]
+macro_rules! silk_LIMIT {
+    ($a:expr, $limit1:expr, $limit2:expr) => {{
+        let (a, l1, l2) = ($a, $limit1, $limit2);
+        if l1 > l2 {
+            if a > l1 { l1 } else if a < l2 { l2 } else { a }
+        } else if a > l2 {
+            l2
+        } else if a < l1 {
+            l1
+        } else {
+            a
+        }
+    }};
+}
+
+/// Be careful, silk_abs returns wrong when input equals to silk_intXX_MIN
+#[macro_export]
+macro_rules! silk_abs {
+    ($a:expr) => {{
+        let a = $a;
+        if a > 0 { a } else { -a }
+    }};
+}
+
+#[macro_export]
+macro_rules! silk_sign {
+    ($a:expr) => {{
+        let a = $a;
+        if a > 0 { 1 } else if a < 0 { -1 } else { 0 }
+    }};
+}
+
+pub use crate::{silk_LIMIT as silk_LIMIT_int, silk_LIMIT as silk_LIMIT_16, silk_LIMIT as silk_LIMIT_32};
+pub use crate::{silk_LIMIT, silk_abs, silk_max, silk_min, silk_sign};
+
+/* silk/Inlines.h */
+
+/// count leading zeros of opus_int64
+#[inline(always)]
+pub fn silk_CLZ64(in_: i64) -> i32 {
+    let in_upper = silk_RSHIFT64(in_, 32) as i32;
+    if in_upper == 0 {
+        /* Search in the lower 32 bits */
+        32 + silk_CLZ32(in_ as i32)
+    } else {
+        /* Search in the upper 32 bits */
+        silk_CLZ32(in_upper)
+    }
+}
+
+/// get number of leading zeros and fractional part (the bits right after the leading one)
+#[inline(always)]
+pub fn silk_CLZ_FRAC(in_: i32, lz: &mut i32, frac_Q7: &mut i32) {
+    let lzeros = silk_CLZ32(in_);
+    *lz = lzeros;
+    *frac_Q7 = silk_ROR32(in_, 24 - lzeros) & 0x7f;
+}
+
+/// Approximation of square root.
+/// Accuracy: < +/- 10% for output values > 15, < +/- 2.5% for output values > 120
+#[inline(always)]
+pub fn silk_SQRT_APPROX(x: i32) -> i32 {
+    let (mut lz, mut frac_Q7) = (0, 0);
+    if x <= 0 {
+        return 0;
+    }
+    silk_CLZ_FRAC(x, &mut lz, &mut frac_Q7);
+    let mut y: i32 = if lz & 1 != 0 { 32768 } else { 46214 }; /* 46214 = sqrt(2) * 32768 */
+    /* get scaling right */
+    y >>= silk_RSHIFT(lz, 1);
+    /* increment using fractional part of input */
+    silk_SMLAWB(y, y, silk_SMULBB(213, frac_Q7))
+}
+
+/// Divide two int32 values and return result as int32 in a given Q-domain.
+/// Returns a good approximation of "(a32 << Qres) / b32".
+#[inline(always)]
+pub fn silk_DIV32_varQ(a32: i32, b32: i32, Qres: i32) -> i32 {
+    debug_assert!(b32 != 0);
+    debug_assert!(Qres >= 0);
+
+    /* Compute number of bits head room and normalize inputs */
+    let a_headrm = silk_CLZ32(silk_abs!(a32)) - 1;
+    let mut a32_nrm = silk_LSHIFT(a32, a_headrm); /* Q: a_headrm                  */
+    let b_headrm = silk_CLZ32(silk_abs!(b32)) - 1;
+    let b32_nrm = silk_LSHIFT(b32, b_headrm); /* Q: b_headrm                  */
+
+    /* Inverse of b32, with 14 bits of precision */
+    let b32_inv = silk_DIV32_16(silk_int32_MAX >> 2, silk_RSHIFT(b32_nrm, 16)); /* Q: 29 + 16 - b_headrm        */
+
+    /* First approximation */
+    let mut result = silk_SMULWB(a32_nrm, b32_inv); /* Q: 29 + a_headrm - b_headrm  */
+
+    /* Compute residual by subtracting product of denominator and first approximation */
+    /* It's OK to overflow because the final value of a32_nrm should always be small */
+    a32_nrm = silk_SUB32_ovflw(a32_nrm, silk_LSHIFT_ovflw(silk_SMMUL(b32_nrm, result), 3)); /* Q: a_headrm   */
+
+    /* Refinement */
+    result = silk_SMLAWB(result, a32_nrm, b32_inv); /* Q: 29 + a_headrm - b_headrm  */
+
+    /* Convert to Qres domain */
+    let lshift = 29 + a_headrm - b_headrm - Qres;
+    if lshift < 0 {
+        silk_LSHIFT_SAT32(result, -lshift)
+    } else if lshift < 32 {
+        silk_RSHIFT(result, lshift)
+    } else {
+        /* Avoid undefined result */
+        0
+    }
+}
+
+/// Invert int32 value and return result as int32 in a given Q-domain.
+/// Returns a good approximation of "(1 << Qres) / b32".
+#[inline(always)]
+pub fn silk_INVERSE32_varQ(b32: i32, Qres: i32) -> i32 {
+    debug_assert!(b32 != 0);
+    debug_assert!(Qres > 0);
+
+    /* Compute number of bits head room and normalize input */
+    let b_headrm = silk_CLZ32(silk_abs!(b32)) - 1;
+    let b32_nrm = silk_LSHIFT(b32, b_headrm); /* Q: b_headrm                */
+
+    /* Inverse of b32, with 14 bits of precision */
+    let b32_inv = silk_DIV32_16(silk_int32_MAX >> 2, silk_RSHIFT(b32_nrm, 16)); /* Q: 29 + 16 - b_headrm    */
+
+    /* First approximation */
+    let mut result = silk_LSHIFT(b32_inv, 16); /* Q: 61 - b_headrm            */
+
+    /* Compute residual by subtracting product of denominator and first approximation from one */
+    let err_Q32 = silk_LSHIFT((1i32 << 29) - silk_SMULWB(b32_nrm, b32_inv), 3); /* Q32                        */
+
+    /* Refinement */
+    result = silk_SMLAWW(result, err_Q32, b32_inv); /* Q: 61 - b_headrm            */
+
+    /* Convert to Qres domain */
+    let lshift = 61 - b_headrm - Qres;
+    if lshift <= 0 {
+        silk_LSHIFT_SAT32(result, -lshift)
+    } else if lshift < 32 {
+        silk_RSHIFT(result, lshift)
+    } else {
+        /* Avoid undefined result */
+        0
+    }
+}
