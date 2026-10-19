@@ -1,7 +1,12 @@
-//! Port of celt/wasm/pitch_wasm.c (float build): `celt_pitch_xcorr` and `celt_inner_prod`,
-//! the only pitch kernels SILK uses (opus_val16 = opus_val32 = f32).
+//! Port of celt/pitch.c and the float kernels of celt/wasm/pitch_wasm.c
+//! (opus_val16 = opus_val32 = f32).
 
 use core::arch::wasm32::*;
+
+use super::arch::{MAX16, MAX32};
+use super::celt_lpc::{_celt_autocorr, _celt_lpc};
+use super::mathops::celt_sqrt;
+use crate::stack;
 
 /* Multiply-add a*b+c. With relaxed SIMD this may be fused (single rounding),
    which is fine for these float kernels: like the SSE/NEON versions they do
@@ -151,4 +156,419 @@ pub fn celt_pitch_xcorr(_x: &[f32], _y: &[f32], xcorr: &mut [f32], len: i32, max
             i += 1;
         }
     }
+}
+
+/// `xcorr_kernel_wasm`: `sum[k] += sum_j x[j] * y[j + k]` for k in 0..4, j in 0..len.
+/// Reads `x[0..len]` and `y[0..len + 3]`.
+pub fn xcorr_kernel(x: &[f32], y: &[f32], sum: &mut [f32; 4], len: i32) {
+    debug_assert!(len >= 3);
+    let len = len.max(0) as usize;
+    assert!(x.len() >= len && y.len() >= len + 3);
+    // SAFETY: xcorr4_float reads x[0..len] and y[0..len+3]; sum is 4 floats.
+    unsafe {
+        let s = v128_load(sum.as_ptr() as *const v128);
+        v128_store(
+            sum.as_mut_ptr() as *mut v128,
+            f32x4_add(s, xcorr4_float(x.as_ptr(), y.as_ptr(), len)),
+        );
+    }
+}
+
+/// `dual_inner_prod_wasm`: `*xy1 = sum x[i]*y01[i]`, `*xy2 = sum x[i]*y02[i]`, i in 0..N.
+pub fn dual_inner_prod(x: &[f32], y01: &[f32], y02: &[f32], N: i32, xy1: &mut f32, xy2: &mut f32) {
+    let n = N.max(0) as usize;
+    assert!(x.len() >= n && y01.len() >= n && y02.len() >= n);
+    let (px, p1, p2) = (x.as_ptr(), y01.as_ptr(), y02.as_ptr());
+    // SAFETY: every vector load reads 4 floats at an index i with i + 4 <= n.
+    unsafe {
+        let mut i = 0usize;
+        let mut sum1a = f32x4_splat(0.0);
+        let mut sum1b = sum1a;
+        let mut sum2a = sum1a;
+        let mut sum2b = sum1a;
+        while i + 7 < n {
+            let xi = ld(px.add(i));
+            let xi4 = ld(px.add(i + 4));
+            sum1a = WASM_F32X4_MADD(xi, ld(p1.add(i)), sum1a);
+            sum2a = WASM_F32X4_MADD(xi, ld(p2.add(i)), sum2a);
+            sum1b = WASM_F32X4_MADD(xi4, ld(p1.add(i + 4)), sum1b);
+            sum2b = WASM_F32X4_MADD(xi4, ld(p2.add(i + 4)), sum2b);
+            i += 8;
+        }
+        if i + 3 < n {
+            let xi = ld(px.add(i));
+            sum1a = WASM_F32X4_MADD(xi, ld(p1.add(i)), sum1a);
+            sum2a = WASM_F32X4_MADD(xi, ld(p2.add(i)), sum2a);
+            i += 4;
+        }
+        let mut xy01 = wasm_f32x4_hsum(f32x4_add(sum1a, sum1b));
+        let mut xy02 = wasm_f32x4_hsum(f32x4_add(sum2a, sum2b));
+        while i < n {
+            xy01 = xy01 + x[i] * y01[i];
+            xy02 = xy02 + x[i] * y02[i];
+            i += 1;
+        }
+        *xy1 = xy01;
+        *xy2 = xy02;
+    }
+}
+
+/// `comb_filter_const_wasm`: y[i] = x[i] + g10*x[i-T] + g11*(x[i-T+1]+x[i-T-1])
+/// + g12*(x[i-T+2]+x[i-T-2]) for i in 0..N.
+///
+/// # Safety
+/// `x` must have `T+2` readable floats before it and `N` (plus up to 3 for the vector
+/// tail-free loads: reads reach `x[N-T+1]`, `x[N-1]`) after it; `y` must have `N` writable
+/// floats. `y == x` (in place) is allowed, with `T >= COMBFILTER_MINPERIOD`, as in C.
+pub unsafe fn comb_filter_const(
+    y: *mut f32,
+    x: *const f32,
+    T: i32,
+    N: i32,
+    g10: f32,
+    g11: f32,
+    g12: f32,
+) {
+    unsafe {
+        let T = T as isize;
+        let mut i: isize = 0;
+        /* T >= COMBFILTER_MINPERIOD, so when filtering in place (x == y) every
+        x value read below has either not been written yet or was written by
+        an earlier iteration, exactly as in the C code. */
+        let g10v = f32x4_splat(g10);
+        let g11v = f32x4_splat(g11);
+        let g12v = f32x4_splat(g12);
+        let mut x0v = ld(x.offset(-T - 2));
+        let n = N as isize;
+        while i < n - 3 {
+            let mut yi = ld(x.offset(i));
+            let x4v = ld(x.offset(i - T + 2));
+            let x1v = i32x4_shuffle::<1, 2, 3, 4>(x0v, x4v);
+            let x2v = i32x4_shuffle::<2, 3, 4, 5>(x0v, x4v);
+            let x3v = i32x4_shuffle::<3, 4, 5, 6>(x0v, x4v);
+            #[cfg(target_feature = "relaxed-simd")]
+            {
+                yi = f32x4_relaxed_madd(g10v, x2v, yi);
+                yi = f32x4_relaxed_madd(g11v, f32x4_add(x3v, x1v), yi);
+                yi = f32x4_relaxed_madd(g12v, f32x4_add(x4v, x0v), yi);
+            }
+            #[cfg(not(target_feature = "relaxed-simd"))]
+            {
+                /* Use partial sums, like the SSE version. */
+                yi = f32x4_add(yi, f32x4_mul(g10v, x2v));
+                yi = f32x4_add(
+                    yi,
+                    f32x4_add(
+                        f32x4_mul(g11v, f32x4_add(x3v, x1v)),
+                        f32x4_mul(g12v, f32x4_add(x4v, x0v)),
+                    ),
+                );
+            }
+            x0v = x4v;
+            v128_store(y.offset(i) as *mut v128, yi);
+            i += 4;
+        }
+        while i < n {
+            *y.offset(i) = *x.offset(i)
+                + g10 * *x.offset(i - T)
+                + g11 * (*x.offset(i - T + 1) + *x.offset(i - T - 1))
+                + g12 * (*x.offset(i - T + 2) + *x.offset(i - T - 2));
+            i += 1;
+        }
+    }
+}
+
+/// Finds the two best pitch candidates (by xcorr^2 / energy) into `best_pitch`.
+fn find_best_pitch(xcorr: &[f32], y: &[f32], len: i32, max_pitch: i32, best_pitch: &mut [i32; 2]) {
+    let (len, max_pitch) = (len as usize, max_pitch as usize);
+    let mut Syy: f32 = 1.0;
+    let mut best_num: [f32; 2] = [-1.0, -1.0];
+    let mut best_den: [f32; 2] = [0.0, 0.0];
+    best_pitch[0] = 0;
+    best_pitch[1] = 1;
+    for j in 0..len {
+        Syy = Syy + y[j] * y[j];
+    }
+    for i in 0..max_pitch {
+        if xcorr[i] > 0.0 {
+            let mut xcorr16: f32 = xcorr[i];
+            /* Considering the range of xcorr16, this should avoid both underflows
+            and overflows (inf) when squaring xcorr16 */
+            xcorr16 *= 1e-12;
+            let num: f32 = xcorr16 * xcorr16;
+            if num * best_den[1] > best_num[1] * Syy {
+                if num * best_den[0] > best_num[0] * Syy {
+                    best_num[1] = best_num[0];
+                    best_den[1] = best_den[0];
+                    best_pitch[1] = best_pitch[0];
+                    best_num[0] = num;
+                    best_den[0] = Syy;
+                    best_pitch[0] = i as i32;
+                } else {
+                    best_num[1] = num;
+                    best_den[1] = Syy;
+                    best_pitch[1] = i as i32;
+                }
+            }
+        }
+        Syy += y[i + len] * y[i + len] - y[i] * y[i];
+        Syy = MAX32(1.0, Syy);
+    }
+}
+
+fn celt_fir5(x: &mut [f32], num: &[f32; 5], N: i32) {
+    let [num0, num1, num2, num3, num4] = *num;
+    let (mut mem0, mut mem1, mut mem2, mut mem3, mut mem4) = (0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
+    for i in 0..N as usize {
+        let mut sum: f32 = x[i];
+        sum = sum + num0 * mem0;
+        sum = sum + num1 * mem1;
+        sum = sum + num2 * mem2;
+        sum = sum + num3 * mem3;
+        sum = sum + num4 * mem4;
+        mem4 = mem3;
+        mem3 = mem2;
+        mem2 = mem1;
+        mem1 = mem0;
+        mem0 = x[i];
+        x[i] = sum;
+    }
+}
+
+/// `x` holds the `C` channel buffers (each at least `len*factor` samples); `x_lp` receives
+/// `len` downsampled, whitened samples.
+pub fn pitch_downsample(x: &[&[f32]], x_lp: &mut [f32], len: i32, C: i32, factor: i32) {
+    debug_assert!(C == 1 || C == 2);
+    let mut ac = [0.0f32; 5];
+    let mut tmp: f32 = 1.0;
+    let mut lpc = [0.0f32; 4];
+    let mut lpc2 = [0.0f32; 5];
+    let c1: f32 = 0.8;
+    let offset = (factor / 2) as usize;
+    let factor = factor as usize;
+    let n = len as usize;
+    assert!(x.len() >= C as usize && x_lp.len() >= n);
+    for i in 1..n {
+        x_lp[i] = 0.25 * x[0][factor * i - offset] + 0.25 * x[0][factor * i + offset] + 0.5 * x[0][factor * i];
+    }
+    x_lp[0] = 0.25 * x[0][offset] + 0.5 * x[0][0];
+    if C == 2 {
+        for i in 1..n {
+            x_lp[i] += 0.25 * x[1][factor * i - offset] + 0.25 * x[1][factor * i + offset] + 0.5 * x[1][factor * i];
+        }
+        x_lp[0] += 0.25 * x[1][offset] + 0.5 * x[1][0];
+    }
+    _celt_autocorr(x_lp, &mut ac, &[], 0, 4, len);
+
+    /* Noise floor -40 dB */
+    ac[0] *= 1.0001;
+    /* Lag windowing */
+    for i in 1..=4usize {
+        /*ac[i] *= exp(-.5*(2*M_PI*.002*i)*(2*M_PI*.002*i));*/
+        ac[i] -= ac[i] * (0.008 * i as f32) * (0.008 * i as f32);
+    }
+
+    _celt_lpc(&mut lpc, &ac, 4);
+    for i in 0..4 {
+        tmp = 0.9 * tmp;
+        lpc[i] = lpc[i] * tmp;
+    }
+    /* Add a zero */
+    lpc2[0] = lpc[0] + 0.8;
+    lpc2[1] = lpc[1] + c1 * lpc[0];
+    lpc2[2] = lpc[2] + c1 * lpc[1];
+    lpc2[3] = lpc[3] + c1 * lpc[2];
+    lpc2[4] = c1 * lpc[3];
+    celt_fir5(x_lp, &lpc2, len);
+}
+
+/// Reads `x_lp[0..len/2]`, `y[0..len/2 + max_pitch/2]` (and the decimated copies of them).
+pub fn pitch_search(x_lp: &[f32], y: &[f32], len: i32, max_pitch: i32, pitch: &mut i32) {
+    let mut best_pitch: [i32; 2] = [0, 0];
+    let st = stack::save();
+
+    debug_assert!(len > 0);
+    debug_assert!(max_pitch > 0);
+    let lag = len + max_pitch;
+
+    let x_lp4 = st.alloc::<f32>((len >> 2) as usize);
+    let y_lp4 = st.alloc::<f32>((lag >> 2) as usize);
+    let xcorr = st.alloc::<f32>((max_pitch >> 1) as usize);
+
+    /* Downsample by 2 again */
+    for j in 0..(len >> 2) as usize {
+        x_lp4[j] = x_lp[2 * j];
+    }
+    for j in 0..(lag >> 2) as usize {
+        y_lp4[j] = y[2 * j];
+    }
+
+    /* Coarse search with 4x decimation */
+    celt_pitch_xcorr(x_lp4, y_lp4, xcorr, len >> 2, max_pitch >> 2);
+
+    find_best_pitch(xcorr, y_lp4, len >> 2, max_pitch >> 2, &mut best_pitch);
+
+    /* Finer search with 2x decimation */
+    for i in 0..(max_pitch >> 1) {
+        xcorr[i as usize] = 0.0;
+        if (i - 2 * best_pitch[0]).abs() > 2 && (i - 2 * best_pitch[1]).abs() > 2 {
+            continue;
+        }
+        let sum = celt_inner_prod(x_lp, &y[i as usize..], len >> 1);
+        xcorr[i as usize] = MAX32(-1.0, sum);
+    }
+    find_best_pitch(xcorr, y, len >> 1, max_pitch >> 1, &mut best_pitch);
+
+    /* Refine by pseudo-interpolation */
+    let offset: i32;
+    if best_pitch[0] > 0 && best_pitch[0] < (max_pitch >> 1) - 1 {
+        let b0 = best_pitch[0] as usize;
+        let a = xcorr[b0 - 1];
+        let b = xcorr[b0];
+        let c = xcorr[b0 + 1];
+        if (c - a) > 0.7 * (b - a) {
+            offset = 1;
+        } else if (a - c) > 0.7 * (b - c) {
+            offset = -1;
+        } else {
+            offset = 0;
+        }
+    } else {
+        offset = 0;
+    }
+    *pitch = 2 * best_pitch[0] - offset;
+}
+
+fn compute_pitch_gain(xy: f32, xx: f32, yy: f32) -> f32 {
+    xy / celt_sqrt(1.0 + xx * yy)
+}
+
+static second_check: [i32; 16] = [0, 0, 3, 2, 3, 2, 5, 2, 3, 2, 3, 2, 5, 2, 3, 2];
+
+/// `x` is the start of the buffer; C's `x += maxperiod` (halved) is applied internally, and
+/// the function reads `x[0 .. maxperiod/2 + N/2]` (no data before the buffer start).
+pub fn remove_doubling(
+    x: &[f32],
+    mut maxperiod: i32,
+    mut minperiod: i32,
+    mut N: i32,
+    T0_: &mut i32,
+    mut prev_period: i32,
+    prev_gain: f32,
+) -> f32 {
+    let mut xx = 0.0f32;
+    let mut xy = 0.0f32;
+    let mut xy2 = 0.0f32;
+    let mut xcorr = [0.0f32; 3];
+    let offset: i32;
+    let st = stack::save();
+
+    let minperiod0 = minperiod;
+    maxperiod /= 2;
+    minperiod /= 2;
+    *T0_ /= 2;
+    prev_period /= 2;
+    N /= 2;
+    /* x += maxperiod; every access below is x[base + d] with base = maxperiod */
+    let base = maxperiod as usize;
+    let nn = N as usize;
+    if *T0_ >= maxperiod {
+        *T0_ = maxperiod - 1;
+    }
+
+    let mut T: i32;
+    let T0: i32;
+    T = *T0_;
+    T0 = T;
+    let yy_lookup = st.alloc::<f32>(maxperiod as usize + 1);
+    dual_inner_prod(&x[base..], &x[base..], &x[base - T0 as usize..], N, &mut xx, &mut xy);
+    yy_lookup[0] = xx;
+    let mut yy = xx;
+    for i in 1..=maxperiod as usize {
+        yy = yy + x[base - i] * x[base - i] - x[base + nn - i] * x[base + nn - i];
+        yy_lookup[i] = MAX32(0.0, yy);
+    }
+    yy = yy_lookup[T0 as usize];
+    let mut best_xy = xy;
+    let mut best_yy = yy;
+    let mut g = compute_pitch_gain(xy, xx, yy);
+    let g0 = g;
+    /* Look for any pitch at T/k */
+    for k in 2..=15i32 {
+        let T1 = (2 * T0 + k) / (2 * k);
+        if T1 < minperiod {
+            break;
+        }
+        /* Look for another strong correlation at T1b */
+        let T1b: i32;
+        if k == 2 {
+            if T1 + T0 > maxperiod {
+                T1b = T0;
+            } else {
+                T1b = T0 + T1;
+            }
+        } else {
+            T1b = (2 * second_check[k as usize] * T0 + k) / (2 * k);
+        }
+        dual_inner_prod(
+            &x[base..],
+            &x[base - T1 as usize..],
+            &x[base - T1b as usize..],
+            N,
+            &mut xy,
+            &mut xy2,
+        );
+        xy = 0.5 * (xy + xy2);
+        yy = 0.5 * (yy_lookup[T1 as usize] + yy_lookup[T1b as usize]);
+        let g1 = compute_pitch_gain(xy, xx, yy);
+        let cont: f32;
+        if (T1 - prev_period).abs() <= 1 {
+            cont = prev_gain;
+        } else if (T1 - prev_period).abs() <= 2 && 5 * k * k < T0 {
+            cont = 0.5 * prev_gain;
+        } else {
+            cont = 0.0;
+        }
+        let mut thresh = MAX16(0.3, 0.7 * g0 - cont);
+        /* Bias against very high pitch (very short period) to avoid false-positives
+        due to short-term correlation */
+        if T1 < 3 * minperiod {
+            thresh = MAX16(0.4, 0.85 * g0 - cont);
+        } else if T1 < 2 * minperiod {
+            thresh = MAX16(0.5, 0.9 * g0 - cont);
+        }
+        if g1 > thresh {
+            best_xy = xy;
+            best_yy = yy;
+            T = T1;
+            g = g1;
+        }
+    }
+    best_xy = MAX32(0.0, best_xy);
+    let mut pg: f32;
+    if best_yy <= best_xy {
+        pg = 1.0;
+    } else {
+        pg = best_xy / (best_yy + 1.0);
+    }
+
+    for k in 0..3i32 {
+        xcorr[k as usize] = celt_inner_prod(&x[base..], &x[base - (T + k - 1) as usize..], N);
+    }
+    if (xcorr[2] - xcorr[0]) > 0.7 * (xcorr[1] - xcorr[0]) {
+        offset = 1;
+    } else if (xcorr[0] - xcorr[2]) > 0.7 * (xcorr[1] - xcorr[2]) {
+        offset = -1;
+    } else {
+        offset = 0;
+    }
+    if pg > g {
+        pg = g;
+    }
+    *T0_ = 2 * T + offset;
+
+    if *T0_ < minperiod0 {
+        *T0_ = minperiod0;
+    }
+    pg
 }
