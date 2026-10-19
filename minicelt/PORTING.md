@@ -6,8 +6,10 @@ https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`
 (upstream libopus 1.6.1 plus WASM SIMD / relaxed SIMD kernels in `celt/wasm`;
 its scalar encoder code is identical to 1.6.1). Do not use the fork's
 `wasm-simd` branch: it is based on post-1.6.1 upstream, whose scalar code
-behaves differently. The reference for testing is plain upstream libopus 1.6.1
-(`third_party/opus`) for the WASM 2.0 build; see Tests for WASM 3.0.
+behaves differently. The bit-exact reference for testing is that C built to wasm
+and run in the same engine (the kernels sum in lane order, so they are not
+bit-exact with scalar C); natively built upstream libopus 1.6.1
+(`third_party/opus`) is a validity and quality cross-check. See Tests.
 
 ## Fixed configuration
 
