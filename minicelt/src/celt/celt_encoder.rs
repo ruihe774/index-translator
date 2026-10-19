@@ -1422,6 +1422,460 @@ pub fn compute_vbr(
     IMIN(2 * base_target, target)
 }
 
+#[cfg(test)]
+mod helper_tests {
+    use super::*;
+    use crate::celt::celt::AnalysisInfo;
+    use crate::celt::entenc::ec_enc_init;
+    use crate::celt::modes::mode48000_960_120 as MODE;
+    use crate::celt::quant_bands::amp2Log2;
+    use crate::testutil::{Rng, music, noise, same_enc};
+    use core::ffi::{c_int, c_void};
+    use minicelt_oracle as c;
+    use std::vec;
+    use std::vec::Vec;
+
+    unsafe extern "C" {
+        fn celt_preemphasis(pcmp: *const f32, inp: *mut f32, n: c_int, cc: c_int, upsample: c_int, coef: *const f32, mem: *mut f32, clip: c_int);
+    }
+
+    const NB: usize = 21;
+    const NAN: u32 = 0x7fc00001;
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+    fn cm() -> *const c_void {
+        c::mode48000()
+    }
+    /// Planar `CC*len` celt_sig-scaled signals of kinds: 0 music, 1 noise, 2 silence, 3 tone, 4 tone+noise.
+    fn signal(rng: &mut Rng, kind: usize, cc: usize, len: usize) -> Vec<f32> {
+        match kind {
+            0 => {
+                let f = music(rng.next_u64(), 4, len, cc).pop().unwrap();
+                let mut o = vec![0.0f32; cc * len];
+                for i in 0..len {
+                    for ch in 0..cc {
+                        o[ch * len + i] = f[i * cc + ch] * 32768.0;
+                    }
+                }
+                o
+            }
+            1 => noise(rng.next_u64(), 1, len, cc, 8000.0).pop().unwrap(),
+            2 => vec![0.0; cc * len],
+            5 => {
+                /* quiet noise with a decaying burst at a random position */
+                let at = rng.range(200, len as i32 - 300) as usize;
+                let mut o = vec![0.0f32; cc * len];
+                for ch in 0..cc {
+                    for i in 0..len {
+                        let burst = if i >= at { 20000.0 * libm::expf(-((i - at) as f32) / 80.0) } else { 0.0 };
+                        o[ch * len + i] = rng.f32_unit() * (30.0 + burst);
+                    }
+                }
+                o
+            }
+            _ => {
+                let w = 0.005 + 0.2 * (rng.f32_unit().abs() as f64);
+                let a = 3000.0 + 8000.0 * rng.f32_unit().abs() as f64;
+                let ph = rng.f32_unit() as f64 * 3.0;
+                let nz = if kind == 4 { 300.0 } else { 0.0 };
+                let mut o = vec![0.0f32; cc * len];
+                for ch in 0..cc {
+                    for i in 0..len {
+                        o[ch * len + i] = (a * libm::sin(w * i as f64 * (1.0 + 0.1 * ch as f64) + ph)) as f32 + nz * rng.f32_unit();
+                    }
+                }
+                o
+            }
+        }
+    }
+    fn tone_params(rng: &mut Rng) -> (f32, f32) {
+        match rng.range(0, 3) {
+            0 => (0.0, 0.0),
+            1 => (0.005 + rng.f32_unit().abs() * 3.0, 0.97 + rng.f32_unit().abs() * 0.03),
+            2 => (0.02 + rng.f32_unit().abs() * 0.01, 0.995),
+            _ => (rng.f32_unit().abs() * 3.0, rng.f32_unit().abs()),
+        }
+    }
+    /// Per-band normalized MDCT spectrum (2 channels, 960 each) of a music/noise frame.
+    fn norm_spec(rng: &mut Rng, short: i32, kind: usize) -> Vec<f32> {
+        let inp = signal(rng, kind, 2, 1080);
+        let mut out = vec![0.0f32; 2 * 960];
+        compute_mdcts(&MODE, short, &inp, &mut out, 2, 2, 3);
+        for ch in 0..2 {
+            for i in 0..NB {
+                let (a, b) = ((MODE.eBands[i] as usize) << 3, (MODE.eBands[i + 1] as usize) << 3);
+                let e: f32 = out[ch * 960 + a..ch * 960 + b].iter().map(|x| x * x).sum();
+                let g = 1.0 / libm::sqrtf(1e-27 + e);
+                for x in &mut out[ch * 960 + a..ch * 960 + b] {
+                    *x *= g;
+                }
+            }
+        }
+        out
+    }
+    fn band_loge(rng: &mut Rng, short: i32, kind: usize) -> Vec<f32> {
+        let inp = signal(rng, kind, 2, 1080);
+        let mut spec = vec![0.0f32; 2 * 960];
+        compute_mdcts(&MODE, short, &inp, &mut spec, 2, 2, 3);
+        let mut bande = vec![0.0f32; 2 * NB];
+        for ch in 0..2 {
+            for i in 0..NB {
+                let (a, b) = ((MODE.eBands[i] as usize) << 3, (MODE.eBands[i + 1] as usize) << 3);
+                let e: f32 = spec[ch * 960 + a..ch * 960 + b].iter().map(|x| x * x).sum();
+                bande[ch * NB + i] = libm::sqrtf(1e-27 + e);
+            }
+        }
+        let mut l = vec![0.0f32; 2 * NB];
+        amp2Log2(&MODE, 21, 21, &bande, &mut l, 2);
+        l
+    }
+
+    #[test]
+    fn transient_analysis_matches_c() {
+        let mut rng = Rng::new(101);
+        let mut cnt = [0; 2];
+        for iter in 0..400 {
+            let cc = 1 + iter % 2;
+            let x = signal(&mut rng, (iter / 2) % 6, cc, 1080);
+            let (tf, ts) = tone_params(&mut rng);
+            let weak = rng.range(0, 1);
+            let (mut e1, mut e2) = (f32::from_bits(NAN), f32::from_bits(NAN));
+            let (mut ch1, mut ch2, mut w1, mut w2) = (-1, -1, 7, 7);
+            let r1 = transient_analysis(&x, 1080, cc as i32, &mut e1, &mut ch1, weak, &mut w1, tf, ts);
+            let r2 = unsafe { c::oracle_transient_analysis(x.as_ptr(), 1080, cc as i32, &mut e2, &mut ch2, weak, &mut w2, tf, ts) };
+            assert_eq!((r1, ch1, w1, e1.to_bits()), (r2, ch2, w2, e2.to_bits()), "iter {iter}");
+            cnt[r1 as usize] += 1;
+        }
+        assert!(cnt[0] > 20 && cnt[1] > 20, "transient coverage {cnt:?}");
+    }
+
+    #[test]
+    fn patch_transient_decision_matches_c() {
+        let mut rng = Rng::new(102);
+        for iter in 0..400 {
+            let cc = 1 + iter % 2;
+            let mut n = band_loge(&mut rng, 0, iter % 5);
+            let mut o = band_loge(&mut rng, 0, (iter + 1) % 3);
+            if iter % 7 == 0 {
+                for v in &mut o {
+                    *v -= 8.0;
+                }
+            }
+            let start = if iter % 5 == 0 { rng.range(0, 3) } else { 0 };
+            let r1 = patch_transient_decision(&n, &o, NB as i32, start, 21, cc as i32);
+            let r2 = unsafe { c::oracle_patch_transient_decision(n.as_mut_ptr(), o.as_mut_ptr(), NB as i32, start, 21, cc as i32) };
+            assert_eq!(r1, r2, "iter {iter}");
+        }
+    }
+
+    #[test]
+    fn compute_mdcts_matches_c() {
+        let mut rng = Rng::new(103);
+        for iter in 0..80 {
+            let (c_, cc) = match iter % 3 { 0 => (1, 1), 1 => (2, 2), _ => (1, 2) };
+            let short = if iter % 2 == 0 { 0 } else { 8 };
+            let x = signal(&mut rng, iter % 5, cc, 1080);
+            let mut a = vec![f32::from_bits(NAN); cc * 960];
+            let mut b = a.clone();
+            compute_mdcts(&MODE, short, &x, &mut a, c_ as i32, cc as i32, 3);
+            let mut xc = x.clone();
+            unsafe { c::oracle_compute_mdcts(cm(), short, xc.as_mut_ptr(), b.as_mut_ptr(), c_ as i32, cc as i32, 3, 1, 0) };
+            assert_eq!(bits(&a), bits(&b), "iter {iter}");
+        }
+    }
+
+    #[test]
+    fn celt_preemphasis_matches_c() {
+        let mut rng = Rng::new(104);
+        for iter in 0..100 {
+            let cc = 1 + iter % 2;
+            let scale = if iter % 4 < 2 { 0.5 } else { 4.0 };
+            let pcm: Vec<f32> = rng.f32_vec(960 * cc, scale);
+            let clip = (iter / 2) % 2;
+            let mut m1 = rng.f32_unit() * 1000.0;
+            let mut m2 = m1;
+            let mut a = vec![f32::from_bits(NAN); 960];
+            let mut b = a.clone();
+            celt_preemphasis_rs(&pcm, &mut a, cc, &mut m1, clip as i32);
+            unsafe { celt_preemphasis(pcm.as_ptr(), b.as_mut_ptr(), 960, cc as i32, 1, MODE.preemph.as_ptr(), &mut m2, clip as i32) };
+            assert_eq!((bits(&a), m1.to_bits()), (bits(&b), m2.to_bits()), "iter {iter}");
+        }
+    }
+    fn celt_preemphasis_rs(pcm: &[f32], inp: &mut [f32], cc: usize, mem: &mut f32, clip: i32) {
+        super::celt_preemphasis(pcm, inp, 960, cc as i32, &MODE.preemph, mem, clip);
+    }
+
+    #[test]
+    fn l1_metric_matches_c() {
+        let mut rng = Rng::new(105);
+        for _ in 0..300 {
+            let n = rng.range(1, 200);
+            let x = rng.f32_vec(n as usize, 3.0);
+            let (lm, bias) = (rng.range(0, 4), rng.f32_unit() * 0.1);
+            let a = l1_metric(&x, n, lm, bias);
+            let b = unsafe { c::oracle_l1_metric(x.as_ptr(), n, lm, bias) };
+            assert_eq!(a.to_bits(), b.to_bits());
+        }
+    }
+
+    #[test]
+    fn tf_analysis_matches_c() {
+        let mut rng = Rng::new(106);
+        for iter in 0..300 {
+            let trans = (iter % 2) as i32;
+            let mut x = norm_spec(&mut rng, if trans != 0 { 8 } else { 0 }, iter % 5);
+            let len = if iter % 4 == 0 { rng.range(5, 21) } else { 21 };
+            let lambda = rng.range(2, 200);
+            let est = rng.f32_unit().abs() * 1.5;
+            let chan = rng.range(0, 1);
+            let mut imp: Vec<i32> = (0..NB).map(|_| rng.range(1, 60)).collect();
+            let mut r1 = vec![-5; NB];
+            let mut r2 = r1.clone();
+            let s1 = tf_analysis(&MODE, len, trans, &mut r1, lambda, &x, 960, 3, est, chan, &imp);
+            let s2 = unsafe { c::oracle_tf_analysis(cm(), len, trans, r2.as_mut_ptr(), lambda, x.as_mut_ptr(), 960, 3, est, chan, imp.as_mut_ptr()) };
+            assert_eq!((s1, r1), (s2, r2), "iter {iter}");
+        }
+    }
+
+    #[test]
+    fn tf_encode_matches_c() {
+        let mut rng = Rng::new(107);
+        for iter in 0..500 {
+            let size = rng.range(2, 40) as usize;
+            let mut b1 = vec![0u8; size];
+            let mut b2 = vec![0u8; size];
+            let mut e1: ec_enc = unsafe { core::mem::zeroed() };
+            let mut e2: ec_enc = unsafe { core::mem::zeroed() };
+            ec_enc_init(&mut e1, b1.as_mut_ptr(), size as u32);
+            unsafe { c::ec_enc_init(&mut e2 as *mut ec_enc as *mut c_void, b2.as_mut_ptr(), size as u32) };
+            for _ in 0..rng.range(0, size as i32 * 3) {
+                let v = rng.range(0, 1);
+                ec_enc_bit_logp(&mut e1, v, 1);
+                unsafe { c::ec_enc_bit_logp(&mut e2 as *mut ec_enc as *mut c_void, v, 1) };
+            }
+            let trans = iter % 2;
+            let lm = if iter % 3 == 0 { rng.range(0, 3) } else { 3 };
+            let (start, end) = (0, rng.range(1, 21));
+            let mut r1: Vec<i32> = (0..NB).map(|_| rng.range(0, 1)).collect();
+            let mut r2 = r1.clone();
+            let sel = rng.range(0, 1);
+            tf_encode(start, end, trans, &mut r1, lm, sel, &mut e1);
+            unsafe { c::oracle_tf_encode(start, end, trans, r2.as_mut_ptr(), lm, sel, &mut e2 as *mut ec_enc as *mut c_void) };
+            assert_eq!(r1, r2, "iter {iter}");
+            same_enc(&e1, &e2);
+            assert_eq!(b1, b2);
+        }
+    }
+
+    #[test]
+    fn alloc_trim_analysis_matches_c() {
+        let mut rng = Rng::new(108);
+        let an = AnalysisInfo::new_zeroed();
+        for iter in 0..400 {
+            let cc = 1 + (iter % 2) as i32;
+            let x = norm_spec(&mut rng, 0, iter % 5);
+            let ble = band_loge(&mut rng, 0, iter % 5);
+            let end = if iter % 4 == 0 { rng.range(8, 21) } else { 21 };
+            let inten = rng.range(8, 21);
+            let tfe = rng.f32_unit().abs() * 1.2;
+            let rate = rng.range(20000, 130000);
+            let mut s1 = rng.f32_unit() * 2.0;
+            let mut s2 = s1;
+            let r1 = alloc_trim_analysis(&MODE, &x, &ble, end, 3, cc, 960, &mut s1, tfe, inten, rate);
+            let r2 = unsafe {
+                c::oracle_alloc_trim_analysis(cm(), x.as_ptr(), ble.as_ptr(), end, 3, cc, 960, &an as *const _ as *mut c_void, &mut s2, tfe, inten, 0.0, rate, 0)
+            };
+            assert_eq!((r1, s1.to_bits()), (r2, s2.to_bits()), "iter {iter}");
+        }
+    }
+
+    #[test]
+    fn stereo_analysis_matches_c() {
+        let mut rng = Rng::new(109);
+        for iter in 0..300 {
+            let x = norm_spec(&mut rng, 0, iter % 5);
+            let a = stereo_analysis(&MODE, &x, 3, 960);
+            let b = unsafe { c::oracle_stereo_analysis(cm(), x.as_ptr(), 3, 960) };
+            assert_eq!(a, b);
+            let lm = rng.range(0, 2);
+            let n0 = 120 << lm;
+            let y = rng.f32_vec(2 * n0 as usize, 1.0);
+            let a = stereo_analysis(&MODE, &y, lm, n0);
+            let b = unsafe { c::oracle_stereo_analysis(cm(), y.as_ptr(), lm, n0) };
+            assert_eq!(a, b);
+        }
+    }
+
+    #[test]
+    fn medians_match_c() {
+        let mut rng = Rng::new(110);
+        for _ in 0..2000 {
+            let x: Vec<f32> = (0..5).map(|_| rng.range(-3, 3) as f32 * 0.5).collect();
+            assert_eq!(median_of_5(&x).to_bits(), unsafe { c::oracle_median_of_5(x.as_ptr()) }.to_bits());
+            assert_eq!(median_of_3(&x).to_bits(), unsafe { c::oracle_median_of_3(x.as_ptr()) }.to_bits());
+        }
+    }
+
+    #[test]
+    fn dynalloc_analysis_matches_c() {
+        let mut rng = Rng::new(111);
+        let an = AnalysisInfo::new_zeroed();
+        for iter in 0..500 {
+            let cc = 1 + (iter % 2) as i32;
+            let short = if iter % 3 == 0 { 8 } else { 0 };
+            let b1 = band_loge(&mut rng, short, iter % 5);
+            let b2 = band_loge(&mut rng, short, (iter + 1) % 5);
+            let end = if iter % 5 == 0 { rng.range(8, 21) } else { 21 };
+            let lsb = rng.range(12, 24);
+            let trans = (iter / 2 % 2) as i32;
+            let cvbr = (iter / 4 % 2) as i32;
+            let bytes = if iter % 6 == 0 { rng.range(3, 50) } else { rng.range(40, 400) };
+            let (tf, ts) = tone_params(&mut rng);
+            let mut o1 = vec![99; NB];
+            let mut o2 = o1.clone();
+            let mut imp1 = vec![-7; NB];
+            let mut imp2 = imp1.clone();
+            let mut sw1 = vec![-9; NB];
+            let mut sw2 = sw1.clone();
+            let (mut t1, mut t2) = (-1, -1);
+            let r1 = dynalloc_analysis(&b1, &b2, NB as i32, 0, end, cc, &mut o1, lsb, MODE.logN, trans, cvbr, MODE.eBands, 3, bytes, &mut t1, &mut imp1, &mut sw1, tf, ts);
+            let mut sd = vec![0.0f32; 2 * NB];
+            let r2 = unsafe {
+                c::oracle_dynalloc_analysis(b1.as_ptr(), b2.as_ptr(), b1.as_ptr(), NB as i32, 0, end, cc, o2.as_mut_ptr(), lsb, MODE.logN.as_ptr(), trans, 1, cvbr, MODE.eBands.as_ptr(), 3, bytes, &mut t2, 0, sd.as_mut_ptr(), &an as *const _ as *mut c_void, imp2.as_mut_ptr(), sw2.as_mut_ptr(), tf, ts)
+            };
+            assert_eq!((r1.to_bits(), o1, t1, imp1, sw1), (r2.to_bits(), o2, t2, imp2, sw2), "iter {iter}");
+        }
+    }
+
+    #[test]
+    fn tone_lpc_matches_c() {
+        let mut rng = Rng::new(112);
+        for iter in 0..300 {
+            let x = signal(&mut rng, 2 + iter % 3 + (iter % 2) * 0, 1, 1080);
+            let x = if iter % 7 == 0 { signal(&mut rng, 1, 1, 1080) } else { x };
+            let delay = 1 << rng.range(0, 5);
+            let mut l1 = [f32::from_bits(NAN); 2];
+            let mut l2 = l1;
+            let r1 = tone_lpc(&x, 1080, delay, &mut l1);
+            let r2 = unsafe { c::oracle_tone_lpc(x.as_ptr(), 1080, delay, l2.as_mut_ptr()) };
+            assert_eq!((r1, bits(&l1)), (r2, bits(&l2)), "iter {iter}");
+        }
+    }
+
+    #[test]
+    fn tone_detect_matches_c() {
+        let mut rng = Rng::new(113);
+        for iter in 0..400 {
+            let cc = 1 + iter % 2;
+            let x = signal(&mut rng, iter / 2 % 5, cc, 1080);
+            let (mut t1, mut t2) = (f32::from_bits(NAN), f32::from_bits(NAN));
+            let f1 = tone_detect(&x, cc as i32, 1080, &mut t1, 48000);
+            let f2 = unsafe { c::oracle_tone_detect(x.as_ptr(), cc as i32, 1080, &mut t2, 48000) };
+            assert_eq!((f1.to_bits(), t1.to_bits()), (f2.to_bits(), t2.to_bits()), "iter {iter}");
+        }
+    }
+
+    #[test]
+    fn run_prefilter_matches_c() {
+        let mut rng = Rng::new(114);
+        let in_off = core::mem::offset_of!(CELTEncoder, in_mem);
+        let sz = core::mem::size_of::<CELTEncoder>();
+        let (mut on, mut off) = (0, 0);
+        for iter in 0..60 {
+            let cc = 1 + iter % 2;
+            let mut st = CELTEncoder::new_zeroed();
+            celt_encoder_init(&mut st, 48000, cc as i32);
+            st.loss_rate = if iter % 5 == 0 { rng.range(0, 10) } else { 0 };
+            st.prefilter_period = rng.range(0, 1000);
+            st.prefilter_gain = if iter % 3 == 0 { 0.0 } else { rng.f32_unit().abs() * 0.75 };
+            st.prefilter_tapset = rng.range(0, 2);
+            let mut cbuf = vec![0u64; sz / 8 + 2];
+            let cst = cbuf.as_mut_ptr() as *mut u8;
+            assert_eq!(unsafe { c::oracle_opus_custom_encoder_init_arch(cst as *mut c_void, cm(), cc as i32, 0) }, 0);
+            let mut cpre = vec![0.0f32; 2 * 1024];
+            let src = signal(&mut rng, iter / 2 % 3, cc, 1024);
+            for ch in 0..cc {
+                st.prefilter_mem[ch * 1024..(ch + 1) * 1024].copy_from_slice(&src[ch * 1024..(ch + 1) * 1024]);
+            }
+            for ch in 0..cc * 120 {
+                st.in_mem[ch] = rng.f32_unit() * 1000.0;
+            }
+            let cst_bytes_cmp = |st: &CELTEncoder, cpre: &Vec<f32>, what: &str| unsafe {
+                let rb = core::slice::from_raw_parts(st as *const CELTEncoder as *const u8, in_off);
+                let cb = core::slice::from_raw_parts(cst, in_off);
+                assert_eq!(&rb[4..], &cb[4..], "{what}: header");
+                let ci = core::slice::from_raw_parts(cst.add(in_off) as *const f32, cc * 120);
+                assert_eq!(bits(&st.in_mem[..cc * 120]), bits(ci), "{what}: in_mem");
+                assert_eq!(bits(&st.prefilter_mem[..cc * 1024]), bits(&cpre[..cc * 1024]), "{what}: prefilter_mem");
+            };
+            for frame in 0..6 {
+                let sig = signal(&mut rng, (iter / 2 + frame) % 5, cc, 960);
+                let mut inr = vec![f32::from_bits(NAN); cc * 1080];
+                for ch in 0..cc {
+                    inr[ch * 1080 + 120..(ch + 1) * 1080].copy_from_slice(&sig[ch * 960..(ch + 1) * 960]);
+                }
+                let mut inc = inr.clone();
+                // sync C state from Rust (all but the mode pointer)
+                unsafe {
+                    core::ptr::copy_nonoverlapping((&st as *const CELTEncoder as *const u8).add(4), cst.add(4), in_off - 4);
+                    core::ptr::copy_nonoverlapping(st.in_mem.as_ptr(), cst.add(in_off) as *mut f32, cc * 120);
+                }
+                cpre[..cc * 1024].copy_from_slice(&st.prefilter_mem[..cc * 1024]);
+                let tapset = rng.range(0, 2);
+                let enabled = if iter % 7 == 0 { 0 } else { 1 };
+                let cplx = if iter % 9 == 0 { rng.range(0, 4) } else { 5 + rng.range(0, 5) };
+                let tfe = rng.f32_unit().abs() * 1.2;
+                let bytes = rng.range(10, 200);
+                let (tf, ts) = if iter % 4 == 0 { tone_params(&mut rng) } else { (0.0, 0.0) };
+                let (mut p1, mut g1, mut q1) = (-1, -1.0f32, -1);
+                let (mut p2, mut g2, mut q2) = (-1, -1.0f32, -1);
+                let r1 = run_prefilter(&mut st, &mut inr, cc as i32, 960, tapset, &mut p1, &mut g1, &mut q1, enabled, cplx, tfe, bytes, tf, ts);
+                let an = AnalysisInfo::new_zeroed();
+                let r2 = unsafe {
+                    c::oracle_run_prefilter(cst as *mut c_void, inc.as_mut_ptr(), cpre.as_mut_ptr(), cc as i32, 960, tapset, &mut p2, &mut g2, &mut q2, enabled, cplx, tfe, bytes, &an as *const _ as *mut c_void, tf, ts)
+                };
+                assert_eq!((r1, p1, g1.to_bits(), q1), (r2, p2, g2.to_bits(), q2), "iter {iter} frame {frame}");
+                assert_eq!(bits(&inr), bits(&inc), "in iter {iter} frame {frame}");
+                cst_bytes_cmp(&st, &cpre, "state");
+                if r1 != 0 { on += 1 } else { off += 1 }
+                // as celt_encode_with_ec does after the prefilter
+                if r1 != 0 {
+                    st.prefilter_period = p1;
+                    st.prefilter_gain = g1;
+                    st.prefilter_tapset = tapset;
+                } else {
+                    st.prefilter_gain = 0.0;
+                }
+            }
+        }
+        assert!(on > 10 && off > 10, "prefilter coverage on={on} off={off}");
+    }
+
+    #[test]
+    fn compute_vbr_matches_c() {
+        let mut rng = Rng::new(115);
+        let an = AnalysisInfo::new_zeroed();
+        for iter in 0..5000 {
+            let cc = 1 + (iter % 2) as i32;
+            let base = rng.range(300, 40000);
+            let br = rng.range(6000, 510000);
+            let lcb = if iter % 3 == 0 { 0 } else { rng.range(1, 21) };
+            let inten = rng.range(0, 21);
+            let cvbr = rng.range(0, 1);
+            let ss = rng.f32_unit() * 2.0;
+            let tb = rng.range(0, 2000);
+            let tfe = if iter % 2 == 0 { rng.f32_unit().abs() * 0.3 } else { rng.f32_unit().abs() * 1.3 };
+            let md = rng.f32_unit() * 20.0 + 5.0;
+            let tv = rng.f32_unit() * 3.0;
+            let a = compute_vbr(&MODE, base, 3, br, lcb, cc, inten, cvbr, ss, tb, tfe, md, tv);
+            let b = unsafe { c::oracle_compute_vbr(cm(), &an as *const _ as *mut c_void, base, 3, br, lcb, cc, inten, cvbr, ss, tb, tfe, 0, md, 0, 0, 0.0, tv) };
+            assert_eq!(a, b, "iter {iter}");
+        }
+    }
+}
+
 // group E: everything else.
 
 /* ------------------------------------------------------------------------------------------
