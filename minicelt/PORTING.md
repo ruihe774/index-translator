@@ -162,6 +162,24 @@ trap, native decoder error, bad TOC or encoder/decoder final range mismatch fail
 Every packet is also decoded natively (scalar decoder with the right channel count) and the SNR of
 the decoded streams is reported. `--refs-only` runs the reference self-check without minicelt wasm.
 
+**Tolerance gate against upstream scalar** (needs no fork and no wasi-sdk; the `cwasm` builds are optional and
+their exact pairs are skipped when missing). `scalar` vs `wasm2`, `wasm2-checked`, `wasm3`, `wasm3-checked` is judged
+by effects, because SIMD summation order and FMA change packets in a share of the frames (upstream's own SIMD
+builds do too: `scripts/variance.ts` measured 0.15-1.3 % of frames on aarch64 NEON and 41-45 % on x86-64 AVX2, whose
+`celt_pitch_xcorr` fuses with FMA, with SILK bit-exact on both) without a measurable effect on quality or size.
+Checks (`GATE` in `compare.ts`), pooled over all runs and again for mono and stereo: ctl return codes and lookahead
+equal; `|mean dSNR|` <= 0.02 dB and `|mean dbytes|` <= 0.01 % (a mean fails only if it is also more than 4 standard
+errors from zero: noise is symmetric, a defect is not); every run within 1 dB and 2 % of the size (4 bytes floor);
+`in_dtx` differing in <= 0.5 % of the frames; per CELT band (21 bands, Hann-windowed 20 ms frames of the decoded
+streams) the mean log-spectral distance B-A within 0.02 dB (same significance rule) and the mean absolute distance
+within 0.1 dB, over all decoded frames. The band check is there because SNR is dominated by the loud low bands and
+cannot see a defect in the top ones. Packet divergence rate is reported, not gated: it is uninformative on x86. The
+same checks run for `scalar` vs `rtcd` (upstream's own SIMD) as the baseline of the bounds: if it fails on a host,
+the bounds are too tight for it. In `--quick` the band checks are informational (too few frames: the baseline fails
+them there). Sensitivity: a 2.4 % change of the encoder's pre-emphasis fails nearly every check; a 10 % change of the
+constrained-VBR modulation factor (0.67 to 0.60) fails only the mean band distance, and smaller decision tweaks are
+not detectable.
+
 **Relaxed SIMD and FMA**: `f32x4.relaxed_madd` is fused on x86 with FMA (V8
 emits `vfmadd`), so the WASM 3.0 build's float kernels round differently from
 scalar C. The WASM 3.0 build is therefore compared end to end against the fork's

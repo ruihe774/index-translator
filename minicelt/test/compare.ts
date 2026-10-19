@@ -21,6 +21,12 @@
 // fused by V8 on FMA hardware. Informational pairs (reported, never fail): scalar and rtcd vs the
 // minicelt/C-wasm builds, and cwasm2 vs cwasm3 (the effect of FMA). `--strict-scalar` makes
 // scalar vs wasm2/wasm2-checked exact pairs (they hold only for a build without the SIMD float kernels).
+// The cwasm builds are optional (they need wasi-sdk): without them these exact pairs are skipped.
+// Tolerance gate (the oracle that needs no fork): the minicelt builds are also judged against upstream scalar by
+// effects instead of packets (see GATE and gateReport): ctl codes and lookahead, mean SNR and size deltas, per-run
+// bounds, in_dtx agreement, and band-resolved log-spectral distance of the decoded streams. The bounds come from
+// scripts/variance.ts on upstream's own scalar-vs-SIMD builds (aarch64 NEON, x86-64 AVX2); scalar vs rtcd runs through
+// the same checks as the baseline (reported, not gated). In --quick the band checks are informational.
 // Any trap, native decoder rejection, bad TOC or encoder/decoder final range mismatch of any
 // implementation fails the test.
 // Every packet is also decoded by the native (scalar) decoder, whose final range must equal the
@@ -477,7 +483,7 @@ function schedule(cfg: Cfg, nFrames: number) {
 
 type Trace = {
   error?: string; lookahead: number; lens: number[]; pkts: Uint8Array[]; ranges: number[]; dtx: number[]; ctl: number[];
-  bytes: number; snr: number;
+  bytes: number; snr: number; decoded: Float64Array; // decoded: native scalar decoder output, interleaved
 };
 type Decoder = ReturnType<ReturnType<typeof loadNative>['decoder']>;
 
@@ -509,7 +515,7 @@ function prepare(sig: Sig, cfg: Cfg, start: number, nFrames: number): Input {
 
 function runImpl(impl: Impl, nativeDec: (ch: number) => Decoder, cfg: Cfg, inp: Input): Trace {
   const { ch } = cfg, nFrames = inp.nFrames;
-  const tr: Trace = { lookahead: 0, lens: [], pkts: [], ranges: [], dtx: [], ctl: [], bytes: 0, snr: 0 };
+  const tr: Trace = { lookahead: 0, lens: [], pkts: [], ranges: [], dtx: [], ctl: [], bytes: 0, snr: 0, decoded: new Float64Array(0) };
   const enc = impl.create(ch, cfg.bitrate, cfg.complexity, cfg.vbrc, cfg.dtx);
   const dec = nativeDec(ch);
   try {
@@ -539,6 +545,7 @@ function runImpl(impl: Impl, nativeDec: (ch: number) => Decoder, cfg: Cfg, inp: 
       decoded.set(pcmD, f * n);
     }
     tr.snr = snr(inp.ref, decoded, tr.lookahead * ch);
+    tr.decoded = decoded;
   } catch (e) {
     tr.error = e instanceof Error ? e.message : String(e);
   } finally {
@@ -559,12 +566,178 @@ function firstMismatch(a: Trace, b: Trace): string | undefined {
   return undefined;
 }
 
+// ---------- tolerance gate against upstream scalar ----------
+//
+// The fork's SIMD kernels (and the x86/NEON ones of upstream) sum in lane order and may fuse multiply-adds, so
+// their packets differ from the scalar C's in a share of the frames, from a few percent (NEON) to most of them
+// (AVX2 FMA at high bitrates), without any effect on quality or size. The pairs gated against scalar therefore do
+// not compare packets but the effects, which stayed stable across the upstream SIMD builds measured with
+// scripts/variance.ts (aarch64 NEON, x86-64 AVX2): hard invariants (ctl codes, lookahead, plus the per-implementation
+// checks above), signed mean deltas near zero, per-run bounds, and band-resolved log-spectral distance of the decoded
+// streams (SNR is dominated by the loud low bands and cannot see a defect in the top ones). Packet divergence
+// rate and re-convergence are reported only. scalar vs rtcd (upstream's own SIMD) runs through the same checks as a
+// baseline: if it fails, the bounds are too tight for this host.
+// A mean is gated as a bias: it fails only when it is both material (above its bound) and significant (more than
+// SIGMAS standard errors from zero). Float-order noise is symmetric, so on a short or clean corpus a few flipped
+// frames can move a mean without being a bias, while a systematic defect shows in every frame.
+const GATE = {
+  meanDSnr: 0.02,        // dB, mean (SNR_B - SNR_A) over runs
+  runDSnr: 1,            // dB, |SNR_B - SNR_A| of any run
+  meanDBytesPct: 0.01,   // %, mean relative size difference over runs
+  runDBytesPct: 2,       // %, per run, with an absolute floor of runDBytesFloor bytes (a DTX/silence run is a few hundred bytes)
+  runDBytesFloor: 4,
+  bandBias: 0.02,        // dB, mean log-spectral distance B - A of any band, over all decoded frames
+  bandAbs: 0.1,          // dB, mean |log-spectral distance| of any band, over all decoded frames
+  dtxFrames: 0.005,      // share of frames whose in_dtx state differs
+  sigmas: 4,
+};
+
+// The 21 CELT bands (eband5ms, 200 Hz units at 5 ms resolution), analysed with a Hann window over one 20 ms frame.
+const NFFT = 1024;
+const BAND_EDGES = [0, 1, 2, 3, 4, 5, 6, 7, 8, 10, 12, 14, 16, 20, 24, 28, 34, 40, 48, 60, 78, 100].map((e) => e * 200);
+const NBANDS = BAND_EDGES.length - 1;
+const bandAnalysis = (() => {
+  const win = Float64Array.from({ length: FRAME }, (_, i) => 0.5 - 0.5 * Math.cos(2 * Math.PI * (i + 0.5) / FRAME));
+  const w2 = win.reduce((a, v) => a + v * v, 0);
+  const bins = BAND_EDGES.slice(0, NBANDS).map((lo, b) => [Math.ceil(lo * NFFT / FS), Math.ceil(BAND_EDGES[b + 1] * NFFT / FS)]);
+  // Floor: white noise of one 16-bit LSB (variance 1/12) in every bin, so that empty bands do not blow up the ratio.
+  const floor = bins.map(([lo, hi]) => (hi - lo) * w2 / 12);
+  const cos = Float64Array.from({ length: NFFT / 2 }, (_, i) => Math.cos(-2 * Math.PI * i / NFFT));
+  const sin = Float64Array.from({ length: NFFT / 2 }, (_, i) => Math.sin(-2 * Math.PI * i / NFFT));
+  const rev = new Uint32Array(NFFT);
+  for (let i = 0, lg = Math.log2(NFFT); i < NFFT; i++) { let r = 0; for (let b = 0; b < lg; b++) if (i >> b & 1) r |= 1 << (lg - 1 - b); rev[i] = r; }
+  const re = new Float64Array(NFFT), im = new Float64Array(NFFT);
+  const energies = (x: Float64Array, off: number, stride: number) => {
+    re.fill(0); im.fill(0);
+    for (let i = 0; i < FRAME; i++) re[rev[i]] = x[off + i * stride] * win[i];
+    for (let len = 2; len <= NFFT; len <<= 1) {
+      const h = len >> 1, step = NFFT / len;
+      for (let s = 0; s < NFFT; s += len) {
+        for (let k = 0; k < h; k++) {
+          const a = s + k, b = a + h, c = cos[k * step], d = sin[k * step];
+          const tr = re[b] * c - im[b] * d, ti = re[b] * d + im[b] * c;
+          re[b] = re[a] - tr; im[b] = im[a] - ti; re[a] += tr; im[a] += ti;
+        }
+      }
+    }
+    return Float64Array.from(bins, ([lo, hi]) => { let e = 0; for (let k = lo; k < hi; k++) e += re[k] * re[k] + im[k] * im[k]; return e; });
+  };
+  return { floor, energies };
+})();
+
+type Pool = {
+  runs: number; runsDiv: number; frames: number; framesDiv: number; dtxFrames: number;
+  nSnr: number; sumDSnr: number; sumSqDSnr: number; maxDSnr: number; nBytes: number; sumDBytes: number; sumSqDBytes: number; maxDBytes: number;
+  // Log-spectral distance sums over differing decoded frame-channels (identical ones contribute 0); bandNAll counts all of them.
+  bandAbs: number[]; bandSgn: number[]; bandSq: number[]; bandN: number; bandNAll: number;
+  hard: string[]; snrFails: string[]; bytesFails: string[];
+};
+const newPool = (): Pool => ({
+  runs: 0, runsDiv: 0, frames: 0, framesDiv: 0, dtxFrames: 0, nSnr: 0, sumDSnr: 0, sumSqDSnr: 0, maxDSnr: 0, nBytes: 0, sumDBytes: 0,
+  sumSqDBytes: 0, maxDBytes: 0, bandAbs: new Array(NBANDS).fill(0), bandSgn: new Array(NBANDS).fill(0), bandSq: new Array(NBANDS).fill(0),
+  bandN: 0, bandNAll: 0, hard: [], snrFails: [], bytesFails: [],
+});
+
+// Adds one run of B against A (the scalar reference) to the pools.
+function gateRun(pools: Pool[], A: Trace, B: Trace, ch: number, label: string, nFrames: number) {
+  const hard = A.lookahead !== B.lookahead ? `lookahead ${A.lookahead} != ${B.lookahead}`
+    : A.ctl.length !== B.ctl.length || A.ctl.some((v, i) => v !== B.ctl[i]) ? 'ctl return codes differ' : undefined;
+  let div = 0, dtx = 0;
+  for (let f = 0; f < nFrames; f++) {
+    if (A.lens[f] !== B.lens[f] || A.pkts[f].some((v, i) => v !== B.pkts[f][i])) div++;
+    if (A.dtx[f] !== B.dtx[f]) dtx++;
+  }
+  const dSnr = isFinite(A.snr) && isFinite(B.snr) ? B.snr - A.snr : undefined;
+  const dBytes = A.bytes > 0 ? 100 * (B.bytes - A.bytes) / A.bytes : 0;
+  const bytesTol = Math.max(GATE.runDBytesPct / 100 * A.bytes, GATE.runDBytesFloor);
+  // Band-resolved distance over every decoded frame that differs (decoder state keeps differing after a packet flip).
+  const bandAbs = new Array(NBANDS).fill(0), bandSgn = new Array(NBANDS).fill(0), bandSq = new Array(NBANDS).fill(0);
+  let bandN = 0;
+  if (div || dtx) {
+    const n = FRAME * ch;
+    for (let f = 0; f < nFrames; f++) {
+      for (let c = 0; c < ch; c++) {
+        let same = true;
+        for (let i = 0; i < FRAME && same; i++) same = A.decoded[f * n + i * ch + c] === B.decoded[f * n + i * ch + c];
+        if (same) continue;
+        const ea = bandAnalysis.energies(A.decoded, f * n + c, ch), eb = bandAnalysis.energies(B.decoded, f * n + c, ch);
+        for (let b = 0; b < NBANDS; b++) {
+          const d = 10 * Math.log10((eb[b] + bandAnalysis.floor[b]) / (ea[b] + bandAnalysis.floor[b]));
+          bandAbs[b] += Math.abs(d); bandSgn[b] += d; bandSq[b] += d * d;
+        }
+        bandN++;
+      }
+    }
+  }
+  for (const p of pools) {
+    p.runs++; p.frames += nFrames; p.framesDiv += div; p.dtxFrames += dtx;
+    if (div) p.runsDiv++;
+    if (hard) p.hard.push(`  ${label} ${hard}`);
+    if (dSnr !== undefined) {
+      p.nSnr++; p.sumDSnr += dSnr; p.sumSqDSnr += dSnr * dSnr; p.maxDSnr = Math.max(p.maxDSnr, Math.abs(dSnr));
+      if (Math.abs(dSnr) > GATE.runDSnr) p.snrFails.push(`  ${label} SNR${B.snr.toFixed(2)} dB vs scalar ${A.snr.toFixed(2)} dB`);
+    }
+    p.nBytes++; p.sumDBytes += dBytes; p.sumSqDBytes += dBytes * dBytes; p.maxDBytes = Math.max(p.maxDBytes, Math.abs(dBytes));
+    if (Math.abs(B.bytes - A.bytes) > bytesTol) p.bytesFails.push(`  ${label} bytes ${B.bytes} vs scalar ${A.bytes}`);
+    for (let b = 0; b < NBANDS; b++) { p.bandAbs[b] += bandAbs[b]; p.bandSgn[b] += bandSgn[b]; p.bandSq[b] += bandSq[b]; }
+    p.bandN += bandN; p.bandNAll += nFrames * ch;
+  }
+}
+
+// Evaluates the checks of one pool; returns the number of failed checks.
+function gateReport(title: string, p: Pool, count: boolean): number {
+  // soft: reported, never counted as a failure. The band checks are soft in --quick (a few short windows): upstream's own
+  // NEON build fails them at that sample size, where a handful of flipped frames dominates a band's mean.
+  type Check = { name: string; v: number; bound: number; note: string; ok: boolean; soft: boolean };
+  const checks: Check[] = [];
+  const limit = (name: string, v: number, bound: number, note = '', soft = false) => checks.push({ name, v, bound, note, ok: v <= bound, soft });
+  // Bias check on a mean: fails when |mean| > bound and |mean| > SIGMAS standard errors.
+  const bias = (name: string, sum: number, sumSq: number, n: number, bound: number, note = '', soft = false) => {
+    const m = sum / n, se = Math.sqrt(Math.max(0, sumSq / n - m * m) / n);
+    checks.push({ name, v: Math.abs(m), bound, note: `${note}${note ? ', ' : ''}${GATE.sigmas} SE = ${(GATE.sigmas * se).toPrecision(2)}`,
+      ok: !(Math.abs(m) > bound && Math.abs(m) > GATE.sigmas * se), soft });
+  };
+  bias('|mean ΔSNR| (dB)', p.sumDSnr, p.sumSqDSnr, p.nSnr, GATE.meanDSnr);
+  limit('max run |ΔSNR| (dB)', p.maxDSnr, GATE.runDSnr, `${p.snrFails.length} runs over`);
+  bias('|mean Δbytes| (%)', p.sumDBytes, p.sumSqDBytes, p.nBytes, GATE.meanDBytesPct);
+  limit('runs over the Δbytes bound', p.bytesFails.length, 0, `max |Δ| ${p.maxDBytes.toFixed(3)} %, bound ${GATE.runDBytesPct} %`);
+  limit('in_dtx frames differing (share)', p.dtxFrames / p.frames, GATE.dtxFrames);
+  if (p.bandNAll) {
+    // Per band over all decoded frame-channels: a defect in a band shows in every frame, a flipped decision in a few.
+    const bands = Array.from({ length: NBANDS }, (_, b) => b);
+    const wa = bands.reduce((m, b) => p.bandAbs[b] > p.bandAbs[m] ? b : m, 0);
+    const z = (b: number) => Math.abs(p.bandSgn[b] / p.bandNAll) / (Math.sqrt(Math.max(0, p.bandSq[b] / p.bandNAll - (p.bandSgn[b] / p.bandNAll) ** 2) / p.bandNAll) || Infinity);
+    const wb = bands.filter((b) => Math.abs(p.bandSgn[b] / p.bandNAll) > GATE.bandBias).reduce((m, b) => z(b) > z(m) ? b : m, -1);
+    const bb = wb >= 0 ? wb : bands.reduce((m, b) => Math.abs(p.bandSgn[b]) > Math.abs(p.bandSgn[m]) ? b : m, 0);
+    bias('worst band |mean LSD B-A| (dB)', p.bandSgn[bb], p.bandSq[bb], p.bandNAll, GATE.bandBias, `band ${bb} (${BAND_EDGES[bb]}-${BAND_EDGES[bb + 1]} Hz)`, quick);
+    limit('worst band mean |LSD| (dB)', p.bandAbs[wa] / p.bandNAll, GATE.bandAbs, `band ${wa} (${BAND_EDGES[wa]}-${BAND_EDGES[wa + 1]} Hz)`, quick);
+  }
+  limit('ctl/lookahead mismatches', p.hard.length, 0);
+  let failed = 0;
+  console.log(`  ${title}: ${p.runs} runs, ${p.runsDiv} with a differing packet, ${(100 * p.framesDiv / p.frames).toFixed(2)} % of ${p.frames} frames; ` +
+    `${p.bandN} of ${p.bandNAll} decoded frame-channels differ`);
+  for (const { name, v, bound, note, ok, soft } of checks) {
+    if (!ok && !soft) failed++;
+    console.log(`    ${ok ? 'ok  ' : soft ? 'info' : 'FAIL'} ${name.padEnd(34)} ${v.toPrecision(3).padStart(9)} vs ${bound}${note ? `   (${note})` : ''}`);
+  }
+  if (failed && count) {
+    for (const l of [...p.hard, ...p.snrFails, ...p.bytesFails].slice(0, 10)) console.log(l);
+  }
+  return failed;
+}
+
 // ---------- main ----------
 
 const native = { scalar: loadNative('scalar'), rtcd: loadNative('rtcd') };
 const impls = new Map<string, Impl>([['scalar', native.scalar.impl], ['rtcd', native.rtcd.impl]]);
 const nativeDec = native.scalar.decoder;
-for (const v of [2, 3]) impls.set(`cwasm${v}`, await loadCWasm(v));
+// The fork's C built for wasm (build-cwasm.sh, needs wasi-sdk) is optional: without it the exact cwasm pairs are skipped
+// and the tolerance gate against upstream scalar is what judges the minicelt builds.
+for (const v of [2, 3]) {
+  if (refsOnly || await Deno.stat(`${root}target/native/minicelt-cwasm${v}.wasm`).then(() => true, () => false)) {
+    impls.set(`cwasm${v}`, await loadCWasm(v));
+  } else console.log(`note: target/native/minicelt-cwasm${v}.wasm not built, skipping the exact cwasm${v} pairs`);
+}
 if (!refsOnly) {
   for (const [v, c] of [[2, false], [3, false], [2, true], [3, true]] as const) {
     const w = await loadMini(v, c);
@@ -578,7 +751,11 @@ const pairs: [string, string, boolean][] = refsOnly
   : [['cwasm2', 'wasm2', true], ['cwasm2', 'wasm2-checked', true], ['cwasm3', 'wasm3', true], ['cwasm3', 'wasm3-checked', true],
     ['scalar', 'wasm2', strictScalar], ['scalar', 'wasm2-checked', strictScalar], ['scalar', 'cwasm2', false],
     ['cwasm2', 'cwasm3', false], ['scalar', 'wasm3', false], ['rtcd', 'wasm2', false], ['rtcd', 'wasm3', false]];
-const used = [...new Set(pairs.flatMap(([a, b]) => [a, b]).filter((p) => impls.has(p)))];
+// Gated against upstream scalar by tolerance (see GATE); scalar vs rtcd is the baseline of the bounds, not gated.
+const gated: [string, string, boolean][] = refsOnly ? [] : [['scalar', 'wasm2', true], ['scalar', 'wasm2-checked', true],
+  ['scalar', 'wasm3', true], ['scalar', 'wasm3-checked', true], ['scalar', 'rtcd', false]];
+const gatePools = gated.map(() => ({ all: newPool(), ch: [newPool(), newPool()] }));
+const used = [...new Set([...pairs, ...gated].flatMap(([a, b]) => [a, b]).filter((p) => impls.has(p)))];
 const implErrors = new Map<string, string[]>(used.map((u) => [u, []]));
 
 type Stat = { runs: number; exact: number; frames: number; bad: string[]; snrA: number; snrB: number; n: number; dSnr: number; dBytes: number; nBad: number };
@@ -621,6 +798,12 @@ for (const [ri, run] of runs.entries()) {
   for (const [name, tr] of traces) {
     if (tr.error) implErrors.get(name)!.push(`  ${sig.name} [${cfg.name}, ${run.nFrames} fr @${run.start}] ${tr.error}`);
   }
+  gated.forEach(([a, b], gi) => {
+    const A = traces.get(a), B = traces.get(b);
+    if (!A || !B || A.error || B.error) return; // reported per implementation below
+    const label = `${sig.name} [${cfg.name}, ${run.nFrames} fr @${run.start}]`;
+    gateRun([gatePools[gi].all, gatePools[gi].ch[cfg.ch - 1]], A, B, cfg.ch, label, run.nFrames);
+  });
   pairs.forEach(([a, b, exact], pi) => {
     const A = traces.get(a), B = traces.get(b);
     if (!A || !B) return;
@@ -658,6 +841,18 @@ for (const [pi, [a, b, exact]] of pairs.entries()) {
     const show = exact ? 20 : 3;
     console.log(st.bad.slice(0, show).join('\n') + (st.bad.length > show ? `\n  ... ${st.bad.length - show} more` : ''));
     console.log(`  mean over mismatched runs: SNR ${b}-${a} ${(st.dSnr / st.nBad).toFixed(3)} dB, size ${(100 * st.dBytes / st.nBad).toFixed(3)} %`);
+  }
+}
+if (gated.length) {
+  console.log('\ntolerance gate against upstream scalar (bounds: see GATE):');
+  for (const [gi, [a, b, count]] of gated.entries()) {
+    console.log(`${a} vs ${b}${count ? '' : ' (baseline: upstream SIMD, not gated)'}`);
+    const pools: [string, Pool][] = [['all', gatePools[gi].all], ['mono', gatePools[gi].ch[0]], ['stereo', gatePools[gi].ch[1]]];
+    for (const [title, p] of pools) {
+      const failed = gateReport(title, p, count);
+      if (count) failures += failed;
+      else if (failed) console.log(`    NOTE: upstream's own SIMD fails ${failed} check(s) on this host: the bounds are too tight for it`);
+    }
   }
 }
 console.log(`${((performance.now() - t0) / 1000).toFixed(1)} s total`);
