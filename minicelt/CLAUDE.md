@@ -24,7 +24,8 @@ Rust port of the libopus CELT-only float encoder for wasm32. Read `PORTING.md` b
 
 ## Rules
 
-- Bit-exactness with scalar libopus is the test goal. Match C numeric precision exactly
+- Bit-exactness with libopus 1.6.1 + the fork's WASM kernels (built to wasm, same engine) is the test
+  goal; the kernels sum in lane order, so native scalar libopus is only a quality cross-check. Match C numeric precision exactly
   (integer promotion, `f32` vs `f64`); never hand-vectorize plain C loops.
 - Where the fork has a WASM SIMD kernel, port it with `core::arch::wasm32`; add no scalar fallback.
   Relaxed SIMD uses `cfg(target_feature = "relaxed-simd")`.

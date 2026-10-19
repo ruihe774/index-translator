@@ -8,7 +8,8 @@ and `minicelt/` (CELT-only). Each crate has its own `CLAUDE.md` (scope) and `POR
 
 - Keep the crates separate: no shared crate, no cross-crate dependency. Copy and adapt instead.
 - wasm32 only; variants WASM 2.0 (`+simd128`) and 3.0 (`+relaxed-simd`). `no_std`, no alloc.
-- Bit-exactness with scalar libopus is the test goal. C reference builds use `-ffp-contract=off`.
+- Bit-exactness with the C reference is the test goal (see each crate's PORTING.md for which build).
+  C reference builds use `-ffp-contract=off`.
 
 ## Layout
 
