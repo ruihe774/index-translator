@@ -128,6 +128,7 @@ unsafe extern "C" {
     pub fn opus_encoder_get_size(channels: c_int) -> c_int;
     pub fn opus_encoder_create(fs: i32, channels: c_int, application: c_int, error: *mut c_int) -> *mut OpusEncoder;
     pub fn opus_encoder_destroy(st: *mut OpusEncoder);
+    pub fn is_digital_silence(pcm: *const f32, frame_size: c_int, channels: c_int, lsb_depth: c_int) -> c_int;
     pub fn opus_encode(st: *mut OpusEncoder, pcm: *const i16, frame_size: c_int, data: *mut c_uchar, max_data_bytes: i32) -> i32;
     pub fn opus_encode_float(st: *mut OpusEncoder, pcm: *const f32, frame_size: c_int, data: *mut c_uchar, max_data_bytes: i32) -> i32;
 
