@@ -2,9 +2,11 @@
 
 A minimal Opus encoder: a Rust port of the libopus CELT-only float encoder
 (`OPUS_APPLICATION_RESTRICTED_CELT`), designed for WebAssembly. `no_std`, no allocation (a 48 KiB
-static scratch buffer). WASM SIMD is used (which the upstream libopus does not). Its packets are
-valid Opus and bit-exact with libopus 1.6.1 configured the same way and built with the same WASM
-SIMD kernels (https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`).
+static scratch buffer). WASM SIMD is used (which the upstream libopus does not; the kernels are ported
+from https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`). Its packets are valid
+Opus and agree with libopus 1.6.1 (scalar C) within a tolerance: SIMD changes the order of float sums,
+so a share of the packets differ from scalar's without a measurable effect on quality or size, as
+with upstream's own SSE/AVX2/NEON builds.
 
 ## Scope
 
@@ -52,14 +54,14 @@ const packet = new Uint8Array(x.memory.buffer, x.minicelt_output_ptr(), n).slice
 ## Test
 
 ```sh
-git submodule update --init   # third_party/opus (libopus v1.6.1), third_party/opus-wasm-simd
+git submodule update --init   # third_party/opus (libopus v1.6.1)
 scripts/test.sh celt [--quick] [audio files...]
 ```
 
-Needs Rust, a C compiler, CMake, Ninja, wasi-sdk (`WASI_SDK_PATH`) and Deno; the submodule
-`third_party/opus-wasm-simd` holds the fork. The test encodes the same inputs with every wasm build, with the C built to
-wasm with the same kernels, and with natively built libopus (via Deno FFI), and requires identical
-packets, final range and DTX state against the C wasm builds. See [PORTING.md](PORTING.md) for
+Needs Rust, a C compiler, CMake, Ninja and Deno. The test encodes the same inputs with every wasm build
+and with natively built libopus, scalar and SIMD (via Deno FFI), and judges the wasm builds against scalar
+libopus by tolerance (mean SNR and size deltas, per-run bounds, band-resolved spectral distance of the
+decoded streams); a release and a checked build must agree exactly. See [PORTING.md](PORTING.md) for
 details and translation rules.
 
 ## License

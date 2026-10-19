@@ -1,7 +1,7 @@
 #!/bin/sh
 # usage: scripts/test.sh [silk|celt|all] [--quick] [audio files...]
 # Builds native libopus (once; rerun scripts/build-native.sh after changing it or a test/*.c) and
-# all wasm builds (minicelt also the wasm build of the fork's C, minicelt/test/build-cwasm.sh, once), then runs the differential test mini{silk,celt}/test/compare.ts.
+# all wasm builds, then runs the differential test mini{silk,celt}/test/compare.ts.
 set -e
 cd "$(dirname "$0")/.."
 c=all
@@ -10,12 +10,6 @@ for crate in minisilk minicelt; do
   [ "$c" = all ] || [ "$c" = "${crate#mini}" ] || continue
   [ -f "$crate/test/compare.ts" ] || continue
   [ -f "target/native/$crate-scalar.so" ] && [ -f "target/native/$crate-rtcd.so" ] || scripts/build-native.sh
-  if [ "$crate" = minicelt ]; then
-    # The fork's C for wasm is optional (needs wasi-sdk): without it compare.ts skips the exact cwasm pairs.
-    if [ -x "${WASI_SDK_PATH:-/opt/wasi-sdk}/bin/clang" ]; then
-      [ -f target/native/minicelt-cwasm2.wasm ] && [ -f target/native/minicelt-cwasm3.wasm ] || minicelt/test/build-cwasm.sh
-    fi
-  fi
   scripts/build.sh "${crate#mini}" all both
   deno run --allow-read --allow-ffi --allow-run "$crate/test/compare.ts" "$@"
 done

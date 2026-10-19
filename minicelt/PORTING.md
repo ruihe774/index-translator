@@ -2,15 +2,14 @@
 
 minicelt is a mechanical Rust port of the libopus CELT-only float encoder
 (`OPUS_APPLICATION_RESTRICTED_CELT`), for wasm32 only. C source: the fork
-https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`, submodule
-`third_party/opus-wasm-simd`
-(upstream libopus 1.6.1 plus WASM SIMD / relaxed SIMD kernels in `celt/wasm`;
-its scalar encoder code is identical to 1.6.1). Do not use the fork's
-`wasm-simd` branch: it is based on post-1.6.1 upstream, whose scalar code
-behaves differently. The bit-exact reference for testing is that C built to wasm
-and run in the same engine (the kernels sum in lane order, so they are not
-bit-exact with scalar C); natively built upstream libopus 1.6.1
-(`third_party/opus`) is a validity and quality cross-check. See Tests.
+https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd` (upstream
+libopus 1.6.1 plus WASM SIMD / relaxed SIMD kernels in `celt/wasm`; its scalar
+encoder code is identical to 1.6.1; not vendored here, fetch it to port). Do not
+use the fork's `wasm-simd` branch: it is based on post-1.6.1 upstream, whose
+scalar code behaves differently. The oracle for testing is natively built
+upstream libopus 1.6.1 (`third_party/opus`, scalar C), compared by tolerance
+because the kernels sum in lane order and are not bit-exact with scalar C. See
+Tests.
 
 ## Fixed configuration
 
@@ -134,16 +133,10 @@ per-function oracle, its wrapper TUs and the tests are kept at the git tag
 now end to end only:
 
 **End to end** (`minicelt/test/compare.ts`, Deno; `scripts/test.sh celt [--quick] [--all]
-[--refs-only] [--strict-scalar] [--filter=text] [audio files...]`). Every implementation sits behind one
+[--strict-scalar] [--filter=text] [audio files...]`). Every implementation sits behind one
 adapter with the `test/shim.c` API (create, ctl setters, encode i16/f32, final range, in_dtx,
 lookahead; decoder for the bitstream check):
 - `scalar`, `rtcd`: upstream libopus 1.6.1 natively (`scripts/build-native.sh`, Deno FFI).
-- `cwasm2`, `cwasm3`: the fork's C (`OPUS_WASM_SRC`) + `shim.c` + `analysis_stub.c`, built by
-  `minicelt/test/build-cwasm.sh` (run by `scripts/test.sh` when `target/native/minicelt-cwasm{2,3}.wasm`
-  are missing; wasi-sdk at `WASI_SDK_PATH`, default `/opt/wasi-sdk`) as wasm32-wasip1 reactors
-  (`-mexec-model=reactor`, exporting `shim_*`, `malloc`, `free`; `-O2 -msimd128 -ffp-contract=off`, plus
-  `-mrelaxed-simd` for cwasm3; `test/cwasm/config.h`). The harness instantiates them with a stub WASI
-  import object and calls `_initialize`.
 - `wasm2`, `wasm2-checked`, `wasm3`, `wasm3-checked`: the minicelt builds (`minicelt_*` exports).
 
 The same input and ctl schedule (static settings: bitrate, complexity, constrained VBR, DTX, packet
@@ -151,20 +144,19 @@ loss, bandwidth, i16/f32 input, hot f32 x2.5; dynamic runs with random mid-strea
 stereo; 48 kHz speech upsampled x3, synthetic music, transients, noise, chirp, DTX patterns, DC, clipping,
 hard-panned/anti-phase/mono-compatible stereo) goes through each implementation once; the traces
 (packets, final range, in_dtx, ctl return codes) are then compared pairwise. **Exact pairs** (mismatch =
-failure): `cwasm2` = `wasm2` = `wasm2-checked`, `cwasm3` = `wasm3` = `wasm3-checked`. **Informational**:
-scalar and rtcd vs the wasm builds, `cwasm2` vs `cwasm3`. Native scalar is *not* an exact reference for
-WASM 2.0 here (unlike SILK): the fork's float SIMD kernels (`celt_inner_prod`, `dual_inner_prod`,
-`xcorr_kernel`/`celt_pitch_xcorr`, `op_pvq_search`, ...) accumulate in lane order, not in the C order, so
-packets differ occasionally (in about half of the short runs, with identical SNR). The fork's C built with
-its kernels disabled is bit-exact with scalar in every run (checked), so the harness, the libm and the
-signal path are not the cause. `--strict-scalar` makes scalar vs `wasm2`/`wasm2-checked` exact pairs. Any
-trap, native decoder error, bad TOC or encoder/decoder final range mismatch fails every run.
-Every packet is also decoded natively (scalar decoder with the right channel count) and the SNR of
-the decoded streams is reported. `--refs-only` runs the reference self-check without minicelt wasm.
+failure): `wasm2` = `wasm2-checked`, `wasm3` = `wasm3-checked`. **Informational**: scalar and rtcd vs the
+wasm builds. Native scalar is *not* an exact reference for the minicelt builds (unlike SILK): the float
+SIMD kernels (`celt_inner_prod`, `dual_inner_prod`, `xcorr_kernel`/`celt_pitch_xcorr`, `op_pvq_search`, ...)
+accumulate in lane order, not in the C order, so packets differ in a share of the frames (identical SNR).
+The fork's C built with its kernels disabled was bit-exact with scalar in every run (checked while the fork
+was part of the tests), so the harness, the libm and the signal path are not the cause. `--strict-scalar`
+makes scalar vs `wasm2`/`wasm2-checked` exact pairs. Any trap, native decoder error, bad TOC or
+encoder/decoder final range mismatch fails every run. Every packet is also decoded natively (scalar
+decoder with the right channel count) and the SNR of the decoded streams is reported.
 
-**Tolerance gate against upstream scalar** (needs no fork and no wasi-sdk; the `cwasm` builds are optional and
-their exact pairs are skipped when missing). `scalar` vs `wasm2`, `wasm2-checked`, `wasm3`, `wasm3-checked` is judged
-by effects, because SIMD summation order and FMA change packets in a share of the frames (upstream's own SIMD
+**Tolerance gate against upstream scalar** (the oracle for the minicelt builds). `scalar` vs `wasm2`,
+`wasm2-checked`, `wasm3`, `wasm3-checked` is judged by effects, because SIMD summation order and FMA change
+packets in a share of the frames (upstream's own SIMD
 builds do too: `scripts/variance.ts` measured 0.15-1.3 % of frames on aarch64 NEON and 41-45 % on x86-64 AVX2, whose
 `celt_pitch_xcorr` fuses with FMA, with SILK bit-exact on both) without a measurable effect on quality or size.
 Checks (`GATE` in `compare.ts`), pooled over all runs and again for mono and stereo: ctl return codes and lookahead
@@ -182,7 +174,7 @@ not detectable.
 
 **Relaxed SIMD and FMA**: `f32x4.relaxed_madd` is fused on x86 with FMA (V8
 emits `vfmadd`), so the WASM 3.0 build's float kernels round differently from
-scalar C. The WASM 3.0 build is therefore compared end to end against the fork's
-C (`v1.6.1-wasm-simd`) built for wasm with `-mrelaxed-simd` (run in the same engine). The WASM 2.0
-build is compared against the same C built with `-msimd128`; the native scalar build is informational
-only, because the fork's float kernels sum in a different order than the C code (see 2.).
+scalar C, and the float kernels of both builds sum in a different order than the C
+code. Both are therefore judged against native scalar by the tolerance gate above, not
+bit-exactly. The WASM 3.0 build is the one most likely to approach the gate's bounds
+(its FMA behaviour is that of upstream's x86 AVX2 build, which diverges most).

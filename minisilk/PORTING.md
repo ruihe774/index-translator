@@ -3,8 +3,10 @@
 minisilk is a mechanical Rust port of the libopus SILK-only float encoder
 (`OPUS_APPLICATION_RESTRICTED_SILK`), for wasm32 only. C source: libopus 1.6.1
 plus a fork's WASM SIMD / relaxed SIMD kernels (https://github.com/ruihe774/opus-wasm-simd,
-branch `v1.6.1-wasm-simd`, submodule `third_party/opus-wasm-simd`). The kernels are bit-exact with the scalar C, so the
-reference for testing is plain upstream libopus (`third_party/opus`).
+branch `v1.6.1-wasm-simd`; not vendored here). The kernels are bit-exact with the scalar C, so the
+reference for testing is plain upstream libopus (`third_party/opus`), compared bit-exactly. Upstream's own
+SIMD builds are bit-exact with scalar for this configuration too (`scripts/variance.ts`: 0 differing runs
+in about 4000 on aarch64 NEON and on x86-64 AVX2).
 
 ## Fixed configuration
 

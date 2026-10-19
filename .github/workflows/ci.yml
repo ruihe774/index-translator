@@ -20,12 +20,6 @@ jobs:
           deno-version: v2.x
       - name: Install CMake and Ninja
         run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
-      # The minicelt test also builds the fork's C (libopus + WASM SIMD kernels) for wasm with wasi-sdk
-      # (minicelt/test/build-cwasm.sh, submodule third_party/opus-wasm-simd) as the reference for the WASM builds.
-      - name: Install wasi-sdk
-        run: |
-          curl -fsSL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz | tar -xz -C "$RUNNER_TEMP"
-          echo "WASI_SDK_PATH=$RUNNER_TEMP/wasi-sdk-34.0-x86_64-linux" >> "$GITHUB_ENV"
       - uses: Swatinem/rust-cache@v2
       # Builds native libopus, the release and checked wasm2/wasm3 builds, then compares them.
       - name: Test

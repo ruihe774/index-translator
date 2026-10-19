@@ -14,8 +14,8 @@ Rust port of the libopus CELT-only float encoder for wasm32. Read `PORTING.md` b
 
 - `src/celt`, `src/opus`: one Rust module per C file, C names kept.
 - `wasm/`: the `minicelt-wasm` cdylib with the `minicelt_*` exports.
-- `test/compare.ts` (Deno) + `test/shim.c` + `test/analysis_stub.c`: differential test against the
-  fork's C built to wasm (`test/build-cwasm.sh`) and native `third_party/opus`. `scripts/gen_tables.py` generates the tables.
+- `test/compare.ts` (Deno) + `test/shim.c` + `test/analysis_stub.c`: differential test against native
+  `third_party/opus` (scalar C as the oracle, by tolerance). `scripts/gen_tables.py` generates the tables.
 
 ## Commands (from the workspace root)
 
@@ -25,10 +25,12 @@ Rust port of the libopus CELT-only float encoder for wasm32. Read `PORTING.md` b
 
 ## Rules
 
-- Bit-exactness with libopus 1.6.1 + the fork's WASM kernels (built to wasm, same engine) is the
-  test goal; the kernels sum in lane order, so native scalar libopus is only a quality cross-check.
-  Match C numeric precision exactly (integer promotion, `f32` vs `f64`); never hand-vectorize plain C loops.
-- Where the fork has a WASM SIMD kernel, port it with `core::arch::wasm32`; add no scalar fallback.
+- The test goal is the tolerance gate against upstream libopus 1.6.1 scalar C (see `PORTING.md`): the
+  SIMD kernels sum in lane order, so packets are not bit-exact with scalar, but their effects must stay
+  within the gate. Match C numeric precision exactly (integer promotion, `f32` vs `f64`); never
+  hand-vectorize plain C loops.
+- Where the WASM SIMD fork (https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`) has
+  a kernel, port it with `core::arch::wasm32`; add no scalar fallback.
   Relaxed SIMD uses `cfg(target_feature = "relaxed-simd")`.
 - Keep C function/field/constant names. Comment density follows the C comments that explain the algorithm.
 - `src/` is BSD-3 (libopus derivative).

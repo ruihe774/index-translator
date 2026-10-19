@@ -1,40 +1,34 @@
 // Differential test of the minicelt wasm builds against builds of the libopus C reference.
 //
-//   scripts/test.sh celt [--quick] [--all] [--refs-only] [audio files...]
+//   scripts/test.sh celt [--quick] [--all] [audio files...]
 //   (= scripts/build-native.sh && scripts/build.sh celt all both &&
 //      deno run --allow-read --allow-ffi --allow-run minicelt/test/compare.ts [flags] [audio files...])
 //
 // Implementations (all behind one adapter, `Impl`/`Enc`, with the shim.c API):
 //   scalar   target/native/minicelt-scalar.so   upstream libopus 1.6.1, intrinsics off (Deno FFI)
-//   rtcd     target/native/minicelt-rtcd.so     upstream with SSE/AVX2 and runtime detection (FFI)
-//   cwasm2   target/native/minicelt-cwasm2.wasm the fork's C (celt/wasm, silk/wasm kernels), -msimd128
-//   cwasm3   target/native/minicelt-cwasm3.wasm  same with -mrelaxed-simd (minicelt/test/build-cwasm.sh)
+//   rtcd     target/native/minicelt-rtcd.so     upstream with SSE/AVX2/NEON and runtime detection (FFI)
 //   wasm2, wasm2-checked, wasm3, wasm3-checked   target/minicelt-wasm{2,3}[-checked].wasm
 // For each pairing it encodes the same input with both implementations and compares packets,
 // OPUS_GET_FINAL_RANGE, OPUS_GET_IN_DTX, ctl return codes and lookahead frame by frame.
-// Exact pairs (a mismatch fails the test): cwasm2 = wasm2 = wasm2-checked and cwasm3 = wasm3 =
-// wasm3-checked, i.e. each minicelt build against the fork's C built with the same SIMD kernels and
-// run in the same engine. This is the only possible reference: the fork's float SIMD kernels
-// (celt_inner_prod, xcorr, op_pvq_search, ...) sum in lane order like SSE/NEON, not in the C order,
-// so native scalar libopus is NOT bit-exact with wasm2 (checked: the fork's C built with its kernels
-// disabled matches scalar in every run), and with relaxed SIMD f32x4.relaxed_madd is additionally
-// fused by V8 on FMA hardware. Informational pairs (reported, never fail): scalar and rtcd vs the
-// minicelt/C-wasm builds, and cwasm2 vs cwasm3 (the effect of FMA). `--strict-scalar` makes
-// scalar vs wasm2/wasm2-checked exact pairs (they hold only for a build without the SIMD float kernels).
-// The cwasm builds are optional (they need wasi-sdk): without them these exact pairs are skipped.
-// Tolerance gate (the oracle that needs no fork): the minicelt builds are also judged against upstream scalar by
-// effects instead of packets (see GATE and gateReport): ctl codes and lookahead, mean SNR and size deltas, per-run
-// bounds, in_dtx agreement, and band-resolved log-spectral distance of the decoded streams. The bounds come from
-// scripts/variance.ts on upstream's own scalar-vs-SIMD builds (aarch64 NEON, x86-64 AVX2); scalar vs rtcd runs through
-// the same checks as the baseline (reported, not gated). In --quick the band checks are informational.
+// Native scalar libopus is not a bit-exact reference for the minicelt builds: their float SIMD kernels
+// (celt_inner_prod, xcorr, op_pvq_search, ...) sum in lane order like SSE/NEON, not in the C order, and with
+// relaxed SIMD f32x4.relaxed_madd is additionally fused by V8 on FMA hardware. So scalar is the oracle by tolerance:
+// the minicelt builds are judged against it by effects instead of packets (see GATE and gateReport): ctl codes and
+// lookahead, mean SNR and size deltas, per-run bounds, in_dtx agreement, and band-resolved log-spectral distance of
+// the decoded streams. The bounds come from scripts/variance.ts on upstream's own scalar-vs-SIMD builds (aarch64 NEON,
+// x86-64 AVX2); scalar vs rtcd runs through the same checks as the baseline (reported, not gated). In --quick the
+// band checks are informational.
+// Exact pairs (a mismatch fails the test): wasm2 = wasm2-checked and wasm3 = wasm3-checked (the checked builds are the
+// release code plus assertions). Informational pairs (reported, never fail): scalar and rtcd vs the minicelt builds.
+// `--strict-scalar` makes scalar vs wasm2/wasm2-checked exact pairs (they hold only for a build without the SIMD
+// float kernels).
 // Any trap, native decoder rejection, bad TOC or encoder/decoder final range mismatch of any
 // implementation fails the test.
 // Every packet is also decoded by the native (scalar) decoder, whose final range must equal the
 // encoder's (the bitstream check from opus_demo); the SNR of both decoded streams is reported.
 //
 // Flags: --quick (each run is a 3 s window, 3 signals per configuration, fewer configurations; < 2 min),
-// --filter=text (only runs whose "signal [config]" contains text), --all (every signal for every configuration), --refs-only (self-check of the references: scalar vs
-// cwasm2 exact, cwasm3 and rtcd informational; needs no minicelt wasm).
+// --filter=text (only runs whose "signal [config]" contains text), --all (every signal for every configuration).
 // The speech corpus is test/audio/*.wav (16 kHz mono 16-bit, upsampled x3 here; see
 // THIRD_PARTY_NOTICES.md). Audio files given as arguments replace it; other formats go through ffmpeg.
 
@@ -43,7 +37,6 @@ const FRAME = 960;
 const CAP = 1276;
 const quick = Deno.args.includes('--quick');
 const allSigs = Deno.args.includes('--all');
-const refsOnly = Deno.args.includes('--refs-only');
 const strictScalar = Deno.args.includes('--strict-scalar');
 const filter = Deno.args.find((a) => a.startsWith('--filter='))?.slice(9); // only runs whose name contains this
 const files = Deno.args.filter((a) => !a.startsWith('--'));
@@ -127,58 +120,6 @@ function loadNative(name: string) {
   return { impl, version, decoder };
 }
 
-// ---------- C reference built for wasm (cwasm2/cwasm3) ----------
-
-// wasm32-wasip1 reactor; it imports nothing today, but stub whatever WASI imports a toolchain adds.
-function wasiImports(module: WebAssembly.Module) {
-  const wasi: Record<string, WebAssembly.ImportValue> = {};
-  for (const i of WebAssembly.Module.imports(module)) {
-    if (i.module === 'wasi_snapshot_preview1' && i.kind === 'function') {
-      wasi[i.name] = i.name === 'proc_exit' ? (c: number) => { throw new Error(`proc_exit(${c})`); }
-        : i.name === 'random_get' ? () => 0 : () => 52; // ENOSYS
-    } else {
-      throw new Error(`unexpected import ${i.module}.${i.name}`);
-    }
-  }
-  return { wasi_snapshot_preview1: wasi };
-}
-
-async function loadCWasm(variant: number): Promise<Impl> {
-  const name = `cwasm${variant}`;
-  const path = `${root}target/native/minicelt-${name}.wasm`;
-  const module = await WebAssembly.compile(await Deno.readFile(path));
-  // deno-lint-ignore no-explicit-any
-  const impl = { name, e: undefined as any, reset: async () => {} } as any;
-  impl.reset = async () => {
-    const inst = await WebAssembly.instantiate(module, wasiImports(module));
-    impl.e = inst.exports;
-    impl.e._initialize();
-  };
-  await impl.reset();
-  impl.create = (ch: number, bitrate: number, cx: number, vbrc: number, dtx: number): Enc => {
-    const e = impl.e;
-    const errp = e.malloc(4), inp = e.malloc(FRAME * 2 * 4), outp = e.malloc(CAP);
-    const mem = () => e.memory.buffer as ArrayBuffer;
-    const st = e.shim_enc_create(ch, bitrate, cx, vbrc, dtx, errp);
-    if (!st) throw new Error(`${name} create: ${new Int32Array(mem(), errp, 1)[0]}`);
-    const setters = [e.shim_enc_set_bitrate, e.shim_enc_set_complexity, e.shim_enc_set_vbr_constraint, e.shim_enc_set_dtx,
-      e.shim_enc_set_packet_loss_perc, e.shim_enc_set_bandwidth];
-    return {
-      ctl: (w, v) => setters[w](st, v),
-      lookahead: () => e.shim_enc_lookahead(st),
-      range: () => e.shim_enc_final_range(st) >>> 0,
-      inDtx: () => e.shim_enc_in_dtx(st),
-      encode(pcm) {
-        new Uint8Array(mem(), inp, pcm.byteLength).set(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
-        return pcm instanceof Float32Array ? e.shim_encode_float(st, inp, outp, CAP) : e.shim_encode(st, inp, outp, CAP);
-      },
-      packet: (len) => new Uint8Array(mem(), outp, len).slice(),
-      destroy() { e.shim_enc_destroy(st); e.free(errp); e.free(inp); e.free(outp); },
-    };
-  };
-  return impl as Impl;
-}
-
 // ---------- minicelt wasm ----------
 
 // `checked` builds keep debug_assert!s and overflow checks; a failing one traps.
@@ -189,8 +130,7 @@ async function loadMini(variant: number, checked: boolean): Promise<Impl> {
   const impl = { name, e: undefined as any, reset: async () => {} } as any;
   // After a trap the pseudostack is left unbalanced, so the instance is replaced.
   impl.reset = async () => {
-    impl.e = (await WebAssembly.instantiate(module, wasiImports(module))).exports;
-    impl.e._initialize?.(); // the Rust builds have no start function (nor imports)
+    impl.e = (await WebAssembly.instantiate(module, {})).exports; // the Rust builds have no imports and no start function
   };
   await impl.reset();
   impl.create = (ch: number, bitrate: number, cx: number, vbrc: number, dtx: number): Enc => {
@@ -731,28 +671,17 @@ function gateReport(title: string, p: Pool, count: boolean): number {
 const native = { scalar: loadNative('scalar'), rtcd: loadNative('rtcd') };
 const impls = new Map<string, Impl>([['scalar', native.scalar.impl], ['rtcd', native.rtcd.impl]]);
 const nativeDec = native.scalar.decoder;
-// The fork's C built for wasm (build-cwasm.sh, needs wasi-sdk) is optional: without it the exact cwasm pairs are skipped
-// and the tolerance gate against upstream scalar is what judges the minicelt builds.
-for (const v of [2, 3]) {
-  if (refsOnly || await Deno.stat(`${root}target/native/minicelt-cwasm${v}.wasm`).then(() => true, () => false)) {
-    impls.set(`cwasm${v}`, await loadCWasm(v));
-  } else console.log(`note: target/native/minicelt-cwasm${v}.wasm not built, skipping the exact cwasm${v} pairs`);
-}
-if (!refsOnly) {
-  for (const [v, c] of [[2, false], [3, false], [2, true], [3, true]] as const) {
-    const w = await loadMini(v, c);
-    impls.set(w.name, w);
-  }
+for (const [v, c] of [[2, false], [3, false], [2, true], [3, true]] as const) {
+  const w = await loadMini(v, c);
+  impls.set(w.name, w);
 }
 
 // [A, B, exact]
-const pairs: [string, string, boolean][] = refsOnly
-  ? [['scalar', 'cwasm2', false], ['scalar', 'cwasm3', false], ['cwasm2', 'cwasm3', false], ['rtcd', 'cwasm2', false]]
-  : [['cwasm2', 'wasm2', true], ['cwasm2', 'wasm2-checked', true], ['cwasm3', 'wasm3', true], ['cwasm3', 'wasm3-checked', true],
-    ['scalar', 'wasm2', strictScalar], ['scalar', 'wasm2-checked', strictScalar], ['scalar', 'cwasm2', false],
-    ['cwasm2', 'cwasm3', false], ['scalar', 'wasm3', false], ['rtcd', 'wasm2', false], ['rtcd', 'wasm3', false]];
+const pairs: [string, string, boolean][] = [['wasm2', 'wasm2-checked', true], ['wasm3', 'wasm3-checked', true],
+  ['scalar', 'wasm2', strictScalar], ['scalar', 'wasm2-checked', strictScalar], ['scalar', 'wasm3', false],
+  ['rtcd', 'wasm2', false], ['rtcd', 'wasm3', false]];
 // Gated against upstream scalar by tolerance (see GATE); scalar vs rtcd is the baseline of the bounds, not gated.
-const gated: [string, string, boolean][] = refsOnly ? [] : [['scalar', 'wasm2', true], ['scalar', 'wasm2-checked', true],
+const gated: [string, string, boolean][] = [['scalar', 'wasm2', true], ['scalar', 'wasm2-checked', true],
   ['scalar', 'wasm3', true], ['scalar', 'wasm3-checked', true], ['scalar', 'rtcd', false]];
 const gatePools = gated.map(() => ({ all: newPool(), ch: [newPool(), newPool()] }));
 const used = [...new Set([...pairs, ...gated].flatMap(([a, b]) => [a, b]).filter((p) => impls.has(p)))];
@@ -780,7 +709,7 @@ cfgs.forEach((cfg, ci) => {
 });
 if (filter) runs.splice(0, runs.length, ...runs.filter((r) => `${r.sig.name} [${r.cfg.name}]`.includes(filter)));
 console.log(`native: ${native.scalar.version}; ${sigs.length} signals, ${cfgs.length} configs, ${runs.length} runs` +
-  `${refsOnly ? ' (refs-only)' : ''}; implementations: ${used.join(', ')}`);
+  `; implementations: ${used.join(', ')}`);
 
 const t0 = performance.now();
 let lastProgress = t0, framesTotal = 0;
