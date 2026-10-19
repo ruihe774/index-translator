@@ -15,6 +15,7 @@ names them and says where the full texts are. The AppImage carries this file in
 | [audio.cpp](https://github.com/0xShug0/audio.cpp) (`libaudiocpp.so`), pinned in `scripts/build_audiocpp.ts` | Reading aloud (IndexTTS-2.5) and voice separation (BS-RoFormer) | Apache-2.0, Copyright 2026 ShugoAI LLC | `vendor/audio.cpp/LICENSE` |
 | ggml, audio.cpp's fork, linked statically into `libaudiocpp.so` | Tensor library under audio.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/audio.cpp/LICENSE.ggml` |
 | cJSON, SentencePiece and the Abseil subset that comes with SentencePiece, in audio.cpp's source tree (`external/`) | Compiled into `libaudiocpp.so` | Each under its own license (MIT, Apache-2.0, Apache-2.0); the files are in audio.cpp's repository at the pinned commit | `external/*/LICENSE` there |
+| [libsoxr](https://sourceforge.net/projects/soxr/) (the SoX Resampler Library, `libsoxr.so.0`; `soxr.dll` in the Windows installer), version and checksum pinned in `scripts/build_soxr.ts`, built unchanged | Resampling the voice samples for audio.cpp | LGPL-2.1 or later, Copyright (c) 2007-18 robs; the PFFFT code in it is under a BSD-like license (Copyright (c) 2013 Julien Pommier, and 2004 University Corporation for Atmospheric Research for the FFTPACK parts), stated in its source file; it is a separate shared library that can be replaced by another build of the same version, and its source is the tarball at the pinned URL | `vendor/soxr/LICENCE` and `vendor/soxr/COPYING.LGPL` |
 | [Bun](https://bun.sh) (`usr/bin/bun` in the AppImage) | JavaScript runtime and HTTP server | MIT for Bun itself; the executable also contains statically linked components under their own licenses, among them JavaScriptCore (LGPL-2.0 or later) | <https://bun.com/docs/project/licensing> |
 
 | [pdf-inspector](https://github.com/firecrawl/pdf-inspector), its WebAssembly build (`@firecrawl/pdf-inspector-wasm`), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: the text of a PDF page as Markdown | MIT, Copyright (c) 2026 Firecrawl; the binary embeds CMaps derived from Adobe's CMap resources (BSD 3-Clause, Copyright 1990-2009 Adobe Systems Incorporated) | `public/vendor/pdf-inspector/LICENSE` |
@@ -95,6 +96,6 @@ about to download and asks for `yes` first (the same text as here, in short).
 
 ## Keeping this file true
 
-Changing a pin in `scripts/build_llama.ts`, `scripts/build_audiocpp.ts`, `scripts/build_appimage.ts`,
+Changing a pin in `scripts/build_llama.ts`, `scripts/build_audiocpp.ts`, `scripts/build_soxr.ts`, `scripts/build_appimage.ts`,
 `scripts/fetch_web_libs.ts` or `scripts/fetch_models.ts`, or adding a model, a library or a download, means checking its license and
 updating this file and `NOTICES` in `scripts/fetch_models.ts`.

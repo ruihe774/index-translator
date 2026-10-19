@@ -139,6 +139,7 @@ Before the first start, build the engines and get the models once (about 17.9 Gi
 ```bash
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
+bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, example voices
 bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and compress speech in the browser (13 MB), into public/vendor/
 ```
@@ -147,7 +148,7 @@ Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app 
 Markdown files, and says that PDF and Word support is not installed. Reading aloud then sends its audio
 as WAV instead of the smaller QOA.
 
-Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and download only the
+Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and `build_soxr.ts` and download only the
 translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.
 
 You need [Bun](https://bun.sh) and `curl`, and to build the engines git, CMake, a C and C++

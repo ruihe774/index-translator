@@ -35,7 +35,8 @@ CRLF and do not commit CRLF. Editors and `sed -i` in Git Bash keep LF; check wit
 
 ## Building the engines
 
-`bun scripts/build_llama.ts` and `bun scripts/build_audiocpp.ts` build for Windows with no administrator
+`bun scripts/build_llama.ts`, `bun scripts/build_audiocpp.ts` and `bun scripts/build_soxr.ts` (libsoxr, as
+`soxr.dll`; it needs `tar` from Windows 10 or Git, and only the Visual Studio tools) build for Windows with no administrator
 rights. They need: Git, CMake (on the PATH), Visual Studio 2022 or its Build Tools with the "Desktop
 development with C++" workload (found with `vswhere`; `vcvars64.bat` supplies `cl`), and the Vulkan SDK
 (`glslc`, headers, `vulkan-1.lib`; sets `VULKAN_SDK`). Ninja is not needed: CMake's Visual Studio
@@ -78,7 +79,7 @@ Windows has no AppImage-style single file, so the installer unpacks the reposito
 is the shortcut's target. The launcher's commands run in the install directory, and `cmd` finds
 `bun.exe` there first, so the user needs no Bun on the `PATH`.
 
-- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`), the web app's PDF
+- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`) and `build_soxr.ts`, the web app's PDF
   libraries fetched (`fetch_web_libs.ts`, packed with `public\`) and the launcher's MSVC
   tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads
   and installs Inno Setup 6.7.3 for the current user (pinned checksum) when `ISCC.exe` is not found.

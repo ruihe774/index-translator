@@ -21,11 +21,39 @@ const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
 export const libraryPath = (dir: string) =>
   join(dir, process.platform === "win32" ? `audiocpp.${suffix}` : `libaudiocpp.${suffix}`);
 
+/** Where scripts/build_soxr.ts puts libsoxr, beside the engine directory `audioDir`. */
+export const soxrDir = (audioDir: string) => join(audioDir, "..", "soxr");
+
+/** The file audio.cpp asks for: the library's SONAME on Linux, `soxr.dll` on Windows. */
+export const soxrLibraryPath = (dir: string) =>
+  join(dir, process.platform === "win32" ? `soxr.${suffix}` : `libsoxr.${suffix}.0`);
+
+/**
+ * audio.cpp resamples with libsoxr when it can open one by name, and otherwise with resamplers of
+ * its own that sound different. Opening ours first by its full path makes that lookup find it: both
+ * the dynamic loader of Linux (by SONAME) and Windows (by file name) hand a library that is already
+ * loaded to a later request for its name, ahead of any other that is installed.
+ */
+function openSoxr(dir: string) {
+  const path = soxrLibraryPath(dir);
+  if (!existsSync(path)) {
+    throw new Error(`libsoxr not found in ${dir}; run: bun scripts/build_soxr.ts`);
+  }
+  return dlopen(path, { soxr_version: { args: [], returns: "ptr" } }).symbols;
+}
+
+/** The version of the libsoxr in `dir`. */
+export function soxrVersion(dir: string): string {
+  const version = openSoxr(dir).soxr_version();
+  return version ? new CString(version) : "";
+}
+
 function bind(dir: string) {
   const libPath = libraryPath(dir);
   if (!existsSync(libPath)) {
     throw new Error(`libaudiocpp not found in ${dir}; run: bun scripts/build_audiocpp.ts`);
   }
+  openSoxr(soxrDir(dir));
   const lib = dlopen(libPath, {
     audiocpp_abi_version: { args: [], returns: "u32" },
     audiocpp_build_version: { args: [], returns: "ptr" },

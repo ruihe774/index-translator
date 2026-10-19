@@ -1,11 +1,11 @@
 // Pack the app into one file that runs on other Linux machines: dist/Index_Translator-<arch>.AppImage (x86_64 or aarch64, as the machine),
 // with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and
-// the prebuilt shim, libaudiocpp). The models and the voices are not packed; the AppImage's `fetch`
+// the prebuilt shim, libaudiocpp) and libsoxr. The models and the voices are not packed; the AppImage's `fetch`
 // subcommand (scripts/fetch_models.ts) downloads them into the user's data directory.
 // Usage: bun scripts/build_appimage.ts
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
-// since the engines are packed as built, and bun scripts/fetch_web_libs.ts (the web app's PDF
+// since the engines are packed as built, bun scripts/build_soxr.ts, and bun scripts/fetch_web_libs.ts (the web app's PDF
 // and Word libraries and the QOA codec of the speech stream, packed with public/). The Bun that is packed is the one running this script.
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
@@ -17,7 +17,7 @@
 import { chmod, cp, mkdir, readdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
+import { libraryPath as audioLibrary, soxrLibraryPath } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { download, output, run } from "./build_tools";
 import { requireWebLibs } from "./fetch_web_libs";
@@ -60,6 +60,7 @@ const root = resolve(import.meta.dir, "..");
 const packaging = join(root, "packaging", "appimage");
 const llama = join(root, "vendor", "llama.cpp");
 const audio = join(root, "vendor", "audio.cpp");
+const soxr = join(root, "vendor", "soxr");
 const work = join(root, "vendor", ".build", "appimage");
 const appDir = join(work, "AppDir");
 const app = join(appDir, "usr", "share", "index-translator");
@@ -69,6 +70,7 @@ for (const [file, script] of [
   [llamaLibrary(llama), "build_llama.ts"],
   [shimPath(llama), "build_llama.ts"],
   [audioLibrary(audio), "build_audiocpp.ts"],
+  [soxrLibraryPath(soxr), "build_soxr.ts"],
 ] as const) {
   if (!(await Bun.file(file).exists())) {
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
@@ -116,12 +118,14 @@ await cp(join(root, "packaging", "bunfig.toml"), join(app, "bunfig.toml"));
 await Bun.write(join(app, "package.json"), `${JSON.stringify({ name: "index-translator", type: "module" })}\n`);
 await copyEngine(llama, join(app, "vendor", "llama.cpp"));
 await copyEngine(audio, join(app, "vendor", "audio.cpp"));
+await copyEngine(soxr, join(app, "vendor", "soxr"));
 
 const commit = (await output(["git", "describe", "--tags", "--always", "--dirty"], root)) || "unknown";
 const version = [
   `index-translator ${commit}`,
   `llama.cpp ${(await Bun.file(join(llama, "VERSION")).text()).trim()}`,
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
+  `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `bun ${Bun.version}`,
 ];
 await Bun.write(join(app, "VERSION"), `${version.join("\n")}\n`);

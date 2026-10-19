@@ -159,6 +159,22 @@ jobs:
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
         run: bun scripts/build_audiocpp.ts
 
+      # audio.cpp resamples with libsoxr when it finds one and differently when not, so the one it is
+      # given is ours, packed in the AppImage (src/audiocpp-ffi.ts opens it first).
+      - name: Cache libsoxr
+        id: soxr
+        uses: actions/cache@v6
+        with:
+          path: vendor/soxr
+          key: soxr-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libsoxr
+        if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_soxr.ts
+
+      - name: Check that libsoxr and libaudiocpp open
+        run: bun -e "import { libraryVersion } from './src/audiocpp-ffi'; console.log(libraryVersion('vendor/audio.cpp'))"
+
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
@@ -263,6 +279,41 @@ jobs:
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
         run: bun scripts/build_audiocpp.ts
 
+      - name: Cache libsoxr
+        id: soxr
+        uses: actions/cache@v6
+        with:
+          path: vendor/soxr
+          key: soxr-windows-2022-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libsoxr
+        if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_soxr.ts
+
+      # audio.cpp asks LoadLibraryA for "soxr.dll" by name, which does not search its own directory.
+      # Opening the engine loads ours first; a request by name must then return that very file.
+      - name: Check that audio.cpp's lookup of soxr.dll finds ours
+        shell: bash
+        run: |
+          bun -e '
+            import { dlopen } from "bun:ffi";
+            import { resolve } from "node:path";
+            import { libraryVersion, soxrDir, soxrLibraryPath } from "./src/audiocpp-ffi";
+            libraryVersion("vendor/audio.cpp");
+            const k = dlopen("kernel32.dll", {
+              LoadLibraryA: { args: ["cstring"], returns: "ptr" },
+              GetModuleFileNameW: { args: ["ptr", "ptr", "u32"], returns: "u32" },
+            }).symbols;
+            const module = k.LoadLibraryA(Buffer.from("soxr.dll\0"));
+            if (!module) throw new Error("LoadLibraryA(soxr.dll) found nothing");
+            const name = new Uint16Array(1024);
+            const length = k.GetModuleFileNameW(module, name, name.length);
+            const got = String.fromCharCode(...name.subarray(0, length));
+            const want = resolve(soxrLibraryPath(soxrDir("vendor/audio.cpp")));
+            console.log({ got, want });
+            if (got.toLowerCase() !== want.toLowerCase()) throw new Error("soxr.dll was found elsewhere");
+          '
+
       # The runner has neither a GPU nor the models, so what can be checked is that the engines
       # open, that the program says why it cannot run and stops, and that with the CPU it gets as
       # far as the missing model.
@@ -286,6 +337,7 @@ jobs:
           path: |
             vendor/llama.cpp/*.dll
             vendor/audio.cpp/*.dll
+            vendor/soxr/*.dll
           if-no-files-found: error
           retention-days: 7
 
@@ -339,6 +391,17 @@ jobs:
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
         run: bun scripts/build_audiocpp.ts
+
+      - name: Cache libsoxr
+        id: soxr
+        uses: actions/cache@v6
+        with:
+          path: vendor/soxr
+          key: soxr-windows-2022-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libsoxr
+        if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_soxr.ts
 
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
