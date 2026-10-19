@@ -127,13 +127,43 @@ There are no Rust unit tests in the final tree. Two layers:
 
 1. **Per-function oracle** (`minicelt/oracle`, during development; dropped
    before the port is finished, and kept at a git tag). A wasm32-wasip1 build
-   of the fork's `v1.6.1-wasm-simd` branch (`-msimd128 -ffp-contract=off`, plus `-mrelaxed-simd` for
-   the WASM 3.0 variant, with the analysis stub instead of `src/analysis.c`) is
-   linked into `cargo test` binaries that run under Node's WASI. Each ported
+   of the fork's C (branch `v1.6.1-wasm-simd`, `OPUS_SRC`, default
+   `/home/user/opus-v1.6.1-wasm-simd`; wasi-sdk at `WASI_SDK_PATH`, default
+   `/opt/wasi-sdk`; `-msimd128 -ffp-contract=off`, plus `-mrelaxed-simd` for
+   the WASM 3.0 variant, with `csrc/analysis_stub.c` instead of `src/analysis.c`/`mlp*.c`)
+   is linked into `cargo test` binaries that run under Node's WASI. Each ported
    function has a `#[cfg(test)] mod tests` that calls the C function and the
    Rust one on the same inputs and compares all outputs and in/out state
    bit-exactly. Because the C and the Rust run in the same wasm engine with the
    same SIMD instructions, this is bit-exact for both variants.
+
+   Run: `minicelt/scripts/oracle-test.sh [2|3|all] [cargo test args]` (from anywhere;
+   needs `rustup target add wasm32-wasip1`, Node). It runs
+   `cargo test -p minicelt --target wasm32-wasip1` (runner `minicelt/scripts/wasi-run`,
+   `[profile.test]` opt-level 1 with debug assertions and overflow checks); variant 3 uses
+   `+relaxed-simd` and `--target-dir target/v3`.
+
+   Writing a test (examples: `celt/entenc.rs`, `layout_tests.rs`; helpers in `src/testutil.rs`):
+   - Public C functions are declared in `minicelt_oracle` under their C names
+     (`ec_enc_init`, `comb_filter`, `alg_quant`, `quant_all_bands`, ...). C `static` functions
+     are reached through `oracle_<name>` wrappers: the .c file is compiled via a wrapper TU
+     `oracle/csrc/<file>_x.c` that `#include`s it and forwards (celt_encoder, bands, vq,
+     quant_bands, rate, cwrs, pitch, kiss_fft, opus_encoder; header inlines/macros in
+     `inlines_x.c`). To expose another static function add the forwarder there and the
+     `extern` line in `oracle/src/lib.rs`. `CELTMode *`, `ec_enc *`, `struct band_ctx *` ...
+     are `*const/*mut c_void`: cast the Rust `#[repr(C)]` value (`&mut x as *mut _ as *mut c_void`).
+     `testutil::c_mode()` is the C mode; `minicelt_oracle::mode_info()` gives its tables
+     (so tests do not depend on the Rust mode tables); `layout_tests.rs` checks struct layouts
+     from the `oracle_*_layout` tables.
+   - Call the Rust and the C function on identical copies of random input (`testutil::Rng`,
+     `MusicGen`/`music()` for realistic 48 kHz signals), then compare every output buffer and
+     the state (`testutil::same_enc` for range coders, `assert_eq!` on `f32::to_bits` or the
+     raw bytes for float state).
+   - Whole-encoder tests: `RefEncoder::new(channels)` wraps `opus_encoder_create(48000, ch,
+     RESTRICTED_CELT)` with `set_bitrate/complexity/vbr/vbr_constraint/dtx`, `encode_float`,
+     `final_range`, `in_dtx`, and `celt_encoder_ptr()` / `celt_state_bytes()` for the embedded
+     `CELTEncoder`, to compare packets and the encoder state frame by frame.
+     The reference has no tonality analysis, matching the port.
 2. **End-to-end** (`minicelt/test/compare.ts`, Deno): the wasm builds against
    natively built upstream libopus (`scripts/build-native.sh`: intrinsics off,
    `-ffp-contract=off`, `src/analysis.c` replaced by

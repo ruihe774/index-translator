@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["minisilk", "minisilk/wasm", "minicelt", "minicelt/wasm"]
+members = ["minisilk", "minisilk/wasm", "minicelt", "minicelt/wasm", "minicelt/oracle"]
 
 [profile.release]
 opt-level = "s"
@@ -11,5 +11,11 @@ panic = "abort"
 # Release code with debug_assert!s and integer overflow checks, for the compare.ts tests.
 [profile.checked]
 inherits = "release"
+debug-assertions = true
+overflow-checks = true
+
+# Per-function oracle tests (cargo test): some optimization keeps them fast; checks stay on.
+[profile.test]
+opt-level = 1
 debug-assertions = true
 overflow-checks = true

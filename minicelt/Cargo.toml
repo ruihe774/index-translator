@@ -5,7 +5,10 @@ edition = "2024"
 
 [lib]
 doctest = false
-test = false
+test = true
 
 [dependencies]
 libm = "0.2.16"
+
+[dev-dependencies]
+minicelt-oracle = { path = "oracle" }
