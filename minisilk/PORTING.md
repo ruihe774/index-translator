@@ -109,5 +109,5 @@ submodule), `scripts/build.sh silk all both`, then the comparison.
   packet is also decoded natively and its decoder final range checked.
 - A mismatch shows only where the stream diverges. The per-function
   differential tests against a wasm build of the C (one per ported function,
-  comparing whole encoder states) are in commit `adfc1f7` (the parent of `c58066e`,
-  which dropped them); check it out to localize a regression.
+  comparing whole encoder states) are kept at the tag `minisilk-oracle-tests` (commit `adfc1f7`, the parent of
+  `c58066e`, which dropped them); check it out to localize a regression.
