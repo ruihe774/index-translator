@@ -1,3 +1,7 @@
 [submodule "third_party/opus"]
 	path = third_party/opus
 	url = https://github.com/xiph/opus.git
+[submodule "third_party/opus-wasm-simd"]
+	path = third_party/opus-wasm-simd
+	url = https://github.com/ruihe774/opus-wasm-simd.git
+	branch = v1.6.1-wasm-simd

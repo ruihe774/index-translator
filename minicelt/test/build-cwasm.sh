@@ -1,7 +1,7 @@
 #!/bin/sh
 # usage: minicelt/test/build-cwasm.sh   (from anywhere; called by scripts/test.sh when outputs are missing)
 # Builds the fork's C (libopus 1.6.1 + celt/wasm and silk/wasm SIMD kernels, OPUS_WASM_SRC, default
-# /home/user/opus-v1.6.1-wasm-simd) with wasi-sdk (WASI_SDK_PATH, default /opt/wasi-sdk) together with
+# third_party/opus-wasm-simd) with wasi-sdk (WASI_SDK_PATH, default /opt/wasi-sdk) together with
 # minicelt/test/shim.c and analysis_stub.c (instead of src/analysis.c, mlp*.c) as wasm32-wasip1 reactors:
 #   target/native/minicelt-cwasm2.wasm   -msimd128
 #   target/native/minicelt-cwasm3.wasm   -msimd128 -mrelaxed-simd
@@ -10,9 +10,9 @@
 # cwasm3 is the bit-exact reference for the WASM 3.0 minicelt build (same engine, same FMA behaviour).
 set -e
 cd "$(dirname "$0")/../.."
-SRC=$(realpath "${OPUS_WASM_SRC:-/home/user/opus-v1.6.1-wasm-simd}")
+SRC=$(realpath "${OPUS_WASM_SRC:-third_party/opus-wasm-simd}")
 SDK=${WASI_SDK_PATH:-/opt/wasi-sdk}
-[ -f "$SRC/celt_sources.mk" ] || { echo "OPUS_WASM_SRC $SRC is not a libopus tree" >&2; exit 1; }
+[ -f "$SRC/celt_sources.mk" ] || { echo "OPUS_WASM_SRC $SRC is not a libopus tree (git submodule update --init?)" >&2; exit 1; }
 [ -x "$SDK/bin/clang" ] || { echo "wasi-sdk not found at $SDK (set WASI_SDK_PATH)" >&2; exit 1; }
 out=$PWD/target/native
 mkdir -p "$out"

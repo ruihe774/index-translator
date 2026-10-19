@@ -62,10 +62,13 @@ fn main() {
     assert!(features.split(',').any(|f| f == "simd128"), "build with -Ctarget-feature=+simd128");
 
     // Fork branch v1.6.1-wasm-simd: upstream libopus 1.6.1 + the WASM SIMD kernels and hooks.
-    let src = PathBuf::from(env::var("OPUS_SRC").unwrap_or("/home/user/opus-v1.6.1-wasm-simd".into()));
-    assert!(src.join("celt_sources.mk").exists(), "OPUS_SRC {} is not a libopus tree", src.display());
+    let src = match env::var("OPUS_WASM_SRC") {
+        Ok(p) => PathBuf::from(p),
+        Err(_) => PathBuf::from(env::var("CARGO_MANIFEST_DIR").unwrap()).join("../../third_party/opus-wasm-simd"),
+    };
+    assert!(src.join("celt_sources.mk").exists(), "OPUS_WASM_SRC {} is not a libopus tree (git submodule update --init?)", src.display());
 
-    for v in ["WASI_SDK_PATH", "OPUS_SRC"] {
+    for v in ["WASI_SDK_PATH", "OPUS_WASM_SRC"] {
         println!("cargo:rerun-if-env-changed={v}");
     }
     println!("cargo:rerun-if-changed=csrc");

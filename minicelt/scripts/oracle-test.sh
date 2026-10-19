@@ -5,8 +5,8 @@
 #   2   = WASM 2.0 variant (+simd128), target/
 #   3   = WASM 3.0 variant (+simd128,+relaxed-simd), target/v3/
 #   all = both (default)
-# Env: WASI_SDK_PATH (default /opt/wasi-sdk), OPUS_SRC (fork branch v1.6.1-wasm-simd, default
-#      /home/user/opus-v1.6.1-wasm-simd).
+# Env: WASI_SDK_PATH (default /opt/wasi-sdk), OPUS_WASM_SRC (fork branch v1.6.1-wasm-simd, default
+#      third_party/opus-wasm-simd).
 set -e
 cd "$(dirname "$0")/../.."
 v=${1:-all}; [ $# -gt 0 ] && shift

@@ -8,6 +8,9 @@
   uses) and is a derivative work of libopus.
 - `third_party/opus` is a git submodule of upstream libopus (https://github.com/xiph/opus,
   tag `v1.6.1`), used only by the tests (`scripts/build-native.sh`).
+- `third_party/opus-wasm-simd` is a git submodule of a libopus fork with WASM SIMD kernels
+  (https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`), used only by the
+  minicelt tests; the kernels ported in `minicelt/src` and `minisilk/src` come from it.
 
 License: BSD-3-Clause, reproduced from libopus `COPYING`:
 

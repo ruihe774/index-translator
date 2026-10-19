@@ -2,7 +2,8 @@
 
 minicelt is a mechanical Rust port of the libopus CELT-only float encoder
 (`OPUS_APPLICATION_RESTRICTED_CELT`), for wasm32 only. C source: the fork
-https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`
+https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`, submodule
+`third_party/opus-wasm-simd`
 (upstream libopus 1.6.1 plus WASM SIMD / relaxed SIMD kernels in `celt/wasm`;
 its scalar encoder code is identical to 1.6.1). Do not use the fork's
 `wasm-simd` branch: it is based on post-1.6.1 upstream, whose scalar code
@@ -129,8 +130,8 @@ There are no Rust unit tests in the final tree. Two layers:
 
 1. **Per-function oracle** (`minicelt/oracle`, during development; dropped
    before the port is finished, and kept at a git tag). A wasm32-wasip1 build
-   of the fork's C (branch `v1.6.1-wasm-simd`, `OPUS_SRC`, default
-   `/home/user/opus-v1.6.1-wasm-simd`; wasi-sdk at `WASI_SDK_PATH`, default
+   of the fork's C (submodule `third_party/opus-wasm-simd`, branch
+   `v1.6.1-wasm-simd`, overridable with `OPUS_WASM_SRC`; wasi-sdk at `WASI_SDK_PATH`, default
    `/opt/wasi-sdk`; `-msimd128 -ffp-contract=off`, plus `-mrelaxed-simd` for
    the WASM 3.0 variant, with `csrc/analysis_stub.c` instead of `src/analysis.c`/`mlp*.c`)
    is linked into `cargo test` binaries that run under Node's WASI. Each ported

@@ -16,6 +16,8 @@ and `minicelt/` (CELT-only). Each crate has its own `CLAUDE.md` (scope) and `POR
 - `minisilk/`, `minicelt/`: `src/` (library), `wasm/` (cdylib with the `mini*_*` exports),
   `test/compare.ts` (Deno FFI) + `test/*.c`.
 - `third_party/opus`: submodule, upstream libopus v1.6.1, test reference only.
+- `third_party/opus-wasm-simd`: submodule, libopus 1.6.1 + WASM SIMD kernels (fork branch
+  `v1.6.1-wasm-simd`): source of the kernels and minicelt's test reference.
 - `test/audio`: speech corpus (GPL-2.0, test-only).
 
 ## Commands
