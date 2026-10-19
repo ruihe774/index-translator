@@ -173,3 +173,56 @@ pub unsafe fn comb_filter(
         comb_filter_const(y.offset(i), x.offset(i), T1, N - i as i32, g10, g11, g12);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{Rng, c_mode};
+    use minicelt_oracle as c;
+    use std::vec::Vec;
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    #[test]
+    fn comb_filter_matches_c() {
+        let mut rng = Rng::new(7);
+        let mi = c::mode_info(c_mode());
+        assert_eq!(mi.overlap, 120);
+        let window = unsafe { core::slice::from_raw_parts(mi.window, mi.overlap as usize) };
+        const H: usize = 1040;
+        for iter in 0..4000 {
+            let overlap = if iter % 2 == 0 { 120 } else { 0 };
+            let n = if iter % 5 == 0 { 120 } else { rng.range(120, 400) } as usize;
+            let t0 = if iter % 7 == 0 { 0 } else { rng.range(15, 1024) };
+            let t1 = match iter % 4 {
+                0 => t0,
+                1 => rng.range(0, 40),
+                _ => rng.range(15, 1024),
+            };
+            let pick = |rng: &mut Rng, k: usize| if k == 0 { 0.0 } else { rng.f32_unit().abs() };
+            let g0 = pick(&mut rng, if (iter / 3) % 5 == 0 { 0 } else { 1 });
+            let mut g1 = pick(&mut rng, if (iter / 5) % 5 == 0 { 0 } else { 1 });
+            if iter % 8 == 0 {
+                g1 = g0;
+            }
+            let (ts0, ts1) = (rng.range(0, 2), if iter % 6 == 0 { 0 } else { rng.range(0, 2) });
+            let ts1 = if iter % 8 == 0 { ts0 } else { ts1 };
+            let in_place = iter % 3 == 0;
+            let buf = rng.f32_vec(H + n + 16, 10000.0);
+            let ybuf = rng.f32_vec(n + 16, 10000.0);
+            let (mut br, mut bc) = (buf.clone(), buf.clone());
+            let (mut yr, mut yc) = (ybuf.clone(), ybuf.clone());
+            unsafe {
+                let (xr, xc) = (br.as_mut_ptr().add(H), bc.as_mut_ptr().add(H));
+                let (pyr, pyc) = if in_place { (xr, xc) } else { (yr.as_mut_ptr(), yc.as_mut_ptr()) };
+                comb_filter(pyr, xr, t0, t1, n as i32, g0, g1, ts0, ts1, window, overlap);
+                c::comb_filter(pyc, xc, t0, t1, n as i32, g0, g1, ts0, ts1, window.as_ptr(), overlap, 0);
+            }
+            let msg = std::format!("t0={t0} t1={t1} n={n} g0={g0} g1={g1} ts={ts0},{ts1} ov={overlap} ip={in_place}");
+            assert_eq!(bits(&br), bits(&bc), "x {msg}");
+            assert_eq!(bits(&yr), bits(&yc), "y {msg}");
+        }
+    }
+}

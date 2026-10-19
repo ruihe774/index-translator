@@ -69,3 +69,57 @@ pub fn _celt_autocorr(x: &[f32], ac: &mut [f32], window: &[f32], overlap: i32, l
     }
     shift
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{Rng, c_mode};
+    use minicelt_oracle as c;
+    use std::vec::Vec;
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    #[test]
+    fn autocorr_and_lpc_match_c() {
+        let mut rng = Rng::new(6);
+        let mi = c::mode_info(c_mode());
+        let window = unsafe { core::slice::from_raw_parts(mi.window, mi.overlap as usize) };
+        for iter in 0..1500 {
+            let lag = [4, 4, 24, rng.range(1, 30)][iter % 4];
+            let n = rng.range(lag + 1, 1000);
+            let overlap = if iter % 3 == 0 { rng.range(1, (n / 2).min(120)) } else { 0 };
+            let scale = [1.0f32, 1000.0, 30000.0][iter % 3];
+            let mut x = rng.f32_vec(n as usize + 4, scale);
+            if iter % 7 == 0 {
+                for (i, v) in x.iter_mut().enumerate() {
+                    *v = scale * libm::sinf(i as f32 * 0.1);
+                }
+            }
+            let mut ar = rng.f32_vec(lag as usize + 5, 1.0);
+            let mut ac = ar.clone();
+            let sr = _celt_autocorr(&x, &mut ar, window, overlap, lag, n);
+            let mut xc = x.clone();
+            let sc = unsafe { c::_celt_autocorr(xc.as_mut_ptr(), ac.as_mut_ptr(), window.as_ptr(), overlap, lag, n, 0) };
+            assert_eq!(sr, sc);
+            assert_eq!(bits(&ar), bits(&ac), "autocorr n={n} lag={lag} overlap={overlap}");
+
+            // _celt_lpc on a conditioned autocorrelation, and on arbitrary/degenerate inputs
+            let p = lag.min(24);
+            let mut a = ar[..p as usize + 1].to_vec();
+            if iter % 11 == 0 {
+                a[0] = 0.0;
+            } else if iter % 13 == 0 {
+                a[0] = 1e-11;
+            } else {
+                a[0] *= 1.0001;
+            }
+            let mut lr = rng.f32_vec(p as usize + 3, 1.0);
+            let mut lc = lr.clone();
+            _celt_lpc(&mut lr, &a, p);
+            unsafe { c::_celt_lpc(lc.as_mut_ptr(), a.as_ptr(), p) };
+            assert_eq!(bits(&lr), bits(&lc), "lpc p={p}");
+        }
+    }
+}
