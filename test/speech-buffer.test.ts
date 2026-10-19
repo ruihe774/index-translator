@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-argument, @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
 import { describe, expect, test } from "bun:test";
 
 import { AHEAD_SECONDS, blockStarts, KEEP_SECONDS, NEAR_SECONDS, SpeechBuffer } from "../public/speech-buffer";

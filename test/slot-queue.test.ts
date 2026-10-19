@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/await-thenable */
 import { describe, expect, test } from "bun:test";
 
 import { QueueFullError, SlotQueue } from "../src/queue";

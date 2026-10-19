@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/await-thenable */
 // scripts/fetch_models.ts against a local server that stands in for Hugging Face, with the real curl.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";

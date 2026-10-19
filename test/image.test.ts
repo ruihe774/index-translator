@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/await-thenable */
 // An uploaded image on its way to the engine (src/image.ts) and through the API (mock engine): every
 // format takes the same path through Bun.Image and reaches the engine as a PNG.
 

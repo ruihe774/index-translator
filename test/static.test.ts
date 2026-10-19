@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/await-thenable */
 // src/static.ts against a temporary public directory: transpiling, revalidation, headers and paths.
 // The app-level behaviour of the real public/ directory is in api-requests.test.ts ("static files").
 

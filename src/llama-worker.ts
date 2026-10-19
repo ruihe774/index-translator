@@ -25,7 +25,6 @@ export type WorkerReply =
   // `image`: the image itself is at fault, not the engine.
   | { type: "error"; req: number; message: string; image?: boolean };
 
-// eslint-disable-next-line no-var -- only `var` declares a global
 declare var self: Worker;
 
 const post = (reply: WorkerReply) => self.postMessage(reply);

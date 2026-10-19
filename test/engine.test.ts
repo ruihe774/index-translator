@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/await-thenable */
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call */
 // Unit tests for src/llama.ts: the Engine lifecycle, token counting and streaming against fake
 // models, the ChatML prompt from src/llama-ffi.ts, and how launchNative reports a missing model or
 // library. libllama itself is never loaded here.
