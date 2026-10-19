@@ -6,8 +6,10 @@
 //!   (e.g. `silk_SMULBB(a as i32, b as i32)` for `opus_int16` operands).
 //! - Plain C arithmetic (`silk_ADD32`, `silk_MUL`, ...) uses plain Rust operators, so debug
 //!   builds trap where C would hit signed overflow. The `_ovflw` variants wrap.
-//! - wasm32 has `OPUS_FAST_INT64 == 0`, so the SMULWx/SMLAWx macros use the 32-bit
-//!   formulations. This matters for `silk_SMULWW`/`silk_SMLAWW`, which round differently.
+//! - The SMULWx/SMLAWx macros use the `OPUS_FAST_INT64` (64-bit) formulations. C's
+//!   wasm32 build picks the 32-bit ones (arch.h keys the choice on LP64), but wasm has
+//!   native i64 arithmetic and both formulations give identical results, including on
+//!   wraparound; the 64-bit ones also avoid an intermediate i32 overflow.
 //! - Type-generic C macros (`silk_min`, `silk_max`, `silk_LIMIT`, `silk_abs`, `silk_sign`) are
 //!   `macro_rules!` macros; everything else is an `#[inline(always)]` function.
 
@@ -32,25 +34,25 @@ pub const RAND_INCREMENT: i32 = 907633515;
 /// (a32 * (opus_int32)((opus_int16)(b32))) >> 16
 #[inline(always)]
 pub fn silk_SMULWB(a32: i32, b32: i32) -> i32 {
-    ((a32 >> 16) * (b32 as i16 as i32)) + (((a32 & 0x0000FFFF) * (b32 as i16 as i32)) >> 16)
+    ((a32 as i64 * (b32 as i16 as i64)) >> 16) as i32
 }
 
 /// a32 + (b32 * (opus_int32)((opus_int16)(c32))) >> 16
 #[inline(always)]
 pub fn silk_SMLAWB(a32: i32, b32: i32, c32: i32) -> i32 {
-    a32 + silk_SMULWB(b32, c32)
+    (a32 as i64 + ((b32 as i64 * (c32 as i16 as i64)) >> 16)) as i32
 }
 
 /// (a32 * (b32 >> 16)) >> 16
 #[inline(always)]
 pub fn silk_SMULWT(a32: i32, b32: i32) -> i32 {
-    (a32 >> 16) * (b32 >> 16) + (((a32 & 0x0000FFFF) * (b32 >> 16)) >> 16)
+    ((a32 as i64 * (b32 >> 16) as i64) >> 16) as i32
 }
 
 /// a32 + (b32 * (c32 >> 16)) >> 16
 #[inline(always)]
 pub fn silk_SMLAWT(a32: i32, b32: i32, c32: i32) -> i32 {
-    a32 + ((b32 >> 16) * (c32 >> 16)) + (((b32 & 0x0000FFFF) * (c32 >> 16)) >> 16)
+    (a32 as i64 + ((b32 as i64 * (c32 as i64 >> 16)) >> 16)) as i32
 }
 
 /// (opus_int32)((opus_int16)(a32)) * (opus_int32)((opus_int16)(b32))
@@ -83,16 +85,16 @@ pub fn silk_SMLAL(a64: i64, b32: i32, c32: i32) -> i64 {
     silk_ADD64(a64, (b32 as i64) * (c32 as i64))
 }
 
-/// (a32 * b32) >> 16, 32-bit formulation (OPUS_FAST_INT64 == 0)
+/// (a32 * b32) >> 16
 #[inline(always)]
 pub fn silk_SMULWW(a32: i32, b32: i32) -> i32 {
-    silk_MLA(silk_SMULWB(a32, b32), a32, silk_RSHIFT_ROUND(b32, 16))
+    ((a32 as i64 * b32 as i64) >> 16) as i32
 }
 
-/// a32 + ((b32 * c32) >> 16), 32-bit formulation (OPUS_FAST_INT64 == 0)
+/// a32 + ((b32 * c32) >> 16)
 #[inline(always)]
 pub fn silk_SMLAWW(a32: i32, b32: i32, c32: i32) -> i32 {
-    silk_MLA(silk_SMLAWB(a32, b32, c32), b32, silk_RSHIFT_ROUND(c32, 16))
+    (a32 as i64 + ((b32 as i64 * c32 as i64) >> 16)) as i32
 }
 
 /// add with output saturated
@@ -659,5 +661,40 @@ pub fn silk_INVERSE32_varQ(b32: i32, Qres: i32) -> i32 {
     } else {
         /* Avoid undefined result */
         0
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::Rng;
+
+    /* The 32-bit formulations C uses when OPUS_FAST_INT64 == 0 (as in its wasm32 build),
+       with wraparound instead of UB. */
+    fn smulwb32(a: i32, b: i32) -> i32 {
+        ((a >> 16).wrapping_mul(b as i16 as i32)).wrapping_add(((a & 0xFFFF) * (b as i16 as i32)) >> 16)
+    }
+    fn smulwt32(a: i32, b: i32) -> i32 {
+        ((a >> 16).wrapping_mul(b >> 16)).wrapping_add(((a & 0xFFFF) * (b >> 16)) >> 16)
+    }
+    fn smulww32(a: i32, b: i32) -> i32 {
+        smulwb32(a, b).wrapping_add(a.wrapping_mul(silk_RSHIFT_ROUND(b, 16)))
+    }
+
+    #[test]
+    fn fast_int64_forms_match_32bit_forms() {
+        let mut rng = Rng::new(3);
+        let edge = [i32::MIN, i32::MIN + 1, -65536, -32769, -32768, -1, 0, 1, 32767, 32768, 65535, i32::MAX];
+        let mut pairs: std::vec::Vec<(i32, i32)> = edge.iter().flat_map(|&a| edge.iter().map(move |&b| (a, b))).collect();
+        pairs.extend((0..200000).map(|i| (rng.i32_bits(1 + i % 32), rng.i32_bits(1 + (i / 32) % 32))));
+        for (a, b) in pairs {
+            assert_eq!(silk_SMULWB(a, b), smulwb32(a, b), "SMULWB({a}, {b})");
+            assert_eq!(silk_SMULWT(a, b), smulwt32(a, b), "SMULWT({a}, {b})");
+            assert_eq!(silk_SMULWW(a, b), smulww32(a, b), "SMULWW({a}, {b})");
+            let c = b.rotate_left(7);
+            assert_eq!(silk_SMLAWB(c, a, b), c.wrapping_add(smulwb32(a, b)), "SMLAWB({c}, {a}, {b})");
+            assert_eq!(silk_SMLAWT(c, a, b), c.wrapping_add(smulwt32(a, b)), "SMLAWT({c}, {a}, {b})");
+            assert_eq!(silk_SMLAWW(c, a, b), c.wrapping_add(smulww32(a, b)), "SMLAWW({c}, {a}, {b})");
+        }
     }
 }
