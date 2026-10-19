@@ -3,9 +3,6 @@
 
 use super::mdct::mdct_lookup;
 
-pub const MAX_PERIOD: i32 = 1024;
-pub const DEC_PITCH_BUF_SIZE: i32 = 2048;
-
 pub struct PulseCache {
     pub size: i32,
     pub index: &'static [i16],

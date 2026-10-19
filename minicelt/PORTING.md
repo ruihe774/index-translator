@@ -32,7 +32,7 @@ bit-exact with scalar C); natively built upstream libopus 1.6.1
   `#if defined(__wasm_relaxed_simd__)` becomes
   `#[cfg(target_feature = "relaxed-simd")]`. Kernels that matter here:
   `op_pvq_search_wasm` (vq_wasm.c), `celt_inner_prod_wasm`,
-  `dual_inner_prod_wasm`, `xcorr_kernel_wasm`, `celt_pitch_xcorr_wasm`,
+  `dual_inner_prod_wasm`, `celt_pitch_xcorr_wasm` (with its `xcorr_kernel_wasm` part),
   `comb_filter_const_wasm` (pitch_wasm.c). The MDCT, FFT and `bands.c` have no
   kernels and are ported as plain scalar code.
 - Branches that are unreachable under the fixed configuration (other modes or
@@ -53,7 +53,6 @@ go into the module of the matching `.c` file.
 |---|---|
 | `arch.h` (types, `MIN16`/`MAX32`/`IMIN`/..., `celt_isnan`, `ABS16`) | `celt::arch` |
 | `mathops.h`, `mathops.c` (float) | `celt::mathops` |
-| `float_cast.h` | `celt::float_cast` |
 | `entcode.h`/`entcode.c`, `entenc.c` | `celt::entcode`, `celt::entenc` |
 | `modes.h`, `static_modes_float.h` | `celt::modes`, `celt::static_modes_float` (generated) |
 | `kiss_fft.h`/`.c`, `mdct.h`/`.c` | `celt::kiss_fft`, `celt::mdct` |
@@ -102,7 +101,8 @@ bytes equal the C allocation.
   with `-ffp-contract=off`, so plain expressions match. Never hand-vectorize a
   plain C loop to imitate compiler output.
 - C `(int)x` on a float truncates; Rust `x as i32` truncates and saturates.
-  `float2int` (`lrintf`) rounds half to even (`celt::float_cast::float2int`).
+  `float2int` (`lrintf`) would be `libm::rintf` (round half to even); the encoder does not
+  use it.
   `floor(.5+x)` stays exactly that.
 - Arrays: prefer slices (`&[f32]`, `&mut [i32]`). Where C uses negative
   offsets or pointer arithmetic into a larger buffer, pass the buffer plus an

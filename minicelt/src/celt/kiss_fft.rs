@@ -275,7 +275,9 @@ pub fn opus_fft_impl(st: &kiss_fft_state, fout: &mut [kiss_fft_cpx]) {
     }
 }
 
-/// opus_fft_c: forward FFT, `fin` and `fout` must not alias.
+/// opus_fft_c: forward FFT, `fin` and `fout` must not alias. The encoder only uses
+/// `opus_fft_impl` (via the MDCT); this is the test entry point against C.
+#[cfg(test)]
 pub fn opus_fft(st: &kiss_fft_state, fin: &[kiss_fft_cpx], fout: &mut [kiss_fft_cpx]) {
     let scale = st.scale;
 

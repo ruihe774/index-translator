@@ -68,27 +68,8 @@ pub static tapset_icdf: [u8; 3] = [2, 1, 0];
 pub const COMBFILTER_MAXPERIOD: i32 = 1024;
 pub const COMBFILTER_MINPERIOD: i32 = 15;
 
-pub fn init_caps(m: &CELTMode, cap: &mut [i32], LM: i32, C: i32) {
-    for i in 0..m.nbEBands {
-        let N = (m.eBands[i as usize + 1] as i32 - m.eBands[i as usize] as i32) << LM;
-        cap[i as usize] =
-            (m.cache.caps[(m.nbEBands * (2 * LM + C - 1) + i) as usize] as i32 + 64) * C * N >> 2;
-    }
-}
-
-/* The tf_select_table second index is 4*isTransient + 2*tf_select + per_band_flag */
-pub static tf_select_table: [[i8; 8]; 4] = [
-    /*isTransient=0     isTransient=1 */
-    [0, -1, 0, -1, 0, -1, 0, -1], /* 2.5 ms */
-    [0, -1, 0, -2, 1, 0, 1, -1],  /* 5 ms */
-    [0, -2, 0, -3, 2, 0, 1, -1],  /* 10 ms */
-    [0, -2, 0, -3, 3, 0, 1, -1],  /* 20 ms */
-];
-
-// group D: comb_filter (+ comb_filter_const in pitch);
-// group E: tf_select_table, celt_preemphasis (celt_encoder.c), resampling_factor is not needed (48 kHz only).
-
-// ---- group D: comb_filter ----
+/* celt.c. resampling_factor() is not needed (48 kHz only); comb_filter_const is the WASM
+kernel in pitch.rs. */
 
 /// Gains of the three comb filter tapsets (QCONST16(x,15) = x in float).
 static gains: [[f32; 3]; 3] = [
@@ -171,6 +152,23 @@ pub unsafe fn comb_filter(
 
         /* Compute the part with the constant filter. */
         comb_filter_const(y.offset(i), x.offset(i), T1, N - i as i32, g10, g11, g12);
+    }
+}
+
+/* The tf_select_table second index is 4*isTransient + 2*tf_select + per_band_flag */
+pub static tf_select_table: [[i8; 8]; 4] = [
+    /*isTransient=0     isTransient=1 */
+    [0, -1, 0, -1, 0, -1, 0, -1], /* 2.5 ms */
+    [0, -1, 0, -2, 1, 0, 1, -1],  /* 5 ms */
+    [0, -2, 0, -3, 2, 0, 1, -1],  /* 10 ms */
+    [0, -2, 0, -3, 3, 0, 1, -1],  /* 20 ms */
+];
+
+pub fn init_caps(m: &CELTMode, cap: &mut [i32], LM: i32, C: i32) {
+    for i in 0..m.nbEBands {
+        let N = (m.eBands[i as usize + 1] as i32 - m.eBands[i as usize] as i32) << LM;
+        cap[i as usize] =
+            (m.cache.caps[(m.nbEBands * (2 * LM + C - 1) + i) as usize] as i32 + 64) * C * N >> 2;
     }
 }
 

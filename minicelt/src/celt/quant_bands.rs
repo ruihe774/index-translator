@@ -1,4 +1,4 @@
-//! Port of celt/quant_bands.c (encoder side; upstream libopus 1.6.1, float build).
+//! Port of celt/quant_bands.c (encoder side, float build).
 //!
 //! Dropped: the decoder functions (`unquant_*`), `log2Amp` (decoder/RESYNTH only), and the
 //! `lfe` parameter (no LFE). `quant_fine_energy` loses `prev_quant` (always NULL outside
