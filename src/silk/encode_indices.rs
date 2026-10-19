@@ -4,27 +4,9 @@ use crate::celt::entcode::ec_enc;
 use crate::celt::entenc::{ec_enc_icdf, ec_enc_icdf_ptr};
 use crate::silk::define::*;
 use crate::silk::macros::*;
+use crate::silk::NLSF_unpack::silk_NLSF_unpack;
 use crate::silk::structs::*;
 use crate::silk::tables::*;
-
-/// silk_NLSF_unpack (silk/NLSF_unpack.c), private copy so that this module does not depend
-/// on the NLSF group: unpacks predictor values and indices for entropy coding tables.
-unsafe fn NLSF_unpack(ec_ix: &mut [i16], pred_Q8: &mut [u8], psNLSF_CB: &silk_NLSF_CB_struct, CB1_index: i32) {
-    unsafe {
-        let order = psNLSF_CB.order as i32;
-        let mut ec_sel_ptr = psNLSF_CB.ec_sel.add((CB1_index * order / 2) as usize);
-        let mut i = 0;
-        while i < order {
-            let entry = *ec_sel_ptr as i32;
-            ec_sel_ptr = ec_sel_ptr.add(1);
-            ec_ix[i as usize] = silk_SMULBB(silk_RSHIFT(entry, 1) & 7, 2 * NLSF_QUANT_MAX_AMPLITUDE + 1) as i16;
-            pred_Q8[i as usize] = *psNLSF_CB.pred_Q8.add((i + (entry & 1) * (order - 1)) as usize);
-            ec_ix[i as usize + 1] = silk_SMULBB(silk_RSHIFT(entry, 5) & 7, 2 * NLSF_QUANT_MAX_AMPLITUDE + 1) as i16;
-            pred_Q8[i as usize + 1] = *psNLSF_CB.pred_Q8.add((i + (silk_RSHIFT(entry, 4) & 1) * (order - 1) + 1) as usize);
-            i += 2;
-        }
-    }
-}
 
 /// Encode side-information parameters to payload.
 pub fn silk_encode_indices(psEncC: &mut silk_encoder_state, psRangeEnc: &mut ec_enc, FrameIndex: i32, encode_LBRR: i32, condCoding: i32) {
@@ -83,8 +65,8 @@ pub fn silk_encode_indices(psEncC: &mut silk_encoder_state, psRangeEnc: &mut ec_
             psNLSF_CB.CB1_iCDF.add(((signalType >> 1) * psNLSF_CB.nVectors as i32) as usize),
             8,
         );
-        NLSF_unpack(&mut ec_ix, &mut pred_Q8, psNLSF_CB, psIndices.NLSFIndices[0] as i32);
     }
+    silk_NLSF_unpack(&mut ec_ix, &mut pred_Q8, psNLSF_CB, psIndices.NLSFIndices[0] as i32);
     debug_assert!(psNLSF_CB.order as i32 == psEncC.predictLPCOrder);
     for i in 0..psNLSF_CB.order as usize {
         let nlsf = psIndices.NLSFIndices[i + 1] as i32;
