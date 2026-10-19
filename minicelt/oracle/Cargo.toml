@@ -1,0 +1,8 @@
+[package]
+name = "minicelt-oracle"
+version = "0.0.0"
+edition = "2024"
+publish = false
+description = "Reference libopus CELT encoder (float build, WASM SIMD) built with wasi-sdk, linked into minicelt tests"
+
+[dependencies]

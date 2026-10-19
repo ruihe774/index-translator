@@ -10,8 +10,10 @@ pub const EC_UINT_BITS: i32 = 8;
 /// The resolution of fractional-precision bit usage measurements, i.e., 3 => 1/8th bits.
 pub const BITRES: i32 = 3;
 
-/// The entropy encoder/decoder context.
+/// The entropy encoder/decoder context. Copied by value (struct assignment) to save and
+/// restore the coder state.
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct ec_ctx {
     /// Buffered input/output.
     pub buf: *mut u8,

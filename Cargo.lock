@@ -13,7 +13,12 @@ name = "minicelt"
 version = "0.1.0"
 dependencies = [
  "libm",
+ "minicelt-oracle",
 ]
+
+[[package]]
+name = "minicelt-oracle"
+version = "0.0.0"
 
 [[package]]
 name = "minicelt-wasm"
