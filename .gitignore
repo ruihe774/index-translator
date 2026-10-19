@@ -1,2 +1,5 @@
-/target
-/.claude/
+/target/*
+!/target/minicelt-wasm2.wasm
+!/target/minicelt-wasm3.wasm
+!/target/minisilk-wasm2.wasm
+!/target/minisilk-wasm3.wasm
