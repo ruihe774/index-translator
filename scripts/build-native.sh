@@ -8,13 +8,15 @@
 #   target/native/minisilk-{scalar,rtcd}.so  minisilk/test/shim.c + libopus
 #   target/native/minicelt-{scalar,rtcd}.so  minicelt/test/{shim,analysis_stub}.c + libopus without
 #                                            src/analysis.c (tonality analysis off, as in minicelt)
+# The wasm builds of the fork's C (target/native/minicelt-cwasm{2,3}.wasm) come from
+# minicelt/test/build-cwasm.sh, which scripts/test.sh runs when they are missing.
 # OPUS_SRC overrides the source directory.
 set -e
 cd "$(dirname "$0")/.."
 OPUS_SRC=$(realpath "${OPUS_SRC:-third_party/opus}")
 [ -f "$OPUS_SRC/CMakeLists.txt" ] || { echo "$OPUS_SRC is empty: run git submodule update --init" >&2; exit 1; }
 out=$PWD/target/native
-rm -rf "$out" && mkdir -p "$out"
+rm -rf "$out"/build-* "$out"/*.so && mkdir -p "$out"  # keeps the cwasm references (minicelt/test/build-cwasm.sh)
 build() { # $1 = name, $2.. = extra cmake args
   name=$1; shift
   cmake -S "$OPUS_SRC" -B "$out/build-$name" -G Ninja -DCMAKE_BUILD_TYPE=Release \

@@ -164,14 +164,38 @@ There are no Rust unit tests in the final tree. Two layers:
      `final_range`, `in_dtx`, and `celt_encoder_ptr()` / `celt_state_bytes()` for the embedded
      `CELTEncoder`, to compare packets and the encoder state frame by frame.
      The reference has no tonality analysis, matching the port.
-2. **End-to-end** (`minicelt/test/compare.ts`, Deno): the wasm builds against
-   natively built upstream libopus (`scripts/build-native.sh`: intrinsics off,
-   `-ffp-contract=off`, `src/analysis.c` replaced by
-   `minicelt/test/analysis_stub.c`), comparing packets, final range and DTX
-   state frame by frame.
+2. **End to end** (`minicelt/test/compare.ts`, Deno; `scripts/test.sh celt [--quick] [--all]
+   [--refs-only] [--strict-scalar] [--filter=text] [audio files...]`). Every implementation sits behind one
+   adapter with the `test/shim.c` API (create, ctl setters, encode i16/f32, final range, in_dtx,
+   lookahead; decoder for the bitstream check):
+   - `scalar`, `rtcd`: upstream libopus 1.6.1 natively (`scripts/build-native.sh`, Deno FFI).
+   - `cwasm2`, `cwasm3`: the fork's C (`OPUS_WASM_SRC`) + `shim.c` + `analysis_stub.c`, built by
+     `minicelt/test/build-cwasm.sh` (run by `scripts/test.sh` when `target/native/minicelt-cwasm{2,3}.wasm`
+     are missing; wasi-sdk at `WASI_SDK_PATH`, default `/opt/wasi-sdk`) as wasm32-wasip1 reactors
+     (`-mexec-model=reactor`, exporting `shim_*`, `malloc`, `free`; `-O2 -msimd128 -ffp-contract=off`, plus
+     `-mrelaxed-simd` for cwasm3; `test/cwasm/config.h`). The harness instantiates them with a stub WASI
+     import object and calls `_initialize`.
+   - `wasm2`, `wasm2-checked`, `wasm3`, `wasm3-checked`: the minicelt builds (`minicelt_*` exports).
+
+   The same input and ctl schedule (static settings: bitrate, complexity, constrained VBR, DTX, packet
+   loss, bandwidth, i16/f32 input, hot f32 x2.5; dynamic runs with random mid-stream changes; mono and
+   stereo; 48 kHz speech upsampled x3, synthetic music, transients, noise, chirp, DTX patterns, DC, clipping,
+   hard-panned/anti-phase/mono-compatible stereo) goes through each implementation once; the traces
+   (packets, final range, in_dtx, ctl return codes) are then compared pairwise. **Exact pairs** (mismatch =
+   failure): `cwasm2` = `wasm2` = `wasm2-checked`, `cwasm3` = `wasm3` = `wasm3-checked`. **Informational**:
+   scalar and rtcd vs the wasm builds, `cwasm2` vs `cwasm3`. Native scalar is *not* an exact reference for
+   WASM 2.0 here (unlike SILK): the fork's float SIMD kernels (`celt_inner_prod`, `dual_inner_prod`,
+   `xcorr_kernel`/`celt_pitch_xcorr`, `op_pvq_search`, ...) accumulate in lane order, not in the C order, so
+   packets differ occasionally (in about half of the short runs, with identical SNR). The fork's C built with
+   its kernels disabled is bit-exact with scalar in every run (checked), so the harness, the libm and the
+   signal path are not the cause. `--strict-scalar` makes scalar vs `wasm2`/`wasm2-checked` exact pairs. Any
+   trap, native decoder error, bad TOC or encoder/decoder final range mismatch fails every run.
+   Every packet is also decoded natively (scalar decoder with the right channel count) and the SNR of
+   the decoded streams is reported. `--refs-only` runs the reference self-check without minicelt wasm.
 
 **Relaxed SIMD and FMA**: `f32x4.relaxed_madd` is fused on x86 with FMA (V8
 emits `vfmadd`), so the WASM 3.0 build's float kernels round differently from
 scalar C. The WASM 3.0 build is therefore compared end to end against the fork's
-C (`v1.6.1-wasm-simd`) built for wasm with `-mrelaxed-simd` (run in the same engine); the native
-scalar build is the bit-exact reference for WASM 2.0 only.
+C (`v1.6.1-wasm-simd`) built for wasm with `-mrelaxed-simd` (run in the same engine). The WASM 2.0
+build is compared against the same C built with `-msimd128`; the native scalar build is informational
+only, because the fork's float kernels sum in a different order than the C code (see 2.).
