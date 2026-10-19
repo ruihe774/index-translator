@@ -6,18 +6,23 @@
 //
 // For every native library (target/native/minisilk-{scalar,rtcd}.so) x wasm build
 // (target/minisilk-wasm{2,3}[-checked].wasm) x signal x configuration it encodes the same input with both
-// encoders and compares packets, OPUS_GET_FINAL_RANGE and OPUS_GET_IN_DTX frame by frame. Every
-// minisilk packet is also decoded by the native decoder, whose final range must equal the
-// encoder's (the bitstream check from opus_demo), and the decoded SNR of both streams is
-// reported so a mismatch can be judged by its effect.
+// encoders and compares packets, OPUS_GET_FINAL_RANGE and OPUS_GET_IN_DTX frame by frame. The native
+// encoder and decoder run once per (library, signal, configuration); all wasm builds are compared against
+// that trace. The native decoder's final range must equal the encoder's (the bitstream check from
+// opus_demo). minisilk packets identical to the native ones need no decoding of their own; mismatching
+// ones are decoded natively too. The decoded SNR of both streams is reported so a mismatch can be judged
+// by its effect. Tasks run on a pool of workers (--jobs=N, default: all cores).
 // The speech corpus is test/audio/*.wav (16 kHz mono 16-bit; see THIRD_PARTY_NOTICES.md).
 // Audio files given as arguments replace it; files in other formats are decoded with ffmpeg.
 
 const root = new URL('../..', import.meta.url).pathname;
 const FRAME = 320;
 const CAP = 1276;
-const quick = Deno.args.includes('--quick');
-const files = Deno.args.filter((a) => !a.startsWith('--'));
+// deno-lint-ignore no-explicit-any
+const isWorker = typeof (globalThis as any).WorkerGlobalScope !== 'undefined';
+// Workers get these from the main thread (see the init message).
+let quick = Deno.args.includes('--quick');
+let files = Deno.args.filter((a) => !a.startsWith('--'));
 
 // ---------- native libopus ----------
 
@@ -204,132 +209,282 @@ function snr(ref: Float64Array, dec: Float64Array, delay: number) {
   return s === 0 ? Infinity : 10 * Math.log10(s / Math.max(e, 1e-9));
 }
 
-function run(nat: Native, w: Wasm, x: Float64Array, cfg: Cfg): Result {
-  const n = nat.s, e = w.e;
-  const err = new Int32Array(1);
-  const enc = n.shim_enc_create(cfg.bitrate, cfg.complexity, cfg.dtx, err);
-  if (!enc) throw new Error(`native create: ${err[0]}`);
-  const decN = n.shim_dec_create(err), decM = n.shim_dec_create(err);
-  const chk = (what: string, r: number) => { if (r < 0) throw new Error(`${what}: ${r}`); return r; };
-  chk('minisilk_init', e.minisilk_init(cfg.bitrate, cfg.complexity, cfg.dtx));
-  if (n.shim_enc_lookahead(enc) !== e.minisilk_lookahead()) throw new Error('lookahead differs');
+// What the native encoder and decoder did for one (signal, configuration); shared by all wasm builds.
+type Trace = {
+  frames: number; lookahead: number; pkts: Uint8Array[]; ranges: number[]; dtx: number[]; ctl: number[];
+  bytes: number; decoded: Float64Array; snr: number;
+};
 
-  const nFrames = Math.floor(x.length / FRAME);
-  const outN = new Uint8Array(CAP);
-  const pcmI = new Int16Array(FRAME), pcmF = new Float32Array(FRAME);
-  const decodedN = new Float64Array(nFrames * FRAME), decodedM = new Float64Array(nFrames * FRAME);
-  const pcmD = new Int16Array(FRAME);
+const chk = (what: string, r: number) => { if (r < 0) throw new Error(`${what}: ${r}`); return r; };
+
+// The ctl changes of a `dynamic` configuration; the sequence depends only on the seed, so the native and
+// wasm runs draw the same one.
+function* ctlEvents(cfg: Cfg, nFrames: number) {
   const rng = cfg.dynamic ? new Rng(cfg.dynamic) : undefined;
-  const res: Result = { frames: nFrames, bytesNative: 0, bytesMini: 0, snrNative: 0, snrMini: 0 };
-  const scale = cfg.hot ? 2.5 : 1;
-
-  const decode = (dec: Deno.PointerValue, pkt: Uint8Array, out: Float64Array, f: number, encRange: number, who: string) => {
-    const r = n.shim_decode(dec, pkt, pkt.length, pcmD);
-    if (r !== FRAME) throw new Error(`${who} frame ${f}: native decoder returned ${r}`);
-    const dr = n.shim_dec_final_range(dec);
-    // A 1-2 byte packet (DTX) carries no SILK frame, so the decoder runs PLC and reports range 0.
-    if (pkt.length > 2 && dr !== encRange) throw new Error(`${who} frame ${f}: decoder final range ${dr} != encoder ${encRange}`);
-    for (let i = 0; i < FRAME; i++) out[f * FRAME + i] = pcmD[i];
-  };
-
   for (let f = 0; f < nFrames; f++) {
     if (rng && f % 5 === 0 && rng.next() < 0.5) {
       const which = rng.int(0, 4);
       const v = [() => rng.pick([5000, 6000, 9000, 14000, 20000, 30000, 50000, -1000, -1]), () => rng.int(0, 11), () => rng.int(0, 2), () => rng.pick([0, 1, 5, 10, 25, 50, 100])][which]();
-      const rn = [n.shim_enc_set_bitrate, n.shim_enc_set_complexity, n.shim_enc_set_dtx, n.shim_enc_set_packet_loss_perc][which](enc, v);
-      const rm = [e.minisilk_set_bitrate, e.minisilk_set_complexity, e.minisilk_set_dtx, e.minisilk_set_packet_loss_perc][which](v);
-      if (rn !== rm) throw new Error(`ctl ${which}=${v}: native ${rn} minisilk ${rm}`);
+      yield { f, which, v };
     }
-    let lenN: number, lenM: number;
+  }
+}
+
+function fillInput(cfg: Cfg, x: Float64Array, f: number, pcmI: Int16Array, pcmF: Float32Array) {
+  const scale = cfg.hot ? 2.5 : 1;
+  if (cfg.float) for (let i = 0; i < FRAME; i++) pcmF[i] = Math.fround(x[f * FRAME + i] / 32768 * scale);
+  else for (let i = 0; i < FRAME; i++) pcmI[i] = Math.max(-32768, Math.min(32767, Math.round(x[f * FRAME + i])));
+}
+
+const refOf = (x: Float64Array, cfg: Cfg, nFrames: number) => {
+  const scale = cfg.hot ? 2.5 : 1;
+  return Float64Array.from(x.subarray(0, nFrames * FRAME), (v) => v * scale);
+};
+
+// Decodes packets natively, checking the final range against the encoder's.
+function decodeAll(n: Native['s'], pkts: Uint8Array[], ranges: number[], who: string) {
+  const err = new Int32Array(1);
+  const dec = n.shim_dec_create(err);
+  const out = new Float64Array(pkts.length * FRAME);
+  const pcmD = new Int16Array(FRAME);
+  try {
+    for (let f = 0; f < pkts.length; f++) {
+      const pkt = pkts[f];
+      const r = n.shim_decode(dec, pkt, pkt.length, pcmD);
+      if (r !== FRAME) throw new Error(`${who} frame ${f}: native decoder returned ${r}`);
+      const dr = n.shim_dec_final_range(dec);
+      // A 1-2 byte packet (DTX) carries no SILK frame, so the decoder runs PLC and reports range 0.
+      if (pkt.length > 2 && dr !== ranges[f]) throw new Error(`${who} frame ${f}: decoder final range ${dr} != encoder ${ranges[f]}`);
+      for (let i = 0; i < FRAME; i++) out[f * FRAME + i] = pcmD[i];
+    }
+  } finally {
+    n.shim_dec_destroy(dec);
+  }
+  return out;
+}
+
+function nativeTrace(nat: Native, x: Float64Array, cfg: Cfg): Trace {
+  const n = nat.s;
+  const err = new Int32Array(1);
+  const enc = n.shim_enc_create(cfg.bitrate, cfg.complexity, cfg.dtx, err);
+  if (!enc) throw new Error(`native create: ${err[0]}`);
+  try {
+    const nFrames = Math.floor(x.length / FRAME);
+    const outN = new Uint8Array(CAP);
+    const pcmI = new Int16Array(FRAME), pcmF = new Float32Array(FRAME);
+    const t: Trace = { frames: nFrames, lookahead: n.shim_enc_lookahead(enc), pkts: [], ranges: [], dtx: [], ctl: [], bytes: 0, decoded: new Float64Array(0), snr: 0 };
+    const events = ctlEvents(cfg, nFrames);
+    let ev = events.next();
+    for (let f = 0; f < nFrames; f++) {
+      if (!ev.done && ev.value.f === f) {
+        const { which, v } = ev.value;
+        t.ctl.push([n.shim_enc_set_bitrate, n.shim_enc_set_complexity, n.shim_enc_set_dtx, n.shim_enc_set_packet_loss_perc][which](enc, v));
+        ev = events.next();
+      }
+      fillInput(cfg, x, f, pcmI, pcmF);
+      const len = cfg.float ? chk('native encode_float', n.shim_encode_float(enc, pcmF, outN, CAP)) : chk('native encode', n.shim_encode(enc, pcmI, outN, CAP));
+      t.pkts.push(outN.slice(0, len));
+      t.ranges.push(n.shim_enc_final_range(enc));
+      t.dtx.push(n.shim_enc_in_dtx(enc));
+      t.bytes += len;
+    }
+    t.decoded = decodeAll(n, t.pkts, t.ranges, 'native');
+    t.snr = snr(refOf(x, cfg, nFrames), t.decoded, t.lookahead); // the decoder adds no delay of its own (verified: SNR peaks at the lookahead)
+    return t;
+  } finally {
+    n.shim_enc_destroy(enc);
+  }
+}
+
+function wasmRun(nat: Native, w: Wasm, x: Float64Array, cfg: Cfg, t: Trace): Result {
+  const e = w.e;
+  chk('minisilk_init', e.minisilk_init(cfg.bitrate, cfg.complexity, cfg.dtx));
+  if (t.lookahead !== e.minisilk_lookahead()) throw new Error('lookahead differs');
+  const nFrames = t.frames;
+  const res: Result = { frames: nFrames, bytesNative: t.bytes, bytesMini: 0, snrNative: t.snr, snrMini: 0 };
+  const pkts: Uint8Array[] = [], ranges: number[] = [];
+  const events = ctlEvents(cfg, nFrames);
+  let ev = events.next(), ci = 0;
+  for (let f = 0; f < nFrames; f++) {
+    if (!ev.done && ev.value.f === f) {
+      const { which, v } = ev.value;
+      const rm = [e.minisilk_set_bitrate, e.minisilk_set_complexity, e.minisilk_set_dtx, e.minisilk_set_packet_loss_perc][which](v);
+      const rn = t.ctl[ci++];
+      if (rn !== rm) throw new Error(`ctl ${which}=${v}: native ${rn} minisilk ${rm}`);
+      ev = events.next();
+    }
+    let lenM: number;
     if (cfg.float) {
-      for (let i = 0; i < FRAME; i++) pcmF[i] = Math.fround(x[f * FRAME + i] / 32768 * scale);
-      new Float32Array(e.memory.buffer, e.minisilk_input_ptr(), FRAME).set(pcmF);
-      lenN = chk('native encode_float', n.shim_encode_float(enc, pcmF, outN, CAP));
+      const pcmF = new Float32Array(e.memory.buffer, e.minisilk_input_ptr(), FRAME);
+      fillInput(cfg, x, f, new Int16Array(FRAME), pcmF);
       lenM = chk('minisilk_encode', e.minisilk_encode());
     } else {
-      for (let i = 0; i < FRAME; i++) pcmI[i] = Math.max(-32768, Math.min(32767, Math.round(x[f * FRAME + i])));
-      new Int16Array(e.memory.buffer, e.minisilk_input_i16_ptr(), FRAME).set(pcmI);
-      lenN = chk('native encode', n.shim_encode(enc, pcmI, outN, CAP));
+      const pcmI = new Int16Array(e.memory.buffer, e.minisilk_input_i16_ptr(), FRAME);
+      fillInput(cfg, x, f, pcmI, new Float32Array(FRAME));
       lenM = chk('minisilk_encode_i16', e.minisilk_encode_i16());
     }
-    const pktN = outN.slice(0, lenN);
+    const pktN = t.pkts[f];
     const pktM = new Uint8Array(e.memory.buffer, e.minisilk_output_ptr(), lenM).slice();
-    const rangeN = n.shim_enc_final_range(enc), rangeM = e.minisilk_final_range() >>> 0;
+    const rangeM = e.minisilk_final_range() >>> 0;
     if (!res.mismatch) {
-      if (lenN !== lenM || pktN.some((b, i) => b !== pktM[i])) res.mismatch = `frame ${f}: packet differs (native ${lenN} B, minisilk ${lenM} B)`;
-      else if (rangeN !== rangeM) res.mismatch = `frame ${f}: final range ${rangeN} != ${rangeM}`;
-      else if (n.shim_enc_in_dtx(enc) !== e.minisilk_in_dtx()) res.mismatch = `frame ${f}: in_dtx differs`;
+      if (pktN.length !== lenM || pktN.some((b, i) => b !== pktM[i])) res.mismatch = `frame ${f}: packet differs (native ${pktN.length} B, minisilk ${lenM} B)`;
+      else if (t.ranges[f] !== rangeM) res.mismatch = `frame ${f}: final range ${t.ranges[f]} != ${rangeM}`;
+      else if (t.dtx[f] !== e.minisilk_in_dtx()) res.mismatch = `frame ${f}: in_dtx differs`;
     }
     if ((pktM[0] & 0xfc) !== 0x48) throw new Error(`frame ${f}: minisilk TOC 0x${pktM[0].toString(16)}`);
-    res.bytesNative += lenN;
     res.bytesMini += lenM;
-    decode(decN, pktN, decodedN, f, rangeN, 'native');
-    decode(decM, pktM, decodedM, f, rangeM, 'minisilk');
+    pkts.push(pktM);
+    ranges.push(rangeM);
   }
-  const delay = e.minisilk_lookahead(); // the decoder adds no delay of its own (verified: SNR peaks here)
-  const ref = Float64Array.from(x.subarray(0, nFrames * FRAME), (v) => v * scale);
-  res.snrNative = snr(ref, decodedN, delay);
-  res.snrMini = snr(ref, decodedM, delay);
-  n.shim_enc_destroy(enc);
-  n.shim_dec_destroy(decN);
-  n.shim_dec_destroy(decM);
+  if (!res.mismatch) {
+    res.snrMini = t.snr; // identical packets decode identically
+  } else {
+    const decodedM = decodeAll(nat.s, pkts, ranges, 'minisilk');
+    res.snrMini = snr(refOf(x, cfg, nFrames), decodedM, t.lookahead);
+  }
   return res;
+}
+
+// ---------- tasks ----------
+
+// A task is one (native library, signal, configuration): the native trace plus every wasm build compared
+// against it. The strict scalar library is checked with all four wasm builds, rtcd with the release ones.
+type Outcome = { err: string } | { r: Result };
+type Done = { nat: number; sig: number; cfg: number; outcomes: Outcome[] };
+const NATIVES = ['scalar', 'rtcd'];
+const WASMS: [number, boolean][] = [[2, false], [3, false], [2, true], [3, true]];
+const wasmsFor = (nat: number) => WASMS.map((_, i) => i).filter((i) => nat === 0 || !WASMS[i][1]);
+const errText = (err: unknown) => err instanceof Error ? err.message : String(err);
+
+if (isWorker) {
+  const natives = NATIVES.map(loadNative);
+  const wasms = await Promise.all(WASMS.map(([v, c]) => loadWasm(v, c)));
+  let sigs: Awaited<ReturnType<typeof signals>>, cfgs: Cfg[];
+  // deno-lint-ignore no-explicit-any
+  const ws = self as any;
+  const post = (m: unknown) => ws.postMessage(m);
+  ws.onmessage = async (m: MessageEvent) => {
+    if (m.data.init) {
+      quick = m.data.quick;
+      files = m.data.files;
+      sigs = await signals();
+      cfgs = configs();
+      post({ ready: true });
+      return;
+    }
+    const { nat, sig, cfg } = m.data;
+    const x = sigs[sig].x, c = cfgs[cfg];
+    const outcomes: Outcome[] = [];
+    let t: Trace | undefined, traceErr = '';
+    try {
+      t = nativeTrace(natives[nat], x, c);
+    } catch (err) {
+      traceErr = errText(err);
+    }
+    for (const wi of wasmsFor(nat)) {
+      if (!t) { outcomes.push({ err: traceErr }); continue; }
+      try {
+        outcomes.push({ r: wasmRun(natives[nat], wasms[wi], x, c, t) });
+      } catch (err) {
+        // Traps (failed debug_assert!/overflow check, or a panic), native decoder rejections.
+        outcomes.push({ err: errText(err) });
+        await wasms[wi].reset();
+      }
+    }
+    post({ nat, sig, cfg, outcomes } satisfies Done);
+  };
+  post({ loaded: true });
+} else {
+  await main();
 }
 
 // ---------- main ----------
 
-const natives = ['scalar', 'rtcd'].map(loadNative);
-const wasms = await Promise.all([[2, false], [3, false], [2, true], [3, true]].map(([v, c]) => loadWasm(v as number, c as boolean)));
-const sigs = await signals();
-const cfgs = configs();
-console.log(`native: ${natives[0].version}; ${sigs.length} signals x ${cfgs.length} configs` +
-  ` (${sigs.map((s) => `${s.name} ${(s.x.length / 16000).toFixed(1)} s`).join(', ')})`);
+async function main() {
+  const natives = NATIVES.map(loadNative);
+  const wasmNames = WASMS.map(([v, c]) => `wasm${v}${c ? '-checked' : ''}`);
+  const sigs = await signals();
+  const cfgs = configs();
+  console.log(`native: ${natives[0].version}; ${sigs.length} signals x ${cfgs.length} configs` +
+    ` (${sigs.map((s) => `${s.name} ${(s.x.length / 16000).toFixed(1)} s`).join(', ')})`);
 
-// Every build must match the scalar native build bit-exactly (the wasm SIMD kernels are exact
-// ports of the scalar C). The rtcd build's SSE/AVX2 float kernels sum in a different order, so
-// it is compared, with the release builds only, for stream validity and coding quality.
-let failures = 0;
-for (const nat of natives) {
-  const strict = nat.name === 'scalar';
-  for (const w of wasms.filter((w) => strict || !w.checked)) {
-    let runs = 0, exact = 0, frames = 0;
-    const bad: string[] = [], errors: string[] = [];
-    let dSnr = 0, dBytes = 0, nBad = 0, snrSum = 0, snrN = 0;
-    const t0 = performance.now();
-    for (const sig of sigs) {
-      for (const cfg of cfgs) {
-        runs++;
-        let r: Result;
-        try {
-          r = run(nat, w, sig.x, cfg);
-        } catch (err) {
-          // Traps (failed debug_assert!/overflow check, or a panic), native decoder rejections.
-          errors.push(`  ${sig.name} [${cfg.name}] ${err instanceof Error ? err.message : err}`);
-          await w.reset();
-          continue;
+  // Every build must match the scalar native build bit-exactly (the wasm SIMD kernels are exact
+  // ports of the scalar C). The rtcd build's SSE/AVX2 float kernels sum in a different order, so
+  // it is compared, with the release builds only, for stream validity and coding quality.
+  const jobsArg = Deno.args.find((a) => a.startsWith('--jobs='));
+  const jobs = Math.max(1, jobsArg ? Number(jobsArg.slice(7)) : navigator.hardwareConcurrency || 1);
+  const tasks: { nat: number; sig: number; cfg: number }[] = [];
+  // Longest signals first, for load balance.
+  const sigOrder = sigs.map((_, i) => i).sort((a, b) => sigs[b].x.length - sigs[a].x.length);
+  for (const sig of sigOrder) for (let cfg = 0; cfg < cfgs.length; cfg++) for (let nat = 0; nat < NATIVES.length; nat++) tasks.push({ nat, sig, cfg });
+  const done = new Map<string, Outcome[]>();
+  const t0 = performance.now();
+  let next = 0, lastProgress = t0;
+  await new Promise<void>((resolve, reject) => {
+    let finished = 0;
+    const nWorkers = Math.min(jobs, tasks.length);
+    for (let k = 0; k < nWorkers; k++) {
+      const wk = new Worker(import.meta.url, { type: 'module' });
+      const feed = () => {
+        if (next < tasks.length) wk.postMessage(tasks[next++]);
+        else { wk.terminate(); if (++finished === nWorkers) resolve(); }
+      };
+      wk.onerror = (e) => { e.preventDefault(); reject(new Error(`worker: ${e.message}`)); };
+      wk.onmessage = (m) => {
+        if (m.data.loaded) wk.postMessage({ init: true, quick, files });
+        else if (m.data.ready) feed();
+        else {
+          const d = m.data as Done;
+          done.set(`${d.nat}|${d.sig}|${d.cfg}`, d.outcomes);
+          if (performance.now() - lastProgress > 30000) {
+            lastProgress = performance.now();
+            console.log(`  progress: ${done.size}/${tasks.length} tasks, ${((lastProgress - t0) / 1000).toFixed(0)} s`);
+          }
+          feed();
         }
-        frames += r.frames;
-        if (isFinite(r.snrMini)) { snrSum += r.snrMini; snrN++; }
-        if (!r.mismatch) { exact++; continue; }
-        nBad++;
-        dSnr += r.snrMini - r.snrNative;
-        dBytes += (r.bytesMini - r.bytesNative) / r.bytesNative;
-        bad.push(`  ${sig.name} [${cfg.name}] ${r.mismatch}; SNR native ${r.snrNative.toFixed(2)} dB, minisilk ${r.snrMini.toFixed(2)} dB; bytes ${r.bytesNative} vs ${r.bytesMini}`);
+      };
+    }
+  });
+
+  let failures = 0;
+  for (const [ni, nat] of natives.entries()) {
+    const strict = nat.name === 'scalar';
+    for (const [pos, wi] of wasmsFor(ni).entries()) {
+      let runs = 0, exact = 0, frames = 0;
+      const bad: string[] = [], errors: string[] = [];
+      let dSnr = 0, dBytes = 0, nBad = 0, snrSum = 0, snrN = 0;
+      for (const [si, sig] of sigs.entries()) {
+        for (const [ci, cfg] of cfgs.entries()) {
+          runs++;
+          const o = done.get(`${ni}|${si}|${ci}`)![pos];
+          if ('err' in o) {
+            errors.push(`  ${sig.name} [${cfg.name}] ${o.err}`);
+            continue;
+          }
+          const r = o.r;
+          frames += r.frames;
+          if (isFinite(r.snrMini)) { snrSum += r.snrMini; snrN++; }
+          if (!r.mismatch) { exact++; continue; }
+          nBad++;
+          dSnr += r.snrMini - r.snrNative;
+          dBytes += (r.bytesMini - r.bytesNative) / r.bytesNative;
+          bad.push(`  ${sig.name} [${cfg.name}] ${r.mismatch}; SNR native ${r.snrNative.toFixed(2)} dB, minisilk ${r.snrMini.toFixed(2)} dB; bytes ${r.bytesNative} vs ${r.bytesMini}`);
+        }
+      }
+      console.log(`${nat.name.padEnd(6)} vs ${wasmNames[wi].padEnd(13)}: ${exact}/${runs} runs bit-exact (${frames} frames), ` +
+        `${errors.length} errors; mean SNR ${(snrSum / snrN).toFixed(2)} dB`);
+      failures += errors.length;
+      if (errors.length) console.log(errors.slice(0, 20).join('\n') + (errors.length > 20 ? `\n  ... ${errors.length - 20} more` : ''));
+      if (bad.length) {
+        if (strict) failures += bad.length;
+        const show = strict ? 20 : 3;
+        console.log(bad.slice(0, show).join('\n') + (bad.length > show ? `\n  ... ${bad.length - show} more` : ''));
+        console.log(`  mean over mismatched runs: SNR minisilk-native ${(dSnr / nBad).toFixed(3)} dB, size ${(100 * dBytes / nBad).toFixed(3)} %` +
+          (strict ? '' : ' (informational)'));
       }
     }
-    const s = ((performance.now() - t0) / 1000).toFixed(1);
-    console.log(`${nat.name.padEnd(6)} vs ${w.name.padEnd(13)}: ${exact}/${runs} runs bit-exact (${frames} frames, ${s} s), ` +
-      `${errors.length} errors; mean SNR ${(snrSum / snrN).toFixed(2)} dB`);
-    failures += errors.length;
-    if (errors.length) console.log(errors.slice(0, 20).join('\n') + (errors.length > 20 ? `\n  ... ${errors.length - 20} more` : ''));
-    if (bad.length) {
-      if (strict) failures += bad.length;
-      const show = strict ? 20 : 3;
-      console.log(bad.slice(0, show).join('\n') + (bad.length > show ? `\n  ... ${bad.length - show} more` : ''));
-      console.log(`  mean over mismatched runs: SNR minisilk-native ${(dSnr / nBad).toFixed(3)} dB, size ${(100 * dBytes / nBad).toFixed(3)} %` +
-        (strict ? '' : ' (informational)'));
-    }
   }
+  console.log(`${((performance.now() - t0) / 1000).toFixed(1)} s total on ${jobs} workers`);
+  console.log(failures ? `FAILED: ${failures}` : 'ok');
+  Deno.exit(failures ? 1 : 0);
 }
-console.log(failures ? `FAILED: ${failures}` : 'ok');
-Deno.exit(failures ? 1 : 0);

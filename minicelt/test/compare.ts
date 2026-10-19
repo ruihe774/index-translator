@@ -28,18 +28,22 @@
 // encoder's (the bitstream check from opus_demo); the SNR of both decoded streams is reported.
 //
 // Flags: --quick (each run is a 3 s window, 3 signals per configuration, fewer configurations; < 2 min),
-// --filter=text (only runs whose "signal [config]" contains text), --all (every signal for every configuration).
+// --filter=text (only runs whose "signal [config]" contains text), --all (every signal for every configuration),
+// --jobs=N (worker threads running the runs in parallel; default: all cores).
 // The speech corpus is test/audio/*.wav (16 kHz mono 16-bit, upsampled x3 here; see
 // THIRD_PARTY_NOTICES.md). Audio files given as arguments replace it; other formats go through ffmpeg.
 
 const root = new URL('../..', import.meta.url).pathname;
 const FRAME = 960;
 const CAP = 1276;
-const quick = Deno.args.includes('--quick');
-const allSigs = Deno.args.includes('--all');
-const strictScalar = Deno.args.includes('--strict-scalar');
-const filter = Deno.args.find((a) => a.startsWith('--filter='))?.slice(9); // only runs whose name contains this
-const files = Deno.args.filter((a) => !a.startsWith('--'));
+// deno-lint-ignore no-explicit-any
+const isWorker = typeof (globalThis as any).WorkerGlobalScope !== 'undefined';
+// Workers get the flags from the main thread (see the init message).
+let quick = Deno.args.includes('--quick');
+let allSigs = Deno.args.includes('--all');
+let strictScalar = Deno.args.includes('--strict-scalar');
+let filter = Deno.args.find((a) => a.startsWith('--filter='))?.slice(9); // only runs whose name contains this
+let files = Deno.args.filter((a) => !a.startsWith('--'));
 
 // ---------- adapter ----------
 
@@ -666,124 +670,226 @@ function gateReport(title: string, p: Pool, count: boolean): number {
   return failed;
 }
 
-// ---------- main ----------
+// ---------- runs ----------
 
-const native = { scalar: loadNative('scalar'), rtcd: loadNative('rtcd') };
-const impls = new Map<string, Impl>([['scalar', native.scalar.impl], ['rtcd', native.rtcd.impl]]);
-const nativeDec = native.scalar.decoder;
-for (const [v, c] of [[2, false], [3, false], [2, true], [3, true]] as const) {
-  const w = await loadMini(v, c);
-  impls.set(w.name, w);
+type RunSpec = { cfg: Cfg; sig: Sig; start: number; nFrames: number };
+
+// Runs: (cfg, signal) pairs. Each configuration uses a rotating subset of the signals (all with
+// --all); every signal is covered. In --quick each run is a 3 s window at a rotating offset.
+// Deterministic, so the main thread and the workers derive the same list from the same flags.
+function buildRuns(sigs: Sig[], cfgs: Cfg[]): RunSpec[] {
+  const perCfg = allSigs ? Infinity : quick ? 3 : 5;
+  const runs: RunSpec[] = [];
+  cfgs.forEach((cfg, ci) => {
+    const pool = sigs.filter((s) => cfg.ch === 2 || !s.stereoOnly);
+    const k = Math.min(perCfg, pool.length);
+    for (let j = 0; j < k; j++) {
+      const sig = pool[(ci * 3 + j * Math.max(1, Math.floor(pool.length / k))) % pool.length];
+      const total = Math.floor(sig.L.length / FRAME);
+      const nFrames = quick ? Math.min(150, total) : total;
+      const start = quick ? Math.floor((ci * 37 + j * 53) % (total - nFrames + 1)) : 0;
+      runs.push({ cfg, sig, start, nFrames });
+    }
+  });
+  const f = filter;
+  if (f) runs.splice(0, runs.length, ...runs.filter((r) => `${r.sig.name} [${r.cfg.name}]`.includes(f)));
+  return runs;
 }
 
 // [A, B, exact]
-const pairs: [string, string, boolean][] = [['wasm2', 'wasm2-checked', true], ['wasm3', 'wasm3-checked', true],
-  ['scalar', 'wasm2', strictScalar], ['scalar', 'wasm2-checked', strictScalar], ['scalar', 'wasm3', false],
-  ['rtcd', 'wasm2', false], ['rtcd', 'wasm3', false]];
-// Gated against upstream scalar by tolerance (see GATE); scalar vs rtcd is the baseline of the bounds, not gated.
-const gated: [string, string, boolean][] = [['scalar', 'wasm2', true], ['scalar', 'wasm2-checked', true],
-  ['scalar', 'wasm3', true], ['scalar', 'wasm3-checked', true], ['scalar', 'rtcd', false]];
-const gatePools = gated.map(() => ({ all: newPool(), ch: [newPool(), newPool()] }));
-const used = [...new Set([...pairs, ...gated].flatMap(([a, b]) => [a, b]).filter((p) => impls.has(p)))];
-const implErrors = new Map<string, string[]>(used.map((u) => [u, []]));
+function setup() {
+  const pairs: [string, string, boolean][] = [['wasm2', 'wasm2-checked', true], ['wasm3', 'wasm3-checked', true],
+    ['scalar', 'wasm2', strictScalar], ['scalar', 'wasm2-checked', strictScalar], ['scalar', 'wasm3', false],
+    ['rtcd', 'wasm2', false], ['rtcd', 'wasm3', false]];
+  // Gated against upstream scalar by tolerance (see GATE); scalar vs rtcd is the baseline of the bounds, not gated.
+  const gated: [string, string, boolean][] = [['scalar', 'wasm2', true], ['scalar', 'wasm2-checked', true],
+    ['scalar', 'wasm3', true], ['scalar', 'wasm3-checked', true], ['scalar', 'rtcd', false]];
+  const used = [...new Set([...pairs, ...gated].flatMap(([a, b]) => [a, b]))];
+  return { pairs, gated, used };
+}
 
-type Stat = { runs: number; exact: number; frames: number; bad: string[]; snrA: number; snrB: number; n: number; dSnr: number; dBytes: number; nBad: number };
-const stats = pairs.map((): Stat => ({ runs: 0, exact: 0, frames: 0, bad: [], snrA: 0, snrB: 0, n: 0, dSnr: 0, dBytes: 0, nBad: 0 }));
+function loadAll() {
+  const native = { scalar: loadNative('scalar'), rtcd: loadNative('rtcd') };
+  return native;
+}
 
-const sigs = await signals();
-const cfgs = configs();
-// Runs: (cfg, signal) pairs. Each configuration uses a rotating subset of the signals (all with
-// --all); every signal is covered. In --quick each run is a 3 s window at a rotating offset.
-const perCfg = allSigs ? Infinity : quick ? 3 : 5;
-const runs: { cfg: Cfg; sig: Sig; start: number; nFrames: number }[] = [];
-cfgs.forEach((cfg, ci) => {
-  const pool = sigs.filter((s) => cfg.ch === 2 || !s.stereoOnly);
-  const k = Math.min(perCfg, pool.length);
-  for (let j = 0; j < k; j++) {
-    const sig = pool[(ci * 3 + j * Math.max(1, Math.floor(pool.length / k))) % pool.length];
-    const total = Math.floor(sig.L.length / FRAME);
-    const nFrames = quick ? Math.min(150, total) : total;
-    const start = quick ? Math.floor((ci * 37 + j * 53) % (total - nFrames + 1)) : 0;
-    runs.push({ cfg, sig, start, nFrames });
-  }
-});
-if (filter) runs.splice(0, runs.length, ...runs.filter((r) => `${r.sig.name} [${r.cfg.name}]`.includes(filter)));
-console.log(`native: ${native.scalar.version}; ${sigs.length} signals, ${cfgs.length} configs, ${runs.length} runs` +
-  `; implementations: ${used.join(', ')}`);
+// ---------- one task: every implementation on one run, reduced to small per-run records ----------
 
-const t0 = performance.now();
-let lastProgress = t0, framesTotal = 0;
-for (const [ri, run] of runs.entries()) {
-  const { cfg, sig } = run;
-  const inp = prepare(sig, cfg, run.start, run.nFrames);
-  const traces = new Map<string, Trace>();
-  for (const name of used) {
-    const impl = impls.get(name)!;
-    const tr = runImpl(impl, nativeDec, cfg, inp);
-    if (tr.error) await impl.reset(); // after a trap the pseudostack is left unbalanced
-    traces.set(name, tr);
+// Per (pair): what the main thread needs to accumulate the pair's statistics.
+type PairRes = { skip: true } | { skip?: false; mm?: string; snrA: number; snrB: number; bytesA: number; bytesB: number; bad: string };
+type RunDone = { ri: number; errors: string[]; pairs: PairRes[]; gates: (Pool | undefined)[] };
+
+function mergePool(d: Pool, s: Pool) {
+  for (const k of ['runs', 'runsDiv', 'frames', 'framesDiv', 'dtxFrames', 'nSnr', 'sumDSnr', 'sumSqDSnr', 'nBytes', 'sumDBytes', 'sumSqDBytes', 'bandN', 'bandNAll'] as const) d[k] += s[k];
+  d.maxDSnr = Math.max(d.maxDSnr, s.maxDSnr);
+  d.maxDBytes = Math.max(d.maxDBytes, s.maxDBytes);
+  for (let b = 0; b < NBANDS; b++) { d.bandAbs[b] += s.bandAbs[b]; d.bandSgn[b] += s.bandSgn[b]; d.bandSq[b] += s.bandSq[b]; }
+  d.hard.push(...s.hard); d.snrFails.push(...s.snrFails); d.bytesFails.push(...s.bytesFails);
+}
+
+if (isWorker) {
+  const native = loadAll();
+  const impls = new Map<string, Impl>([['scalar', native.scalar.impl], ['rtcd', native.rtcd.impl]]);
+  for (const [v, c] of [[2, false], [3, false], [2, true], [3, true]] as const) {
+    const w = await loadMini(v, c);
+    impls.set(w.name, w);
   }
-  framesTotal += run.nFrames;
-  for (const [name, tr] of traces) {
-    if (tr.error) implErrors.get(name)!.push(`  ${sig.name} [${cfg.name}, ${run.nFrames} fr @${run.start}] ${tr.error}`);
-  }
-  gated.forEach(([a, b], gi) => {
-    const A = traces.get(a), B = traces.get(b);
-    if (!A || !B || A.error || B.error) return; // reported per implementation below
-    const label = `${sig.name} [${cfg.name}, ${run.nFrames} fr @${run.start}]`;
-    gateRun([gatePools[gi].all, gatePools[gi].ch[cfg.ch - 1]], A, B, cfg.ch, label, run.nFrames);
+  const nativeDec = native.scalar.decoder;
+  let sigs: Sig[], runs: RunSpec[], S: ReturnType<typeof setup>;
+  // deno-lint-ignore no-explicit-any
+  const ws = self as any;
+  ws.onmessage = async (m: MessageEvent) => {
+    if (m.data.init) {
+      ({ quick, allSigs, strictScalar, filter, files } = m.data);
+      S = setup();
+      sigs = await signals();
+      runs = buildRuns(sigs, configs());
+      ws.postMessage({ ready: true });
+      return;
+    }
+    const ri: number = m.data.ri;
+    const { cfg, sig, start, nFrames } = runs[ri];
+    const inp = prepare(sig, cfg, start, nFrames);
+    const traces = new Map<string, Trace>();
+    for (const name of S.used) {
+      const impl = impls.get(name)!;
+      const tr = runImpl(impl, nativeDec, cfg, inp);
+      if (tr.error) await impl.reset(); // after a trap the pseudostack is left unbalanced
+      traces.set(name, tr);
+    }
+    const errors = S.used.map((name) => {
+      const tr = traces.get(name)!;
+      return tr.error ? `  ${sig.name} [${cfg.name}, ${nFrames} fr @${start}] ${tr.error}` : '';
+    });
+    const gates = S.gated.map(([a, b]): Pool | undefined => {
+      const A = traces.get(a)!, B = traces.get(b)!;
+      if (A.error || B.error) return undefined; // reported per implementation
+      const p = newPool();
+      gateRun([p], A, B, cfg.ch, `${sig.name} [${cfg.name}, ${nFrames} fr @${start}]`, nFrames);
+      return p;
+    });
+    const pairs = S.pairs.map(([a, b]): PairRes => {
+      const A = traces.get(a)!, B = traces.get(b)!;
+      if (A.error || B.error) return { skip: true };
+      const label = `${sig.name} [${cfg.name}${quick || !allSigs ? `, ${nFrames} fr @${start}` : ''}]`;
+      const mm = firstMismatch(A, B);
+      return {
+        mm, snrA: A.snr, snrB: B.snr, bytesA: A.bytes, bytesB: B.bytes,
+        bad: mm ? `  ${label} ${mm}; SNR ${a} ${A.snr.toFixed(2)} dB, ${b} ${B.snr.toFixed(2)} dB; bytes ${A.bytes} vs ${B.bytes}` : '',
+      };
+    });
+    ws.postMessage({ ri, errors, pairs, gates } satisfies RunDone);
+  };
+  ws.postMessage({ loaded: true });
+} else {
+  await main();
+}
+
+// ---------- main ----------
+
+async function main() {
+  const native = loadAll();
+  const { pairs, gated, used } = setup();
+  const gatePools = gated.map(() => ({ all: newPool(), ch: [newPool(), newPool()] }));
+  const implErrors = new Map<string, string[]>(used.map((u) => [u, []]));
+  type Stat = { runs: number; exact: number; frames: number; bad: string[]; snrA: number; snrB: number; n: number; dSnr: number; dBytes: number; nBad: number };
+  const stats = pairs.map((): Stat => ({ runs: 0, exact: 0, frames: 0, bad: [], snrA: 0, snrB: 0, n: 0, dSnr: 0, dBytes: 0, nBad: 0 }));
+
+  const sigs = await signals();
+  const runs = buildRuns(sigs, configs());
+  const jobsArg = Deno.args.find((a) => a.startsWith('--jobs='));
+  const jobs = Math.max(1, jobsArg ? Number(jobsArg.slice(7)) : navigator.hardwareConcurrency || 1);
+  console.log(`native: ${native.scalar.version}; ${sigs.length} signals, ${configs().length} configs, ${runs.length} runs` +
+    `; implementations: ${used.join(', ')}; ${jobs} workers`);
+
+  // Runs are independent; they are handed to the workers longest first and their records are folded into the
+  // pools in run order, so the report does not depend on scheduling.
+  const order = runs.map((_, i) => i).sort((a, b) => runs[b].nFrames * runs[b].cfg.ch - runs[a].nFrames * runs[a].cfg.ch);
+  const results = new Array<RunDone>(runs.length);
+  const t0 = performance.now();
+  let next = 0, completed = 0, lastProgress = t0;
+  await new Promise<void>((resolve, reject) => {
+    let finished = 0;
+    const nWorkers = Math.min(jobs, runs.length);
+    if (!nWorkers) return resolve();
+    for (let k = 0; k < nWorkers; k++) {
+      const wk = new Worker(import.meta.url, { type: 'module' });
+      const feed = () => {
+        if (next < order.length) wk.postMessage({ ri: order[next++] });
+        else { wk.terminate(); if (++finished === nWorkers) resolve(); }
+      };
+      wk.onerror = (e) => { e.preventDefault(); reject(new Error(`worker: ${e.message}`)); };
+      wk.onmessage = (m) => {
+        if (m.data.loaded) wk.postMessage({ init: true, quick, allSigs, strictScalar, filter, files });
+        else if (m.data.ready) feed();
+        else {
+          const d = m.data as RunDone;
+          results[d.ri] = d;
+          completed++;
+          if (performance.now() - lastProgress > 30000) {
+            lastProgress = performance.now();
+            console.log(`  progress: ${completed}/${runs.length} runs, ${((lastProgress - t0) / 1000).toFixed(0)} s`);
+          }
+          feed();
+        }
+      };
+    }
   });
-  pairs.forEach(([a, b, exact], pi) => {
-    const A = traces.get(a), B = traces.get(b);
-    if (!A || !B) return;
-    const st = stats[pi], label = `${sig.name} [${cfg.name}${quick || !allSigs ? `, ${run.nFrames} fr @${run.start}` : ''}]`;
-    st.runs++;
-    st.frames += run.nFrames;
-    if (A.error || B.error) return; // reported per implementation below
-    if (isFinite(B.snr)) { st.snrA += A.snr; st.snrB += B.snr; st.n++; }
-    const mm = firstMismatch(A, B);
-    if (!mm) { st.exact++; return; }
-    st.nBad++;
-    st.dSnr += B.snr - A.snr;
-    st.dBytes += (B.bytes - A.bytes) / A.bytes;
-    st.bad.push(`  ${label} ${mm}; SNR ${a} ${A.snr.toFixed(2)} dB, ${b} ${B.snr.toFixed(2)} dB; bytes ${A.bytes} vs ${B.bytes}`);
-  });
-  if (performance.now() - lastProgress > 10000) {
-    lastProgress = performance.now();
-    console.log(`  progress: ${ri + 1}/${runs.length} runs, ${framesTotal} frames, ${((lastProgress - t0) / 1000).toFixed(0)} s`);
-  }
-}
 
-let failures = 0;
-for (const [name, errs] of implErrors) {
-  failures += errs.length;
-  console.log(`${name}: ${errs.length} errors in ${runs.length} runs`);
-  if (errs.length) console.log(errs.slice(0, 20).join('\n') + (errs.length > 20 ? `\n  ... ${errs.length - 20} more` : ''));
-}
-for (const [pi, [a, b, exact]] of pairs.entries()) {
-  const st = stats[pi];
-  if (!st.runs) continue;
-  console.log(`${a} vs ${b}${exact ? '' : ' (informational)'}: ${st.exact}/${st.runs} runs bit-exact (${st.frames} frames), ` +
-    `mean SNR ${(st.snrA / st.n).toFixed(2)} dB vs ${(st.snrB / st.n).toFixed(2)} dB`);
-  if (st.bad.length) {
-    if (exact) failures += st.bad.length;
-    const show = exact ? 20 : 3;
-    console.log(st.bad.slice(0, show).join('\n') + (st.bad.length > show ? `\n  ... ${st.bad.length - show} more` : ''));
-    console.log(`  mean over mismatched runs: SNR ${b}-${a} ${(st.dSnr / st.nBad).toFixed(3)} dB, size ${(100 * st.dBytes / st.nBad).toFixed(3)} %`);
+  for (const [ri, run] of runs.entries()) {
+    const d = results[ri];
+    const { cfg } = run;
+    d.errors.forEach((e, ui) => { if (e) implErrors.get(used[ui])!.push(e); });
+    d.gates.forEach((p, gi) => {
+      if (!p) return;
+      mergePool(gatePools[gi].all, p);
+      mergePool(gatePools[gi].ch[cfg.ch - 1], p);
+    });
+    d.pairs.forEach((r, pi) => {
+      const st = stats[pi];
+      st.runs++;
+      st.frames += run.nFrames;
+      if (r.skip) return; // reported per implementation below
+      if (isFinite(r.snrB)) { st.snrA += r.snrA; st.snrB += r.snrB; st.n++; }
+      if (!r.mm) { st.exact++; return; }
+      st.nBad++;
+      st.dSnr += r.snrB - r.snrA;
+      st.dBytes += (r.bytesB - r.bytesA) / r.bytesA;
+      st.bad.push(r.bad);
+    });
   }
-}
-if (gated.length) {
-  console.log('\ntolerance gate against upstream scalar (bounds: see GATE):');
-  for (const [gi, [a, b, count]] of gated.entries()) {
-    console.log(`${a} vs ${b}${count ? '' : ' (baseline: upstream SIMD, not gated)'}`);
-    const pools: [string, Pool][] = [['all', gatePools[gi].all], ['mono', gatePools[gi].ch[0]], ['stereo', gatePools[gi].ch[1]]];
-    for (const [title, p] of pools) {
-      const failed = gateReport(title, p, count);
-      if (count) failures += failed;
-      else if (failed) console.log(`    NOTE: upstream's own SIMD fails ${failed} check(s) on this host: the bounds are too tight for it`);
+
+  let failures = 0;
+  for (const [name, errs] of implErrors) {
+    failures += errs.length;
+    console.log(`${name}: ${errs.length} errors in ${runs.length} runs`);
+    if (errs.length) console.log(errs.slice(0, 20).join('\n') + (errs.length > 20 ? `\n  ... ${errs.length - 20} more` : ''));
+  }
+  for (const [pi, [a, b, exact]] of pairs.entries()) {
+    const st = stats[pi];
+    if (!st.runs) continue;
+    console.log(`${a} vs ${b}${exact ? '' : ' (informational)'}: ${st.exact}/${st.runs} runs bit-exact (${st.frames} frames), ` +
+      `mean SNR ${(st.snrA / st.n).toFixed(2)} dB vs ${(st.snrB / st.n).toFixed(2)} dB`);
+    if (st.bad.length) {
+      if (exact) failures += st.bad.length;
+      const show = exact ? 20 : 3;
+      console.log(st.bad.slice(0, show).join('\n') + (st.bad.length > show ? `\n  ... ${st.bad.length - show} more` : ''));
+      console.log(`  mean over mismatched runs: SNR ${b}-${a} ${(st.dSnr / st.nBad).toFixed(3)} dB, size ${(100 * st.dBytes / st.nBad).toFixed(3)} %`);
     }
   }
+  if (gated.length) {
+    console.log('\ntolerance gate against upstream scalar (bounds: see GATE):');
+    for (const [gi, [a, b, count]] of gated.entries()) {
+      console.log(`${a} vs ${b}${count ? '' : ' (baseline: upstream SIMD, not gated)'}`);
+      const pools: [string, Pool][] = [['all', gatePools[gi].all], ['mono', gatePools[gi].ch[0]], ['stereo', gatePools[gi].ch[1]]];
+      for (const [title, p] of pools) {
+        const failed = gateReport(title, p, count);
+        if (count) failures += failed;
+        else if (failed) console.log(`    NOTE: upstream's own SIMD fails ${failed} check(s) on this host: the bounds are too tight for it`);
+      }
+    }
+  }
+  console.log(`${((performance.now() - t0) / 1000).toFixed(1)} s total`);
+  console.log(failures ? `FAILED: ${failures}` : 'ok');
+  Deno.exit(failures ? 1 : 0);
 }
-console.log(`${((performance.now() - t0) / 1000).toFixed(1)} s total`);
-console.log(failures ? `FAILED: ${failures}` : 'ok');
-Deno.exit(failures ? 1 : 0);
