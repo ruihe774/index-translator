@@ -1,0 +1,12 @@
+[package]
+name = "minisilk-wasm"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "wasm32-unknown-unknown cdylib exposing the minisilk encoder"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+minisilk = { path = ".." }

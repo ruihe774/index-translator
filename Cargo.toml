@@ -5,3 +5,18 @@ edition = "2024"
 
 [dependencies]
 libm = "0.2.16"
+
+[dev-dependencies]
+oracle = { path = "oracle" }
+
+[workspace]
+members = ["oracle", "wasm"]
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.test]
+opt-level = 1

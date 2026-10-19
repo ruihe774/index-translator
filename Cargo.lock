@@ -13,4 +13,16 @@ name = "minisilk"
 version = "0.1.0"
 dependencies = [
  "libm",
+ "oracle",
 ]
+
+[[package]]
+name = "minisilk-wasm"
+version = "0.1.0"
+dependencies = [
+ "minisilk",
+]
+
+[[package]]
+name = "oracle"
+version = "0.0.0"
