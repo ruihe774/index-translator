@@ -98,66 +98,6 @@ export function readWav(bytes: Uint8Array): Pcm {
   throw new Error("the WAV file has no audio");
 }
 
-/** Zero crossings of the interpolation kernel on each side of a sample; more is sharper and slower. */
-const KERNEL_LOBES = 16;
-/** Points of the tabulated kernel per input sample. */
-const KERNEL_STEPS = 256;
-
-const sinc = (x: number) => (x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x));
-
-/**
- * `pcm` at `sampleRate` Hz (windowed-sinc interpolation, low-passed below the lower of the two
- * rates' Nyquist limits, so downsampling does not alias), and with `channels` channels when that is
- * fewer than it has: the extra channels are averaged into the last one kept.
- */
-export function resample(pcm: Pcm, sampleRate: number, channels = pcm.channels): Pcm {
-  const kept = Math.min(channels, pcm.channels);
-  const frames = pcm.samples.length / pcm.channels;
-  // One mono-or-stereo planar copy, with the channels beyond `kept` mixed into the last one.
-  const planar = Array.from({ length: kept }, () => new Float32Array(frames));
-  for (let i = 0; i < frames; i++) {
-    for (let c = 0; c < pcm.channels; c++) {
-      planar[Math.min(c, kept - 1)]![i]! += pcm.samples[i * pcm.channels + c]!;
-    }
-  }
-  const folded = pcm.channels - kept + 1;
-  if (folded > 1) {
-    for (let i = 0; i < frames; i++) {
-      planar[kept - 1]![i]! /= folded;
-    }
-  }
-
-  const ratio = sampleRate / pcm.sampleRate;
-  const outFrames = Math.max(1, Math.round(frames * ratio));
-  const cutoff = Math.min(1, ratio);
-  // Kernel half-width in input samples: the lobes of the low-passed sinc, which are wider when downsampling.
-  const half = Math.ceil(KERNEL_LOBES / cutoff);
-  // The kernel (Hann-windowed over its width) tabulated at KERNEL_STEPS points per input sample, and
-  // linearly interpolated, which is far faster than evaluating it for every tap.
-  const table = new Float32Array(2 * half * KERNEL_STEPS + 2);
-  for (let k = 0; k < table.length; k++) {
-    const d = k / KERNEL_STEPS - half;
-    table[k] = Math.abs(d) >= half ? 0 : cutoff * sinc(d * cutoff) * (0.5 + 0.5 * Math.cos((Math.PI * d) / half));
-  }
-  const out = new Float32Array(outFrames * kept);
-  for (let o = 0; o < outFrames; o++) {
-    const at = o / ratio;
-    const first = Math.max(0, Math.ceil(at - half));
-    const last = Math.min(frames - 1, Math.floor(at + half));
-    for (let c = 0; c < kept; c++) {
-      const channel = planar[c]!;
-      let sum = 0;
-      for (let i = first; i <= last; i++) {
-        const x = (i - at + half) * KERNEL_STEPS;
-        const k = Math.floor(x);
-        sum += channel[i]! * (table[k]! + (table[k + 1]! - table[k]!) * (x - k));
-      }
-      out[o * kept + c] = sum;
-    }
-  }
-  return { samples: out, sampleRate, channels: kept };
-}
-
 /** RMS the voice is brought to, over its non-silent samples (-20 dBFS). */
 const TARGET_RMS = 0.1;
 /** Samples below this (-40 dBFS) are pauses and noise floor, not counted in the loudness. */

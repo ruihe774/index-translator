@@ -2,7 +2,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { normalizeLoudness, type Pcm, readWav, resample, writeWav } from "../src/wav";
+import { normalizeLoudness, type Pcm, readWav, writeWav } from "../src/wav";
 
 describe("normalizeLoudness", () => {
   const tone = (amp: number, silence = 0): Pcm => {
@@ -154,86 +154,5 @@ describe("writeWav", () => {
     expect(back.sampleRate).toBe(22_050);
     expect(back.channels).toBe(1);
     expect([...back.samples].map((s) => Math.round(s * 1000) / 1000)).toStrictEqual([0, 0.5, -0.5, 1, -1]);
-  });
-});
-
-describe("resample", () => {
-  /** `seconds` of a sine of `hz` in `channels` identical channels. */
-  const sine = (hz: number, rate: number, seconds = 0.5, channels = 1): Pcm => {
-    const frames = Math.round(rate * seconds);
-    const samples = new Float32Array(frames * channels);
-    for (let i = 0; i < frames; i++) {
-      for (let c = 0; c < channels; c++) {
-        samples[i * channels + c] = 0.5 * Math.sin((2 * Math.PI * hz * i) / rate);
-      }
-    }
-    return { samples, sampleRate: rate, channels };
-  };
-  /** Root mean square of the samples between the frames `from` and `to`, away from the edges. */
-  const rms = (pcm: Pcm, from: number, to: number) => {
-    let sum = 0;
-    for (let i = from * pcm.channels; i < to * pcm.channels; i++) {
-      sum += pcm.samples[i]! ** 2;
-    }
-    return Math.sqrt(sum / ((to - from) * pcm.channels));
-  };
-
-  test("keeps a tone's level and length when the rate changes", () => {
-    for (const [from, to] of [
-      [16_000, 44_100],
-      [48_000, 44_100],
-      [22_050, 44_100],
-    ] as const) {
-      const out = resample(sine(440, from), to);
-      expect(out.sampleRate).toBe(to);
-      expect(out.channels).toBe(1);
-      expect(out.samples).toHaveLength(Math.round(to * 0.5));
-      // A sine of amplitude 0.5 has an RMS of 0.5 / sqrt(2).
-      expect(rms(out, to * 0.1, to * 0.4)).toBeCloseTo(0.5 / Math.SQRT2, 2);
-    }
-  });
-
-  test("follows the waveform, not only its level", () => {
-    const out = resample(sine(440, 16_000), 44_100);
-    let worst = 0;
-    for (let i = 4000; i < 18_000; i++) {
-      worst = Math.max(worst, Math.abs(out.samples[i]! - 0.5 * Math.sin((2 * Math.PI * 440 * i) / 44_100)));
-    }
-    expect(worst).toBeLessThan(0.01);
-  });
-
-  test("removes what the lower rate cannot hold instead of folding it back", () => {
-    // 15 kHz is above the 8 kHz Nyquist limit of the 16 kHz result.
-    const out = resample(sine(15_000, 44_100), 16_000);
-    expect(rms(out, 3000, 5000)).toBeLessThan(0.01);
-  });
-
-  test("the same rate is a copy", () => {
-    const pcm = sine(300, 44_100, 0.1);
-    const out = resample(pcm, 44_100);
-    expect(out.samples).toHaveLength(pcm.samples.length);
-    for (let i = 100; i < pcm.samples.length - 100; i++) {
-      expect(out.samples[i]).toBeCloseTo(pcm.samples[i]!, 3);
-    }
-  });
-
-  test("keeps stereo, or averages the extra channels into the last one kept", () => {
-    const stereo = resample(sine(440, 16_000, 0.2, 2), 44_100, 2);
-    expect(stereo.channels).toBe(2);
-    expect(stereo.samples[2000 * 2]).toBeCloseTo(stereo.samples[2000 * 2 + 1]!, 5);
-
-    // Three constant channels: the first is kept, the other two are averaged into the second.
-    const three: Pcm = {
-      samples: Float32Array.from({ length: 3 * 1000 }, (_, i) => [0.5, 0.2, 0.6][i % 3]!),
-      sampleRate: 44_100,
-      channels: 3,
-    };
-    const folded = resample(three, 44_100, 2);
-    expect(folded.channels).toBe(2);
-    expect(folded.samples[500 * 2]).toBeCloseTo(0.5, 3);
-    expect(folded.samples[500 * 2 + 1]).toBeCloseTo(0.4, 3);
-    expect(resample(sine(440, 44_100, 0.1, 2), 44_100, 1).channels).toBe(1);
-    // More channels than the file has are not invented.
-    expect(resample(sine(440, 44_100, 0.1, 1), 44_100, 2).channels).toBe(1);
   });
 });

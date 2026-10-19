@@ -6,7 +6,7 @@
 import { readFileSync } from "node:fs";
 
 import { AbortedError, SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
-import { normalizeLoudness, readWav, resample, writeWav } from "./wav";
+import { normalizeLoudness, readWav, writeWav } from "./wav";
 
 export type SpeechWorkerRequest =
   | { type: "load"; req: number; options: SpeechModelOptions }
@@ -38,8 +38,6 @@ declare var self: Worker;
 
 /** Sampling is seeded so the same sentence sounds the same when it is played again. */
 const SEED = 42;
-/** The only sample rate BS-RoFormer accepts. */
-const SEPARATOR_RATE = 44_100;
 
 let model: SpeechModel | undefined;
 
@@ -87,8 +85,9 @@ function handle(msg: SpeechWorkerRequest): SpeechWorkerReply {
       // Only one of the two models is on the GPU at a time.
       model?.free();
       model = undefined;
-      // The separation model takes 44.1 kHz, mono or stereo, and nothing else.
-      const mixture = resample(readWav(new Uint8Array(msg.wav)), SEPARATOR_RATE, 2);
+      // The separation model takes 44.1 kHz, mono or stereo, and nothing else: `validateSample` has
+      // checked both, so the upload goes in as it is.
+      const mixture = readWav(new Uint8Array(msg.wav));
       const separator = VoiceSeparator.load(msg.options);
       try {
         return { type: "audio", req: msg.req, wav: writeWav(normalizeLoudness(separator.vocals(mixture))) };

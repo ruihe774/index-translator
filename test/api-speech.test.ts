@@ -198,8 +198,8 @@ describe("GET /voices and health", () => {
       max_voices: MAX_UPLOADED_VOICES,
       max_name_chars: 60,
       max_sample_bytes: 8 * 1024 * 1024,
-      sample_seconds: { min: 1, max: 60 },
-      sample_rate: { min: 8000, max: 192_000 },
+      sample_seconds: { min: 1, max: 15 },
+      sample_rate: { min: 44_100, max: 44_100 },
       voices: mockSpeech.voices,
     });
   });
@@ -425,7 +425,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   const kinds = (w: any) => w.posted.map((m: any) => m.type);
   const request: SpeechRequest = { text: "Hi", lang: "en", voice: "a", speed: 1 };
   const say = (speech: NativeSpeech) => speech.synthesize(request, new AbortController().signal, () => {});
-  const wav = () => silentWav(1.5, 16_000);
+  const wav = () => silentWav(1.5, 44_100);
   /** What the worker answers a separation with: recognizably not the uploaded sample. */
   const separated = () => silentWav(2, 44_100);
   const quiet = () => spyOn(console, "error").mockImplementation(() => {});
@@ -623,8 +623,8 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   test("addVoice refuses samples outside the limits without keeping them", async () => {
     const { speech, cleanup } = await setup();
     try {
-      await expect(speech.addVoice("x", silentWav(0.5, 16_000))).rejects.toThrow("too short");
-      await expect(speech.addVoice("x", silentWav(1.5, 4000))).rejects.toThrow("sample rate");
+      await expect(speech.addVoice("x", silentWav(0.5, 44_100))).rejects.toThrow("too short");
+      await expect(speech.addVoice("x", silentWav(1.5, 48_000))).rejects.toThrow("sample rate");
       await expect(speech.addVoice("x", new ArrayBuffer(100))).rejects.toThrow(SpeechError);
       await expect(speech.voices()).resolves.toStrictEqual([]);
     } finally {
@@ -790,7 +790,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     test("a sample outside the limits is refused before the speech model is touched", async () => {
       const { workers, speech, cleanup } = await setup({}, true);
       try {
-        await expect(speech.addVoice("x", silentWav(0.5, 16_000))).rejects.toThrow("too short");
+        await expect(speech.addVoice("x", silentWav(0.5, 44_100))).rejects.toThrow("too short");
         expect(workers).toHaveLength(0);
       } finally {
         await cleanup();
@@ -806,7 +806,7 @@ describe("POST /voices", () => {
       headers: { "content-type": type },
       body,
     });
-  const sample = (seconds = 1.5, rate = 16_000) => new Uint8Array(silentWav(seconds, rate));
+  const sample = (seconds = 1.5, rate = 44_100) => new Uint8Array(silentWav(seconds, rate));
 
   test("a WAV sample becomes a voice", async () => {
     const res = await upload(sample());
@@ -887,9 +887,9 @@ describe("POST /voices", () => {
 
   test.each([
     ["shorter than 1 s", sample(0.5), "too short"],
-    ["longer than 60 s", sample(61, 8000), "too long"],
-    ["below 8 kHz", sample(1.5, 7999), "sample rate"],
-    ["above 192 kHz", sample(0.2, 192_001), "sample rate"],
+    ["longer than 15 s", sample(16), "too long"],
+    ["below 44.1 kHz", sample(1.5, 44_099), "sample rate"],
+    ["above 44.1 kHz", sample(1.5, 48_000), "sample rate"],
   ])("a sample %s is a 400", async (_what, wav, message) => {
     const res = await upload(wav);
     expect(res.status).toBe(400);
@@ -899,8 +899,8 @@ describe("POST /voices", () => {
     expect(error.message).toContain(message);
   });
 
-  test("the limits are inclusive at 1 s, 60 s, 8 kHz and 192 kHz", async () => {
-    for (const wav of [sample(1, 8000), sample(60, 8000), sample(1, 192_000)]) {
+  test("the limits are inclusive at 1 s and 15 s", async () => {
+    for (const wav of [sample(1), sample(15)]) {
       expect((await upload(wav)).status).toBe(201);
     }
   });
@@ -922,15 +922,21 @@ describe("POST /speech speed range", () => {
 
 describe("validateSample", () => {
   /** silentWav is mono; the header is patched to two channels, which halves the duration. */
-  const stereo = (seconds: number, rate: number) => {
-    const wav = new Uint8Array(silentWav(seconds, rate));
-    new DataView(wav.buffer).setUint16(22, 2, true);
+  const channels = (seconds: number, count: number) => {
+    const wav = new Uint8Array(silentWav(seconds, 44_100));
+    new DataView(wav.buffer).setUint16(22, count, true);
     return wav.buffer;
   };
 
   test("the duration counts frames, not samples", () => {
-    expect(() => validateSample(stereo(2, 8000))).not.toThrow();
-    expect(() => validateSample(stereo(1.5, 8000))).toThrow("too short");
+    expect(() => validateSample(channels(2, 2))).not.toThrow();
+    expect(() => validateSample(channels(1.5, 2))).toThrow("too short");
+  });
+
+  test("mono and stereo are accepted, more channels are not", () => {
+    expect(validateSample(channels(2, 1)).channels).toBe(1);
+    expect(validateSample(channels(2, 2)).channels).toBe(2);
+    expect(() => validateSample(channels(6, 3))).toThrow("3 channels");
   });
 
   test("garbage is a SpeechError", () => {

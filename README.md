@@ -334,7 +334,8 @@ first (the button tells you so). Clicking a paragraph itself still scrolls the o
   recording of a few seconds of speech (one speaker, no music) into the folder and reload the
   page. Only use voices of people who agreed to it.
 - **Your own voice sample:** under **Model and options** you can also record or upload a sample.
-  It is kept until the app stops. The voice is first taken out of any music and background noise
+  It is kept until the app stops. Only the first 15 seconds are used: a recording stops there and a
+  longer file is cut. The voice is first taken out of any music and background noise
   by a separation model (BS-RoFormer), which takes a few seconds; the speech model leaves the GPU
   while that runs and is loaded again by the next sentence, which takes about five seconds. Without
   the separation model (`fetch --model bs-roformer`, 0.2 GiB) the sample is used as it is, so a

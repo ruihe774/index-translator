@@ -99,7 +99,7 @@
     <text class="sub" x="863" y="400.26" text-anchor="middle">calls</text>
     <path class="edge" d="M946 377 L946 399 A16 16 0 0 0 962 415 L1124 415 A15 15 0 0 1 1139 430 L1139 445" marker-end="url(#arrow)"/>
     <rect class="label-patch" x="887.28" y="388.8" width="117.45" height="14.4" rx="5"/>
-    <text class="sub" x="946" y="400.26" text-anchor="middle">resample, loudness</text>
+    <text class="sub" x="946" y="400.26" text-anchor="middle">loudness</text>
     <path id="edge-13" class="edge" d="M905 504 L905 595" marker-end="url(#arrow)"/>
     <rect class="label-patch" x="880.97" y="515.8" width="48.06" height="14.4" rx="5"/>
     <text class="sub" x="905" y="527.26" text-anchor="middle">dlopen</text>
@@ -198,7 +198,7 @@
     <rect class="badge" x="1040.5" y="458.5" width="36" height="36" rx="8"/>
     <g class="icon core" transform="translate(1046.5 464.5)" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 9h18"/><path d="M10 12.5l-2 2 2 2M14 12.5l2 2-2 2"/></g>
     <text class="title" x="1086.5" y="474.27">src/wav.ts</text>
-    <text class="sub" x="1086.5" y="489.16">WAV, resample, loudness</text>
+    <text class="sub" x="1086.5" y="489.16">WAV, loudness</text>
   </g>
   <g data-node="libaudiocpp">
     <rect class="card external" x="813.5" y="598.5" width="184" height="56" rx="10"/>

@@ -35,16 +35,15 @@ import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 import {
   isSpeechLanguage,
   MAX_SAMPLE_BYTES,
-  MAX_SAMPLE_RATE,
   MAX_SAMPLE_SECONDS,
   MAX_SPEECH_CHARS,
   MAX_SPEED,
   MAX_UPLOADED_VOICES,
   MAX_VOICE_NAME_CHARS,
-  MIN_SAMPLE_RATE,
   MIN_SAMPLE_SECONDS,
   MIN_SPEED,
   nativeSpeech,
+  SAMPLE_RATE,
   SeparationError,
   type Speech,
   SPEECH_LANGUAGES,
@@ -1064,7 +1063,7 @@ export async function startApp(
               max_name_chars: MAX_VOICE_NAME_CHARS,
               max_sample_bytes: MAX_SAMPLE_BYTES,
               sample_seconds: { min: MIN_SAMPLE_SECONDS, max: MAX_SAMPLE_SECONDS },
-              sample_rate: { min: MIN_SAMPLE_RATE, max: MAX_SAMPLE_RATE },
+              sample_rate: { min: SAMPLE_RATE, max: SAMPLE_RATE },
               voices: speech.state === "unavailable" ? [] : await speech.voices(),
             });
           }

@@ -1,8 +1,8 @@
 // Recording a voice sample from the microphone, and writing it as WAV. No DOM types here, so the
 // logic can be tested with fakes under bun test; voice-sample.ts adds the browser-only parts.
 
-/** Longer samples are cut: the model uses a few seconds, and the upload stays small. */
-export const MAX_SAMPLE_SECONDS = 30;
+/** Longer samples are cut: IndexTTS-2 reads only the first 15 s of a reference, and the server refuses more. */
+export const MAX_SAMPLE_SECONDS = 15;
 /** Shorter ones carry too little of the voice. */
 export const MIN_SAMPLE_SECONDS = 1;
 

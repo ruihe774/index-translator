@@ -47,11 +47,16 @@ export const MAX_UPLOADED_VOICES = 16;
 /** Longest name `POST /voices` keeps; a longer one is cut off. */
 export const MAX_VOICE_NAME_CHARS = 60;
 
-/** Recording limits of an uploaded sample: a few seconds suffice, a long one only slows every utterance. */
+/**
+ * Recording limits of an uploaded sample: a few seconds suffice, and audio.cpp's IndexTTS-2 keeps
+ * only the first 15 s of a reference, so more would only slow the separation.
+ */
 export const MIN_SAMPLE_SECONDS = 1;
-export const MAX_SAMPLE_SECONDS = 60;
-export const MIN_SAMPLE_RATE = 8000;
-export const MAX_SAMPLE_RATE = 192_000;
+export const MAX_SAMPLE_SECONDS = 15;
+/** The one rate BS-RoFormer accepts; the client resamples, so the server never does. */
+export const SAMPLE_RATE = 44_100;
+/** BS-RoFormer takes mono or stereo; a mono sample is duplicated by audio.cpp. */
+export const MAX_SAMPLE_CHANNELS = 2;
 
 export class SpeechError extends Error {}
 
@@ -110,10 +115,11 @@ export function validateSample(wav: ArrayBuffer): Pcm {
   } catch (e) {
     throw new SpeechError(`the sample cannot be used: ${messageOf(e)}`);
   }
-  if (pcm.sampleRate < MIN_SAMPLE_RATE || pcm.sampleRate > MAX_SAMPLE_RATE) {
-    throw new SpeechError(
-      `the sample rate of ${pcm.sampleRate} Hz is not supported (${MIN_SAMPLE_RATE} to ${MAX_SAMPLE_RATE} Hz)`,
-    );
+  if (pcm.sampleRate !== SAMPLE_RATE) {
+    throw new SpeechError(`the sample rate of ${pcm.sampleRate} Hz is not supported (it must be ${SAMPLE_RATE} Hz)`);
+  }
+  if (pcm.channels > MAX_SAMPLE_CHANNELS) {
+    throw new SpeechError(`the sample has ${pcm.channels} channels (at most ${MAX_SAMPLE_CHANNELS})`);
   }
   const seconds = pcm.samples.length / pcm.channels / pcm.sampleRate;
   if (seconds < MIN_SAMPLE_SECONDS) {

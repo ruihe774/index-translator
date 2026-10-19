@@ -25,7 +25,7 @@ nodes:
   - { id: speech, kind: service, label: "src/speech.ts", note: one utterance at a time, frame: reading }
   - { id: speech-worker, kind: service, label: "src/speech-worker.ts", note: "worker, speech and separator", frame: reading }
   - { id: audiocpp-ffi, kind: service, label: "src/audiocpp-ffi.ts", note: bindings, frame: reading }
-  - { id: wav, kind: service, label: "src/wav.ts", note: "WAV, resample, loudness", frame: reading }
+  - { id: wav, kind: service, label: "src/wav.ts", note: "WAV, loudness", frame: reading }
   - { id: libaudiocpp, kind: service, label: libaudiocpp, note: audio.cpp, variant: external }
 edges:
   - { from: app, to: prompt, label: build prompt }
@@ -40,7 +40,7 @@ edges:
   - { from: speech, to: speech-worker, label: "start, post" }
   - { from: speech, to: wav, label: read WAV }
   - { from: speech-worker, to: audiocpp-ffi, label: calls }
-  - { from: speech-worker, to: wav, label: "resample, loudness" }
+  - { from: speech-worker, to: wav, label: loudness }
   - { from: audiocpp-ffi, to: libaudiocpp, label: dlopen }
 flows:
   - { name: a translation, steps: [app, llama, llama-worker, llama-ffi, libllama] }

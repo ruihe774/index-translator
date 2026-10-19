@@ -7,7 +7,8 @@ import { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS } from "./mic-recorde
 
 export { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS, MicRecorder } from "./mic-recorder.ts";
 
-const RATE = 24_000;
+/** The only rate the server accepts (`sample_rate` of `GET /voices`): it is what the voice separator takes. */
+const RATE = 44_100;
 
 /** Decodes audio of any format the browser knows, mixes it to mono, resamples and trims it. */
 export async function audioToWav(data: ArrayBuffer): Promise<ArrayBuffer> {

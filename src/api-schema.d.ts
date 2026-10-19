@@ -63,8 +63,9 @@ export interface paths {
         /**
          * Upload a voice sample for cloning
          * @description The body is a WAV recording (`audio/wav`, at most `max_sample_bytes`) of the voice to
-         *     imitate. It must last between `sample_seconds.min` and `sample_seconds.max` seconds and have a
-         *     sample rate within `sample_rate` (`400` otherwise). It becomes a voice in `GET /voices`
+         *     imitate. It must last between `sample_seconds.min` and `sample_seconds.max` seconds, have the
+         *     sample rate `sample_rate` (44.1 kHz; the server does not resample), and be mono or stereo
+         *     (`400` otherwise). It becomes a voice in `GET /voices`
          *     until the server stops; nothing is persisted. At most `max_voices` uploads exist at once:
          *     once that many are stored, the next upload is refused with `400` (`invalid_request`,
          *     `details.field` `body`) and nothing is evicted.
@@ -643,7 +644,10 @@ export interface components {
                 min: number;
                 max: number;
             };
-            /** @description Sample rate a `POST /voices` recording must have, in Hz. */
+            /**
+             * @description Sample rate a `POST /voices` recording must have, in Hz. `min` and `max` are equal: the
+             *     voice separation model takes one rate only.
+             */
             sample_rate: {
                 min: number;
                 max: number;
