@@ -373,3 +373,211 @@ pub fn stereo_itheta(X: &[f32], Y: &[f32], stereo: i32, N: i32) -> i32 {
     let side = celt_sqrt32(Eside);
     libm::floor((0.5f32 + 65536.0f32 * 16384.0 * celt_atan2p_norm(side, mid)) as f64) as i32
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::celt::entenc::{ec_enc_done, ec_enc_init};
+    use crate::testutil::{Rng, same_enc};
+    use core::ffi::c_void;
+    use minicelt_oracle as c;
+    use std::vec;
+    use std::vec::Vec;
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    /// Random vector: mostly unit-norm, sometimes sparse, tiny, zero or huge.
+    fn rand_vec(rng: &mut Rng, n: usize) -> Vec<f32> {
+        let mut v = rng.f32_vec(n, 1.0);
+        match rng.range(0, 9) {
+            0 => v.iter_mut().for_each(|x| *x *= 1e-20),
+            1 => v.iter_mut().for_each(|x| *x = 0.0),
+            2 => {
+                for x in v.iter_mut() {
+                    if rng.range(0, 3) != 0 {
+                        *x = 0.0
+                    }
+                }
+            }
+            3 => v.iter_mut().for_each(|x| *x *= 1e4),
+            4 => v[rng.range(0, n as i32 - 1) as usize] = 1.0,
+            _ => {
+                let e: f32 = v.iter().map(|x| x * x).sum::<f32>() + 1e-15;
+                let g = 1.0 / libm::sqrtf(e);
+                v.iter_mut().for_each(|x| *x *= g);
+            }
+        }
+        v
+    }
+
+    /// A valid PVQ (N, K) pair from the static pulse cache (band i at LM in -1..=3).
+    fn rand_nk(rng: &mut Rng) -> (i32, i32) {
+        use crate::celt::modes::mode48000_960_120 as MODE;
+        use crate::celt::rate::get_pulses;
+        loop {
+            let i = rng.range(0, 20);
+            let lm = rng.range(-1, 3);
+            let w = (MODE.eBands[i as usize + 1] - MODE.eBands[i as usize]) as i32;
+            let n = (w << (lm + 1)) >> 1;
+            if n < 2 {
+                continue;
+            }
+            let off = MODE.cache.index[((lm + 1) * 21 + i) as usize] as usize;
+            let maxq = MODE.cache.bits[off] as i32;
+            let q = if rng.range(0, 3) == 0 { maxq } else { rng.range(1, maxq) };
+            return (n, get_pulses(q));
+        }
+    }
+
+    fn rand_n(rng: &mut Rng) -> i32 {
+        match rng.range(0, 3) {
+            0 => rng.range(2, 16),
+            1 => rng.range(2, 64),
+            _ => rng.range(2, 176),
+        }
+    }
+
+    #[test]
+    fn exp_rotation1_matches_c() {
+        let mut rng = Rng::new(1);
+        for _ in 0..3000 {
+            let len = rng.range(2, 200);
+            let stride = rng.range(1, (len / 2).max(1));
+            let (cc, s) = (rng.f32_unit(), rng.f32_unit());
+            let mut a = rng.f32_vec(len as usize, 1.0);
+            let mut b = a.clone();
+            exp_rotation1(&mut a, len, stride, cc, s);
+            unsafe { c::oracle_exp_rotation1(b.as_mut_ptr(), len, stride, cc, s) };
+            assert_eq!(bits(&a), bits(&b));
+        }
+    }
+
+    #[test]
+    fn exp_rotation_matches_c() {
+        let mut rng = Rng::new(2);
+        for it in 0..20000 {
+            let stride = [1, 2, 4, 8, 16][rng.range(0, 4) as usize];
+            let n0 = rng.range(1, 30);
+            let len = stride * n0;
+            if len < 2 {
+                continue;
+            }
+            let K = if it % 3 == 0 { rng.range(1, len) } else { rng.range(1, (len / 2).max(1)) };
+            let spread = rng.range(0, 3);
+            let dir = if rng.range(0, 1) == 0 { 1 } else { -1 };
+            let mut a = rng.f32_vec(len as usize, 1.0);
+            let mut b = a.clone();
+            exp_rotation(&mut a, len, dir, stride, K, spread);
+            unsafe { c::exp_rotation(b.as_mut_ptr(), len, dir, stride, K, spread) };
+            assert_eq!(bits(&a), bits(&b), "len {len} stride {stride} K {K} spread {spread}");
+        }
+    }
+
+    #[test]
+    fn op_pvq_search_matches_c() {
+        let mut rng = Rng::new(3);
+        for it in 0..30000 {
+            let N = rand_n(&mut rng);
+            let K = match it % 4 {
+                0 => rng.range(1, (N / 2).max(1)),
+                1 => rng.range(N / 2 + 1, N + 8),
+                2 => rng.range(1, 128),
+                _ => rng.range(1, 600),
+            };
+            let x = rand_vec(&mut rng, N as usize);
+            let mut xc = x.clone();
+            let mut iyr = vec![0x5555i32; N as usize + 3];
+            let mut iyc = vec![0x5555i32; N as usize + 3];
+            let yr = op_pvq_search(&x, &mut iyr, K, N);
+            let yc = unsafe { c::op_pvq_search_wasm(xc.as_mut_ptr(), iyc.as_mut_ptr(), K, N, 0) };
+            assert_eq!(yr.to_bits(), yc.to_bits(), "N {N} K {K}");
+            assert_eq!(iyr[..N as usize], iyc[..N as usize], "N {N} K {K}");
+            assert_eq!(bits(&x), bits(&xc));
+            assert_eq!(iyr.iter().map(|v| v.abs()).sum::<i32>() - iyr[N as usize..].iter().map(|v| v.abs()).sum::<i32>(), K);
+        }
+    }
+
+    #[test]
+    fn normalise_residual_and_collapse_mask_match_c() {
+        let mut rng = Rng::new(4);
+        for _ in 0..5000 {
+            let B = [1, 2, 4, 8][rng.range(0, 3) as usize];
+            let N = B * rng.range(1, 22);
+            let mut iy = rng.i32_vec(N as usize, 5);
+            if rng.range(0, 1) == 0 {
+                for v in iy.iter_mut() {
+                    if rng.range(0, 2) != 0 {
+                        *v = 0;
+                    }
+                }
+            }
+            let ryy = iy.iter().map(|v| (v * v) as f32).sum::<f32>() + 1.0;
+            let gain = rng.f32_unit().abs() + 0.1;
+            let mut a = vec![0.0f32; N as usize];
+            let mut b = a.clone();
+            normalise_residual(&iy, &mut a, N, ryy, gain);
+            unsafe { c::oracle_normalise_residual(iy.as_mut_ptr(), b.as_mut_ptr(), N, ryy, gain, 0) };
+            assert_eq!(bits(&a), bits(&b));
+            assert_eq!(extract_collapse_mask(&iy, N, B), unsafe {
+                c::oracle_extract_collapse_mask(iy.as_mut_ptr(), N, B)
+            });
+        }
+    }
+
+    #[test]
+    fn alg_quant_matches_c() {
+        let mut rng = Rng::new(5);
+        for it in 0..20000 {
+            let (N, K) = rand_nk(&mut rng);
+            let mut B = [1, 2, 4, 8][rng.range(0, 3) as usize];
+            while N % B != 0 {
+                B >>= 1;
+            }
+            let _ = it;
+            let spread = rng.range(0, 3);
+            let resynth = rng.range(0, 1);
+            let gain = if rng.range(0, 1) == 0 { 1.0 } else { rng.f32_unit().abs() };
+            let x = rand_vec(&mut rng, N as usize);
+            let (mut xr, mut xc) = (x.clone(), x.clone());
+            let size = rng.range(4, 200) as usize;
+            let (mut br, mut bc) = (vec![0u8; size], vec![0u8; size]);
+            let mut er: ec_enc = unsafe { core::mem::zeroed() };
+            let mut ec: ec_enc = unsafe { core::mem::zeroed() };
+            ec_enc_init(&mut er, br.as_mut_ptr(), size as u32);
+            unsafe { c::ec_enc_init(&mut ec as *mut ec_enc as *mut c_void, bc.as_mut_ptr(), size as u32) };
+            let mr = alg_quant(&mut xr, N, K, spread, B, &mut er, gain, resynth);
+            let mc = unsafe {
+                c::alg_quant(xc.as_mut_ptr(), N, K, spread, B, &mut ec as *mut ec_enc as *mut c_void, gain, resynth, 0)
+            };
+            assert_eq!(mr, mc);
+            assert_eq!(bits(&xr), bits(&xc), "N {N} K {K} B {B} spread {spread} resynth {resynth}");
+            same_enc(&er, &ec);
+            ec_enc_done(&mut er);
+            unsafe { c::ec_enc_done(&mut ec as *mut ec_enc as *mut c_void) };
+            same_enc(&er, &ec);
+            assert_eq!(br, bc);
+        }
+    }
+
+    #[test]
+    fn renormalise_vector_and_stereo_itheta_match_c() {
+        let mut rng = Rng::new(6);
+        for _ in 0..20000 {
+            let N = rand_n(&mut rng);
+            let x = rand_vec(&mut rng, N as usize);
+            let y = rand_vec(&mut rng, N as usize);
+            let gain = if rng.range(0, 1) == 0 { 1.0 } else { rng.f32_unit() };
+            let (mut a, mut b) = (x.clone(), x.clone());
+            renormalise_vector(&mut a, N, gain);
+            unsafe { c::renormalise_vector(b.as_mut_ptr(), N, gain, 0) };
+            assert_eq!(bits(&a), bits(&b));
+            for stereo in 0..2 {
+                assert_eq!(stereo_itheta(&x, &y, stereo, N), unsafe {
+                    c::stereo_itheta(x.as_ptr(), y.as_ptr(), stereo, N, 0)
+                });
+            }
+        }
+    }
+}
