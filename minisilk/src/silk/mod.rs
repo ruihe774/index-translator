@@ -43,7 +43,6 @@ pub mod LPC_analysis_filter;
 pub mod LPC_fit;
 pub mod LPC_inv_pred_gain;
 pub mod interpolate;
-pub mod bwexpander;
 pub mod bwexpander_32;
 pub mod sort;
 pub mod process_NLSFs;
@@ -54,18 +53,14 @@ pub mod NSQ_del_dec;
 pub mod VAD;
 pub mod VQ_WMat_EC;
 pub mod ana_filt_bank_1;
-pub mod sum_sqr_shift;
 
 // Group F: encoder control
 pub mod enc_API;
 pub mod init_encoder;
 pub mod control_codec;
 pub mod control_SNR;
-pub mod control_audio_bandwidth;
-pub mod check_control_input;
 pub mod HP_variable_cutoff;
 pub mod quant_LTP_gains;
-pub mod resampler;
 
 /// tables.h: all SILK tables in one namespace.
 pub mod tables {

@@ -9,7 +9,10 @@
 //!   (`peak_signal_energy`, `equiv_rate`, `auto_bandwidth`, `stereoWidth_Q14`, the
 //!   `delay_buffer`, `variable_HP_smth2_Q15`, which only feeds the VOIP high-pass) cannot
 //!   influence the output and is omitted;
-//! - the bandwidth is fixed to WB as with `OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_WIDEBAND)`.
+//! - the bandwidth is fixed to WB as with `OPUS_SET_BANDWIDTH(OPUS_BANDWIDTH_WIDEBAND)`, so the
+//!   ToC byte of an encoded packet is the constant `TOC_SILK_WB_20MS`;
+//! - `silk_EncControlStruct` is gone: its inputs are arguments of `silk_Encode` (the packet loss
+//!   percentage, complexity and SILK DTX flag live in this struct).
 //!
 //! Deviation from C: when `effective_max_rate < 8000` (an output buffer under 20 bytes)
 //! C lowers SILK's maximum internal rate to 12/8 kHz, which minisilk cannot do. Such
@@ -23,10 +26,9 @@ use crate::celt::entcode::{ec_enc, ec_tell};
 use crate::celt::entenc::{ec_enc_done, ec_enc_init};
 use crate::celt::pitch::celt_inner_prod;
 use crate::opus::defines::*;
-use crate::silk::define::{MAX_CONSECUTIVE_DTX, NB_SPEECH_FRAMES_BEFORE_DTX, VAD_NO_DECISION};
+use crate::silk::define::{MAX_CONSECUTIVE_DTX, NB_SPEECH_FRAMES_BEFORE_DTX, TYPE_NO_VOICE_ACTIVITY, VAD_NO_DECISION};
 use crate::silk::enc_API::{silk_Encode, silk_InitEncoder};
 use crate::silk::float::structs_flp::silk_encoder;
-use crate::silk::structs::silk_EncControlStruct;
 
 /* Fixed configuration. */
 const FS: i32 = 16000;
@@ -36,17 +38,25 @@ const FRAME_RATE: i32 = FS / FRAME_SIZE;
 const LOOKAHEAD: i32 = FS / 400 + FS / 250;
 const PACKET_SIZE_CAP: i32 = 1276;
 
+/// `gen_toc(MODE_SILK_ONLY, 50, OPUS_BANDWIDTH_WIDEBAND, 1)`.
+const TOC_SILK_WB_20MS: u8 = 0x48;
+/// `gen_toc(MODE_HYBRID, 50, OPUS_BANDWIDTH_FULLBAND, 1)`: the ToC of a "PLC" packet emitted
+/// before the first real frame, when C's initial mode/bandwidth are still in effect.
+const TOC_HYBRID_FB_20MS: u8 = 0x78;
+
 pub struct OpusEncoder {
     silk_enc: silk_encoder,
-    silk_mode: silk_EncControlStruct,
+    /// `silk_mode.complexity`
+    complexity: i32,
+    /// `silk_mode.packetLossPercentage`
+    packetLossPercentage: i32,
+    /// `silk_mode.useDTX`
+    silk_useDTX: i32,
     use_dtx: i32,
     user_bitrate_bps: i32,
-    bitrate_bps: i32,
-    hp_mem: [f32; 4],
+    hp_mem: f32,
     mode: i32,
     prev_mode: i32,
-    bandwidth: i32,
-    first: i32,
     nb_no_activity_ms_Q1: i32,
     rangeFinal: u32,
 }
@@ -61,48 +71,19 @@ fn bitrate_to_bits(bitrate: i32, Fs: i32, frame_size: i32) -> i32 {
     bitrate * 6 / (6 * Fs / frame_size)
 }
 
-fn gen_toc(mode: i32, framerate: i32, bandwidth: i32, channels: i32) -> u8 {
-    let mut framerate = framerate;
-    let mut period = 0;
-    while framerate < 400 {
-        framerate <<= 1;
-        period += 1;
-    }
-    let mut toc: i32;
-    if mode == MODE_SILK_ONLY {
-        toc = (bandwidth - OPUS_BANDWIDTH_NARROWBAND) << 5;
-        toc |= (period - 2) << 3;
-    } else if mode == MODE_CELT_ONLY {
-        let mut tmp = bandwidth - OPUS_BANDWIDTH_MEDIUMBAND;
-        if tmp < 0 {
-            tmp = 0;
-        }
-        toc = 0x80;
-        toc |= tmp << 5;
-        toc |= period << 3;
-    } else {
-        /* Hybrid */
-        toc = 0x60;
-        toc |= (bandwidth - OPUS_BANDWIDTH_SUPERWIDEBAND) << 4;
-        toc |= (period - 2) << 3;
-    }
-    toc |= ((channels == 2) as i32) << 2;
-    toc as u8
-}
-
-/// Float `dc_reject` (mono). `hp_mem[0]` is the filter state.
-fn dc_reject(input: &[f32], cutoff_Hz: i32, out: &mut [f32], hp_mem: &mut [f32; 4], len: usize, Fs: i32) {
+/// Float `dc_reject` (mono, 3 Hz cutoff). `hp_mem` is the filter state.
+fn dc_reject(input: &[f32], out: &mut [f32], hp_mem: &mut f32) {
     const VERY_SMALL: f32 = 1e-30;
-    let coef: f32 = 6.3f32 * cutoff_Hz as f32 / Fs as f32;
+    let coef: f32 = 6.3f32 * 3 as f32 / FS as f32;
     let coef2: f32 = 1.0 - coef;
-    let mut m0 = hp_mem[0];
-    for i in 0..len {
+    let mut m0 = *hp_mem;
+    for i in 0..FRAME_SIZE as usize {
         let x = input[i];
         let y = x - m0;
         m0 = coef * x + VERY_SMALL + coef2 * m0;
         out[i] = y;
     }
-    hp_mem[0] = m0;
+    *hp_mem = m0;
 }
 
 /// `celt_maxabs16` for floats, including its NaN behaviour (MAX16/MIN16 are `?:` macros).
@@ -122,11 +103,11 @@ fn is_digital_silence(pcm: &[f32], lsb_depth: i32) -> bool {
 }
 
 /// Decides if DTX should be turned on (=1) or off (=0).
-fn decide_dtx_mode(activity: i32, nb_no_activity_ms_Q1: &mut i32, frame_size_ms_Q1: i32) -> i32 {
+fn decide_dtx_mode(activity: i32, nb_no_activity_ms_Q1: &mut i32) -> i32 {
     if activity == 0 {
         /* The number of consecutive DTX frames should be within the allowed bounds.
         The allowed bound is defined in the SILK headers and assumes 20 ms frames. */
-        *nb_no_activity_ms_Q1 += frame_size_ms_Q1;
+        *nb_no_activity_ms_Q1 += 2 * 1000 * FRAME_SIZE / FS;
         if *nb_no_activity_ms_Q1 > NB_SPEECH_FRAMES_BEFORE_DTX * 20 * 2 {
             if *nb_no_activity_ms_Q1 <= (NB_SPEECH_FRAMES_BEFORE_DTX + MAX_CONSECUTIVE_DTX) * 20 * 2 {
                 /* Valid frame for DTX! */
@@ -150,36 +131,13 @@ impl OpusEncoder {
 
     /// `opus_encoder_init(st, 16000, 1, OPUS_APPLICATION_RESTRICTED_SILK)` followed by
     /// `OPUS_SET_BANDWIDTH(WB)`. Defaults as in C: bitrate `OPUS_AUTO`, complexity 9, DTX off.
-    pub fn init(&mut self) -> i32 {
+    pub fn init(&mut self) {
         // SAFETY: see `new_zeroed`.
         unsafe { core::ptr::write_bytes(self as *mut Self, 0, 1) };
-        if silk_InitEncoder(&mut self.silk_enc, &mut self.silk_mode) != 0 {
-            return OPUS_INTERNAL_ERROR;
-        }
-        /* default SILK parameters */
-        let m = &mut self.silk_mode;
-        m.nChannelsAPI = 1;
-        m.nChannelsInternal = 1;
-        m.API_sampleRate = FS;
-        m.maxInternalSampleRate = 16000;
-        m.minInternalSampleRate = 8000;
-        m.desiredInternalSampleRate = 16000;
-        m.payloadSize_ms = 20;
-        m.bitRate = 25000;
-        m.packetLossPercentage = 0;
-        m.complexity = 9;
-        m.useInBandFEC = 0;
-        m.useDRED = 0;
-        m.useDTX = 0;
-        m.useCBR = 0;
-        m.reducedDependency = 0;
-
+        silk_InitEncoder(&mut self.silk_enc);
+        self.complexity = 9;
         self.user_bitrate_bps = OPUS_AUTO;
-        self.bitrate_bps = 3000 + FS;
         self.mode = MODE_HYBRID;
-        self.bandwidth = OPUS_BANDWIDTH_FULLBAND;
-        self.first = 1;
-        OPUS_OK
     }
 
     /// `OPUS_SET_BITRATE`: `OPUS_AUTO`, `OPUS_BITRATE_MAX` or a rate in bits/s (clamped to
@@ -204,7 +162,7 @@ impl OpusEncoder {
         if !(0..=10).contains(&value) {
             return OPUS_BAD_ARG;
         }
-        self.silk_mode.complexity = value;
+        self.complexity = value;
         OPUS_OK
     }
 
@@ -222,7 +180,7 @@ impl OpusEncoder {
         if !(0..=100).contains(&value) {
             return OPUS_BAD_ARG;
         }
-        self.silk_mode.packetLossPercentage = value;
+        self.packetLossPercentage = value;
         OPUS_OK
     }
 
@@ -238,9 +196,9 @@ impl OpusEncoder {
 
     /// `OPUS_GET_IN_DTX`.
     pub fn get_in_dtx(&self) -> i32 {
-        if self.silk_mode.useDTX != 0 && (self.prev_mode == MODE_SILK_ONLY || self.prev_mode == MODE_HYBRID) {
+        if self.silk_useDTX != 0 && self.prev_mode == MODE_SILK_ONLY {
             /* DTX determined by Silk. */
-            (self.silk_enc.state_Fxx[0].sCmn.noSpeechCounter >= NB_SPEECH_FRAMES_BEFORE_DTX) as i32
+            (self.silk_enc.state_Fxx.sCmn.noSpeechCounter >= NB_SPEECH_FRAMES_BEFORE_DTX) as i32
         } else if self.use_dtx != 0 {
             /* DTX determined by Opus. */
             (self.nb_no_activity_ms_Q1 >= NB_SPEECH_FRAMES_BEFORE_DTX * 20 * 2) as i32
@@ -273,7 +231,6 @@ impl OpusEncoder {
 
     /// `opus_encode_native`, up to the frame encoder.
     fn encode_native(&mut self, pcm: &[f32], out: &mut [u8], lsb_depth: i32) -> i32 {
-        let frame_size = FRAME_SIZE;
         /* Just avoid insane packet sizes here, but the real bounds are applied later on. */
         let max_data_bytes = (PACKET_SIZE_CAP * 6).min(out.len().min(i32::MAX as usize) as i32);
 
@@ -282,45 +239,30 @@ impl OpusEncoder {
             return OPUS_BAD_ARG;
         }
 
-        let lsb_depth = lsb_depth.min(24);
         let is_silence = is_digital_silence(pcm, lsb_depth);
 
-        self.bitrate_bps = self.user_bitrate_to_bitrate(frame_size, max_data_bytes);
+        let bitrate_bps = self.user_bitrate_to_bitrate(max_data_bytes);
 
-        let frame_rate = FRAME_RATE;
-        if max_data_bytes < 3 || self.bitrate_bps < 3 * frame_rate * 8 {
+        if max_data_bytes < 3 || bitrate_bps < 3 * FRAME_RATE * 8 {
             /* If the space is too low to do something useful, emit 'PLC' frames. */
-            let mut tocmode = self.mode;
-            let mut bw = if self.bandwidth == 0 { OPUS_BANDWIDTH_NARROWBAND } else { self.bandwidth };
-            if tocmode == 0 {
-                tocmode = MODE_SILK_ONLY;
-            }
-            if tocmode == MODE_SILK_ONLY && bw > OPUS_BANDWIDTH_WIDEBAND {
-                bw = OPUS_BANDWIDTH_WIDEBAND;
-            } else if tocmode == MODE_HYBRID && bw <= OPUS_BANDWIDTH_SUPERWIDEBAND {
-                bw = OPUS_BANDWIDTH_SUPERWIDEBAND;
-            }
-            out[0] = gen_toc(tocmode, frame_rate, bw, 1);
+            out[0] = if self.mode == MODE_SILK_ONLY { TOC_SILK_WB_20MS } else { TOC_HYBRID_FB_20MS };
             return 1;
         }
 
         /* Allow SILK DTX if DTX is enabled but the generalized DTX cannot be used,
         i.e. when the frame is not digital silence. */
-        self.silk_mode.useDTX = (self.use_dtx != 0 && !is_silence) as i32;
+        self.silk_useDTX = (self.use_dtx != 0 && !is_silence) as i32;
 
         /* Mode selection: RESTRICTED_SILK is always SILK-only, mono, WB (user bandwidth). */
         self.mode = MODE_SILK_ONLY;
-        self.bandwidth = OPUS_BANDWIDTH_WIDEBAND;
-        self.silk_mode.LBRR_coded = 0; /* decide_fec with useInBandFEC == 0 */
-        self.silk_mode.toMono = 0;
 
-        self.encode_frame_native(pcm, out, max_data_bytes, is_silence)
+        self.encode_frame_native(pcm, out, max_data_bytes, is_silence, bitrate_bps)
     }
 
-    fn user_bitrate_to_bitrate(&self, frame_size: i32, max_data_bytes: i32) -> i32 {
-        let max_bitrate = bits_to_bitrate(max_data_bytes * 8, FS, frame_size);
+    fn user_bitrate_to_bitrate(&self, max_data_bytes: i32) -> i32 {
+        let max_bitrate = bits_to_bitrate(max_data_bytes * 8, FS, FRAME_SIZE);
         let user_bitrate = if self.user_bitrate_bps == OPUS_AUTO {
-            60 * FS / frame_size + FS
+            60 * FS / FRAME_SIZE + FS
         } else if self.user_bitrate_bps == OPUS_BITRATE_MAX {
             1500000
         } else {
@@ -330,83 +272,62 @@ impl OpusEncoder {
     }
 
     /// `opus_encode_frame_native`.
-    fn encode_frame_native(&mut self, pcm: &[f32], out: &mut [u8], orig_max_data_bytes: i32, is_silence: bool) -> i32 {
-        let frame_size = FRAME_SIZE;
+    fn encode_frame_native(&mut self, pcm: &[f32], out: &mut [u8], orig_max_data_bytes: i32, is_silence: bool, bitrate_bps: i32) -> i32 {
         let max_data_bytes = orig_max_data_bytes.min(PACKET_SIZE_CAP);
         self.rangeFinal = 0;
-        let mut curr_bandwidth = self.bandwidth;
 
         let mut activity = VAD_NO_DECISION;
         if is_silence {
             activity = 0;
         }
 
-        let effective_max_rate = bits_to_bitrate(max_data_bytes * 8, FS, frame_size);
+        let effective_max_rate = bits_to_bitrate(max_data_bytes * 8, FS, FRAME_SIZE);
         if effective_max_rate < 8000 {
             /* C would lower SILK's max internal rate to 12/8 kHz here; unsupported. */
             return OPUS_BUFFER_TOO_SMALL;
         }
 
-        let bits_target = (8 * max_data_bytes).min(bitrate_to_bits(self.bitrate_bps, FS, frame_size)) - 8;
+        let bits_target = (8 * max_data_bytes).min(bitrate_to_bits(bitrate_bps, FS, FRAME_SIZE)) - 8;
 
         /* DC reject (not the VOIP high-pass); delay_compensation is 0 for RESTRICTED_SILK. */
         let mut pcm_buf = [0f32; FRAME_SIZE as usize];
-        dc_reject(pcm, 3, &mut pcm_buf, &mut self.hp_mem, FRAME_SIZE as usize, FS);
+        dc_reject(pcm, &mut pcm_buf, &mut self.hp_mem);
 
         /* This should filter out both NaNs and ridiculous signals that could
         cause NaNs further down. */
         let sum = celt_inner_prod(&pcm_buf, &pcm_buf, FRAME_SIZE);
         if !(sum < 1e9f32) || sum.is_nan() {
             pcm_buf = [0f32; FRAME_SIZE as usize];
-            self.hp_mem = [0.0; 4];
+            self.hp_mem = 0.0;
         }
-
-        /* SILK processing: SILK gets all bits. */
-        self.silk_mode.bitRate = bits_to_bitrate(bits_target, FS, frame_size);
-        self.silk_mode.payloadSize_ms = 1000 * frame_size / FS;
-        self.silk_mode.nChannelsAPI = 1;
-        self.silk_mode.nChannelsInternal = 1;
-        self.silk_mode.desiredInternalSampleRate = 16000;
-        self.silk_mode.minInternalSampleRate = 8000;
-        self.silk_mode.maxInternalSampleRate = 16000;
-        self.silk_mode.useCBR = 0;
-
-        /* Max bits for SILK, counting the ToC. */
-        self.silk_mode.maxBits = (max_data_bytes - 1) * 8;
 
         /* Call SILK encoder. The range coder writes after the ToC byte. */
         let mut enc: ec_enc = unsafe { core::mem::zeroed() };
         // SAFETY: out.len() >= orig_max_data_bytes >= 3; the coder gets
         // orig_max_data_bytes - 1 bytes starting at out[1].
         unsafe { ec_enc_init(&mut enc, out.as_mut_ptr().add(1), (orig_max_data_bytes - 1) as u32) };
-        let mut nBytes: i32 = 0;
-        let ret = silk_Encode(&mut self.silk_enc, &mut self.silk_mode, &pcm_buf, frame_size, &mut enc, &mut nBytes, 0, activity);
-        if ret != 0 {
-            return OPUS_INTERNAL_ERROR;
-        }
-
-        /* Extract SILK internal bandwidth for signaling in first byte */
-        if self.silk_mode.internalSampleRate == 8000 {
-            curr_bandwidth = OPUS_BANDWIDTH_NARROWBAND;
-        } else if self.silk_mode.internalSampleRate == 12000 {
-            curr_bandwidth = OPUS_BANDWIDTH_MEDIUMBAND;
-        } else if self.silk_mode.internalSampleRate == 16000 {
-            curr_bandwidth = OPUS_BANDWIDTH_WIDEBAND;
-        }
-
-        /* nonfinal_frame is always 0 */
-        self.silk_mode.opusCanSwitch = self.silk_mode.switchReady;
+        let nBytes = silk_Encode(
+            &mut self.silk_enc,
+            &pcm_buf,
+            &mut enc,
+            /* SILK gets all bits */
+            bits_to_bitrate(bits_target, FS, FRAME_SIZE),
+            /* Max bits for SILK, counting the ToC. */
+            (max_data_bytes - 1) * 8,
+            self.complexity,
+            self.packetLossPercentage,
+            self.silk_useDTX,
+            activity,
+        );
 
         if activity == VAD_NO_DECISION {
-            activity = (self.silk_mode.signalType != 0) as i32; /* TYPE_NO_VOICE_ACTIVITY */
+            activity = (self.silk_enc.state_Fxx.sCmn.indices.signalType as i32 != TYPE_NO_VOICE_ACTIVITY) as i32;
         }
         if nBytes == 0 {
             self.rangeFinal = 0;
-            out[0] = gen_toc(self.mode, FRAME_RATE, curr_bandwidth, 1);
+            out[0] = TOC_SILK_WB_20MS;
             return 1;
         }
-        /* opusCanSwitch would set silk_bw_switch, which is reset again since redundancy is
-        always off for RESTRICTED_SILK. */
 
         /* SILK-only: the redundancy flag is inferred from the length (no redundancy). */
         let mut ret = (ec_tell(&enc) + 7) >> 3;
@@ -414,16 +335,14 @@ impl OpusEncoder {
         self.rangeFinal = enc.rng;
 
         /* Signalling the mode in the first byte */
-        out[0] = gen_toc(self.mode, FRAME_RATE, curr_bandwidth, 1);
+        out[0] = TOC_SILK_WB_20MS;
 
         self.prev_mode = self.mode;
-        self.first = 0;
 
         /* DTX decision */
-        if self.use_dtx != 0 && self.silk_mode.useDTX == 0 {
-            if decide_dtx_mode(activity, &mut self.nb_no_activity_ms_Q1, 2 * 1000 * frame_size / FS) != 0 {
+        if self.use_dtx != 0 && self.silk_useDTX == 0 {
+            if decide_dtx_mode(activity, &mut self.nb_no_activity_ms_Q1) != 0 {
                 self.rangeFinal = 0;
-                out[0] = gen_toc(self.mode, FRAME_RATE, curr_bandwidth, 1);
                 return 1;
             }
         } else {

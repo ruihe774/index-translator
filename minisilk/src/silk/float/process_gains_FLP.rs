@@ -12,12 +12,11 @@ use crate::silk::tuning_parameters::*;
 pub fn silk_process_gains_FLP(
     psEnc: &mut silk_encoder_state_FLP,        /* I/O  Encoder state FLP                           */
     psEncCtrl: &mut silk_encoder_control_FLP, /* I/O  Encoder control FLP                         */
-    condCoding: i32,                          /* I    The type of conditional coding to use       */
 ) {
     let psShapeSt = &mut psEnc.sShape;
     let sCmn = &mut psEnc.sCmn;
     let mut pGains_Q16 = [0i32; MAX_NB_SUBFR as usize];
-    let nb_subfr = sCmn.nb_subfr as usize;
+    let nb_subfr = MAX_NB_SUBFR as usize;
 
     /* Gain reduction when LTP coding gain is high */
     if sCmn.indices.signalType as i32 == TYPE_VOICED {
@@ -29,12 +28,12 @@ pub fn silk_process_gains_FLP(
 
     /* Limit the quantized signal */
     let InvMaxSqrVal = (libm::pow(2.0, (0.33f32 * (21.0f32 - sCmn.SNR_dB_Q7 as f32 * (1.0f32 / 128.0f32))) as f64)
-        / sCmn.subfr_length as f64) as f32;
+        / MAX_SUB_FRAME_LENGTH as f64) as f32;
 
     for k in 0..nb_subfr {
         /* Soft limit on ratio residual energy and squared gains */
         let mut gain = psEncCtrl.Gains[k];
-        gain = libm::sqrt((gain * gain + psEncCtrl.ResNrg[k] * InvMaxSqrVal) as f64) as f32;
+        gain = crate::silk::float::sigproc_flp::sqrt((gain * gain + psEncCtrl.ResNrg[k] * InvMaxSqrVal) as f64) as f32;
         psEncCtrl.Gains[k] = silk_min_float(gain, 32767.0f32);
     }
 
@@ -52,8 +51,6 @@ pub fn silk_process_gains_FLP(
         &mut sCmn.indices.GainsIndices,
         &mut pGains_Q16,
         &mut psShapeSt.LastGainIndex,
-        (condCoding == CODE_CONDITIONALLY) as i32,
-        sCmn.nb_subfr,
     );
 
     /* Overwrite unquantized gains with quantized gains and convert back to Q0 from Q16 */

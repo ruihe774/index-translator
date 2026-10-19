@@ -7,14 +7,16 @@ Rust port of the libopus SILK-only float encoder for wasm32. Read `PORTING.md` b
 
 - wasm32 only (no native build); variants WASM 2.0 (`+simd128`) and 3.0 (`+relaxed-simd`).
 - Mono, 16 kHz, wideband, 20 ms frames, VBR. DTX kept; no FEC/LBRR, CBR, stereo, other frame sizes.
+  Trim aggressively: anything that cannot change the output within this subset (code, state, tables) is removed, not kept "for completeness".
 - `no_std`, no alloc. Scratch memory is the static pseudostack in `src/stack.rs`.
 
 ## Layout
 
 - `src/silk`, `src/celt`, `src/opus`: one Rust module per C file, C names kept.
-- `wasm/`: the `minisilk-wasm` cdylib with the `minisilk_*` exports.
+- `wasm/`: the `minisilk-wasm` cdylib with the `minisilk_*` exports; `wasm/build.rs` sets the shadow stack size.
 - `test/compare.ts` (Deno FFI) + `test/shim.c`: differential test against `third_party/opus`
-  (submodule, libopus v1.6.1). `scripts/gen_tables.py` generates the tables.
+  (submodule, libopus v1.6.1).
+  `test/stack_peak.ts` measures the stack sizes (see `PORTING.md`, "Memory").
 
 ## Commands (from the workspace root)
 

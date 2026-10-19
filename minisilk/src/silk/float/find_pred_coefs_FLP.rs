@@ -22,7 +22,6 @@ pub fn silk_find_pred_coefs_FLP(
     res_pitch: &[f32],                        /* I    Residual from pitch analysis                */
     res_off: usize,
     x_off: usize,                             /* I    Speech signal: psEnc->x_buf + x_off         */
-    condCoding: i32,                          /* I    The type of conditional coding to use       */
 ) {
     let mut XXLTP = [0f32; MAX_NB_SUBFR_ * LTP_ORDER_ * LTP_ORDER_];
     let mut xXLTP = [0f32; MAX_NB_SUBFR_ * LTP_ORDER_];
@@ -32,9 +31,9 @@ pub fn silk_find_pred_coefs_FLP(
     let mut LPC_in_pre = [0f32; (MAX_NB_SUBFR * MAX_LPC_ORDER + MAX_FRAME_LENGTH) as usize];
     let minInvGain: f32;
 
-    let nb_subfr = psEnc.sCmn.nb_subfr;
-    let subfr_length = psEnc.sCmn.subfr_length;
-    let predictLPCOrder = psEnc.sCmn.predictLPCOrder;
+    let nb_subfr = MAX_NB_SUBFR;
+    let subfr_length = MAX_SUB_FRAME_LENGTH;
+    let predictLPCOrder = MAX_LPC_ORDER;
 
     /* Weighting for weighted least squares */
     for i in 0..nb_subfr as usize {
@@ -46,7 +45,7 @@ pub fn silk_find_pred_coefs_FLP(
         /**********/
         /* VOICED */
         /**********/
-        debug_assert!(psEnc.sCmn.ltp_mem_length - predictLPCOrder >= psEncCtrl.pitchL[0] + LTP_ORDER / 2);
+        debug_assert!(LTP_MEM_LENGTH - predictLPCOrder >= psEncCtrl.pitchL[0] + LTP_ORDER / 2);
 
         /* LTP analysis */
         silk_find_LTP_FLP(&mut XXLTP, &mut xXLTP, res_pitch, res_off, &psEncCtrl.pitchL, subfr_length, nb_subfr);
@@ -65,7 +64,7 @@ pub fn silk_find_pred_coefs_FLP(
         );
 
         /* Control LTP scaling */
-        silk_LTP_scale_ctrl_FLP(psEnc, psEncCtrl, condCoding);
+        silk_LTP_scale_ctrl_FLP(psEnc, psEncCtrl);
 
         /* Create LTP residual */
         silk_LTP_analysis_filter_FLP(
@@ -124,7 +123,6 @@ pub fn silk_find_pred_coefs_FLP(
         &psEncCtrl.PredCoef,
         &psEncCtrl.Gains,
         subfr_length,
-        nb_subfr,
         predictLPCOrder,
     );
 

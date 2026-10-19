@@ -28,15 +28,15 @@ pub fn silk_find_pitch_lags_FLP(
     /******************************************/
     /* Set up buffer lengths etc based on Fs  */
     /******************************************/
-    let buf_len = psEnc.sCmn.la_pitch + psEnc.sCmn.frame_length + psEnc.sCmn.ltp_mem_length;
+    let buf_len = LA_PITCH_MAX + MAX_FRAME_LENGTH + LTP_MEM_LENGTH;
 
     /* Safety check */
-    debug_assert!(buf_len >= psEnc.sCmn.pitch_LPC_win_length);
+    debug_assert!(buf_len >= FIND_PITCH_LPC_WIN_MAX);
 
-    let x_buf = &psEnc.x_buf[x_off - psEnc.sCmn.ltp_mem_length as usize..];
+    let x_buf = &psEnc.x_buf[x_off - LTP_MEM_LENGTH as usize..];
 
-    let la_pitch = psEnc.sCmn.la_pitch as usize;
-    let win_len = psEnc.sCmn.pitch_LPC_win_length as usize;
+    let la_pitch = LA_PITCH_MAX as usize;
+    let win_len = FIND_PITCH_LPC_WIN_MAX as usize;
 
     /******************************************/
     /* Estimate LPC AR coefficients           */
@@ -103,9 +103,9 @@ pub fn silk_find_pitch_lags_FLP(
             psEnc.sCmn.prevLag,
             psEnc.sCmn.pitchEstimationThreshold_Q16 as f32 / 65536.0,
             thrhld,
-            psEnc.sCmn.fs_kHz,
+            FS_KHZ,
             psEnc.sCmn.pitchEstimationComplexity,
-            psEnc.sCmn.nb_subfr,
+            MAX_NB_SUBFR,
         ) == 0
         {
             psEnc.sCmn.indices.signalType = TYPE_VOICED as i8;

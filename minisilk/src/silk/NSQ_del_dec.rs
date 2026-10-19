@@ -615,11 +615,11 @@ pub unsafe fn silk_NSQ_del_dec(
     LTP_scale_Q14: i32,                /* I    LTP state scaling               */
 ) {
     unsafe {
-        let subfr_length = (*psEncC).subfr_length;
-        let ltp_mem_length = (*psEncC).ltp_mem_length;
-        let frame_length = (*psEncC).frame_length;
-        let nb_subfr = (*psEncC).nb_subfr;
-        let predictLPCOrder = (*psEncC).predictLPCOrder;
+        let subfr_length = MAX_SUB_FRAME_LENGTH;
+        let ltp_mem_length = LTP_MEM_LENGTH;
+        let frame_length = MAX_FRAME_LENGTH;
+        let nb_subfr = MAX_NB_SUBFR;
+        let predictLPCOrder = MAX_LPC_ORDER;
         let shapingLPCOrder = (*psEncC).shapingLPCOrder;
         let warping_Q16 = (*psEncC).warping_Q16;
         let nStatesDelayedDecision = (*psEncC).nStatesDelayedDecision;

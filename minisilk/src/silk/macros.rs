@@ -15,14 +15,10 @@
 
 #![allow(non_snake_case, dead_code)]
 
-pub const silk_int64_MAX: i64 = i64::MAX;
-pub const silk_int64_MIN: i64 = i64::MIN;
 pub const silk_int32_MAX: i32 = i32::MAX;
 pub const silk_int32_MIN: i32 = i32::MIN;
 pub const silk_int16_MAX: i32 = i16::MAX as i32;
 pub const silk_int16_MIN: i32 = i16::MIN as i32;
-pub const silk_int8_MAX: i32 = i8::MAX as i32;
-pub const silk_int8_MIN: i32 = i8::MIN as i32;
 pub const silk_uint8_MAX: i32 = u8::MAX as i32;
 pub const silk_float_MAX: f32 = f32::MAX;
 
@@ -43,12 +39,6 @@ pub fn silk_SMLAWB(a32: i32, b32: i32, c32: i32) -> i32 {
     (a32 as i64 + ((b32 as i64 * (c32 as i16 as i64)) >> 16)) as i32
 }
 
-/// (a32 * (b32 >> 16)) >> 16
-#[inline(always)]
-pub fn silk_SMULWT(a32: i32, b32: i32) -> i32 {
-    ((a32 as i64 * (b32 >> 16) as i64) >> 16) as i32
-}
-
 /// a32 + (b32 * (c32 >> 16)) >> 16
 #[inline(always)]
 pub fn silk_SMLAWT(a32: i32, b32: i32, c32: i32) -> i32 {
@@ -65,24 +55,6 @@ pub fn silk_SMULBB(a32: i32, b32: i32) -> i32 {
 #[inline(always)]
 pub fn silk_SMLABB(a32: i32, b32: i32, c32: i32) -> i32 {
     a32 + (b32 as i16 as i32) * (c32 as i16 as i32)
-}
-
-/// (opus_int32)((opus_int16)(a32)) * (b32 >> 16)
-#[inline(always)]
-pub fn silk_SMULBT(a32: i32, b32: i32) -> i32 {
-    (a32 as i16 as i32) * (b32 >> 16)
-}
-
-/// a32 + (opus_int32)((opus_int16)(b32)) * (c32 >> 16)
-#[inline(always)]
-pub fn silk_SMLABT(a32: i32, b32: i32, c32: i32) -> i32 {
-    a32 + (b32 as i16 as i32) * (c32 >> 16)
-}
-
-/// a64 + (b32 * c32)
-#[inline(always)]
-pub fn silk_SMLAL(a64: i64, b32: i32, c32: i32) -> i64 {
-    silk_ADD64(a64, (b32 as i64) * (c32 as i64))
 }
 
 /// (a32 * b32) >> 16
@@ -107,11 +79,6 @@ pub fn silk_ADD_SAT32(a: i32, b: i32) -> i32 {
 #[inline(always)]
 pub fn silk_SUB_SAT32(a: i32, b: i32) -> i32 {
     a.saturating_sub(b)
-}
-
-#[inline(always)]
-pub fn silk_CLZ16(in16: i16) -> i32 {
-    ((((in16 as i32) << 16) | 0x8000) as u32).leading_zeros() as i32
 }
 
 #[inline(always)]
@@ -142,39 +109,10 @@ pub fn silk_MUL(a32: i32, b32: i32) -> i32 {
     a32 * b32
 }
 
-/// (a32 * b32) output have to be 32bit uint
-#[inline(always)]
-pub fn silk_MUL_uint(a32: u32, b32: u32) -> u32 {
-    a32 * b32
-}
-
 /// a32 + (b32 * c32) output have to be 32bit int
 #[inline(always)]
 pub fn silk_MLA(a32: i32, b32: i32, c32: i32) -> i32 {
     silk_ADD32(a32, b32 * c32)
-}
-
-/// a32 + (b32 * c32) output have to be 32bit uint
-#[inline(always)]
-pub fn silk_MLA_uint(a32: u32, b32: u32, c32: u32) -> u32 {
-    a32 + b32 * c32
-}
-
-/// ((a32 >> 16) * (b32 >> 16)) output have to be 32bit int
-#[inline(always)]
-pub fn silk_SMULTT(a32: i32, b32: i32) -> i32 {
-    (a32 >> 16) * (b32 >> 16)
-}
-
-/// a32 + ((b32 >> 16) * (c32 >> 16)) output have to be 32bit int
-#[inline(always)]
-pub fn silk_SMLATT(a32: i32, b32: i32, c32: i32) -> i32 {
-    silk_ADD32(a32, (b32 >> 16) * (c32 >> 16))
-}
-
-#[inline(always)]
-pub fn silk_SMLALBB(a64: i64, b16: i32, c16: i32) -> i64 {
-    silk_ADD64(a64, (b16 * c16) as i64)
 }
 
 /// (a32 * b32)
@@ -222,34 +160,13 @@ pub fn silk_ADD32(a: i32, b: i32) -> i32 {
 }
 
 #[inline(always)]
-pub fn silk_ADD64(a: i64, b: i64) -> i64 {
-    a + b
-}
-
-#[inline(always)]
 pub fn silk_SUB32(a: i32, b: i32) -> i32 {
     a - b
 }
 
 #[inline(always)]
-pub fn silk_SUB64(a: i64, b: i64) -> i64 {
-    a - b
-}
-
-#[inline(always)]
-pub fn silk_SAT8(a: i32) -> i32 {
-    a.clamp(silk_int8_MIN, silk_int8_MAX)
-}
-
-#[inline(always)]
 pub fn silk_SAT16(a: i32) -> i32 {
     a.clamp(silk_int16_MIN, silk_int16_MAX)
-}
-
-/// Saturates a 64-bit value to the 32-bit range.
-#[inline(always)]
-pub fn silk_SAT32(a: i64) -> i32 {
-    a.clamp(silk_int32_MIN as i64, silk_int32_MAX as i64) as i32
 }
 
 #[inline(always)]
@@ -258,47 +175,9 @@ pub fn silk_ADD_SAT16(a: i32, b: i32) -> i16 {
 }
 
 #[inline(always)]
-pub fn silk_ADD_SAT64(a: i64, b: i64) -> i64 {
-    a.saturating_add(b)
-}
-
-#[inline(always)]
-pub fn silk_SUB_SAT16(a: i32, b: i32) -> i16 {
-    silk_SAT16(silk_SUB32(a, b)) as i16
-}
-
-#[inline(always)]
-pub fn silk_SUB_SAT64(a: i64, b: i64) -> i64 {
-    a.saturating_sub(b)
-}
-
-/// Saturation for positive input values
-#[inline(always)]
-pub fn silk_POS_SAT32(a: i64) -> i32 {
-    if a > silk_int32_MAX as i64 { silk_int32_MAX } else { a as i32 }
-}
-
-/// Add with saturation for positive input values
-#[inline(always)]
-pub fn silk_ADD_POS_SAT8(a: i32, b: i32) -> i32 {
-    if (a + b) & 0x80 != 0 { silk_int8_MAX } else { a + b }
-}
-
-#[inline(always)]
-pub fn silk_ADD_POS_SAT16(a: i32, b: i32) -> i32 {
-    if (a + b) & 0x8000 != 0 { silk_int16_MAX } else { a + b }
-}
-
-#[inline(always)]
 pub fn silk_ADD_POS_SAT32(a: i32, b: i32) -> i32 {
     let s = (a as u32).wrapping_add(b as u32);
     if s & 0x80000000 != 0 { silk_int32_MAX } else { s as i32 }
-}
-
-/// shift >= 0, shift < 8
-#[inline(always)]
-pub fn silk_LSHIFT8(a: i32, shift: i32) -> i8 {
-    ((a as u8) << shift) as i8
 }
 
 /// shift >= 0, shift < 16
@@ -311,12 +190,6 @@ pub fn silk_LSHIFT16(a: i32, shift: i32) -> i16 {
 #[inline(always)]
 pub fn silk_LSHIFT32(a: i32, shift: i32) -> i32 {
     ((a as u32) << shift) as i32
-}
-
-/// shift >= 0, shift < 64
-#[inline(always)]
-pub fn silk_LSHIFT64(a: i64, shift: i32) -> i64 {
-    ((a as u64) << shift) as i64
 }
 
 /// shift >= 0, shift < 32
@@ -356,16 +229,6 @@ pub fn silk_LSHIFT_ovflw(a: i32, shift: i32) -> i32 {
 }
 
 #[inline(always)]
-pub fn silk_LSHIFT_uint(a: u32, shift: i32) -> u32 {
-    a << shift
-}
-
-#[inline(always)]
-pub fn silk_RSHIFT_uint(a: u32, shift: i32) -> u32 {
-    a >> shift
-}
-
-#[inline(always)]
 pub fn silk_ADD_LSHIFT(a: i32, b: i32, shift: i32) -> i32 {
     a + silk_LSHIFT(b, shift)
 }
@@ -376,11 +239,6 @@ pub fn silk_ADD_LSHIFT32(a: i32, b: i32, shift: i32) -> i32 {
 }
 
 #[inline(always)]
-pub fn silk_ADD_LSHIFT_uint(a: u32, b: u32, shift: i32) -> u32 {
-    a + silk_LSHIFT_uint(b, shift)
-}
-
-#[inline(always)]
 pub fn silk_ADD_RSHIFT(a: i32, b: i32, shift: i32) -> i32 {
     a + silk_RSHIFT(b, shift)
 }
@@ -388,11 +246,6 @@ pub fn silk_ADD_RSHIFT(a: i32, b: i32, shift: i32) -> i32 {
 #[inline(always)]
 pub fn silk_ADD_RSHIFT32(a: i32, b: i32, shift: i32) -> i32 {
     silk_ADD32(a, silk_RSHIFT32(b, shift))
-}
-
-#[inline(always)]
-pub fn silk_ADD_RSHIFT_uint(a: u32, b: u32, shift: i32) -> u32 {
-    a + silk_RSHIFT_uint(b, shift)
 }
 
 #[inline(always)]
@@ -417,17 +270,6 @@ pub fn silk_RSHIFT_ROUND64(a: i64, shift: i32) -> i64 {
     if shift == 1 { (a >> 1) + (a & 1) } else { ((a >> (shift - 1)) + 1) >> 1 }
 }
 
-/// Number of rightshift required to fit the multiplication
-#[inline(always)]
-pub fn silk_NSHIFT_MUL_32_32(a: i32, b: i32) -> i32 {
-    -(31 - (32 - silk_CLZ32(silk_abs!(a)) + (32 - silk_CLZ32(silk_abs!(b)))))
-}
-
-#[inline(always)]
-pub fn silk_NSHIFT_MUL_16_16(a: i16, b: i16) -> i32 {
-    -(15 - (16 - silk_CLZ16(silk_abs!(a)) + (16 - silk_CLZ16(silk_abs!(b)))))
-}
-
 /// Macro to convert floating-point constants to fixed-point.
 /// For a C `float` literal (`0.1f`), pass `0.1f32 as f64` so the constant is rounded as in C.
 #[inline(always)]
@@ -441,17 +283,7 @@ pub fn silk_min_int(a: i32, b: i32) -> i32 {
 }
 
 #[inline(always)]
-pub fn silk_min_16(a: i16, b: i16) -> i16 {
-    if a < b { a } else { b }
-}
-
-#[inline(always)]
 pub fn silk_min_32(a: i32, b: i32) -> i32 {
-    if a < b { a } else { b }
-}
-
-#[inline(always)]
-pub fn silk_min_64(a: i64, b: i64) -> i64 {
     if a < b { a } else { b }
 }
 
@@ -461,28 +293,8 @@ pub fn silk_max_int(a: i32, b: i32) -> i32 {
 }
 
 #[inline(always)]
-pub fn silk_max_16(a: i16, b: i16) -> i16 {
-    if a > b { a } else { b }
-}
-
-#[inline(always)]
 pub fn silk_max_32(a: i32, b: i32) -> i32 {
     if a > b { a } else { b }
-}
-
-#[inline(always)]
-pub fn silk_max_64(a: i64, b: i64) -> i64 {
-    if a > b { a } else { b }
-}
-
-#[inline(always)]
-pub fn silk_abs_int32(a: i32) -> i32 {
-    (a ^ (a >> 31)) - (a >> 31)
-}
-
-#[inline(always)]
-pub fn silk_abs_int64(a: i64) -> i64 {
-    if a > 0 { a } else { -a }
 }
 
 /// PSEUDO-RANDOM GENERATOR. Store the result as the seed for the next call.
@@ -553,19 +365,6 @@ pub use crate::{silk_LIMIT as silk_LIMIT_int, silk_LIMIT as silk_LIMIT_16, silk_
 pub use crate::{silk_LIMIT, silk_abs, silk_max, silk_min, silk_sign};
 
 /* silk/Inlines.h */
-
-/// count leading zeros of opus_int64
-#[inline(always)]
-pub fn silk_CLZ64(in_: i64) -> i32 {
-    let in_upper = silk_RSHIFT64(in_, 32) as i32;
-    if in_upper == 0 {
-        /* Search in the lower 32 bits */
-        32 + silk_CLZ32(in_ as i32)
-    } else {
-        /* Search in the upper 32 bits */
-        silk_CLZ32(in_upper)
-    }
-}
 
 /// get number of leading zeros and fractional part (the bits right after the leading one)
 #[inline(always)]

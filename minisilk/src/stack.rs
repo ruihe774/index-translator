@@ -16,13 +16,15 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 
-/// Scratch size; set from the measured peak (see `peak()`) once the encoder is complete.
-pub const GLOBAL_STACK_SIZE: usize = 120000;
+/// Scratch size in bytes: the measured high-water mark (5436 bytes, see `peak()` and
+/// "Memory" in PORTING.md) rounded up to a multiple of 64.
+pub const GLOBAL_STACK_SIZE: usize = 5504;
 
 #[repr(C, align(16))]
 struct Scratch {
     buf: UnsafeCell<[u8; GLOBAL_STACK_SIZE]>,
     top: UnsafeCell<usize>,
+    #[cfg(feature = "stack-peak")]
     peak: UnsafeCell<usize>,
 }
 
@@ -32,6 +34,7 @@ unsafe impl Sync for Scratch {}
 static SCRATCH: Scratch = Scratch {
     buf: UnsafeCell::new([0; GLOBAL_STACK_SIZE]),
     top: UnsafeCell::new(0),
+    #[cfg(feature = "stack-peak")]
     peak: UnsafeCell::new(0),
 };
 
@@ -73,9 +76,12 @@ impl StackGuard {
                 panic!("pseudostack overflow");
             }
             *top = end;
-            let peak = &mut *SCRATCH.peak.get();
-            if end > *peak {
-                *peak = end;
+            #[cfg(feature = "stack-peak")]
+            {
+                let peak = &mut *SCRATCH.peak.get();
+                if end > *peak {
+                    *peak = end;
+                }
             }
             core::slice::from_raw_parts_mut(base.add(start) as *mut T, n)
         }
@@ -89,7 +95,8 @@ impl Drop for StackGuard {
     }
 }
 
-/// High-water mark of the scratch buffer in bytes.
+/// High-water mark of the scratch buffer in bytes (only with the `stack-peak` feature).
+#[cfg(feature = "stack-peak")]
 pub fn peak() -> usize {
     unsafe { *SCRATCH.peak.get() }
 }

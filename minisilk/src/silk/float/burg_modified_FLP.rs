@@ -94,7 +94,7 @@ pub fn silk_burg_modified_FLP(
         let tmp1 = invGain * (1.0 - rc * rc);
         if tmp1 <= minInvGain as f64 {
             /* Max prediction gain exceeded; set reflection coefficient such that max prediction gain is exactly hit */
-            rc = libm::sqrt(1.0 - minInvGain as f64 / invGain);
+            rc = crate::silk::float::sigproc_flp::sqrt(1.0 - minInvGain as f64 / invGain);
             if num > 0.0 {
                 /* Ensure adjusted reflection coefficients has the original sign */
                 rc = -rc;

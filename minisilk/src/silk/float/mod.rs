@@ -30,5 +30,4 @@ pub mod find_pred_coefs_FLP;
 pub mod noise_shape_analysis_FLP;
 pub mod process_gains_FLP;
 pub mod LTP_scale_ctrl_FLP;
-pub mod regularize_correlations_FLP;
 pub mod wrappers_FLP;

@@ -3,32 +3,6 @@
 #![allow(non_upper_case_globals)]
 
 use crate::silk::pitch_est_defines::*;
-pub static silk_CB_lags_stage2_10_ms: [[i8; 3]; 2] = [
-    [
-        0, 1, 0,
-    ],
-    [
-        0, 0, 1,
-    ],
-];
-
-pub static silk_CB_lags_stage3_10_ms: [[i8; 12]; 2] = [
-    [
-        0, 0, 1, -1, 1, -1, 2, -2, 2, -2, 3, -3,
-    ],
-    [
-        0, 1, 0, 1, -1, 2, -1, 2, -2, 3, -2, 3,
-    ],
-];
-
-pub static silk_Lag_range_stage3_10_ms: [[i8; 2]; 2] = [
-    [
-        -3, 7,
-    ],
-    [
-        -2, 7,
-    ],
-];
 
 pub static silk_CB_lags_stage2: [[i8; 11]; 4] = [
     [

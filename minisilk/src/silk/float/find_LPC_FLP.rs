@@ -23,16 +23,16 @@ pub fn silk_find_LPC_FLP(
     let mut a_tmp = [0f32; MAX_LPC_ORDER as usize];
     let mut LPC_res = [0f32; (MAX_FRAME_LENGTH + MAX_NB_SUBFR * MAX_LPC_ORDER) as usize];
 
-    let subfr_length = psEncC.subfr_length + psEncC.predictLPCOrder;
-    let order = psEncC.predictLPCOrder;
+    let subfr_length = MAX_SUB_FRAME_LENGTH + MAX_LPC_ORDER;
+    let order = MAX_LPC_ORDER;
 
     /* Default: No interpolation */
     psEncC.indices.NLSFInterpCoef_Q2 = 4;
 
     /* Burg AR analysis for the full frame */
-    let mut res_nrg = silk_burg_modified_FLP(&mut a, x, minInvGain, subfr_length, psEncC.nb_subfr, order);
+    let mut res_nrg = silk_burg_modified_FLP(&mut a, x, minInvGain, subfr_length, MAX_NB_SUBFR, order);
 
-    if psEncC.useInterpolatedNLSFs != 0 && psEncC.first_frame_after_reset == 0 && psEncC.nb_subfr == MAX_NB_SUBFR {
+    if psEncC.useInterpolatedNLSFs != 0 && psEncC.first_frame_after_reset == 0 {
         /* Optimal solution for last 10 ms; subtract residual energy here, as that's easier than        */
         /* adding it to the residual energy of the first 10 ms in each iteration of the search below    */
         res_nrg -= silk_burg_modified_FLP(
@@ -84,6 +84,6 @@ pub fn silk_find_LPC_FLP(
 
     debug_assert!(
         psEncC.indices.NLSFInterpCoef_Q2 == 4
-            || (psEncC.useInterpolatedNLSFs != 0 && psEncC.first_frame_after_reset == 0 && psEncC.nb_subfr == MAX_NB_SUBFR)
+            || (psEncC.useInterpolatedNLSFs != 0 && psEncC.first_frame_after_reset == 0)
     );
 }

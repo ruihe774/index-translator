@@ -12,8 +12,19 @@ in about 4000 on aarch64 NEON and on x86-64 AVX2).
 
 - 16 kHz mono input, wideband (internal rate is always 16 kHz), 20 ms frames
   (`nb_subfr == 4`, `frame_length == 320`), VBR.
-- DTX is supported. No FEC/LBRR, no CBR, no stereo, no resampler (replaced by a
-  10-sample delay line), no 10/40/60 ms frames.
+- DTX is supported. No FEC/LBRR, no CBR, no stereo, no resampler (replaced by an
+  11-sample input delay line: the resampler's 10 samples plus the one sample of C's mono
+  "stereo mid" buffer), no 10/40/60 ms frames.
+- The fixed values are compile-time constants (`silk::define`: `FS_KHZ`, `MAX_NB_SUBFR`,
+  `MAX_FRAME_LENGTH`, `MAX_SUB_FRAME_LENGTH`, `LTP_MEM_LENGTH`, `LA_PITCH_MAX`,
+  `FIND_PITCH_LPC_WIN_MAX`, `MAX_LPC_ORDER` = predictLPCOrder, `MAX_FRAMES_PER_PACKET` = 1), not
+  state fields: `sCmn.fs_kHz`, `nb_subfr`, `frame_length`, ... do not exist. Every frame is
+  coded independently (`CODE_INDEPENDENTLY`, the first and only frame of a packet), so the
+  conditional-coding paths, the pitch-lag delta coding and `ec_prevLagIndex`/`ec_prevSignalType`
+  are gone.
+- The state structs keep only what the configuration reads or writes (no `silk_EncControlStruct`
+  - its fields are arguments of `silk_Encode` -, stereo state, LBRR buffers, resampler state,
+  bandwidth-switch state, `sLP`, ...). They are `#[repr(C)]` but no longer mirror the C layout.
 - Float path only (`silk/float`, no `FIXED_POINT`).
 - Where the fork has a WASM SIMD kernel (`silk/wasm`, `silk/float/wasm`,
   `celt/wasm`), port **that** kernel with `core::arch::wasm32` and drop the
@@ -22,8 +33,9 @@ in about 4000 on aarch64 NEON and on x86-64 AVX2).
   configurations we never use (e.g. `nStatesDelayedDecision > 4`) become a
   `debug_assert!`.
 - Branches that are unreachable under the fixed configuration (fs_kHz != 16,
-  nb_subfr == 2, stereo, LBRR, CBR) may be removed when doing so is trivial;
-  leave a `debug_assert!` of the assumption. When in doubt, port as-is.
+  nb_subfr == 2, stereo, LBRR, CBR) are removed, state included; leave a `debug_assert!` of
+  the assumption where it is cheap. Size (code and memory) is the main optimization, so do not
+  add them back "for completeness"; git has them.
 
 ## Layout
 
@@ -36,7 +48,7 @@ One Rust module per C file, with the C file name (`silk/NLSF_VQ.c` →
 | `silk/define.h`, `errors.h`, `tuning_parameters.h`, `pitch_est_defines.h` | `silk::{define, tuning_parameters, pitch_est_defines}` (ints are `i32`, `1.0f` → `f32`, `1.0` → `f64`) |
 | `SigProc_FIX.h` macros, `macros.h`, `Inlines.h` | `silk::macros` |
 | `SigProc_FLP.h` inlines, `float2int` | `silk::float::sigproc_flp` |
-| `structs.h`, `control.h`, `structs_FLP.h` | `silk::structs`, `silk::float::structs_flp` (`#[repr(C)]`, same layout as C) |
+| `structs.h`, `structs_FLP.h` | `silk::structs`, `silk::float::structs_flp` (trimmed, see above) |
 | `tables.h` | `silk::tables` (re-exports all `tables_*` modules) |
 | `entcode.h` `ec_ctx` | `celt::entcode` |
 | `stack_alloc.h` | `stack` |
@@ -77,6 +89,35 @@ One Rust module per C file, with the C file name (`silk/NLSF_VQ.c` →
   Allocated memory is not cleared, as in C.
 - Keep the C comments that explain the algorithm; drop the boilerplate.
 - No `std`, no `alloc` in non-test code.
+
+## Memory
+
+Everything is static (`no_std`, no allocator), so the linear memory is stack + data + bss, with
+the stack first (overflow traps at address < 0):
+
+- Shadow stack (the Rust call stack): `wasm/build.rs` sets it to 48 KiB (default 1 MiB; the
+  `MINISILK_STACK_SIZE` env var overrides it). Deepest use measured: 36280 bytes (release) and
+  35248 (`checked`), all builds.
+- Pseudostack (`src/stack.rs`, `GLOBAL_STACK_SIZE`): 5504 bytes. Measured peak 5436 bytes: the
+  `ec_buf_copy` of `silk_encode_frame_FLP` (1276 with alignment) plus the `silk_NSQ` scratch (4160).
+- Encoder state 8564 bytes, I/O buffers 3196 bytes, tables ~10 KB: 2 wasm pages in total.
+
+To re-measure after a change (do it whenever `silk_encode_frame_FLP`, the NSQs, the VAD, `encode_pulses`
+or `NLSF_encode` change), build with the `stack-peak` feature (adds the `minisilk_stack_peak` export and the
+high-water mark in `stack.rs`) and a 1 MiB shadow stack, then run `test/stack_peak.ts`, which sweeps
+every bitrate (500 .. 750000, `OPUS_AUTO`, `OPUS_BITRATE_MAX`) x complexity 0-10 x DTX x packet loss
+x i16/f32 over the corpus and the synthetic signals, painting the stack region to find the shadow
+stack depth:
+
+```sh
+MINISILK_STACK_SIZE=1048576 cargo build --release -p minisilk-wasm --target wasm32-unknown-unknown \
+  --features stack-peak --target-dir target/stack-peak \
+  --config 'target.wasm32-unknown-unknown.rustflags=["-Ctarget-feature=+simd128"]'
+deno run --allow-read minisilk/test/stack_peak.ts target/stack-peak/wasm32-unknown-unknown/release/minisilk_wasm.wasm
+```
+
+(`--profile checked` for the checked build; the WASM 3.0 flags are in `scripts/build.sh`.)
+The checked builds overflow-panic if the pseudostack is too small, and `scripts/test.sh` runs them.
 
 ## Tests
 

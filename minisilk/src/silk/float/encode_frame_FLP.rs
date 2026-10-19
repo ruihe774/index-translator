@@ -41,7 +41,7 @@ pub fn silk_encode_do_VAD_FLP(
     /****************************/
     unsafe {
         let p: *mut crate::silk::structs::silk_encoder_state = &mut psEnc.sCmn;
-        silk_VAD_GetSA_Q8(p, core::ptr::addr_of!((*p).inputBuf).cast::<i16>().add(1));
+        silk_VAD_GetSA_Q8(p, core::ptr::addr_of!((*p).inputBuf).cast::<i16>());
     }
     /* If Opus VAD is inactive and Silk VAD is active: lower Silk VAD to just under the threshold */
     if activity == VAD_NO_ACTIVITY && psEnc.sCmn.speech_activity_Q8 >= activity_threshold {
@@ -51,7 +51,6 @@ pub fn silk_encode_do_VAD_FLP(
     /**************************************************/
     /* Convert speech activity into VAD and DTX flags */
     /**************************************************/
-    let nFramesEncoded = psEnc.sCmn.nFramesEncoded as usize;
     if psEnc.sCmn.speech_activity_Q8 < activity_threshold {
         psEnc.sCmn.indices.signalType = TYPE_NO_VOICE_ACTIVITY as i8;
         psEnc.sCmn.noSpeechCounter += 1;
@@ -61,12 +60,12 @@ pub fn silk_encode_do_VAD_FLP(
             psEnc.sCmn.noSpeechCounter = NB_SPEECH_FRAMES_BEFORE_DTX;
             psEnc.sCmn.inDTX = 0;
         }
-        psEnc.sCmn.VAD_flags[nFramesEncoded] = 0;
+        psEnc.sCmn.VAD_flags[0] = 0;
     } else {
         psEnc.sCmn.noSpeechCounter = 0;
         psEnc.sCmn.inDTX = 0;
         psEnc.sCmn.indices.signalType = TYPE_UNVOICED as i8;
-        psEnc.sCmn.VAD_flags[nFramesEncoded] = 1;
+        psEnc.sCmn.VAD_flags[0] = 1;
     }
 }
 
@@ -75,9 +74,7 @@ pub fn silk_encode_frame_FLP(
     psEnc: &mut silk_encoder_state_FLP, /* I/O  Encoder state FLP                           */
     pnBytesOut: &mut i32,               /* O    Number of payload bytes;                    */
     psRangeEnc: &mut ec_enc,            /* I/O  compressor data structure                   */
-    condCoding: i32,                    /* I    The type of conditional coding to use       */
     maxBits: i32,                       /* I    If > 0: maximum number of output bits       */
-    useCBR: i32,                        /* I    Flag to force constant-bitrate operation    */
 ) -> i32 {
     let ret = 0;
     let mut sEncCtrl: silk_encoder_control_FLP = unsafe { core::mem::zeroed() };
@@ -92,11 +89,6 @@ pub fn silk_encode_frame_FLP(
     let mut best_sum = [0i32; MAX_NB_SUBFR as usize];
     let st = stack::save();
 
-    /* CBR, prefill and LBRR are not supported */
-    debug_assert!(useCBR == 0);
-    debug_assert!(psEnc.sCmn.prefillFlag == 0);
-    debug_assert!(psEnc.sCmn.LBRR_enabled == 0);
-
     /* For VBR, allow up to 25% below the cap if we initially busted the budget. (CBR: 5 bits) */
     let bits_margin = maxBits / 4;
     /* This is totally unnecessary but many compilers (including gcc) are too dumb to realise it */
@@ -110,21 +102,15 @@ pub fn silk_encode_frame_FLP(
     /* Set up Input Pointers, and insert frame in input buffer    */
     /**************************************************************/
     /* pointers aligned with start of frame to encode */
-    let x_frame = psEnc.sCmn.ltp_mem_length as usize; /* start of frame to encode: psEnc->x_buf + x_frame */
-    let res_pitch_frame = psEnc.sCmn.ltp_mem_length as usize; /* start of pitch LPC residual frame */
-
-    /***************************************/
-    /* Ensure smooth bandwidth transitions */
-    /***************************************/
-    /* silk_LP_variable_cutoff() does nothing while sLP.mode == 0 (fixed 16 kHz internal rate) */
-    debug_assert!(psEnc.sCmn.sLP.mode == 0);
+    let x_frame = LTP_MEM_LENGTH as usize; /* start of frame to encode: psEnc->x_buf + x_frame */
+    let res_pitch_frame = LTP_MEM_LENGTH as usize; /* start of pitch LPC residual frame */
 
     /*******************************************/
     /* Copy new frame to front of input buffer */
     /*******************************************/
-    let la = (LA_SHAPE_MS * psEnc.sCmn.fs_kHz) as usize;
-    let frame_length = psEnc.sCmn.frame_length;
-    silk_short2float_array(&mut psEnc.x_buf[x_frame + la..], &psEnc.sCmn.inputBuf[1..], frame_length);
+    let la = (LA_SHAPE_MS * FS_KHZ) as usize;
+    let frame_length = MAX_FRAME_LENGTH;
+    silk_short2float_array(&mut psEnc.x_buf[x_frame + la..], &psEnc.sCmn.inputBuf, frame_length);
 
     /* Add tiny signal to avoid high CPU load from denormalized floating point numbers */
     for i in 0..8 {
@@ -145,12 +131,12 @@ pub fn silk_encode_frame_FLP(
         /***************************************************/
         /* Find linear prediction coefficients (LPC + LTP) */
         /***************************************************/
-        silk_find_pred_coefs_FLP(psEnc, &mut sEncCtrl, &res_pitch, res_pitch_frame, x_frame, condCoding);
+        silk_find_pred_coefs_FLP(psEnc, &mut sEncCtrl, &res_pitch, res_pitch_frame, x_frame);
 
         /****************************************/
         /* Process gains                        */
         /****************************************/
-        silk_process_gains_FLP(psEnc, &mut sEncCtrl, condCoding);
+        silk_process_gains_FLP(psEnc, &mut sEncCtrl);
 
         /****************************************/
         /* Low Bitrate Redundant Encoding       */
@@ -162,17 +148,14 @@ pub fn silk_encode_frame_FLP(
         let mut gainMult_Q8: i16 = SILK_FIX_CONST(1.0, 8) as i16;
         let mut found_lower = 0;
         let mut found_upper = 0;
-        let mut gainsID = silk_gains_ID(&psEnc.sCmn.indices.GainsIndices, psEnc.sCmn.nb_subfr);
+        let mut gainsID = silk_gains_ID(&psEnc.sCmn.indices.GainsIndices);
         let mut gainsID_lower = -1;
         let mut gainsID_upper = -1;
         /* Copy part of the input state */
         ec_copy(&mut sRangeEnc_copy, psRangeEnc);
         sNSQ_copy[0] = psEnc.sCmn.sNSQ;
         let seed_copy = psEnc.sCmn.indices.Seed;
-        let ec_prevLagIndex_copy = psEnc.sCmn.ec_prevLagIndex;
-        let ec_prevSignalType_copy = psEnc.sCmn.ec_prevSignalType;
         let ec_buf_copy = st.alloc::<u8>(1275);
-        let nFramesEncoded = psEnc.sCmn.nFramesEncoded;
         let mut iter = 0;
         loop {
             if gainsID == gainsID_lower {
@@ -185,8 +168,6 @@ pub fn silk_encode_frame_FLP(
                     ec_copy(psRangeEnc, &sRangeEnc_copy);
                     psEnc.sCmn.sNSQ = sNSQ_copy[0];
                     psEnc.sCmn.indices.Seed = seed_copy;
-                    psEnc.sCmn.ec_prevLagIndex = ec_prevLagIndex_copy;
-                    psEnc.sCmn.ec_prevSignalType = ec_prevSignalType_copy;
                 }
 
                 /*****************************************/
@@ -211,7 +192,7 @@ pub fn silk_encode_frame_FLP(
                 /****************************************/
                 /* Encode Parameters                    */
                 /****************************************/
-                silk_encode_indices(&mut psEnc.sCmn, psRangeEnc, nFramesEncoded, 0, condCoding);
+                silk_encode_indices(&psEnc.sCmn.indices, psRangeEnc);
 
                 /****************************************/
                 /* Encode Excitation Signal             */
@@ -221,7 +202,7 @@ pub fn silk_encode_frame_FLP(
                     psEnc.sCmn.indices.signalType as i32,
                     psEnc.sCmn.indices.quantOffsetType as i32,
                     &psEnc.sCmn.pulses,
-                    psEnc.sCmn.frame_length,
+                    MAX_FRAME_LENGTH,
                 );
 
                 nBits = ec_tell(psRangeEnc);
@@ -232,27 +213,23 @@ pub fn silk_encode_frame_FLP(
 
                     /* Keep gains the same as the last frame. */
                     psEnc.sShape.LastGainIndex = sEncCtrl.lastGainIndexPrev;
-                    for i in 0..psEnc.sCmn.nb_subfr as usize {
+                    for i in 0..MAX_NB_SUBFR as usize {
                         psEnc.sCmn.indices.GainsIndices[i] = 4;
                     }
-                    if condCoding != CODE_CONDITIONALLY {
-                        psEnc.sCmn.indices.GainsIndices[0] = sEncCtrl.lastGainIndexPrev;
-                    }
-                    psEnc.sCmn.ec_prevLagIndex = ec_prevLagIndex_copy;
-                    psEnc.sCmn.ec_prevSignalType = ec_prevSignalType_copy;
+                    psEnc.sCmn.indices.GainsIndices[0] = sEncCtrl.lastGainIndexPrev;
                     /* Clear all pulses. */
-                    for i in 0..psEnc.sCmn.frame_length as usize {
+                    for i in 0..MAX_FRAME_LENGTH as usize {
                         psEnc.sCmn.pulses[i] = 0;
                     }
 
-                    silk_encode_indices(&mut psEnc.sCmn, psRangeEnc, nFramesEncoded, 0, condCoding);
+                    silk_encode_indices(&psEnc.sCmn.indices, psRangeEnc);
 
                     silk_encode_pulses(
                         psRangeEnc,
                         psEnc.sCmn.indices.signalType as i32,
                         psEnc.sCmn.indices.quantOffsetType as i32,
                         &psEnc.sCmn.pulses,
-                        psEnc.sCmn.frame_length,
+                        MAX_FRAME_LENGTH,
                     );
 
                     nBits = ec_tell(psRangeEnc);
@@ -312,8 +289,8 @@ pub fn silk_encode_frame_FLP(
             }
 
             if found_lower == 0 && nBits > maxBits {
-                let subfr_length = psEnc.sCmn.subfr_length as usize;
-                for i in 0..psEnc.sCmn.nb_subfr as usize {
+                let subfr_length = MAX_SUB_FRAME_LENGTH as usize;
+                for i in 0..MAX_NB_SUBFR as usize {
                     let mut sum: i32 = 0;
                     for j in i * subfr_length..(i + 1) * subfr_length {
                         sum += (psEnc.sCmn.pulses[j] as i32).abs();
@@ -346,7 +323,7 @@ pub fn silk_encode_frame_FLP(
                 }
             }
 
-            for i in 0..psEnc.sCmn.nb_subfr as usize {
+            for i in 0..MAX_NB_SUBFR as usize {
                 let tmp: i16 = if gain_lock[i] != 0 { best_gain_mult[i] } else { gainMult_Q8 };
                 pGains_Q16[i] = silk_LSHIFT_SAT32(silk_SMULWB(sEncCtrl.GainsUnq_Q16[i], tmp as i32), 8);
             }
@@ -357,15 +334,13 @@ pub fn silk_encode_frame_FLP(
                 &mut psEnc.sCmn.indices.GainsIndices,
                 &mut pGains_Q16,
                 &mut psEnc.sShape.LastGainIndex,
-                (condCoding == CODE_CONDITIONALLY) as i32,
-                psEnc.sCmn.nb_subfr,
             );
 
             /* Unique identifier of gains vector */
-            gainsID = silk_gains_ID(&psEnc.sCmn.indices.GainsIndices, psEnc.sCmn.nb_subfr);
+            gainsID = silk_gains_ID(&psEnc.sCmn.indices.GainsIndices);
 
             /* Overwrite unquantized gains with quantized gains and convert back to Q0 from Q16 */
-            for i in 0..psEnc.sCmn.nb_subfr as usize {
+            for i in 0..MAX_NB_SUBFR as usize {
                 sEncCtrl.Gains[i] = pGains_Q16[i] as f32 / 65536.0f32;
             }
             iter += 1;
@@ -373,11 +348,11 @@ pub fn silk_encode_frame_FLP(
     }
 
     /* Update input buffer */
-    let n = (psEnc.sCmn.ltp_mem_length + LA_SHAPE_MS * psEnc.sCmn.fs_kHz) as usize;
+    let n = (LTP_MEM_LENGTH + LA_SHAPE_MS * FS_KHZ) as usize;
     psEnc.x_buf.copy_within(frame_length as usize..frame_length as usize + n, 0);
 
     /* Parameters needed for next frame */
-    psEnc.sCmn.prevLag = sEncCtrl.pitchL[(psEnc.sCmn.nb_subfr - 1) as usize];
+    psEnc.sCmn.prevLag = sEncCtrl.pitchL[(MAX_NB_SUBFR - 1) as usize];
     psEnc.sCmn.prevSignalType = psEnc.sCmn.indices.signalType;
 
     /****************************************/

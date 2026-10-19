@@ -62,7 +62,7 @@ pub fn silk_process_NLSFs_FLP(
     silk_process_NLSFs(psEncC, &mut PredCoef_Q12, NLSF_Q15, prev_NLSF_Q15);
 
     for j in 0..2 {
-        for i in 0..psEncC.predictLPCOrder as usize {
+        for i in 0..MAX_LPC_ORDER as usize {
             PredCoef[j][i] = PredCoef_Q12[j][i] as f32 * (1.0f32 / 4096.0f32);
         }
     }
@@ -95,7 +95,7 @@ pub unsafe fn silk_NSQ_wrapper_FLP(
         let mut HarmShapeGain_Q14 = [0i32; MAX_NB_SUBFR_];
 
         let psEncC: *const silk_encoder_state = core::ptr::addr_of!((*psEnc).sCmn);
-        let nb_subfr = (*psEncC).nb_subfr as usize;
+        let nb_subfr = MAX_NB_SUBFR as usize;
         let psEncCtrl = &*psEncCtrl;
 
         /* Convert control struct to fix control struct */
@@ -121,7 +121,7 @@ pub unsafe fn silk_NSQ_wrapper_FLP(
         }
 
         for j in 0..2 {
-            for i in 0..(*psEncC).predictLPCOrder as usize {
+            for i in 0..MAX_LPC_ORDER as usize {
                 PredCoef_Q12[j][i] = silk_float2int(psEncCtrl.PredCoef[j][i] * 4096.0f32) as i16;
             }
         }
@@ -138,7 +138,7 @@ pub unsafe fn silk_NSQ_wrapper_FLP(
         };
 
         /* Convert input to fix */
-        for i in 0..(*psEncC).frame_length as usize {
+        for i in 0..MAX_FRAME_LENGTH as usize {
             x16[i] = silk_float2int(*x.add(i)) as i16;
         }
 

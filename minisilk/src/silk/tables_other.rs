@@ -36,20 +36,8 @@ pub static silk_LTPScales_table_Q14: [i16; 3] = [
     15565, 12288, 8192,
 ];
 
-pub static silk_uniform3_iCDF: [u8; 3] = [
-    171, 85, 0,
-];
-
 pub static silk_uniform4_iCDF: [u8; 4] = [
     192, 128, 64, 0,
-];
-
-pub static silk_uniform5_iCDF: [u8; 5] = [
-    205, 154, 102, 51, 0,
-];
-
-pub static silk_uniform6_iCDF: [u8; 6] = [
-    213, 171, 128, 85, 43, 0,
 ];
 
 pub static silk_uniform8_iCDF: [u8; 8] = [

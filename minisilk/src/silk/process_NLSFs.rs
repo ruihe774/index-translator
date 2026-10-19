@@ -6,6 +6,7 @@ use crate::silk::NLSF_encode::silk_NLSF_encode;
 use crate::silk::define::*;
 use crate::silk::interpolate::silk_interpolate;
 use crate::silk::macros::*;
+use crate::silk::tables::silk_NLSF_CB_WB;
 use crate::silk::structs::silk_encoder_state;
 
 /// Limit, stabilize, convert and quantize NLSFs.
@@ -25,10 +26,8 @@ pub fn silk_process_NLSFs(
     debug_assert!(psEncC.speech_activity_Q8 >= 0);
     debug_assert!(psEncC.speech_activity_Q8 <= SILK_FIX_CONST(1.0, 8));
     debug_assert!(psEncC.useInterpolatedNLSFs == 1 || psEncC.indices.NLSFInterpCoef_Q2 == (1 << 2));
-    /* minisilk is fixed to 16 kHz, 20 ms frames (4 subframes) */
-    debug_assert!(psEncC.nb_subfr == MAX_NB_SUBFR);
 
-    let predictLPCOrder = psEncC.predictLPCOrder;
+    let predictLPCOrder = MAX_LPC_ORDER;
 
     /***********************/
     /* Calculate mu values */
@@ -36,7 +35,6 @@ pub fn silk_process_NLSFs(
     /* NLSF_mu  = 0.003 - 0.0015 * psEnc->speech_activity; */
     let NLSF_mu_Q20 =
         silk_SMLAWB(SILK_FIX_CONST(0.003, 20), SILK_FIX_CONST(-0.001, 28), psEncC.speech_activity_Q8);
-    /* (nb_subfr == 2, i.e. 10 ms packets, would multiply by 1.5; not supported) */
 
     debug_assert!(NLSF_mu_Q20 > 0);
     debug_assert!(NLSF_mu_Q20 <= SILK_FIX_CONST(0.005, 20));
@@ -65,7 +63,7 @@ pub fn silk_process_NLSFs(
 
     let signalType = psEncC.indices.signalType as i32;
     let survivors = psEncC.NLSF_MSVQ_Survivors;
-    let psNLSF_CB = unsafe { &*psEncC.psNLSF_CB };
+    let psNLSF_CB = &silk_NLSF_CB_WB;
     silk_NLSF_encode(
         &mut psEncC.indices.NLSFIndices,
         pNLSF_Q15,

@@ -1,21 +1,20 @@
 //! Port of silk/HP_variable_cutoff.c.
 
 use crate::silk::define::*;
-use crate::silk::float::structs_flp::silk_encoder_state_FLP;
+use crate::silk::structs::silk_encoder_state;
 use crate::silk::lin2log::silk_lin2log;
 use crate::silk::macros::*;
 use crate::silk::tuning_parameters::*;
 
 /// High-pass filter with cutoff frequency adaptation based on pitch lag statistics
 pub fn silk_HP_variable_cutoff(
-    state_Fxx: &mut [silk_encoder_state_FLP], /* I/O  Encoder states                              */
+    psEncC1: &mut silk_encoder_state, /* I/O  Encoder state                                      */
 ) {
-    let psEncC1 = &mut state_Fxx[0].sCmn;
 
     /* Adaptive cutoff frequency: estimate low end of pitch frequency range */
     if psEncC1.prevSignalType as i32 == TYPE_VOICED {
         /* difference, in log domain */
-        let pitch_freq_Hz_Q16 = silk_DIV32_16(silk_LSHIFT(silk_MUL(psEncC1.fs_kHz, 1000), 16), psEncC1.prevLag);
+        let pitch_freq_Hz_Q16 = silk_DIV32_16(silk_LSHIFT(FS_KHZ * 1000, 16), psEncC1.prevLag);
         let mut pitch_freq_log_Q7 = silk_lin2log(pitch_freq_Hz_Q16) - (16 << 7);
 
         /* adjustment based on quality */

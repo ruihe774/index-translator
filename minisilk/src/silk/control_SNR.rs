@@ -1,6 +1,5 @@
 //! Port of silk/control_SNR.c.
 
-use crate::silk::define::*;
 use crate::silk::macros::*;
 use crate::silk::structs::silk_encoder_state;
 
@@ -30,11 +29,7 @@ static silk_TargetRate_WB_21: [u8; 201 - 10] = [
 pub fn silk_control_SNR(
     psEncC: &mut silk_encoder_state, /* I/O  Pointer to Silk encoder state               */
     TargetRate_bps: i32,             /* I    Target max bitrate (bps)                    */
-) -> i32 {
-    psEncC.TargetRate_bps = TargetRate_bps;
-    /* 10 ms frames (nb_subfr == 2) and NB/MB tables are not supported */
-    debug_assert!(psEncC.nb_subfr == MAX_NB_SUBFR);
-    debug_assert!(psEncC.fs_kHz == 16);
+) {
     let bound = silk_TargetRate_WB_21.len() as i32;
     let snr_table = &silk_TargetRate_WB_21;
     let mut id = (TargetRate_bps + 200) / 400;
@@ -44,5 +39,4 @@ pub fn silk_control_SNR(
     } else {
         psEncC.SNR_dB_Q7 = snr_table[id as usize] as i32 * 21;
     }
-    SILK_NO_ERROR
 }

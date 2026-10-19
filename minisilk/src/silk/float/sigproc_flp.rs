@@ -13,6 +13,13 @@ pub fn float2int(x: f32) -> i32 {
     libm::rintf(x) as i32
 }
 
+/// Correctly rounded `sqrt` (C `sqrt()`), as the wasm `f64.sqrt` instruction (libm's is a software
+/// implementation).
+#[inline(always)]
+pub fn sqrt(x: f64) -> f64 {
+    core::arch::wasm32::f64x2_extract_lane::<0>(core::arch::wasm32::f64x2_sqrt(core::arch::wasm32::f64x2_splat(x)))
+}
+
 /// sigmoid function
 #[inline(always)]
 pub fn silk_sigmoid(x: f32) -> f32 {

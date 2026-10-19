@@ -38,10 +38,7 @@ fn enc() -> &'static mut OpusEncoder {
 #[unsafe(no_mangle)]
 pub extern "C" fn minisilk_init(bitrate: i32, complexity: i32, dtx: i32) -> i32 {
     let e = enc();
-    let r = e.init();
-    if r < 0 {
-        return r;
-    }
+    e.init();
     let r = e.set_bitrate(bitrate);
     if r < 0 {
         return r;
@@ -111,4 +108,11 @@ pub extern "C" fn minisilk_final_range() -> u32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn minisilk_in_dtx() -> i32 {
     enc().get_in_dtx()
+}
+
+/// High-water mark of the pseudostack in bytes (`stack-peak` feature only).
+#[cfg(feature = "stack-peak")]
+#[unsafe(no_mangle)]
+pub extern "C" fn minisilk_stack_peak() -> u32 {
+    minisilk::stack::peak() as u32
 }

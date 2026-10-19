@@ -37,7 +37,6 @@ pub struct silk_encoder_control_FLP {
     pub Gains: [f32; MAX_NB_SUBFR_],
     pub PredCoef: [[f32; MAX_LPC_ORDER_]; 2], /* holds interpolated and final coefficients */
     pub LTPCoef: [f32; (LTP_ORDER * MAX_NB_SUBFR) as usize],
-    pub LTP_scale: f32,
     pub pitchL: [i32; MAX_NB_SUBFR_],
 
     /* Noise shaping parameters */
@@ -60,21 +59,10 @@ pub struct silk_encoder_control_FLP {
     pub lastGainIndexPrev: i8,
 }
 
-/// Encoder Super Struct
+/// Encoder Super Struct (mono: a single channel state)
 #[repr(C)]
 #[derive(Clone, Copy)]
 pub struct silk_encoder {
-    pub sStereo: stereo_enc_state,
-    pub nBitsUsedLBRR: i32,
     pub nBitsExceeded: i32,
-    pub nChannelsAPI: i32,
-    pub nChannelsInternal: i32,
-    pub nPrevChannelsInternal: i32,
-    pub timeSinceSwitchAllowed_ms: i32,
-    pub allowBandwidthSwitch: i32,
-    pub prev_decode_only_middle: i32,
-
-    /* This needs to be last so we can skip the second state for mono. */
-    /* Mono only: same layout as the C allocation for channels == 1. */
-    pub state_Fxx: [silk_encoder_state_FLP; ENCODER_NUM_CHANNELS as usize],
+    pub state_Fxx: silk_encoder_state_FLP,
 }

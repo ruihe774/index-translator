@@ -19,9 +19,7 @@ const VAD_N_BANDS_: usize = VAD_N_BANDS as usize;
 /// Initialization of the Silk VAD
 pub fn silk_VAD_Init(
     psSilk_VAD: &mut silk_VAD_state, /* I/O  Pointer to Silk VAD state                   */
-) -> i32 {
-    let ret = 0;
-
+) {
     /* reset state memory */
     *psSilk_VAD = unsafe { core::mem::zeroed() };
 
@@ -42,8 +40,6 @@ pub fn silk_VAD_Init(
     for b in 0..VAD_N_BANDS_ {
         psSilk_VAD.NrgRatioSmth_Q8[b] = 100 * 256; /* 100 * 256 --> 20 dB SNR */
     }
-
-    ret
 }
 
 /* Weighting factors for tilt measure */
@@ -87,13 +83,13 @@ unsafe fn silk_VAD_energy_wasm(x: *const i16, len: i32) -> i32 {
 
 /// Get the speech activity level in Q8 (silk_VAD_GetSA_Q8_wasm).
 ///
-/// Raw pointers as in C: the encoder passes `psEncC->inputBuf + 1` as `pIn`, which lies
+/// Raw pointers as in C: the encoder passes `psEncC->inputBuf` as `pIn`, which lies
 /// inside `*psEncC`. Only `sVAD`, `speech_activity_Q8`, `input_tilt_Q15` and
 /// `input_quality_bands_Q15` are written.
 pub unsafe fn silk_VAD_GetSA_Q8(
     psEncC: *mut silk_encoder_state, /* I/O  Encoder state                               */
     pIn: *const i16,                 /* I    PCM input                                   */
-) -> i32 {
+) {
     unsafe {
         let mut SA_Q15: i32;
         let pSNR_dB_Q7: i32;
@@ -103,23 +99,18 @@ pub unsafe fn silk_VAD_GetSA_Q8(
         let mut dec_subframe_offset: i32;
         let mut SNR_Q7: i32;
         let mut sumSquared: i32;
-        let mut smooth_coef_Q16: i32;
+        let smooth_coef_Q16: i32;
         let mut Xnrg = [0i32; VAD_N_BANDS_];
         let mut NrgToNoiseRatio_Q8 = [0i32; VAD_N_BANDS_];
         let mut speech_nrg: i32;
         let mut X_offset = [0i32; VAD_N_BANDS_];
-        let ret = 0;
-        let frame_length = (*psEncC).frame_length;
-        let fs_kHz = (*psEncC).fs_kHz;
+        let frame_length = MAX_FRAME_LENGTH;
         let psSilk_VAD: &mut silk_VAD_state = &mut (*psEncC).sVAD;
 
         let st = stack::save();
 
         /* Safety checks */
         debug_assert!(VAD_N_BANDS == 4);
-        debug_assert!(MAX_FRAME_LENGTH >= frame_length);
-        debug_assert!(frame_length <= 512);
-        debug_assert!(frame_length == 8 * silk_RSHIFT(frame_length, 3));
 
         /***********************/
         /* Filter and Decimate */
@@ -272,9 +263,8 @@ pub unsafe fn silk_VAD_GetSA_Q8(
             speech_nrg += (b as i32 + 1) * silk_RSHIFT(Xnrg[b] - psSilk_VAD.NL[b], 4);
         }
 
-        if frame_length == 20 * fs_kHz {
-            speech_nrg = silk_RSHIFT32(speech_nrg, 1);
-        }
+        /* 20 ms frames */
+        speech_nrg = silk_RSHIFT32(speech_nrg, 1);
         /* Power scaling */
         if speech_nrg <= 0 {
             SA_Q15 = silk_RSHIFT(SA_Q15, 1);
@@ -295,10 +285,6 @@ pub unsafe fn silk_VAD_GetSA_Q8(
         /* Smoothing coefficient */
         smooth_coef_Q16 = silk_SMULWB(VAD_SNR_SMOOTH_COEF_Q18, silk_SMULWB(SA_Q15, SA_Q15));
 
-        if frame_length == 10 * fs_kHz {
-            smooth_coef_Q16 >>= 1;
-        }
-
         for b in 0..VAD_N_BANDS_ {
             /* compute smoothed energy-to-noise ratio per band */
             psSilk_VAD.NrgRatioSmth_Q8[b] = silk_SMLAWB(
@@ -312,8 +298,6 @@ pub unsafe fn silk_VAD_GetSA_Q8(
             /* quality = sigmoid( 0.25 * ( SNR_dB - 16 ) ); */
             (*psEncC).input_quality_bands_Q15[b] = silk_sigm_Q15(silk_RSHIFT(SNR_Q7 - 16 * 128, 4));
         }
-
-        ret
     }
 }
 

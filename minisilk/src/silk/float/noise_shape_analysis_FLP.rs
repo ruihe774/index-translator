@@ -143,8 +143,8 @@ pub fn silk_noise_shape_analysis_FLP(
     /* Coding quality level, between 0.0 and 1.0 */
     psEncCtrl.coding_quality = silk_sigmoid(0.25f32 * (SNR_adj_dB - 20.0));
 
-    if sCmn.useCBR == 0 {
-        /* Reduce coding SNR during low speech activity */
+    /* Reduce coding SNR during low speech activity */
+    {
         let b = 1.0f32 - sCmn.speech_activity_Q8 as f32 * (1.0f32 / 256.0);
         SNR_adj_dB -= BG_SNR_DECR_dB * psEncCtrl.coding_quality * (0.5f32 + 0.5f32 * psEncCtrl.input_quality) * b * b;
     }
@@ -167,11 +167,11 @@ pub fn silk_noise_shape_analysis_FLP(
         sCmn.indices.quantOffsetType = 0;
     } else {
         /* Sparseness measure, based on relative fluctuations of energy per 2 milliseconds */
-        let nSamples = 2 * sCmn.fs_kHz;
+        let nSamples = 2 * FS_KHZ;
         let mut energy_variation: f32 = 0.0;
         let mut log_energy_prev: f32 = 0.0;
         let mut pitch_res_ptr = 0usize;
-        let nSegs = silk_SMULBB(SUB_FRAME_LENGTH_MS, sCmn.nb_subfr) / 2;
+        let nSegs = silk_SMULBB(SUB_FRAME_LENGTH_MS, MAX_NB_SUBFR) / 2;
         for k in 0..nSegs {
             let nrg = nSamples as f32 + silk_energy_FLP(&pitch_res[pitch_res_ptr..], nSamples) as f32;
             let log_energy = silk_log2(nrg as f64);
@@ -204,9 +204,9 @@ pub fn silk_noise_shape_analysis_FLP(
     /* Compute noise shaping AR coefs and gains */
     /********************************************/
     let order = sCmn.shapingLPCOrder;
-    for k in 0..sCmn.nb_subfr as usize {
+    for k in 0..MAX_NB_SUBFR as usize {
         /* Apply window: sine slope followed by flat part followed by cosine slope */
-        let flat_part = (sCmn.fs_kHz * 3) as usize;
+        let flat_part = (FS_KHZ * 3) as usize;
         let slope_part = ((sCmn.shapeWinLength - flat_part as i32) / 2) as usize;
 
         silk_apply_sine_window_FLP(&mut x_windowed, &x_buf[x_ptr..], 1, slope_part as i32);
@@ -216,7 +216,7 @@ pub fn silk_noise_shape_analysis_FLP(
         silk_apply_sine_window_FLP(&mut x_windowed[shift..], &x_buf[x_ptr + shift..], 2, slope_part as i32);
 
         /* Update pointer: next LPC analysis block */
-        x_ptr += sCmn.subfr_length as usize;
+        x_ptr += MAX_SUB_FRAME_LENGTH as usize;
 
         if sCmn.warping_Q16 > 0 {
             /* Calculate warped auto correlation */
@@ -233,7 +233,7 @@ pub fn silk_noise_shape_analysis_FLP(
         let nrg = silk_schur_FLP(&mut rc, &auto_corr, order);
         let AR = &mut psEncCtrl.AR[k * MAX_SHAPE_LPC_ORDER as usize..(k + 1) * MAX_SHAPE_LPC_ORDER as usize];
         silk_k2a_FLP(AR, &rc, order);
-        psEncCtrl.Gains[k] = libm::sqrt(nrg as f64) as f32;
+        psEncCtrl.Gains[k] = crate::silk::float::sigproc_flp::sqrt(nrg as f64) as f32;
 
         if sCmn.warping_Q16 > 0 {
             /* Adjust gain for warping */
@@ -258,7 +258,7 @@ pub fn silk_noise_shape_analysis_FLP(
     /* Increase gains during low speech activity */
     let gain_mult = libm::pow(2.0, (-0.16f32 * SNR_adj_dB) as f64) as f32;
     let gain_add = libm::pow(2.0, (0.16f32 * MIN_QGAIN_DB as f32) as f64) as f32;
-    for k in 0..sCmn.nb_subfr as usize {
+    for k in 0..MAX_NB_SUBFR as usize {
         psEncCtrl.Gains[k] *= gain_mult;
         psEncCtrl.Gains[k] += gain_add;
     }
@@ -275,18 +275,18 @@ pub fn silk_noise_shape_analysis_FLP(
     if sCmn.indices.signalType as i32 == TYPE_VOICED {
         /* Reduce low frequencies quantization noise for periodic signals, depending on pitch lag */
         /*f = 400; freqz([1, -0.98 + 2e-4 * f], [1, -0.97 + 7e-4 * f], 2^12, Fs); axis([0, 1000, -10, 1])*/
-        for k in 0..sCmn.nb_subfr as usize {
-            let b = 0.2f32 / sCmn.fs_kHz as f32 + 3.0f32 / psEncCtrl.pitchL[k] as f32;
+        for k in 0..MAX_NB_SUBFR as usize {
+            let b = 0.2f32 / FS_KHZ as f32 + 3.0f32 / psEncCtrl.pitchL[k] as f32;
             psEncCtrl.LF_MA_shp[k] = -1.0f32 + b;
             psEncCtrl.LF_AR_shp[k] = 1.0f32 - b - b * strength;
         }
         Tilt = -HP_NOISE_COEF
             - (1.0f32 - HP_NOISE_COEF) * HARM_HP_NOISE_COEF * sCmn.speech_activity_Q8 as f32 * (1.0f32 / 256.0);
     } else {
-        let b = 1.3f32 / sCmn.fs_kHz as f32;
+        let b = 1.3f32 / FS_KHZ as f32;
         psEncCtrl.LF_MA_shp[0] = -1.0f32 + b;
         psEncCtrl.LF_AR_shp[0] = 1.0f32 - b - b * strength * 0.6f32;
-        for k in 1..sCmn.nb_subfr as usize {
+        for k in 1..MAX_NB_SUBFR as usize {
             psEncCtrl.LF_MA_shp[k] = psEncCtrl.LF_MA_shp[0];
             psEncCtrl.LF_AR_shp[k] = psEncCtrl.LF_AR_shp[0];
         }
@@ -297,7 +297,7 @@ pub fn silk_noise_shape_analysis_FLP(
     /* HARMONIC SHAPING CONTROL */
     /****************************/
     let mut HarmShapeGain: f32;
-    if USE_HARM_SHAPING != 0 && sCmn.indices.signalType as i32 == TYPE_VOICED {
+    if sCmn.indices.signalType as i32 == TYPE_VOICED {
         /* Harmonic noise shaping */
         HarmShapeGain = HARMONIC_SHAPING;
 
@@ -306,7 +306,7 @@ pub fn silk_noise_shape_analysis_FLP(
             * (1.0f32 - (1.0f32 - psEncCtrl.coding_quality) * psEncCtrl.input_quality);
 
         /* Less harmonic noise shaping for less periodic signals */
-        HarmShapeGain *= libm::sqrt(psEnc.LTPCorr as f64) as f32;
+        HarmShapeGain *= crate::silk::float::sigproc_flp::sqrt(psEnc.LTPCorr as f64) as f32;
     } else {
         HarmShapeGain = 0.0f32;
     }
@@ -314,7 +314,7 @@ pub fn silk_noise_shape_analysis_FLP(
     /*************************/
     /* Smooth over subframes */
     /*************************/
-    for k in 0..sCmn.nb_subfr as usize {
+    for k in 0..MAX_NB_SUBFR as usize {
         psShapeSt.HarmShapeGain_smth += SUBFR_SMTH_COEF * (HarmShapeGain - psShapeSt.HarmShapeGain_smth);
         psEncCtrl.HarmShapeGain[k] = psShapeSt.HarmShapeGain_smth;
         psShapeSt.Tilt_smth += SUBFR_SMTH_COEF * (Tilt - psShapeSt.Tilt_smth);
