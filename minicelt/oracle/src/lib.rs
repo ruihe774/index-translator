@@ -153,6 +153,9 @@ unsafe extern "C" {
     pub fn get_required_bits(bits: *mut i16, n: c_int, k: c_int, frac: c_int);
     pub fn encode_pulses(y: *const c_int, n: c_int, k: c_int, enc: *mut c_void);
 
+    // laplace.c
+    pub fn ec_laplace_encode(enc: *mut c_void, value: *mut c_int, fs: c_uint, decay: c_int);
+
     // bands.c
     pub fn bitexact_cos(x: i16) -> i16;
     pub fn bitexact_log2tan(isin: c_int, icos: c_int) -> c_int;
@@ -184,6 +187,7 @@ unsafe extern "C" {
     // celt.c
     pub fn comb_filter(y: *mut f32, x: *mut f32, t0: c_int, t1: c_int, n: c_int, g0: f32, g1: f32, tapset0: c_int, tapset1: c_int, window: *const f32, overlap: c_int, arch: c_int);
     pub fn init_caps(m: *const c_void, cap: *mut c_int, lm: c_int, c: c_int);
+    pub static tf_select_table: [[i8; 8]; 4];
 
     // pitch.c, mathops.c, celt_lpc.c, mdct.c, kiss_fft.c (scalar C and the fork's WASM kernels)
     pub fn pitch_downsample(x: *const *mut f32, x_lp: *mut f32, len: c_int, c: c_int, factor: c_int, arch: c_int);

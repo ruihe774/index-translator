@@ -225,4 +225,24 @@ mod tests {
             assert_eq!(bits(&yr), bits(&yc), "y {msg}");
         }
     }
+
+    use crate::celt::modes::mode48000_960_120 as MODE;
+
+    #[test]
+    fn init_caps_matches_c() {
+        for lm in 0..=3 {
+            for ch in 1..=2 {
+                let mut a = [0x7777i32; 24];
+                let mut b = [0x7777i32; 24];
+                init_caps(&MODE, &mut a, lm, ch);
+                unsafe { c::init_caps(crate::testutil::c_mode(), b.as_mut_ptr(), lm, ch) };
+                assert_eq!(a, b, "lm={lm} C={ch}");
+            }
+        }
+    }
+
+    #[test]
+    fn tf_select_table_matches_c() {
+        assert_eq!(tf_select_table, unsafe { c::tf_select_table });
+    }
 }

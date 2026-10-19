@@ -22,3 +22,5 @@ extern crate minicelt_oracle;
 pub mod testutil;
 #[cfg(test)]
 mod layout_tests;
+#[cfg(test)]
+mod mode_tests;
