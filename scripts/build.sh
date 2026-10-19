@@ -21,7 +21,7 @@ for crate in minisilk minicelt; do
   for profile in release checked; do
     if [ "$p" = "$profile" ] || [ "$p" = both ]; then
       if [ "$v" = 2 ] || [ "$v" = all ]; then build "$crate" 2 +simd128 target "$profile"; fi
-      if [ "$v" = 3 ] || [ "$v" = all ]; then build "$crate" 3 +simd128,+relaxed-simd target/v3 "$profile"; fi
+      if [ "$v" = 3 ] || [ "$v" = all ]; then build "$crate" 3 +simd128,+relaxed-simd,+extended-const,+tail-call target/v3 "$profile"; fi
     fi
   done
 done

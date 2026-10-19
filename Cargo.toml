@@ -7,6 +7,7 @@ opt-level = "s"
 lto = true
 codegen-units = 1
 panic = "abort"
+strip = "symbols"
 
 # Release code with debug_assert!s and integer overflow checks, for the compare.ts tests.
 [profile.checked]
