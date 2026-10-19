@@ -46,37 +46,3 @@ pub fn silk_NLSF_VQ_weights_laroia(pNLSFW_Q_OUT: &mut [i16], pNLSF_Q15: &[i16], 
     pNLSFW_Q_OUT[D - 1] = silk_min_int(tmp1_int + tmp2_int, silk_int16_MAX) as i16;
     debug_assert!(pNLSFW_Q_OUT[D - 1] > 0);
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::silk::NLSF2A::tests::random_nlsf;
-    use crate::testutil::Rng;
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_NLSF_VQ_weights_laroia(pNLSFW_Q_OUT: *mut i16, pNLSF_Q15: *const i16, D: i32);
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(60);
-        for t in 0..4000 {
-            let (nlsf, d): (Vec<i16>, i32) = if t % 4 == 3 {
-                // order 10, including equal / zero-distance and border values
-                let mut v: Vec<i16> = (0..10).map(|_| rng.range(0, 32767) as i16).collect();
-                v.sort();
-                (v, 10)
-            } else if t % 4 == 2 {
-                let mut v: Vec<i16> = (0..16).map(|_| rng.range(0, 32767) as i16).collect();
-                v.sort();
-                (v, 16)
-            } else {
-                (random_nlsf(&mut rng).to_vec(), 16)
-            };
-            let (mut a, mut b) = ([0i16; 16], [0i16; 16]);
-            super::silk_NLSF_VQ_weights_laroia(&mut a, &nlsf, d);
-            unsafe { c::silk_NLSF_VQ_weights_laroia(b.as_mut_ptr(), nlsf.as_ptr(), d) };
-            assert_eq!(a, b, "nlsf={nlsf:?}");
-        }
-    }
-}

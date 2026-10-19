@@ -1,17 +1,17 @@
-// Differential test of the minisilk wasm builds against natively built upstream libopus
-// (the reference the wasm C oracle itself is checked against).
+// Differential test of the minisilk wasm builds against natively built upstream libopus.
 //
-//   native/build.sh && scripts/build.sh
-//   deno run --allow-read --allow-ffi --allow-run native/compare.ts [--quick] [audio files...]
+//   scripts/test.sh [--quick] [audio files...]
+//   (= test/build-native.sh && scripts/build.sh all both &&
+//      deno run --allow-read --allow-ffi --allow-run test/compare.ts [--quick] [audio files...])
 //
-// For every native library (target/native/libopus-{scalar,rtcd}.so) x wasm variant
-// (target/minisilk-wasm{2,3}.wasm) x signal x configuration it encodes the same input with both
+// For every native library (target/native/libopus-{scalar,rtcd}.so) x wasm build
+// (target/minisilk-wasm{2,3}[-checked].wasm) x signal x configuration it encodes the same input with both
 // encoders and compares packets, OPUS_GET_FINAL_RANGE and OPUS_GET_IN_DTX frame by frame. Every
 // minisilk packet is also decoded by the native decoder, whose final range must equal the
 // encoder's (the bitstream check from opus_demo), and the decoded SNR of both streams is
 // reported so a mismatch can be judged by its effect.
-// Audio files are decoded with ffmpeg to 16 kHz mono; by default the spoken channel-name
-// prompts shipped in /usr/share/sounds are used when present.
+// The speech corpus is test/audio/*.wav (16 kHz mono 16-bit; see THIRD_PARTY_NOTICES.md).
+// Audio files given as arguments replace it; files in other formats are decoded with ffmpeg.
 
 const root = new URL('..', import.meta.url).pathname;
 const FRAME = 320;
@@ -46,11 +46,16 @@ type Native = ReturnType<typeof loadNative>;
 
 // ---------- minisilk wasm ----------
 
-async function loadWasm(variant: number) {
-  const bytes = await Deno.readFile(`${root}target/minisilk-wasm${variant}.wasm`);
-  const { instance } = await WebAssembly.instantiate(bytes, {});
+// `checked` builds keep debug_assert!s and overflow checks; a failing one traps.
+async function loadWasm(variant: number, checked: boolean) {
+  const name = `wasm${variant}${checked ? '-checked' : ''}`;
+  const module = await WebAssembly.compile(await Deno.readFile(`${root}target/minisilk-${name}.wasm`));
   // deno-lint-ignore no-explicit-any
-  return { variant, e: instance.exports as any };
+  const w = { name, checked, e: undefined as any, reset: async () => {} };
+  // After a trap the pseudostack is left unbalanced, so the instance is replaced.
+  w.reset = async () => { w.e = (await WebAssembly.instantiate(module, {})).exports; };
+  await w.reset();
+  return w;
 }
 type Wasm = Awaited<ReturnType<typeof loadWasm>>;
 
@@ -97,7 +102,28 @@ function noise(n: number, seed: number, amp: number) {
   return Float64Array.from({ length: n }, () => amp * (rng.next() * 2 - 1));
 }
 
+// 16 kHz mono 16-bit PCM WAV, read directly; anything else goes through ffmpeg.
+function readWav(path: string): Float64Array | undefined {
+  const b = Deno.readFileSync(path);
+  const v = new DataView(b.buffer, b.byteOffset, b.byteLength);
+  const tag = (o: number) => String.fromCharCode(...b.subarray(o, o + 4));
+  if (b.length < 12 || tag(0) !== 'RIFF' || tag(8) !== 'WAVE') return undefined;
+  let fmtOk = false;
+  for (let o = 12; o + 8 <= b.length; o += 8 + v.getUint32(o + 4, true) + (v.getUint32(o + 4, true) & 1)) {
+    const size = v.getUint32(o + 4, true);
+    if (tag(o) === 'fmt ') {
+      fmtOk = v.getUint16(o + 8, true) === 1 && v.getUint16(o + 10, true) === 1 &&
+        v.getUint32(o + 12, true) === 16000 && v.getUint16(o + 22, true) === 16;
+    } else if (tag(o) === 'data' && fmtOk) {
+      return Float64Array.from({ length: size >> 1 }, (_, i) => v.getInt16(o + 8 + 2 * i, true));
+    }
+  }
+  return undefined;
+}
+
 async function readAudio(path: string): Promise<Float64Array> {
+  const wav = readWav(path);
+  if (wav) return wav;
   const { code, stdout, stderr } = await new Deno.Command('ffmpeg', {
     args: ['-v', 'error', '-i', path, '-f', 's16le', '-ac', '1', '-ar', '16000', '-'],
   }).output();
@@ -116,20 +142,19 @@ const silence = (n: number) => new Float64Array(n);
 async function signals(): Promise<{ name: string; x: Float64Array }[]> {
   const sec = 16000;
   const sigs: { name: string; x: Float64Array }[] = [];
-  const speechFiles = files.length ? files : [
-    ...['Front_Left', 'Front_Center', 'Front_Right', 'Rear_Left', 'Rear_Center', 'Rear_Right', 'Side_Left', 'Side_Right', 'Noise']
-      .map((f) => `/usr/share/sounds/alsa/${f}.wav`),
-    ...['front-left', 'front-center', 'front-right', 'rear-left', 'rear-center', 'rear-right', 'side-left', 'side-right', 'lfe', 'mono']
-      .map((f) => `/usr/share/sounds/freedesktop/stereo/audio-channel-${f}.oga`),
-  ].filter((f) => { try { return Deno.statSync(f).isFile; } catch { return false; } });
-  if (speechFiles.length) {
-    // Real speech with pauses (digital silence and low noise) between utterances, for VAD and DTX.
-    const parts: Float64Array[] = [];
-    for (const [i, f] of speechFiles.entries()) {
-      parts.push(await readAudio(f), i % 2 ? silence(sec / 2) : noise(sec / 2, 900 + i, 30));
+  const speechFiles = files.length ? files : [...Deno.readDirSync(`${root}test/audio`)]
+    .filter((e) => e.name.endsWith('.wav')).map((e) => `${root}test/audio/${e.name}`).sort();
+  if (!speechFiles.length) throw new Error('no speech files');
+  // Real speech with pauses (digital silence and low noise) between utterances, for VAD and
+  // DTX; the corpus is used at its own level and again 14 dB quieter.
+  const parts: Float64Array[] = [];
+  const speech = await Promise.all(speechFiles.map(readAudio));
+  for (const gain of [1, 0.2]) {
+    for (const [i, x] of speech.entries()) {
+      parts.push(x.map((v) => v * gain), i % 2 ? silence(sec / 2) : noise(sec / 2, 900 + i, 30));
     }
-    sigs.push({ name: `speech(${speechFiles.length} files)`, x: concat(parts) });
   }
+  sigs.push({ name: `speech(${speechFiles.length} files)`, x: concat(parts) });
   sigs.push({ name: 'synth-voiced', x: concat([speechGen(4 * sec, 1), silence(2 * sec), speechGen(3 * sec, 2, 9000), noise(sec, 3, 40), speechGen(2 * sec, 4, 300)]) });
   sigs.push({ name: 'noise-levels', x: concat([noise(sec, 5, 20000), noise(sec, 6, 2000), noise(sec, 7, 200), noise(sec, 8, 20), noise(sec, 9, 2), silence(sec)]) });
   sigs.push({ name: 'chirp', x: Float64Array.from({ length: 4 * sec }, (_, i) => 12000 * Math.sin(2 * Math.PI * (50 * i / sec + 950 * (i / sec) ** 2))) });
@@ -254,27 +279,35 @@ function run(nat: Native, w: Wasm, x: Float64Array, cfg: Cfg): Result {
 // ---------- main ----------
 
 const natives = ['scalar', 'rtcd'].map(loadNative);
-const wasms = await Promise.all([2, 3].map(loadWasm));
+const wasms = await Promise.all([[2, false], [3, false], [2, true], [3, true]].map(([v, c]) => loadWasm(v as number, c as boolean)));
 const sigs = await signals();
 const cfgs = configs();
 console.log(`native: ${natives[0].version}; ${sigs.length} signals x ${cfgs.length} configs` +
   ` (${sigs.map((s) => `${s.name} ${(s.x.length / 16000).toFixed(1)} s`).join(', ')})`);
 
-// The scalar build must match bit-exactly (the wasm SIMD kernels are exact ports of the scalar
-// C); the rtcd build's SSE/AVX2 float kernels sum in a different order, so it is compared for
-// stream validity and coding quality only.
+// Every build must match the scalar native build bit-exactly (the wasm SIMD kernels are exact
+// ports of the scalar C). The rtcd build's SSE/AVX2 float kernels sum in a different order, so
+// it is compared, with the release builds only, for stream validity and coding quality.
 let failures = 0;
 for (const nat of natives) {
   const strict = nat.name === 'scalar';
-  for (const w of wasms) {
+  for (const w of wasms.filter((w) => strict || !w.checked)) {
     let runs = 0, exact = 0, frames = 0;
-    const bad: string[] = [];
+    const bad: string[] = [], errors: string[] = [];
     let dSnr = 0, dBytes = 0, nBad = 0, snrSum = 0, snrN = 0;
     const t0 = performance.now();
     for (const sig of sigs) {
       for (const cfg of cfgs) {
-        const r = run(nat, w, sig.x, cfg);
         runs++;
+        let r: Result;
+        try {
+          r = run(nat, w, sig.x, cfg);
+        } catch (err) {
+          // Traps (failed debug_assert!/overflow check, or a panic), native decoder rejections.
+          errors.push(`  ${sig.name} [${cfg.name}] ${err instanceof Error ? err.message : err}`);
+          await w.reset();
+          continue;
+        }
         frames += r.frames;
         if (isFinite(r.snrMini)) { snrSum += r.snrMini; snrN++; }
         if (!r.mismatch) { exact++; continue; }
@@ -285,8 +318,10 @@ for (const nat of natives) {
       }
     }
     const s = ((performance.now() - t0) / 1000).toFixed(1);
-    console.log(`${nat.name.padEnd(6)} vs wasm${w.variant}: ${exact}/${runs} runs bit-exact (${frames} frames, ${s} s); ` +
-      `all minisilk packets decode with matching range, mean SNR ${(snrSum / snrN).toFixed(2)} dB`);
+    console.log(`${nat.name.padEnd(6)} vs ${w.name.padEnd(13)}: ${exact}/${runs} runs bit-exact (${frames} frames, ${s} s), ` +
+      `${errors.length} errors; mean SNR ${(snrSum / snrN).toFixed(2)} dB`);
+    failures += errors.length;
+    if (errors.length) console.log(errors.slice(0, 20).join('\n') + (errors.length > 20 ? `\n  ... ${errors.length - 20} more` : ''));
     if (bad.length) {
       if (strict) failures += bad.length;
       const show = strict ? 20 : 3;
@@ -296,4 +331,5 @@ for (const nat of natives) {
     }
   }
 }
+console.log(failures ? `FAILED: ${failures}` : 'ok');
 Deno.exit(failures ? 1 : 0);

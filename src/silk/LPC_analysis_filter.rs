@@ -10,7 +10,7 @@ use crate::silk::macros::*;
 /*******************************************/
 
 /* C has `USE_CELT_FIR 0` and the celt_fir path only exists in FIXED_POINT builds; the generic
-   scalar version below is what the (float) oracle compiles. */
+   scalar version below is what the float C build compiles. */
 
 /// `out`: output signal (O); `in_`: input signal; `B`: MA prediction coefficients, Q12 [order];
 /// `len`: signal length; `d`: filter order.
@@ -50,34 +50,4 @@ pub fn silk_LPC_analysis_filter(out: &mut [i16], in_: &[i16], B: &[i16], len: i3
 
     /* Set first d output samples to zero */
     out[..d as usize].fill(0);
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::silk::NLSF2A::tests::random_stable_a_Q12;
-    use crate::testutil::Rng;
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_LPC_analysis_filter(out: *mut i16, in_: *const i16, B: *const i16, len: i32, d: i32, arch: i32);
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(100);
-        for t in 0..1500 {
-            let d = [10, 16, 6, 12][t % 4];
-            let len = [100, 136, 320, 21][(t / 4) % 4].max(d);
-            let b: Vec<i16> = match t % 3 {
-                0 => random_stable_a_Q12(&mut rng, d as usize),
-                1 => rng.i16_vec(d as usize, 13),
-                _ => rng.i16_vec(d as usize, 16),
-            };
-            let inp = rng.i16_vec(len as usize, [8, 12, 16][(t / 3) % 3]);
-            let (mut o1, mut o2) = (vec![0x55i16; len as usize], vec![0x55i16; len as usize]);
-            super::silk_LPC_analysis_filter(&mut o1, &inp, &b, len, d);
-            unsafe { c::silk_LPC_analysis_filter(o2.as_mut_ptr(), inp.as_ptr(), b.as_ptr(), len, d, 0) };
-            assert_eq!(o1, o2, "d={d} len={len}");
-        }
-    }
 }

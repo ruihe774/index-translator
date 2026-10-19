@@ -46,31 +46,3 @@ pub fn silk_control_SNR(
     }
     SILK_NO_ERROR
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::testutil::{CSilkEncoder, SpeechGen};
-
-    mod c {
-        use crate::silk::structs::silk_encoder_state;
-        unsafe extern "C" {
-            pub fn silk_control_SNR(psEncC: *mut silk_encoder_state, TargetRate_bps: i32) -> i32;
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut enc = CSilkEncoder::new(20000, 5, false);
-        let mut sig = SpeechGen::new(3);
-        for _ in 0..3 {
-            enc.encode(&sig.frame_i16());
-        }
-        let mut r = std::boxed::Box::new(enc.st.state_Fxx[0].sCmn);
-        let mut c = std::boxed::Box::new(enc.st.state_Fxx[0].sCmn);
-        for rate in (-1000..100000).step_by(37) {
-            assert_eq!(silk_control_SNR(&mut r, rate), unsafe { c::silk_control_SNR(&mut *c, rate) });
-            assert_eq!((r.SNR_dB_Q7, r.TargetRate_bps), (c.SNR_dB_Q7, c.TargetRate_bps), "rate {rate}");
-        }
-    }
-}

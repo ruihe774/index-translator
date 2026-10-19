@@ -25,30 +25,3 @@ pub fn silk_energy_FLP(data: &[f32], dataSize: i32) -> f64 {
     debug_assert!(result >= 0.0);
     result
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::testutil::{Rng, SpeechGen};
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_energy_FLP(data: *const f32, dataSize: i32) -> f64;
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(41);
-        let mut sg = SpeechGen::new(42);
-        let sp: Vec<f32> = (0..1000).map(|_| sg.next_sample() as f32).collect();
-        let noise = rng.f32_vec(1000, 20000.0);
-        for n in 0..=400usize {
-            for src in [&sp, &noise] {
-                let off = rng.range(0, 7) as usize;
-                let x = &src[off..off + n];
-                let r = super::silk_energy_FLP(x, n as i32);
-                let e = unsafe { c::silk_energy_FLP(x.as_ptr(), n as i32) };
-                assert_eq!(r.to_bits(), e.to_bits(), "n = {n}");
-            }
-        }
-    }
-}

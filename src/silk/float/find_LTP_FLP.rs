@@ -36,37 +36,3 @@ pub fn silk_find_LTP_FLP(
         xX_ptr += LTP_ORDER_;
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::silk::float::encode_frame_FLP::tests::{c, for_each_frame};
-    use crate::testutil::Rng;
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(71);
-        let mut n = 0;
-        for_each_frame(|fr, what| {
-            let mut fr = fr.clone();
-            c::find_pitch_lags(&mut fr);
-            let off = fr.st.sCmn.ltp_mem_length as usize;
-            let mut lags = fr.ctrl.pitchL;
-            if fr.st.sCmn.indices.signalType as i32 != TYPE_VOICED {
-                // Unvoiced frame: random lags in the encoder's range.
-                lags = core::array::from_fn(|_| rng.range(32, 288 - 3));
-            } else {
-                n += 1;
-            }
-            let (mut XX_r, mut XX_c) = ([0f32; 100], [0f32; 100]);
-            let (mut xX_r, mut xX_c) = ([0f32; 20], [0f32; 20]);
-            silk_find_LTP_FLP(&mut XX_r, &mut xX_r, &fr.res_pitch, off, &lags, 80, 4);
-            unsafe {
-                c::silk_find_LTP_FLP(XX_c.as_mut_ptr(), xX_c.as_mut_ptr(), fr.res_pitch.as_ptr().add(off), lags.as_ptr(), 80, 4, 0)
-            };
-            assert_eq!(XX_r.map(f32::to_bits), XX_c.map(f32::to_bits), "{what}");
-            assert_eq!(xX_r.map(f32::to_bits), xX_c.map(f32::to_bits), "{what}");
-        });
-        assert!(n > 50, "{n} voiced frames");
-    }
-}

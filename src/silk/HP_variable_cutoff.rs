@@ -55,39 +55,3 @@ pub fn silk_HP_variable_cutoff(
         );
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::testutil::{CSilkEncoder, Rng, SpeechGen};
-
-    mod c {
-        use crate::silk::float::structs_flp::silk_encoder_state_FLP;
-        unsafe extern "C" {
-            pub fn silk_HP_variable_cutoff(state_Fxx: *mut silk_encoder_state_FLP);
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(5);
-        let mut enc = CSilkEncoder::new(20000, 5, false);
-        let mut sig = SpeechGen::new(5);
-        for f in 0..200 {
-            enc.encode(&sig.frame_i16());
-            let mut r = std::boxed::Box::new(enc.st.state_Fxx[0]);
-            if f % 2 == 1 {
-                r.sCmn.prevSignalType = TYPE_VOICED as i8;
-                r.sCmn.prevLag = rng.range(32, 288);
-                r.sCmn.speech_activity_Q8 = rng.range(0, 256);
-                r.sCmn.input_quality_bands_Q15[0] = rng.range(0, 32767);
-                r.sCmn.variable_HP_smth1_Q15 = rng.range(200000, 220000);
-            }
-            let mut c = r.clone();
-            silk_HP_variable_cutoff(core::slice::from_mut(&mut *r));
-            unsafe { c::silk_HP_variable_cutoff(&mut *c) };
-            assert_eq!(r.sCmn.variable_HP_smth1_Q15, c.sCmn.variable_HP_smth1_Q15, "frame {f}");
-            assert_eq!(r.sCmn.variable_HP_smth2_Q15, c.sCmn.variable_HP_smth2_Q15, "frame {f}");
-        }
-    }
-}

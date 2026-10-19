@@ -131,26 +131,3 @@ pub(crate) fn silk_max_float(a: f32, b: f32) -> f32 {
 pub(crate) fn silk_min_float(a: f32, b: f32) -> f32 {
     if a < b { a } else { b }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::silk::float::encode_frame_FLP::tests::{c, for_each_frame, same_ctrl, same_state};
-
-    #[test]
-    fn matches_c() {
-        for_each_frame(|fr, what| {
-            let mut r = fr.clone();
-            let mut cc = fr.clone();
-            let off = r.st.sCmn.ltp_mem_length as usize;
-            silk_find_pitch_lags_FLP(&mut r.st, &mut r.ctrl, &mut r.res_pitch, off);
-            unsafe {
-                let x = cc.st.x_buf.as_ptr().add(off);
-                c::silk_find_pitch_lags_FLP(&mut *cc.st, &mut cc.ctrl, cc.res_pitch.as_mut_ptr(), x, 0);
-            }
-            same_state(&r.st, &cc.st, what);
-            same_ctrl(&r.ctrl, &cc.ctrl, what);
-            assert!(r.res_pitch.iter().zip(cc.res_pitch.iter()).all(|(a, b)| a.to_bits() == b.to_bits()), "{what}: res");
-        });
-    }
-}

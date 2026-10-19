@@ -37,29 +37,3 @@ pub fn silk_LTP_scale_ctrl_FLP(
 
     psEncCtrl.LTP_scale = silk_LTPScales_table_Q14[psEnc.sCmn.indices.LTP_scaleIndex as usize] as f32 / 16384.0f32;
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::silk::float::encode_frame_FLP::tests::{c, for_each_frame, same_ctrl, same_state};
-    use crate::testutil::Rng;
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(81);
-        for_each_frame(|fr, what| {
-            for cond in [CODE_INDEPENDENTLY, CODE_INDEPENDENTLY_NO_LTP_SCALING, CODE_CONDITIONALLY] {
-                let mut fr = fr.clone();
-                fr.ctrl.LTPredCodGain = rng.f32_unit().abs() * 30.0;
-                fr.st.sCmn.PacketLoss_perc = rng.range(0, 100);
-                fr.st.sCmn.LBRR_flag = (rng.range(0, 3) == 0) as i8;
-                let mut r = fr.clone();
-                let mut cc = fr.clone();
-                silk_LTP_scale_ctrl_FLP(&mut r.st, &mut r.ctrl, cond);
-                unsafe { c::silk_LTP_scale_ctrl_FLP(&mut *cc.st, &mut cc.ctrl, cond) };
-                same_state(&r.st, &cc.st, what);
-                same_ctrl(&r.ctrl, &cc.ctrl, what);
-            }
-        });
-    }
-}

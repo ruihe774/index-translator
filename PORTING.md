@@ -1,8 +1,10 @@
 # minisilk porting guide
 
 minisilk is a mechanical Rust port of the libopus SILK-only float encoder
-(`OPUS_APPLICATION_RESTRICTED_SILK`), for wasm32 only. C source:
-`/mnt/workspace/opus` (a libopus fork with WASM SIMD / relaxed SIMD kernels).
+(`OPUS_APPLICATION_RESTRICTED_SILK`), for wasm32 only. C source: libopus 1.6.1
+plus a fork's WASM SIMD / relaxed SIMD kernels (https://github.com/ruihe774/opus,
+branch `v1.6.1-wasm-simd`). The kernels are bit-exact with the scalar C, so the
+reference for testing is plain upstream libopus (`third_party/opus`).
 
 ## Fixed configuration
 
@@ -49,12 +51,11 @@ One Rust module per C file, with the C file name (`silk/NLSF_VQ.c` →
   operand is `double` (a `1.0` literal, a `double` variable, `log10()` etc.).
   Reproduce the exact precision of every operation with `as f64`/`as f32`.
   Getting this wrong shows up as a bit-exactness failure.
-- Rust does not contract `a * b + c` into an FMA. The oracle is built with
-  `-ffp-contract=off`, so C only fuses where the source explicitly uses a
-  relaxed madd intrinsic; plain expressions match. (With contraction on, clang
-  fuses multiply-adds in loops it auto-vectorizes under `-mrelaxed-simd`, which
-  would make the reference depend on the optimizer.) Never hand-vectorize a
-  plain C loop to imitate compiler output.
+- Rust does not contract `a * b + c` into an FMA, and the reference is built
+  with `-ffp-contract=off`, so plain expressions match. Never hand-vectorize a
+  plain C loop to imitate compiler output (with contraction on, clang fuses
+  multiply-adds in loops it auto-vectorizes under `-mrelaxed-simd`, which would
+  make the result depend on the optimizer).
 - C `(opus_int)x` on a float truncates; Rust `x as i32` truncates and saturates.
   `silk_float2int`/`float2int` round half to even (`f32.nearest`).
 - Arrays: prefer slices (`&[i16]`, `&mut [f32]`). Where C uses negative
@@ -77,60 +78,36 @@ One Rust module per C file, with the C file name (`silk/NLSF_VQ.c` →
 
 ## Tests
 
-Every ported function gets a differential test against the C oracle in a
-`#[cfg(test)] mod tests` at the bottom of its module:
-
-```rust
-#[cfg(test)]
-mod tests {
-    use crate::testutil::Rng;
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_lin2log(inLin: i32) -> i32;
-        }
-    }
-    #[test]
-    fn matches_c() { /* random + edge-case inputs; compare outputs bit-exactly */ }
-}
-```
-
-- The oracle (`oracle/`) is the full float libopus built with wasi-sdk with the
-  same SIMD variant as the test build, linked into the test binary, so every
-  non-`static` C function can be declared and called. Kernels are exported
-  under their WASM names (`silk_NSQ_wasm`, `celt_pitch_xcorr_wasm`,
-  `silk_inner_product_FLP_wasm`, ...). Declare C functions with minisilk's own
-  `#[repr(C)]` types.
-- Compare all outputs and all in/out state bit-exactly (floats via
-  `to_bits()`).
-- `testutil` has `Rng`, `SpeechGen` (speech-like 16 kHz signal), `zeroed_box`,
-  and `CSilkEncoder`, a `silk_encoder` state driven by the C `silk_Encode` in
-  minisilk's configuration, for realistic states and inputs.
-- Run both variants: `scripts/test.sh` (or `scripts/test.sh 2|3`, plus cargo
-  test args, e.g. `scripts/test.sh 3 NLSF`).
-- On wasm a panic aborts the whole test binary, so the first failure stops the
-  run; use `-- --nocapture` to see its message.
-- Use realistic input ranges (what the encoder actually feeds the function),
-  plus edge cases. Random garbage inputs can make C hit undefined behaviour.
-
-## Native cross-check
-
-The wasm C oracle is itself checked against natively built upstream libopus (the
-commit the fork is based on) by encoding through the public API from Deno:
+There are no Rust unit tests. `test/compare.ts` (Deno) drives the wasm builds
+through their exports next to natively built upstream libopus (via FFI and the
+non-variadic wrappers in `test/shim.c`) and compares the output frame by frame:
 
 ```sh
-native/build.sh && scripts/build.sh
-deno run --allow-read --allow-ffi --allow-run native/compare.ts [--quick] [audio files...]
+git submodule update --init      # third_party/opus (libopus v1.6.1)
+scripts/test.sh [--quick] [audio files...]
 ```
 
-`native/build.sh` builds `target/native/libopus-scalar.so` (intrinsics off,
-`-ffp-contract=off`) and `libopus-rtcd.so` (upstream defaults, SSE/AVX2). Both
-wasm variants must be bit-exact with the scalar build (packets, final range,
-DTX state). The rtcd build's float kernels sum in a different order, so it is
-compared for stream validity and coding quality only. Every minisilk packet is
-also decoded natively and its decoder final range checked.
+Requirements: Rust with the `wasm32-unknown-unknown` target, a C compiler,
+CMake, Ninja and Deno. `scripts/test.sh` runs `test/build-native.sh` once (rerun
+it after changing `test/shim.c` or the submodule), `scripts/build.sh all both`,
+then the comparison.
 
-## Struct layout
-
-`scripts/gen_layout.py` generates a C/Rust `sizeof`/`offsetof` cross-check from
-the structs in `silk/structs.rs`, `silk/float/structs_flp.rs` and
-`celt/entcode.rs`. Re-run it after changing any of them.
+- `test/build-native.sh` builds `target/native/libopus-scalar.so` (intrinsics
+  off, `-ffp-contract=off`) and `libopus-rtcd.so` (upstream defaults, SSE/AVX2
+  on x86).
+- `scripts/build.sh all both` builds the release wasm and the `checked` ones
+  (the `checked` Cargo profile: release code with `debug_assert!`s and overflow
+  checks, which trap on failure).
+- Inputs: the speech recordings in `test/audio` (see
+  `THIRD_PARTY_NOTICES.md`) at two levels with silent and noisy pauses, synthetic
+  speech, noise at several levels, a chirp, a clipped square wave and clicks,
+  tones and DC. Configurations: every bitrate x complexity, DTX on/off, i16/f32
+  input, hot f32 input, and random mid-stream ctl changes.
+- Every wasm build must be bit-exact with the scalar build (packets, final
+  range, DTX state). The rtcd build's float kernels sum in a different order,
+  so it is compared for stream validity and coding quality only. Every minisilk
+  packet is also decoded natively and its decoder final range checked.
+- A mismatch shows only where the stream diverges. The per-function
+  differential tests against a wasm build of the C (one per ported function,
+  comparing whole encoder states) are at the git tag `wasm-oracle-tests`; check
+  it out to localize a regression.

@@ -53,37 +53,3 @@ pub fn silk_LPC_analysis_filter_FLP(
     /* Set first Order output samples to zero */
     r_LPC[..Order as usize].fill(0.0);
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::testutil::{Rng, SpeechGen};
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_LPC_analysis_filter_FLP(r_LPC: *mut f32, PredCoef: *const f32, s: *const f32, length: i32, Order: i32);
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(111);
-        let mut sg = SpeechGen::new(112);
-        let sp: Vec<f32> = (0..1000).map(|_| sg.next_sample() as f32).collect();
-        let noise = rng.f32_vec(1000, 20000.0);
-        for order in [6, 8, 10, 12, 16] {
-            for length in [order, order + 1, 2 * (order + 80), 100, 320, 400, 624] {
-                for src in [&sp, &noise] {
-                    let coef = rng.f32_vec(16, 0.8);
-                    let off = rng.range(0, 7) as usize;
-                    let s = &src[off..off + length as usize];
-                    let mut r = vec![9f32; 700];
-                    let mut e = r.clone();
-                    super::silk_LPC_analysis_filter_FLP(&mut r, &coef, s, length, order);
-                    unsafe { c::silk_LPC_analysis_filter_FLP(e.as_mut_ptr(), coef.as_ptr(), s.as_ptr(), length, order) };
-                    for i in 0..700 {
-                        assert_eq!(r[i].to_bits(), e[i].to_bits(), "order {order} length {length} i {i}");
-                    }
-                }
-            }
-        }
-    }
-}

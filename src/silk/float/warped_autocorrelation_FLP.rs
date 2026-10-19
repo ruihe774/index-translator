@@ -43,35 +43,3 @@ pub fn silk_warped_autocorrelation_FLP(
         corr[i] = C[i] as f32;
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::testutil::{Rng, SpeechGen};
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_warped_autocorrelation_FLP(corr: *mut f32, input: *const f32, warping: f32, length: i32, order: i32);
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(131);
-        let mut sg = SpeechGen::new(132);
-        let sp: Vec<f32> = (0..600).map(|_| sg.next_sample() as f32).collect();
-        let noise = rng.f32_vec(600, 20000.0);
-        for order in [2, 4, 10, 16, 20, 24] {
-            for length in [0, 1, 7, 160, 320, 384, 500] {
-                for src in [&sp, &noise] {
-                    let warping = rng.f32_unit() * 0.1 + 0.02;
-                    let mut r = vec![3f32; 25];
-                    let mut e = r.clone();
-                    super::silk_warped_autocorrelation_FLP(&mut r, src, warping, length, order);
-                    unsafe { c::silk_warped_autocorrelation_FLP(e.as_mut_ptr(), src.as_ptr(), warping, length, order) };
-                    for i in 0..25 {
-                        assert_eq!(r[i].to_bits(), e[i].to_bits(), "order {order} length {length} i {i}");
-                    }
-                }
-            }
-        }
-    }
-}

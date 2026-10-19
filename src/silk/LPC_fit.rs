@@ -50,32 +50,3 @@ pub fn silk_LPC_fit(a_QOUT: &mut [i16], a_QIN: &mut [i32], QOUT: i32, QIN: i32, 
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::testutil::Rng;
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_LPC_fit(a_QOUT: *mut i16, a_QIN: *mut i32, QOUT: i32, QIN: i32, d: i32);
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(13);
-        for t in 0..4000 {
-            let d = [10, 16][rng.range(0, 1) as usize];
-            // Q17 -> Q12 as in NLSF2A; ranges from small to far beyond int16 in Q12
-            // (including the clipping case, where the chirp loop does not converge).
-            let bits = [14, 17, 19, 21, 24, 28][t % 6];
-            let a0 = rng.i32_vec(d as usize, bits);
-            let (qout, qin) = if t % 5 == 0 { (12, 24) } else { (12, 17) };
-            let (mut a1, mut a2) = (a0.clone(), a0.clone());
-            let (mut o1, mut o2) = (vec![0i16; 16], vec![0i16; 16]);
-            super::silk_LPC_fit(&mut o1, &mut a1, qout, qin, d);
-            unsafe { c::silk_LPC_fit(o2.as_mut_ptr(), a2.as_mut_ptr(), qout, qin, d) };
-            assert_eq!(o1, o2, "out, in={a0:?}");
-            assert_eq!(a1, a2, "in/out, in={a0:?}");
-        }
-    }
-}

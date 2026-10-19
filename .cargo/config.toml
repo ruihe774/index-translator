@@ -1,11 +1,7 @@
-# Tests run as wasm32-wasip1 binaries under Node's WASI; the default variant is WASM 2.0 (+simd128).
-# scripts/test.sh / scripts/build.sh select the WASM 3.0 variant (+relaxed-simd) via --config.
+# The default variant is WASM 2.0 (+simd128); scripts/build.sh selects the WASM 3.0 variant
+# (+relaxed-simd) via --config.
 [build]
-target = "wasm32-wasip1"
-
-[target.wasm32-wasip1]
-runner = "scripts/wasi-run"
-rustflags = ["-Ctarget-feature=+simd128"]
+target = "wasm32-unknown-unknown"
 
 [target.wasm32-unknown-unknown]
 rustflags = ["-Ctarget-feature=+simd128"]

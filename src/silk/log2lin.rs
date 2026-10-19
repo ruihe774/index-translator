@@ -22,19 +22,3 @@ pub fn silk_log2lin(inLog_Q7: i32) -> i32 {
     }
     out
 }
-
-#[cfg(test)]
-mod tests {
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_log2lin(inLog_Q7: i32) -> i32;
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        for x in -10..4000 {
-            assert_eq!(super::silk_log2lin(x), unsafe { c::silk_log2lin(x) }, "inLog_Q7 = {x}");
-        }
-    }
-}

@@ -93,28 +93,3 @@ impl Drop for StackGuard {
 pub fn peak() -> usize {
     unsafe { *SCRATCH.peak.get() }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn nested_alloc_restores() {
-        let before = unsafe { *SCRATCH.top.get() };
-        {
-            let st = save();
-            let a = st.alloc::<i16>(3);
-            let b = st.alloc::<f64>(2);
-            assert_eq!(b.as_ptr() as usize % 8, 0);
-            assert!(a.as_ptr() as usize + 6 <= b.as_ptr() as usize);
-            {
-                let st2 = save();
-                let c = st2.alloc::<i32>(10);
-                c[9] = 1;
-            }
-            let d = st.alloc::<u8>(1);
-            d[0] = 1;
-        }
-        assert_eq!(unsafe { *SCRATCH.top.get() }, before);
-    }
-}

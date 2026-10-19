@@ -5,15 +5,13 @@ edition = "2024"
 
 [lib]
 doctest = false
+test = false
 
 [dependencies]
 libm = "0.2.16"
 
-[dev-dependencies]
-oracle = { path = "oracle" }
-
 [workspace]
-members = ["oracle", "wasm"]
+members = ["wasm"]
 
 [profile.release]
 opt-level = "s"
@@ -21,5 +19,8 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-[profile.test]
-opt-level = 1
+# Release code with debug_assert!s and integer overflow checks, for test/compare.ts.
+[profile.checked]
+inherits = "release"
+debug-assertions = true
+overflow-checks = true

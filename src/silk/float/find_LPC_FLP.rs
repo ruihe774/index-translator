@@ -87,27 +87,3 @@ pub fn silk_find_LPC_FLP(
             || (psEncC.useInterpolatedNLSFs != 0 && psEncC.first_frame_after_reset == 0 && psEncC.nb_subfr == MAX_NB_SUBFR)
     );
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::silk::float::encode_frame_FLP::tests::{c, for_each_frame, same_state};
-    use crate::silk::float::find_pred_coefs_FLP::tests::lpc_input;
-
-    #[test]
-    fn matches_c() {
-        for_each_frame(|fr, what| {
-            let mut fr = fr.clone();
-            c::find_pitch_lags(&mut fr);
-            c::noise_shape_analysis(&mut fr);
-            let (x, minInvGain) = lpc_input(&mut fr);
-            let mut r = fr.clone();
-            let mut cc = fr.clone();
-            let (mut n_r, mut n_c) = ([0i16; 16], [0i16; 16]);
-            silk_find_LPC_FLP(&mut r.st.sCmn, &mut n_r, &x, minInvGain);
-            unsafe { c::silk_find_LPC_FLP(&mut cc.st.sCmn, n_c.as_mut_ptr(), x.as_ptr(), minInvGain, 0) };
-            assert_eq!(n_r, n_c, "{what}");
-            same_state(&r.st, &cc.st, what);
-        });
-    }
-}

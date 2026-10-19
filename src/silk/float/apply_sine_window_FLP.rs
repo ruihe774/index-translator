@@ -48,33 +48,3 @@ pub fn silk_apply_sine_window_FLP(
         k += 4;
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::testutil::{Rng, SpeechGen};
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_apply_sine_window_FLP(px_win: *mut f32, px: *const f32, win_type: i32, length: i32);
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(11);
-        let mut sg = SpeechGen::new(12);
-        let sp: Vec<f32> = (0..512).map(|_| sg.next_sample() as f32).collect();
-        let noise = rng.f32_vec(512, 30000.0);
-        for length in (0..=400).step_by(4) {
-            for win_type in 1..=2 {
-                for src in [&sp, &noise] {
-                    let mut r = vec![0f32; length as usize];
-                    let mut e = r.clone();
-                    super::silk_apply_sine_window_FLP(&mut r, src, win_type, length);
-                    unsafe { c::silk_apply_sine_window_FLP(e.as_mut_ptr(), src.as_ptr(), win_type, length) };
-                    let (r, e): (Vec<u32>, Vec<u32>) = (r.iter().map(|x| x.to_bits()).collect(), e.iter().map(|x| x.to_bits()).collect());
-                    assert_eq!(r, e, "length {length} type {win_type}");
-                }
-            }
-        }
-    }
-}

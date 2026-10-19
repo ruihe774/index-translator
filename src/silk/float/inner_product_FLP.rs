@@ -63,30 +63,3 @@ pub fn silk_inner_product_FLP(data1: &[f32], data2: &[f32], dataSize: i32) -> f6
         result
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::testutil::{Rng, SpeechGen};
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_inner_product_FLP_wasm(data1: *const f32, data2: *const f32, dataSize: i32) -> f64;
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(1);
-        let mut sg = SpeechGen::new(2);
-        let sp: Vec<f32> = (0..1000).map(|_| sg.next_sample() as f32).collect();
-        let noise = rng.f32_vec(1000, 20000.0);
-        for n in 0..=400usize {
-            for (a, b) in [(&sp, &noise), (&sp, &sp), (&noise, &noise)] {
-                let (oa, ob) = (rng.range(0, 7) as usize, rng.range(0, 7) as usize);
-                let (x, y) = (&a[oa..oa + n], &b[ob..ob + n]);
-                let r = super::silk_inner_product_FLP(x, y, n as i32);
-                let e = unsafe { c::silk_inner_product_FLP_wasm(x.as_ptr(), y.as_ptr(), n as i32) };
-                assert_eq!(r.to_bits(), e.to_bits(), "n = {n}");
-            }
-        }
-    }
-}

@@ -1,10 +1,8 @@
 //! Port of silk/structs.h (encoder side), silk/resampler_structs.h and the encoder part of
 //! silk/control.h.
 //!
-//! All structs are `#[repr(C)]` with the same layout as the C build on wasm32, so tests can
-//! hand state initialized by the C oracle to Rust functions (and vice versa). Fields that the
-//! trimmed encoder never uses (stereo, LBRR, resampler, ...) are kept for that reason; the
-//! layout is checked against C by `layout_tests`.
+//! The structs still mirror the C layout, including fields the trimmed encoder never uses
+//! (stereo, LBRR, resampler, ...); nothing depends on that any more.
 
 #![allow(non_camel_case_types, non_snake_case)]
 

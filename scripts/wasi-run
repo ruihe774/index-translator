@@ -1,3 +1,0 @@
-#!/bin/sh
-# cargo runner for wasm32-wasip1: executes the wasm binary under Node's WASI.
-exec node --no-warnings "$(dirname "$0")/wasi-run.mjs" "$@"

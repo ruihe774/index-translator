@@ -12,23 +12,3 @@ pub fn silk_lin2log(inLin: i32) -> i32 {
     /* Piece-wise parabolic approximation */
     silk_ADD_LSHIFT32(silk_SMLAWB(frac_Q7, silk_MUL(frac_Q7, 128 - frac_Q7), 179), 31 - lz, 7)
 }
-
-#[cfg(test)]
-mod tests {
-    use crate::testutil::Rng;
-
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_lin2log(inLin: i32) -> i32;
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut rng = Rng::new(1);
-        for i in 0..20000 {
-            let x = if i < 1000 { i as i32 } else { rng.i32_bits(1 + i % 31) & i32::MAX };
-            assert_eq!(super::silk_lin2log(x), unsafe { c::silk_lin2log(x) }, "inLin = {x}");
-        }
-    }
-}

@@ -1,7 +1,7 @@
 //! Port of silk/check_control_input.c.
 //!
 //! The C version also has `celt_assert( 0 )` before each error return (active only in
-//! assertion builds); here the error codes are simply returned, as in the oracle build.
+//! assertion builds); here the error codes are simply returned, as in a non-assertion C build.
 
 use crate::silk::define::*;
 use crate::silk::structs::silk_EncControlStruct;
@@ -55,56 +55,4 @@ pub fn check_control_input(
     }
 
     SILK_NO_ERROR
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::testutil::{CSilkEncoder, Rng};
-
-    mod c {
-        use crate::silk::structs::silk_EncControlStruct;
-        unsafe extern "C" {
-            pub fn check_control_input(encControl: *mut silk_EncControlStruct) -> i32;
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let base = CSilkEncoder::new(20000, 5, false).ctl;
-        let mut rng = Rng::new(77);
-        let rates = [0, 8000, 12000, 16000, 24000, 32000, 44100, 48000, 96000, 11025];
-        for it in 0..5000 {
-            let mut ctl = base;
-            if it > 0 {
-                match rng.range(0, 9) {
-                    0 => ctl.API_sampleRate = rates[rng.range(0, 9) as usize],
-                    1 => ctl.desiredInternalSampleRate = rates[rng.range(0, 4) as usize],
-                    2 => ctl.maxInternalSampleRate = rates[rng.range(0, 4) as usize],
-                    3 => ctl.minInternalSampleRate = rates[rng.range(0, 4) as usize],
-                    4 => ctl.payloadSize_ms = rng.range(-1, 61),
-                    5 => ctl.packetLossPercentage = rng.range(-2, 102),
-                    6 => {
-                        ctl.useDTX = rng.range(-1, 2);
-                        ctl.useCBR = rng.range(-1, 2);
-                        ctl.useInBandFEC = rng.range(-1, 2);
-                    }
-                    7 => {
-                        ctl.nChannelsAPI = rng.range(0, 3);
-                        ctl.nChannelsInternal = rng.range(0, 3);
-                    }
-                    _ => ctl.complexity = rng.range(-1, 11),
-                }
-            }
-            // The C oracle is built with ENCODER_NUM_CHANNELS == 2; minisilk is mono-only.
-            let mut cc = ctl;
-            let expect = unsafe { c::check_control_input(&mut cc) };
-            let got = check_control_input(&ctl);
-            if ctl.nChannelsAPI == 2 || ctl.nChannelsInternal == 2 {
-                assert!(expect == SILK_NO_ERROR || expect == got || got == SILK_ENC_INVALID_NUMBER_OF_CHANNELS_ERROR);
-            } else {
-                assert_eq!(got, expect, "it {it}");
-            }
-        }
-    }
 }

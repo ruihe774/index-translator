@@ -321,24 +321,3 @@ pub fn silk_noise_shape_analysis_FLP(
         psEncCtrl.Tilt[k] = psShapeSt.Tilt_smth;
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::silk::float::encode_frame_FLP::tests::{c, for_each_frame, same_ctrl, same_state};
-
-    #[test]
-    fn matches_c() {
-        for_each_frame(|fr, what| {
-            let mut fr = fr.clone();
-            let off = fr.st.sCmn.ltp_mem_length as usize;
-            c::find_pitch_lags(&mut fr);
-            let mut r = fr.clone();
-            let mut cc = fr.clone();
-            silk_noise_shape_analysis_FLP(&mut r.st, &mut r.ctrl, &r.res_pitch[off..], off);
-            c::noise_shape_analysis(&mut cc);
-            same_state(&r.st, &cc.st, what);
-            same_ctrl(&r.ctrl, &cc.ctrl, what);
-        });
-    }
-}

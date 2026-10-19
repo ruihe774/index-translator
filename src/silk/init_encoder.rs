@@ -30,31 +30,3 @@ pub fn silk_init_encoder(
 
     ret
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::testutil::zeroed_box;
-
-    mod c {
-        use crate::silk::float::structs_flp::silk_encoder_state_FLP;
-        unsafe extern "C" {
-            pub fn silk_init_encoder(psEnc: *mut silk_encoder_state_FLP, arch: i32) -> i32;
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        let mut r: std::boxed::Box<silk_encoder_state_FLP> = zeroed_box();
-        let mut c: std::boxed::Box<silk_encoder_state_FLP> = zeroed_box();
-        let n = core::mem::size_of::<silk_encoder_state_FLP>();
-        unsafe {
-            core::ptr::write_bytes(&mut *r as *mut _ as *mut u8, 0x5A, n);
-            core::ptr::write_bytes(&mut *c as *mut _ as *mut u8, 0xC3, n);
-        }
-        assert_eq!(silk_init_encoder(&mut r), unsafe { c::silk_init_encoder(&mut *c, 0) });
-        let rb = unsafe { core::slice::from_raw_parts(&*r as *const _ as *const u8, n) };
-        let cb = unsafe { core::slice::from_raw_parts(&*c as *const _ as *const u8, n) };
-        assert!(rb == cb);
-    }
-}

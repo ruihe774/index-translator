@@ -3,7 +3,7 @@
 //! frames and VBR, with DTX. `no_std`, no allocation; scratch memory is a static
 //! pseudostack (see `stack`).
 
-#![cfg_attr(not(test), no_std)]
+#![no_std]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(clippy::all)]
 
@@ -12,15 +12,7 @@ compile_error!("minisilk only supports wasm32 (build with -Ctarget-feature=+simd
 #[cfg(not(target_feature = "simd128"))]
 compile_error!("minisilk requires -Ctarget-feature=+simd128");
 
-#[cfg(test)]
-extern crate oracle;
-
 pub mod celt;
 pub mod opus;
 pub mod silk;
 pub mod stack;
-
-#[cfg(test)]
-mod layout_tests;
-#[cfg(test)]
-mod testutil;

@@ -79,5 +79,3 @@ pub mod tables {
     pub use super::pitch_est_tables::*;
 }
 
-#[cfg(test)]
-mod tables_tests;

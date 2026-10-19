@@ -33,19 +33,3 @@ pub fn silk_sigm_Q15(mut in_Q5: i32) -> i32 {
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    mod c {
-        unsafe extern "C" {
-            pub fn silk_sigm_Q15(in_Q5: i32) -> i32;
-        }
-    }
-
-    #[test]
-    fn matches_c() {
-        for x in -300..300 {
-            assert_eq!(super::silk_sigm_Q15(x), unsafe { c::silk_sigm_Q15(x) }, "in_Q5 = {x}");
-        }
-    }
-}

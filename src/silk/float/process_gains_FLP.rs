@@ -84,27 +84,3 @@ pub fn silk_process_gains_FLP(
     debug_assert!(psEncCtrl.Lambda > 0.0f32);
     debug_assert!(psEncCtrl.Lambda < 2.0f32);
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::silk::float::encode_frame_FLP::tests::{c, for_each_frame, same_ctrl, same_state};
-
-    #[test]
-    fn matches_c() {
-        for_each_frame(|fr, what| {
-            for cond in [CODE_INDEPENDENTLY, CODE_CONDITIONALLY] {
-                let mut fr = fr.clone();
-                c::find_pitch_lags(&mut fr);
-                c::noise_shape_analysis(&mut fr);
-                c::find_pred_coefs(&mut fr, cond);
-                let mut r = fr.clone();
-                let mut cc = fr.clone();
-                silk_process_gains_FLP(&mut r.st, &mut r.ctrl, cond);
-                c::process_gains(&mut cc, cond);
-                same_state(&r.st, &cc.st, what);
-                same_ctrl(&r.ctrl, &cc.ctrl, what);
-            }
-        });
-    }
-}

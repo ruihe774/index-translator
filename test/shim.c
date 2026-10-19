@@ -1,6 +1,6 @@
 /* Non-variadic wrappers over the libopus API, for Deno FFI (which cannot call
- * the variadic opus_*_ctl). Configures the encoder exactly as oracle/src/lib.rs
- * RefEncoder does. */
+ * the variadic opus_*_ctl). The encoder is configured as minisilk is fixed:
+ * 16 kHz mono RESTRICTED_SILK, wideband, VBR, no FEC. */
 #include <opus.h>
 
 OpusEncoder *shim_enc_create(int bitrate, int complexity, int dtx, int *err) {
