@@ -9,7 +9,8 @@
 //!    `minisilk_encode_i16()`. The return value is the packet length (bytes at
 //!    `minisilk_output_ptr()`, capacity 1276) or a negative Opus error code.
 //! 3. `minisilk_set_*` mirror the matching `OPUS_SET_*` ctls and return 0 or a negative code.
-//!    `minisilk_lookahead()` is `OPUS_GET_LOOKAHEAD` (samples at 16 kHz).
+//!    `minisilk_lookahead()` is `OPUS_GET_LOOKAHEAD` (samples at 16 kHz),
+//!    `minisilk_final_range()` `OPUS_GET_FINAL_RANGE` and `minisilk_in_dtx()` `OPUS_GET_IN_DTX`.
 #![no_std]
 
 use core::ptr::addr_of_mut;
@@ -100,4 +101,14 @@ pub extern "C" fn minisilk_encode_i16() -> i32 {
 #[unsafe(no_mangle)]
 pub extern "C" fn minisilk_lookahead() -> i32 {
     enc().get_lookahead()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn minisilk_final_range() -> u32 {
+    enc().get_final_range()
+}
+
+#[unsafe(no_mangle)]
+pub extern "C" fn minisilk_in_dtx() -> i32 {
+    enc().get_in_dtx()
 }

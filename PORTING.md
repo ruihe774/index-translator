@@ -112,6 +112,23 @@ mod tests {
 - Use realistic input ranges (what the encoder actually feeds the function),
   plus edge cases. Random garbage inputs can make C hit undefined behaviour.
 
+## Native cross-check
+
+The wasm C oracle is itself checked against natively built upstream libopus (the
+commit the fork is based on) by encoding through the public API from Deno:
+
+```sh
+native/build.sh && scripts/build.sh
+deno run --allow-read --allow-ffi --allow-run native/compare.ts [--quick] [audio files...]
+```
+
+`native/build.sh` builds `target/native/libopus-scalar.so` (intrinsics off,
+`-ffp-contract=off`) and `libopus-rtcd.so` (upstream defaults, SSE/AVX2). Both
+wasm variants must be bit-exact with the scalar build (packets, final range,
+DTX state). The rtcd build's float kernels sum in a different order, so it is
+compared for stream validity and coding quality only. Every minisilk packet is
+also decoded natively and its decoder final range checked.
+
 ## Struct layout
 
 `scripts/gen_layout.py` generates a C/Rust `sizeof`/`offsetof` cross-check from
