@@ -134,6 +134,7 @@ unsafe extern "C" {
 
     // celt_encoder.c
     pub fn celt_encoder_get_size(channels: c_int) -> c_int;
+    pub fn celt_encode_with_ec(st: *mut c_void, pcm: *const f32, frame_size: c_int, compressed: *mut c_uchar, nb_compressed_bytes: c_int, enc: *mut c_void) -> c_int;
 
     // entenc.c / entcode.c (`ec_enc *` is `*mut c_void`)
     pub fn ec_enc_init(this: *mut c_void, buf: *mut u8, size: u32);
@@ -238,6 +239,7 @@ unsafe extern "C" {
     pub fn oracle_tone_detect(input: *const f32, cc: c_int, n: c_int, toneishness: *mut f32, fs: i32) -> f32;
     pub fn oracle_run_prefilter(st: *mut c_void, input: *mut f32, prefilter_mem: *mut f32, cc: c_int, n: c_int, prefilter_tapset: c_int, pitch: *mut c_int, gain: *mut f32, qgain: *mut c_int, enabled: c_int, complexity: c_int, tf_estimate: f32, nb_available_bytes: c_int, analysis: *mut c_void, tone_freq: f32, toneishness: f32) -> c_int;
     pub fn oracle_compute_vbr(mode: *const c_void, analysis: *mut c_void, base_target: i32, lm: c_int, bitrate: i32, last_coded_bands: c_int, c: c_int, intensity: c_int, constrained_vbr: c_int, stereo_saving: f32, tot_boost: c_int, tf_estimate: f32, pitch_change: c_int, max_depth: f32, lfe: c_int, has_surround_mask: c_int, surround_masking: f32, temporal_vbr: f32) -> c_int;
+    pub fn oracle_celt_encoder_ctl_int(st: *mut c_void, request: c_int, value: c_int) -> c_int;
 
     // bands_x.c (`ctx` = struct band_ctx *, `sctx` = struct split_ctx *)
     pub fn oracle_compute_channel_weights(ex: f32, ey: f32, w: *mut f32);

@@ -82,3 +82,8 @@ int oracle_compute_vbr(const void *mode, void *analysis, opus_int32 base_target,
 { return compute_vbr((const CELTMode*)mode, (AnalysisInfo*)analysis, base_target, LM, bitrate,
       lastCodedBands, C, intensity, constrained_vbr, stereo_saving, tot_boost, tf_estimate,
       pitch_change, maxDepth, lfe, has_surround_mask, surround_masking, temporal_vbr); }
+
+/* Non-variadic opus_custom_encoder_ctl for the requests that take one opus_int32 (and
+   OPUS_RESET_STATE, which ignores `value`). */
+int oracle_celt_encoder_ctl_int(void *st, int request, int value)
+{ return opus_custom_encoder_ctl((CELTEncoder*)st, request, value); }

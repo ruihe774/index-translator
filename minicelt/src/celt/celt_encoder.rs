@@ -2065,7 +2065,22 @@ pub fn celt_encoder_get_final_range(st: &CELTEncoder) -> u32 {
     st.rng
 }
 
-/// Encodes one frame (celt/celt_encoder.c, implemented by the CELT port).
+// ---- celt_encode_with_ec ----
+
+use super::arch::celt_isnan;
+use super::bands::{
+    SPREAD_NONE, SPREAD_NORMAL, compute_band_energies, hysteresis_decision, normalise_bands, quant_all_bands,
+    spreading_decision,
+};
+use super::celt::{bitrate_to_bits, init_caps, spread_icdf, tapset_icdf, trim_icdf};
+use super::entcode::{EC_ILOG, ec_get_error, ec_tell_frac};
+use super::entenc::{ec_enc_bits, ec_enc_done, ec_enc_icdf, ec_enc_init, ec_enc_shrink, ec_enc_uint};
+use super::mathops::{celt_maxabs_res, celt_rcp};
+use super::quant_bands::{amp2Log2, quant_coarse_energy, quant_energy_finalise, quant_fine_energy};
+use super::rate::clt_compute_allocation;
+use crate::opus::defines::{OPUS_BAD_ARG, OPUS_BITRATE_MAX, OPUS_INTERNAL_ERROR};
+
+/// Encodes one frame (celt_encoder.c).
 ///
 /// Contract: `pcm` holds `frame_size` interleaved samples of `st.channels` channels
 /// (`pcm.len() >= frame_size * st.channels`, float scale +-1 i.e. opus_res); `frame_size`
@@ -2074,16 +2089,1296 @@ pub fn celt_encoder_get_final_range(st: &CELTEncoder) -> u32 {
 /// caller initialised, e.g. on `data + 1` after the TOC byte) and `compressed` may be null.
 /// Returns the number of bytes written (`nbCompressedBytes` after ec_enc_shrink in VBR)
 /// or a negative Opus error code; on return `st.rng` holds the final range.
+///
+/// Fixed configuration (see PORTING.md): `upsample == 1`, `LM == 3`, VBR only (`vbr_rate > 0`;
+/// the CBR branches are removed), no analysis, no QEXT, no RESYNTH, no LFE, no energy mask
+/// (surround), no `signalling`, `start == 0` (so `hybrid == 0` and the hybrid-only code is
+/// removed). `pitch_change` is not computed (it only feeds the analysis terms of compute_vbr).
 pub fn celt_encode_with_ec(
     st: &mut CELTEncoder,
     pcm: &[f32],
-    frame_size: i32,
+    mut frame_size: i32,
     compressed: *mut u8,
-    nbCompressedBytes: i32,
-    enc: Option<&mut crate::celt::entcode::ec_enc>,
+    mut nbCompressedBytes: i32,
+    enc: Option<&mut ec_enc>,
 ) -> i32 {
-    let _ = (st, pcm, frame_size, compressed, nbCompressedBytes, enc);
-    todo!("celt_encode_with_ec: ported by the CELT encoder group")
+    let mut bits: i32;
+    let mut _enc: ec_enc = ec_enc {
+        buf: core::ptr::null_mut(),
+        storage: 0,
+        end_offs: 0,
+        end_window: 0,
+        nend_bits: 0,
+        nbits_total: 0,
+        offs: 0,
+        rng: 0,
+        val: 0,
+        ext: 0,
+        rem: 0,
+        error: 0,
+    };
+    let mut shortBlocks: i32;
+    let mut isTransient: i32;
+    let CC = st.channels;
+    let C = st.stream_channels;
+    let mut LM: i32;
+    let nbFilledBytes: i32;
+    let mut nbAvailableBytes: i32;
+    let mut effectiveBytes: i32;
+    let mut pitch_index: i32 = COMBFILTER_MINPERIOD;
+    let mut gain1: f32 = 0.0;
+    let mut dual_stereo: i32 = 0;
+    let vbr_rate: i32;
+    let mut total_bits: i32;
+    let mut tell: i32;
+    let prefilter_tapset: i32;
+    let pf_on: i32;
+    let mut anti_collapse_on: i32 = 0;
+    let mut silence: i32;
+    let mut tf_chan: i32 = 0;
+    let mut tf_estimate: f32;
+    let mut tot_boost: i32 = 0;
+    let mut transient_got_disabled: i32 = 0;
+    let mut temporal_vbr: f32;
+    let mut weak_transient: i32 = 0;
+    let mut toneishness: f32 = 0.0;
+    let packet_size_cap: i32 = 1275;
+    let sg = stack::save();
+
+    let mode = st.mode;
+    let nbEBands = mode.nbEBands;
+    let nb = nbEBands as usize;
+    let overlap = mode.overlap;
+    let eBands = mode.eBands;
+    let start = st.start;
+    let end = st.end;
+    /* hybrid = start != 0 is always 0 here */
+    debug_assert!(start == 0);
+    debug_assert!(st.upsample == 1 && st.signalling == 0 && st.lfe == 0 && st.energy_mask.is_null());
+    debug_assert!(st.analysis.valid == 0);
+    tf_estimate = 0.0;
+    if nbCompressedBytes < 2 {
+        return OPUS_BAD_ARG;
+    }
+
+    frame_size *= st.upsample;
+    LM = 0;
+    while LM <= mode.maxLM {
+        if mode.shortMdctSize << LM == frame_size {
+            break;
+        }
+        LM += 1;
+    }
+    if LM > mode.maxLM {
+        return OPUS_BAD_ARG;
+    }
+    debug_assert!(LM == 3);
+    let M: i32 = 1 << LM;
+    let N: i32 = M * mode.shortMdctSize;
+    let (Nu, ovu) = (N as usize, overlap as usize);
+    let mp = COMBFILTER_MAXPERIOD as usize;
+
+    /* prefilter_mem, oldBandE, oldLogE, oldLogE2, energyError are the st fields of those names. */
+
+    match &enc {
+        None => {
+            tell = 1;
+            nbFilledBytes = 0;
+        }
+        Some(e) => {
+            /* (tell0_frac is only used in hybrid mode) */
+            tell = ec_tell(e);
+            nbFilledBytes = (tell + 4) >> 3;
+        }
+    }
+
+    /* Can't produce more than 1275 output bytes for the main payload, plus any QEXT extra data. */
+    nbCompressedBytes = IMIN(nbCompressedBytes, packet_size_cap);
+
+    /* VBR only: the CBR branch (vbr_rate = 0) is removed. */
+    debug_assert!(st.vbr != 0 && st.bitrate != OPUS_BITRATE_MAX);
+    {
+        vbr_rate = bitrate_to_bits(st.bitrate, mode.Fs, frame_size) << BITRES;
+        effectiveBytes = vbr_rate >> (3 + BITRES);
+    }
+    debug_assert!(vbr_rate > 0);
+    nbAvailableBytes = nbCompressedBytes - nbFilledBytes;
+    let mut equiv_rate: i32 = ((nbCompressedBytes * 8 * 50) << (3 - LM)) - (40 * C + 20) * ((400 >> LM) - 50);
+    if st.bitrate != OPUS_BITRATE_MAX {
+        equiv_rate = IMIN(equiv_rate, st.bitrate - (40 * C + 20) * ((400 >> LM) - 50));
+    }
+
+    let enc: &mut ec_enc = match enc {
+        Some(e) => e,
+        None => {
+            ec_enc_init(&mut _enc, compressed, nbCompressedBytes as u32);
+            &mut _enc
+        }
+    };
+
+    /* Computes the max bit-rate allowed in VBR mode to avoid violating the
+    target rate and buffering.
+    We must do this up front so that bust-prevention logic triggers
+    correctly if we don't have enough bits. */
+    if st.constrained_vbr != 0 {
+        /* We could use any multiple of vbr_rate as bound (depending on the
+        delay).
+        This is clamped to ensure we use at least two bytes if the encoder
+        was entirely empty, but to allow 0 in hybrid mode. */
+        let vbr_bound: i32 = vbr_rate;
+        let max_allowed: i32 = IMIN(
+            IMAX(if tell == 1 { 2 } else { 0 }, (vbr_rate + vbr_bound - st.vbr_reservoir) >> (BITRES + 3)),
+            nbAvailableBytes,
+        );
+        if max_allowed < nbAvailableBytes {
+            nbCompressedBytes = nbFilledBytes + max_allowed;
+            nbAvailableBytes = max_allowed;
+            ec_enc_shrink(enc, nbCompressedBytes as u32);
+        }
+    }
+    total_bits = nbCompressedBytes * 8;
+
+    let mut effEnd = end;
+    if effEnd > mode.effEBands {
+        effEnd = mode.effEBands;
+    }
+
+    let in_ = sg.alloc::<f32>((CC * (N + overlap)) as usize);
+
+    let mut sample_max: f32 = MAX32(st.overlap_max, celt_maxabs_res(pcm, C * (N - overlap) / st.upsample));
+    st.overlap_max = celt_maxabs_res(&pcm[(C * (N - overlap) / st.upsample) as usize..], C * overlap / st.upsample);
+    sample_max = MAX32(sample_max, st.overlap_max);
+    silence = (sample_max <= 1.0f32 / (1i32 << st.lsb_depth) as f32) as i32;
+    if tell == 1 {
+        ec_enc_bit_logp(enc, silence, 15);
+    } else {
+        silence = 0;
+    }
+    if silence != 0 {
+        /*In VBR mode there is no need to send more than the minimum. */
+        {
+            nbCompressedBytes = IMIN(nbCompressedBytes, nbFilledBytes + 2);
+            effectiveBytes = nbCompressedBytes;
+            total_bits = nbCompressedBytes * 8;
+            nbAvailableBytes = 2;
+            ec_enc_shrink(enc, nbCompressedBytes as u32);
+        }
+        /* Pretend we've filled all the remaining bits with zeros
+        (that's what the initialiser did anyway) */
+        tell = nbCompressedBytes * 8;
+        enc.nbits_total += tell - ec_tell(enc);
+    }
+    for c in 0..CC as usize {
+        let need_clip: i32 = (st.clip != 0 && sample_max > 65536.0) as i32;
+        let base = c * (Nu + ovu);
+        celt_preemphasis(
+            &pcm[c..],
+            &mut in_[base + ovu..base + ovu + Nu],
+            N,
+            CC,
+            &mode.preemph,
+            &mut st.preemph_memE[c],
+            need_clip,
+        );
+        in_[base..base + ovu].copy_from_slice(&st.prefilter_mem[(1 + c) * mp - ovu..(1 + c) * mp]);
+    }
+
+    let tone_freq: f32 = tone_detect(in_, CC, N + overlap, &mut toneishness, mode.Fs);
+    isTransient = 0;
+    shortBlocks = 0;
+    if st.complexity >= 1 {
+        /* Reduces the likelihood of energy instability on fricatives at low bitrate
+        in hybrid mode. It seems like we still want to have real transients on vowels
+        though (small SILK quantization offset value). */
+        let allow_weak_transients: i32 = 0; /* hybrid only */
+        isTransient = transient_analysis(
+            in_,
+            N + overlap,
+            CC,
+            &mut tf_estimate,
+            &mut tf_chan,
+            allow_weak_transients,
+            &mut weak_transient,
+            tone_freq,
+            toneishness,
+        );
+    }
+    toneishness = MIN32(toneishness, 1.0f32 - tf_estimate);
+    /* Find pitch period and gain */
+    {
+        let mut qg: i32 = 0;
+        let enabled: i32 =
+            (nbAvailableBytes > 12 * C && silence == 0 && tell + 16 <= total_bits && st.disable_pf == 0) as i32;
+
+        prefilter_tapset = st.tapset_decision;
+        let complexity = st.complexity;
+        pf_on = run_prefilter(
+            st,
+            in_,
+            CC,
+            N,
+            prefilter_tapset,
+            &mut pitch_index,
+            &mut gain1,
+            &mut qg,
+            enabled,
+            complexity,
+            tf_estimate,
+            nbAvailableBytes,
+            tone_freq,
+            toneishness,
+        );
+        /* (pitch_change is only used by the analysis terms of compute_vbr) */
+        if pf_on == 0 {
+            if tell + 16 <= total_bits {
+                ec_enc_bit_logp(enc, 0, 1);
+            }
+        } else {
+            /*This block is not gated by a total bits check only because
+            of the nbAvailableBytes check above.*/
+            ec_enc_bit_logp(enc, 1, 1);
+            pitch_index += 1;
+            let octave: i32 = EC_ILOG(pitch_index as u32) - 5;
+            ec_enc_uint(enc, octave as u32, 6);
+            ec_enc_bits(enc, (pitch_index - (16 << octave)) as u32, (4 + octave) as u32);
+            pitch_index -= 1;
+            ec_enc_bits(enc, qg as u32, 3);
+            ec_enc_icdf(enc, prefilter_tapset, &tapset_icdf, 2);
+        }
+    }
+    if LM > 0 && ec_tell(enc) + 3 <= total_bits {
+        if isTransient != 0 {
+            shortBlocks = M;
+        }
+    } else {
+        isTransient = 0;
+        transient_got_disabled = 1;
+    }
+
+    let freq = sg.alloc::<f32>((CC * N) as usize); /* Interleaved signal MDCTs */
+    let bandE = sg.alloc::<f32>(nb * CC as usize);
+    let bandLogE = sg.alloc::<f32>(nb * CC as usize);
+
+    let secondMdct = shortBlocks != 0 && st.complexity >= 8;
+    let bandLogE2 = sg.alloc::<f32>(C as usize * nb);
+    if secondMdct {
+        compute_mdcts(mode, 0, in_, freq, C, CC, LM);
+        compute_band_energies(mode, freq, bandE, effEnd, C, LM);
+        amp2Log2(mode, effEnd, end, bandE, bandLogE2, C);
+        for c in 0..C as usize {
+            for i in 0..end as usize {
+                bandLogE2[nb * c + i] += 0.5f32 * LM as f32;
+            }
+        }
+    }
+
+    compute_mdcts(mode, shortBlocks, in_, freq, C, CC, LM);
+    /* This should catch any NaN in the CELT input. Since we're not supposed to see any (they're filtered
+    at the Opus layer), just abort. */
+    debug_assert!(!celt_isnan(freq[0]) && (C == 1 || !celt_isnan(freq[Nu])));
+    if CC == 2 && C == 1 {
+        tf_chan = 0;
+    }
+    compute_band_energies(mode, freq, bandE, effEnd, C, LM);
+
+    /* (LFE band limiting removed) */
+    amp2Log2(mode, effEnd, end, bandE, bandLogE, C);
+
+    /* (surround_dynalloc / surround masking removed: no energy mask) */
+    /* Temporal VBR (but not for LFE) */
+    {
+        let mut follow: f32 = -10.0;
+        let mut frame_avg: f32 = 0.0;
+        let offset: f32 = if shortBlocks != 0 { 0.5f32 * LM as f32 } else { 0.0 };
+        for i in start as usize..end as usize {
+            follow = MAX32(follow - 1.0, bandLogE[i] - offset);
+            if C == 2 {
+                follow = MAX32(follow, bandLogE[i + nb] - offset);
+            }
+            frame_avg += follow;
+        }
+        frame_avg /= (end - start) as f32;
+        temporal_vbr = frame_avg - st.spec_avg;
+        temporal_vbr = MIN32(3.0, MAX32(-1.5, temporal_vbr));
+        st.spec_avg += 0.02f32 * temporal_vbr;
+    }
+
+    if !secondMdct {
+        bandLogE2.copy_from_slice(&bandLogE[..C as usize * nb]);
+    }
+
+    /* Last chance to catch any transient we might have missed in the
+    time-domain analysis */
+    if LM > 0 && ec_tell(enc) + 3 <= total_bits && isTransient == 0 && st.complexity >= 5 {
+        if patch_transient_decision(bandLogE, &st.oldBandE, nbEBands, start, end, C) != 0 {
+            isTransient = 1;
+            shortBlocks = M;
+            compute_mdcts(mode, shortBlocks, in_, freq, C, CC, LM);
+            compute_band_energies(mode, freq, bandE, effEnd, C, LM);
+            amp2Log2(mode, effEnd, end, bandE, bandLogE, C);
+            /* Compensate for the scaling of short vs long mdcts */
+            for c in 0..C as usize {
+                for i in 0..end as usize {
+                    bandLogE2[nb * c + i] += 0.5f32 * LM as f32;
+                }
+            }
+            tf_estimate = 0.2;
+        }
+    }
+
+    if LM > 0 && ec_tell(enc) + 3 <= total_bits {
+        ec_enc_bit_logp(enc, isTransient, 3);
+    }
+
+    let X = sg.alloc::<f32>((C * N) as usize); /* Interleaved normalised MDCTs */
+
+    /* Band normalisation */
+    normalise_bands(mode, freq, X, bandE, effEnd, C, M);
+
+    let enable_tf_analysis = effectiveBytes >= 15 * C && st.complexity >= 2 && toneishness < 0.98f32;
+
+    let offsets = sg.alloc::<i32>(nb);
+    let importance = sg.alloc::<i32>(nb);
+    let spread_weight = sg.alloc::<i32>(nb);
+
+    let maxDepth: f32 = dynalloc_analysis(
+        bandLogE,
+        bandLogE2,
+        nbEBands,
+        start,
+        end,
+        C,
+        offsets,
+        st.lsb_depth,
+        mode.logN,
+        isTransient,
+        st.constrained_vbr,
+        eBands,
+        LM,
+        effectiveBytes,
+        &mut tot_boost,
+        importance,
+        spread_weight,
+        tone_freq,
+        toneishness,
+    );
+
+    let tf_res = sg.alloc::<i32>(nb);
+    let tf_select: i32;
+    /* Disable variable tf resolution for hybrid and at very low bitrate */
+    if enable_tf_analysis {
+        let lambda: i32 = IMAX(80, 20480 / effectiveBytes + 2);
+        tf_select = tf_analysis(mode, effEnd, isTransient, tf_res, lambda, X, N, LM, tf_estimate, tf_chan, importance);
+        for i in effEnd as usize..end as usize {
+            tf_res[i] = tf_res[effEnd as usize - 1];
+        }
+    } else {
+        /* (the two hybrid cases are removed) */
+        for i in 0..end as usize {
+            tf_res[i] = isTransient;
+        }
+        tf_select = 0;
+    }
+
+    let error = sg.alloc::<f32>(C as usize * nb);
+    for c in 0..C as usize {
+        for i in start as usize..end as usize {
+            /* When the energy is stable, slightly bias energy quantization towards
+            the previous error to make the gain more stable (a constant offset is
+            better than fluctuations). */
+            if ABS32(bandLogE[i + c * nb] - st.oldBandE[i + c * nb]) < 2.0 {
+                bandLogE[i + c * nb] -= 0.25f32 * st.energyError[i + c * nb];
+            }
+        }
+    }
+    quant_coarse_energy(
+        mode,
+        start,
+        end,
+        effEnd,
+        bandLogE,
+        &mut st.oldBandE,
+        total_bits as u32,
+        error,
+        enc,
+        C,
+        LM,
+        nbAvailableBytes,
+        st.force_intra,
+        &mut st.delayedIntra,
+        (st.complexity >= 4) as i32,
+        st.loss_rate,
+    );
+
+    tf_encode(start, end, isTransient, tf_res, LM, tf_select, enc);
+
+    if ec_tell(enc) + 4 <= total_bits {
+        /* (LFE and hybrid cases removed) */
+        if shortBlocks != 0 || st.complexity < 3 || nbAvailableBytes < 10 * C {
+            if st.complexity == 0 {
+                st.spread_decision = SPREAD_NONE;
+            } else {
+                st.spread_decision = SPREAD_NORMAL;
+            }
+        } else {
+            /* Disable new spreading+tapset estimator until we can show it works
+            better than the old one. So far it seems like spreading_decision()
+            works best. */
+            st.spread_decision = spreading_decision(
+                mode,
+                X,
+                &mut st.tonal_average,
+                st.spread_decision,
+                &mut st.hf_average,
+                &mut st.tapset_decision,
+                (pf_on != 0 && shortBlocks == 0) as i32,
+                effEnd,
+                C,
+                M,
+                spread_weight,
+            );
+        }
+        ec_enc_icdf(enc, st.spread_decision, &spread_icdf, 5);
+    } else {
+        st.spread_decision = SPREAD_NORMAL;
+    }
+
+    let cap = sg.alloc::<i32>(nb);
+    init_caps(mode, cap, LM, C);
+
+    let mut dynalloc_logp: i32 = 6;
+    total_bits <<= BITRES;
+    let mut total_boost: i32 = 0;
+    tell = ec_tell_frac(enc) as i32;
+    for i in start as usize..end as usize {
+        let width: i32 = C * (eBands[i + 1] as i32 - eBands[i] as i32) << LM;
+        /* quanta is 6 bits, but no more than 1 bit/sample
+        and no less than 1/8 bit/sample */
+        let quanta: i32 = IMIN(width << BITRES, IMAX(6 << BITRES, width));
+        let mut dynalloc_loop_logp: i32 = dynalloc_logp;
+        let mut boost: i32 = 0;
+        let mut j: i32 = 0;
+        while tell + (dynalloc_loop_logp << BITRES) < total_bits - total_boost && boost < cap[i] {
+            let flag: i32 = (j < offsets[i]) as i32;
+            ec_enc_bit_logp(enc, flag, dynalloc_loop_logp as u32);
+            tell = ec_tell_frac(enc) as i32;
+            if flag == 0 {
+                break;
+            }
+            boost += quanta;
+            total_boost += quanta;
+            dynalloc_loop_logp = 1;
+            j += 1;
+        }
+        /* Making dynalloc more likely */
+        if j != 0 {
+            dynalloc_logp = IMAX(2, dynalloc_logp - 1);
+        }
+        offsets[i] = boost;
+    }
+
+    if C == 2 {
+        static intensity_thresholds: [f32; 21] =
+        /* 0  1  2  3  4  5  6  7  8  9 10 11 12 13 14 15 16 17 18 19  20  off*/
+            [1., 2., 3., 4., 5., 6., 7., 8., 16., 24., 36., 44., 50., 56., 62., 67., 72., 79., 88., 106., 134.];
+        static intensity_histeresis: [f32; 21] =
+            [1., 1., 1., 1., 1., 1., 1., 2., 2., 2., 2., 2., 2., 2., 3., 3., 4., 5., 6., 8., 8.];
+
+        /* Always use MS for 2.5 ms frames until we can do a better analysis */
+        if LM != 0 {
+            dual_stereo = stereo_analysis(mode, X, LM, N);
+        }
+
+        st.intensity = hysteresis_decision(
+            (equiv_rate / 1000) as f32,
+            &intensity_thresholds,
+            &intensity_histeresis,
+            21,
+            st.intensity,
+        );
+        st.intensity = IMIN(end, IMAX(start, st.intensity));
+    }
+
+    let mut alloc_trim: i32 = 5;
+    if tell + (6 << BITRES) <= total_bits - total_boost {
+        /* (start > 0 and LFE are impossible here) */
+        alloc_trim = alloc_trim_analysis(
+            mode,
+            X,
+            bandLogE,
+            end,
+            LM,
+            C,
+            N,
+            &mut st.stereo_saving,
+            tf_estimate,
+            st.intensity,
+            equiv_rate,
+        );
+        ec_enc_icdf(enc, alloc_trim, &trim_icdf, 7);
+        tell = ec_tell_frac(enc) as i32;
+    }
+
+    /* In VBR mode the frame size must not be reduced so much that it would
+    result in the encoder running out of bits.
+    The margin of 2 bytes ensures that none of the bust-prevention logic
+    in the decoder will have triggered so far. */
+    let min_allowed: i32 = ((tell + total_boost + (1 << (BITRES + 3)) - 1) >> (BITRES + 3)) + 2;
+    /* (the hybrid redundancy margin is removed) */
+    /* Variable bitrate */
+    {
+        let alpha: f32;
+        let mut delta: i32;
+        /* The target rate in 8th bits per frame */
+        let mut target: i32;
+        let mut base_target: i32;
+        let lm_diff: i32 = mode.maxLM - LM;
+
+        /* Don't attempt to use more than 510 kb/s, even for frames smaller than 20 ms.
+        The CELT allocator will just not be able to use more than that anyway. */
+        nbCompressedBytes = IMIN(nbCompressedBytes, packet_size_cap >> (3 - LM));
+        base_target = vbr_rate - ((40 * C + 20) << BITRES);
+
+        if st.constrained_vbr != 0 {
+            base_target += st.vbr_offset >> lm_diff;
+        }
+
+        target = compute_vbr(
+            mode,
+            base_target,
+            LM,
+            equiv_rate,
+            st.lastCodedBands,
+            C,
+            st.intensity,
+            st.constrained_vbr,
+            st.stereo_saving,
+            tot_boost,
+            tf_estimate,
+            maxDepth,
+            temporal_vbr,
+        );
+        /* The current offset is removed from the target and the space used
+        so far is added*/
+        target = target + tell;
+
+        nbAvailableBytes = (target + (1 << (BITRES + 2))) >> (BITRES + 3);
+        nbAvailableBytes = IMAX(min_allowed, nbAvailableBytes);
+        nbAvailableBytes = IMIN(nbCompressedBytes, nbAvailableBytes);
+
+        /* By how much did we "miss" the target on that frame */
+        delta = target - vbr_rate;
+
+        target = nbAvailableBytes << (BITRES + 3);
+
+        /*If the frame is silent we don't adjust our drift, otherwise
+        the encoder will shoot to very high rates after hitting a
+        span of silence, but we do allow the bitres to refill.
+        This means that we'll undershoot our target in CVBR/VBR modes
+        on files with lots of silence. */
+        if silence != 0 {
+            nbAvailableBytes = 2;
+            target = 2 * 8 << BITRES;
+            delta = 0;
+        }
+
+        if st.vbr_count < 970 {
+            st.vbr_count += 1;
+            alpha = celt_rcp((st.vbr_count + 20) as f32);
+        } else {
+            alpha = 0.001;
+        }
+        /* How many bits have we used in excess of what we're allowed */
+        if st.constrained_vbr != 0 {
+            st.vbr_reservoir += target - vbr_rate;
+        }
+
+        /* Compute the offset we need to apply in order to reach the target */
+        if st.constrained_vbr != 0 {
+            st.vbr_drift += (alpha * ((delta * (1 << lm_diff)) - st.vbr_offset - st.vbr_drift) as f32) as i32;
+            st.vbr_offset = -st.vbr_drift;
+        }
+
+        if st.constrained_vbr != 0 && st.vbr_reservoir < 0 {
+            /* We're under the min value -- increase rate */
+            let adjust: i32 = (-st.vbr_reservoir) / (8 << BITRES);
+            /* Unless we're just coding silence */
+            nbAvailableBytes += if silence != 0 { 0 } else { adjust };
+            st.vbr_reservoir = 0;
+        }
+        nbCompressedBytes = IMIN(nbCompressedBytes, nbAvailableBytes);
+        /* This moves the raw bits to take into account the new compressed size */
+        ec_enc_shrink(enc, nbCompressedBytes as u32);
+    }
+
+    /* Bit allocation */
+    let fine_quant = sg.alloc::<i32>(nb);
+    let pulses = sg.alloc::<i32>(nb);
+    let fine_priority = sg.alloc::<i32>(nb);
+
+    /* bits =           packet size                    - where we are - safety*/
+    bits = ((nbCompressedBytes * 8) << BITRES) - ec_tell_frac(enc) as i32 - 1;
+    let anti_collapse_rsv: i32 =
+        if isTransient != 0 && LM >= 2 && bits >= ((LM + 2) << BITRES) { 1 << BITRES } else { 0 };
+    bits -= anti_collapse_rsv;
+    /* (analysis.valid is always 0, LFE is always 0) */
+    let signalBandwidth: i32 = end - 1;
+    let mut balance: i32 = 0;
+    let codedBands: i32 = clt_compute_allocation(
+        mode,
+        start,
+        end,
+        offsets,
+        cap,
+        alloc_trim,
+        &mut st.intensity,
+        &mut dual_stereo,
+        bits,
+        &mut balance,
+        pulses,
+        fine_quant,
+        fine_priority,
+        C,
+        LM,
+        enc,
+        st.lastCodedBands,
+        signalBandwidth,
+    );
+    if st.lastCodedBands != 0 {
+        st.lastCodedBands = IMIN(st.lastCodedBands + 1, IMAX(st.lastCodedBands - 1, codedBands));
+    } else {
+        st.lastCodedBands = codedBands;
+    }
+
+    quant_fine_energy(mode, start, end, &mut st.oldBandE, error, fine_quant, enc, C);
+    st.energyError[..nb * CC as usize].fill(0.0);
+
+    /* Residual quantisation */
+    let collapse_masks = sg.alloc::<u8>(C as usize * nb);
+    {
+        let (Xl, Xr) = X.split_at_mut(Nu);
+        quant_all_bands(
+            mode,
+            start,
+            end,
+            Xl,
+            if C == 2 { Some(Xr) } else { None },
+            collapse_masks,
+            bandE,
+            pulses,
+            shortBlocks,
+            st.spread_decision,
+            dual_stereo,
+            st.intensity,
+            tf_res,
+            nbCompressedBytes * (8 << BITRES) - anti_collapse_rsv,
+            balance,
+            enc,
+            LM,
+            codedBands,
+            &mut st.rng,
+            st.complexity,
+            st.disable_inv,
+        );
+    }
+
+    if anti_collapse_rsv > 0 {
+        anti_collapse_on = (st.consec_transient < 2) as i32;
+        ec_enc_bits(enc, anti_collapse_on as u32, 1);
+    }
+    let _ = anti_collapse_on; /* only used by RESYNTH */
+    /* (qext_bytes is always 0) */
+    let bits_left = nbCompressedBytes * 8 - ec_tell(enc);
+    quant_energy_finalise(mode, start, end, &mut st.oldBandE, error, fine_quant, fine_priority, bits_left, enc, C);
+    for c in 0..C as usize {
+        for i in start as usize..end as usize {
+            st.energyError[i + c * nb] = MAX32(-0.5, MIN32(0.5, error[i + c * nb]));
+        }
+    }
+    if silence != 0 {
+        for i in 0..C as usize * nb {
+            st.oldBandE[i] = -28.0;
+        }
+    }
+
+    /* (RESYNTH removed) */
+
+    st.prefilter_period = pitch_index;
+    st.prefilter_gain = gain1;
+    st.prefilter_tapset = prefilter_tapset;
+
+    if CC == 2 && C == 1 {
+        st.oldBandE.copy_within(0..nb, nb);
+    }
+
+    let ccn = CC as usize * nb;
+    if isTransient == 0 {
+        st.oldLogE2[..ccn].copy_from_slice(&st.oldLogE[..ccn]);
+        st.oldLogE[..ccn].copy_from_slice(&st.oldBandE[..ccn]);
+    } else {
+        for i in 0..ccn {
+            st.oldLogE[i] = MIN32(st.oldLogE[i], st.oldBandE[i]);
+        }
+    }
+    /* In case start or end were to change */
+    for c in 0..CC as usize {
+        for i in (0..start as usize).chain(end as usize..nb) {
+            st.oldBandE[c * nb + i] = 0.0;
+            st.oldLogE2[c * nb + i] = -28.0;
+            st.oldLogE[c * nb + i] = -28.0;
+        }
+    }
+
+    if isTransient != 0 || transient_got_disabled != 0 {
+        st.consec_transient += 1;
+    } else {
+        st.consec_transient = 0;
+    }
+    st.rng = enc.rng;
+
+    /* If there's any room left (can only happen for very high rates),
+    it's already filled with zeros */
+    ec_enc_done(enc);
+
+    if ec_get_error(enc) != 0 { OPUS_INTERNAL_ERROR } else { nbCompressedBytes }
+}
+
+#[cfg(test)]
+mod tests {
+    //! Whole-frame differential tests: C `celt_encode_with_ec` (on a C `CELTEncoder` set up with
+    //! `opus_custom_encoder_init_arch` and `opus_custom_encoder_ctl`) vs the Rust port on the same
+    //! input, comparing return values, packet bytes, range coder state and the encoder state
+    //! bytes after every frame. Plus one Opus-layer check (RefEncoder vs OpusEncoder).
+    use super::*;
+    use crate::opus::encoder::OpusEncoder;
+    use crate::testutil::{MusicGen, Rng, c_mode, same_enc};
+    use core::ffi::c_void;
+    use core::mem::offset_of;
+    use minicelt_oracle as c;
+    use std::boxed::Box;
+    use std::vec;
+    use std::vec::Vec;
+
+    const OPUS_SET_BITRATE_REQUEST: i32 = 4002;
+    const OPUS_SET_VBR_REQUEST: i32 = 4006;
+    const OPUS_SET_COMPLEXITY_REQUEST: i32 = 4010;
+    const OPUS_SET_PACKET_LOSS_PERC_REQUEST: i32 = 4014;
+    const OPUS_SET_VBR_CONSTRAINT_REQUEST: i32 = 4020;
+    const OPUS_RESET_STATE: i32 = 4028;
+    const OPUS_SET_LSB_DEPTH_REQUEST: i32 = 4036;
+    const OPUS_SET_PHASE_INVERSION_DISABLED_REQUEST: i32 = 4046;
+    const CELT_SET_PREDICTION_REQUEST: i32 = 10002;
+    const CELT_SET_CHANNELS_REQUEST: i32 = 10008;
+    const CELT_SET_END_BAND_REQUEST: i32 = 10012;
+    const CELT_SET_SIGNALLING_REQUEST: i32 = 10016;
+
+    const FS: usize = 960;
+    const BITRATES: [i32; 16] =
+        [6000, 8000, 10000, 12000, 16000, 20000, 24000, 32000, 48000, 64000, 96000, 128000, 192000, 256000, 320000, 510000];
+    const END_BANDS: [i32; 6] = [13, 15, 17, 19, 20, 21];
+
+    /// A Rust and a C encoder with identical settings.
+    struct Pair {
+        r: Box<CELTEncoder>,
+        c: Vec<u64>,
+        channels: usize,
+        frame: usize,
+    }
+
+    impl Pair {
+        fn new(channels: usize) -> Self {
+            let mut r = Box::new(CELTEncoder::new_zeroed());
+            assert_eq!(celt_encoder_init(&mut r, 48000, channels as i32), 0);
+            let size = unsafe { c::celt_encoder_get_size(channels as i32) } as usize;
+            let mut cbuf = vec![0u64; size.div_ceil(8)];
+            let ret = unsafe { c::oracle_opus_custom_encoder_init_arch(cbuf.as_mut_ptr() as *mut c_void, c_mode(), channels as i32, 0) };
+            assert_eq!(ret, 0);
+            let mut p = Pair { r, c: cbuf, channels, frame: 0 };
+            p.ctl(CELT_SET_SIGNALLING_REQUEST, 0);
+            p.ctl(OPUS_SET_VBR_REQUEST, 1);
+            p.ctl(OPUS_SET_BITRATE_REQUEST, 64000);
+            p.check_state();
+            p
+        }
+
+        fn cptr(&mut self) -> *mut c_void {
+            self.c.as_mut_ptr() as *mut c_void
+        }
+
+        fn ctl(&mut self, request: i32, value: i32) {
+            let st = &mut *self.r;
+            let rr = match request {
+                OPUS_SET_BITRATE_REQUEST => celt_encoder_set_bitrate(st, value),
+                OPUS_SET_VBR_REQUEST => celt_encoder_set_vbr(st, value),
+                OPUS_SET_COMPLEXITY_REQUEST => celt_encoder_set_complexity(st, value),
+                OPUS_SET_PACKET_LOSS_PERC_REQUEST => celt_encoder_set_packet_loss_perc(st, value),
+                OPUS_SET_VBR_CONSTRAINT_REQUEST => celt_encoder_set_vbr_constraint(st, value),
+                OPUS_RESET_STATE => {
+                    celt_encoder_reset_state(st);
+                    0
+                }
+                OPUS_SET_LSB_DEPTH_REQUEST => celt_encoder_set_lsb_depth(st, value),
+                OPUS_SET_PHASE_INVERSION_DISABLED_REQUEST => celt_encoder_set_phase_inversion_disabled(st, value),
+                CELT_SET_PREDICTION_REQUEST => celt_encoder_set_prediction(st, value),
+                CELT_SET_CHANNELS_REQUEST => celt_encoder_set_channels(st, value),
+                CELT_SET_END_BAND_REQUEST => celt_encoder_set_end_band(st, value),
+                CELT_SET_SIGNALLING_REQUEST => celt_encoder_set_signalling(st, value),
+                _ => unreachable!(),
+            };
+            let cr = unsafe { c::oracle_celt_encoder_ctl_int(self.cptr(), request, value) };
+            assert_eq!(rr, cr, "ctl {request}({value})");
+        }
+
+        /// Compares the Rust state with the C allocation: the fixed part except `mode` and
+        /// `energy_mask`, then the first `channels` channels of each trailing array.
+        fn check_state(&self) {
+            let rb = unsafe {
+                core::slice::from_raw_parts(&*self.r as *const CELTEncoder as *const u8, size_of::<CELTEncoder>())
+            };
+            let size = unsafe { c::celt_encoder_get_size(self.channels as i32) } as usize;
+            let cb = unsafe { core::slice::from_raw_parts(self.c.as_ptr() as *const u8, size) };
+            let f = self.frame;
+            let ps = size_of::<usize>();
+            let em = offset_of!(CELTEncoder, energy_mask);
+            let im = offset_of!(CELTEncoder, in_mem);
+            let field = |off: usize| -> &'static str {
+                c::celt_encoder_layout()
+                    .entries()
+                    .iter()
+                    .filter(|(k, v)| !k.starts_with("sizeof") && *v <= off)
+                    .max_by_key(|(_, v)| *v)
+                    .map(|(k, _)| std::string::String::leak(k.clone()) as &'static str)
+                    .unwrap_or("?")
+            };
+            for (a, b) in [(ps, em), (em + ps, im)] {
+                if rb[a..b] != cb[a..b] {
+                    let i = (a..b).find(|&i| rb[i] != cb[i]).unwrap();
+                    panic!("frame {f}: state differs at byte {i} (field {})", field(i));
+                }
+            }
+            let ch = self.channels;
+            let arrays: [(&str, usize, usize); 6] = [
+                ("in_mem", im, OVERLAP),
+                ("prefilter_mem", offset_of!(CELTEncoder, prefilter_mem), COMBFILTER_MAXPERIOD as usize),
+                ("oldBandE", offset_of!(CELTEncoder, oldBandE), NB_EBANDS),
+                ("oldLogE", offset_of!(CELTEncoder, oldLogE), NB_EBANDS),
+                ("oldLogE2", offset_of!(CELTEncoder, oldLogE2), NB_EBANDS),
+                ("energyError", offset_of!(CELTEncoder, energyError), NB_EBANDS),
+            ];
+            let mut coff = im;
+            for (name, roff, per_ch) in arrays {
+                let n = ch * per_ch * 4;
+                if rb[roff..roff + n] != cb[coff..coff + n] {
+                    let i = (0..n).find(|&i| rb[roff + i] != cb[coff + i]).unwrap();
+                    panic!("frame {f}: state differs in {name}[{}]", i / 4);
+                }
+                coff += n;
+            }
+            assert_eq!(coff, size);
+        }
+
+        /// Encodes one frame with both encoders. `prefix` = bits coded before CELT (as the Opus
+        /// layer would code into the same range coder); `None` lets celt_encode_with_ec create its
+        /// own coder.
+        fn encode(&mut self, pcm: &[f32], nbytes: i32, prefix: Option<&[(u32, u32)]>) -> i32 {
+            assert_eq!(pcm.len(), FS * self.channels);
+            let mut rbuf = vec![0u8; nbytes.max(0) as usize + 8];
+            let mut cbuf = vec![0u8; nbytes.max(0) as usize + 8];
+            let (rret, cret);
+            match prefix {
+                None => {
+                    rret = celt_encode_with_ec(&mut self.r, pcm, FS as i32, rbuf.as_mut_ptr(), nbytes, None);
+                    cret = unsafe {
+                        c::celt_encode_with_ec(self.cptr(), pcm.as_ptr(), FS as i32, cbuf.as_mut_ptr(), nbytes, core::ptr::null_mut())
+                    };
+                }
+                Some(bits) => {
+                    let mut re: ec_enc = unsafe { core::mem::zeroed() };
+                    let mut ce: ec_enc = unsafe { core::mem::zeroed() };
+                    crate::celt::entenc::ec_enc_init(&mut re, rbuf.as_mut_ptr(), nbytes as u32);
+                    let cep = &mut ce as *mut ec_enc as *mut c_void;
+                    unsafe { c::ec_enc_init(cep, cbuf.as_mut_ptr(), nbytes as u32) };
+                    for &(v, logp) in bits {
+                        ec_enc_bit_logp(&mut re, v as i32, logp);
+                        unsafe { c::ec_enc_bit_logp(cep, v as i32, logp) };
+                    }
+                    rret = celt_encode_with_ec(&mut self.r, pcm, FS as i32, core::ptr::null_mut(), nbytes, Some(&mut re));
+                    cret = unsafe { c::celt_encode_with_ec(self.cptr(), pcm.as_ptr(), FS as i32, core::ptr::null_mut(), nbytes, cep) };
+                    // buf pointers differ; compare everything else
+                    re.buf = ce.buf;
+                    same_enc(&re, &ce);
+                }
+            }
+            let f = self.frame;
+            assert_eq!(rret, cret, "frame {f}: return value");
+            assert_eq!(rbuf, cbuf, "frame {f}: packet bytes (len {rret})");
+            self.check_state();
+            self.frame += 1;
+            rret
+        }
+    }
+
+    #[derive(Clone, Copy, Debug)]
+    enum Kind {
+        Music,
+        Tone,
+        LowTone,
+        Chirp,
+        Noise,
+        Silence,
+        NearSilence,
+        Clicks,
+        Huge,
+        Steps,
+        Saw,
+    }
+    const KINDS: [Kind; 11] = [
+        Kind::Music,
+        Kind::Tone,
+        Kind::LowTone,
+        Kind::Chirp,
+        Kind::Noise,
+        Kind::Silence,
+        Kind::NearSilence,
+        Kind::Clicks,
+        Kind::Huge,
+        Kind::Steps,
+        Kind::Saw,
+    ];
+
+    #[derive(Clone, Copy, Debug)]
+    enum Stereo {
+        /// the generator's own decorrelated right channel
+        Natural,
+        Same,
+        Anti,
+        Pan,
+        IndepNoise,
+        LeftOnly,
+        Mix,
+    }
+    const STEREOS: [Stereo; 7] =
+        [Stereo::Natural, Stereo::Same, Stereo::Anti, Stereo::Pan, Stereo::IndepNoise, Stereo::LeftOnly, Stereo::Mix];
+
+    /// Realistic-ish test signals, switching kind every few frames.
+    struct SigGen {
+        rng: Rng,
+        music: MusicGen,
+        kind: Kind,
+        stereo: Stereo,
+        left: usize,
+        n: u64,
+        f0: f64,
+        f1: f64,
+        amp: f32,
+        period: u64,
+        mix: f32,
+    }
+
+    impl SigGen {
+        fn new(seed: u64) -> Self {
+            let mut g = SigGen {
+                rng: Rng::new(seed),
+                music: MusicGen::new(seed ^ 0x55),
+                kind: Kind::Music,
+                stereo: Stereo::Natural,
+                left: 0,
+                n: 0,
+                f0: 440.0,
+                f1: 440.0,
+                amp: 0.3,
+                period: 4800,
+                mix: 0.5,
+            };
+            g.left = 20;
+            g
+        }
+
+        fn pick(&mut self) {
+            let r = &mut self.rng;
+            self.kind = KINDS[r.range(0, KINDS.len() as i32 - 1) as usize];
+            self.stereo = STEREOS[r.range(0, STEREOS.len() as i32 - 1) as usize];
+            self.left = r.range(3, 30) as usize;
+            self.f0 = 40.0 * libm::pow(2.0, r.range(0, 900) as f64 / 100.0);
+            self.f1 = 40.0 * libm::pow(2.0, r.range(0, 900) as f64 / 100.0);
+            if let Kind::LowTone = self.kind {
+                self.f0 = r.range(15, 150) as f64;
+            }
+            if let Kind::Saw = self.kind {
+                self.f0 = r.range(80, 900) as f64;
+            }
+            self.amp = [0.001, 0.01, 0.1, 0.3, 0.7, 1.0][r.range(0, 5) as usize];
+            self.period = r.range(300, 20000) as u64;
+            self.mix = r.range(0, 100) as f32 / 100.0;
+            self.music.gain = [0.02, 0.1, 0.25, 0.5][r.range(0, 3) as usize];
+            self.music.noise = [0.0, 0.002, 0.02, 0.2][r.range(0, 3) as usize];
+            self.music.hit_period = [0, 3000, 11000, 24000][r.range(0, 3) as usize];
+        }
+
+        fn frame(&mut self, channels: usize) -> Vec<f32> {
+            if self.left == 0 {
+                self.pick();
+            }
+            self.left -= 1;
+            let mut l = vec![0.0f32; FS];
+            let mut nat = vec![0.0f32; FS];
+            use core::f64::consts::PI;
+            match self.kind {
+                Kind::Music | Kind::Huge => {
+                    let m = self.music.next_frame(FS, 2);
+                    let g = if let Kind::Huge = self.kind { 3.0e5 } else { 1.0 };
+                    for i in 0..FS {
+                        l[i] = m[2 * i] * g;
+                        nat[i] = m[2 * i + 1] * g;
+                    }
+                }
+                Kind::Tone | Kind::LowTone | Kind::Chirp => {
+                    for i in 0..FS {
+                        let t = (self.n + i as u64) as f64 / 48000.0;
+                        let f = if let Kind::Chirp = self.kind {
+                            self.f0 + (self.f1 - self.f0) * ((t * 0.5) % 1.0)
+                        } else {
+                            self.f0
+                        };
+                        l[i] = self.amp * libm::sin(2.0 * PI * f * t) as f32;
+                        nat[i] = self.amp * 0.7 * libm::sin(2.0 * PI * f * t + 1.0) as f32;
+                    }
+                }
+                Kind::Noise => {
+                    for i in 0..FS {
+                        l[i] = self.amp * self.rng.f32_unit();
+                        nat[i] = 0.5 * l[i] + 0.5 * self.amp * self.rng.f32_unit();
+                    }
+                }
+                Kind::Silence => {}
+                Kind::NearSilence => {
+                    let a = if self.amp > 0.05 { 3e-8 } else { 3e-7 };
+                    for i in 0..FS {
+                        l[i] = a * self.rng.f32_unit();
+                        nat[i] = a * self.rng.f32_unit();
+                    }
+                }
+                Kind::Clicks => {
+                    for i in 0..FS {
+                        let k = self.n + i as u64;
+                        let v = if k % self.period < 2 { self.amp } else { 0.0 };
+                        l[i] = v + 1e-4 * self.rng.f32_unit();
+                        nat[i] = if (k + 7) % self.period < 2 { -self.amp } else { 0.0 };
+                    }
+                }
+                Kind::Saw => {
+                    /* harmonic-rich pitched signal (sawtooth with slight vibrato) */
+                    for i in 0..FS {
+                        let t = (self.n + i as u64) as f64 / 48000.0;
+                        let ph = self.f0 * t + 0.002 * libm::sin(2.0 * PI * 5.0 * t);
+                        let saw = 2.0 * (ph - libm::floor(ph)) - 1.0;
+                        /* plus a little white noise */
+                        l[i] = self.amp * (0.5 * saw as f32 + 0.03 * self.mix * self.rng.f32_unit());
+                        nat[i] = self.amp * 0.4 * saw as f32;
+                    }
+                }
+                Kind::Steps => {
+                    for i in 0..FS {
+                        let k = self.n + i as u64;
+                        l[i] = if (k / self.period) % 2 == 0 { self.amp } else { -self.amp * 0.5 };
+                        nat[i] = l[i] * 0.3;
+                    }
+                }
+            }
+            self.n += FS as u64;
+            if channels == 1 {
+                return l;
+            }
+            let mut out = Vec::with_capacity(2 * FS);
+            for i in 0..FS {
+                let r = match self.stereo {
+                    Stereo::Natural => nat[i],
+                    Stereo::Same => l[i],
+                    Stereo::Anti => -l[i],
+                    Stereo::Pan => 0.15 * l[i],
+                    Stereo::IndepNoise => 0.05 * self.rng.f32_unit(),
+                    Stereo::LeftOnly => 0.0,
+                    Stereo::Mix => self.mix * l[i] + (1.0 - self.mix) * nat[i],
+                };
+                out.push(l[i]);
+                out.push(r);
+            }
+            out
+        }
+    }
+
+    /// Random mid-stream ctl changes. `allow_channels`: CELT_SET_CHANNELS (CC == 2 only).
+    fn random_ctl(p: &mut Pair, rng: &mut Rng, allow_channels: bool) {
+        match rng.range(0, 11) {
+            0 | 1 | 2 => p.ctl(OPUS_SET_BITRATE_REQUEST, BITRATES[rng.range(0, BITRATES.len() as i32 - 1) as usize]),
+            3 => p.ctl(OPUS_SET_BITRATE_REQUEST, rng.range(501, 600000)),
+            4 => p.ctl(OPUS_SET_COMPLEXITY_REQUEST, rng.range(0, 10)),
+            5 => p.ctl(OPUS_SET_VBR_CONSTRAINT_REQUEST, rng.range(0, 1)),
+            6 => p.ctl(OPUS_SET_PACKET_LOSS_PERC_REQUEST, [0, 1, 3, 5, 9, 20, 50][rng.range(0, 6) as usize]),
+            7 => p.ctl(CELT_SET_PREDICTION_REQUEST, rng.range(0, 2)),
+            8 => p.ctl(CELT_SET_END_BAND_REQUEST, END_BANDS[rng.range(0, END_BANDS.len() as i32 - 1) as usize]),
+            9 => p.ctl(OPUS_SET_LSB_DEPTH_REQUEST, [8, 16, 24][rng.range(0, 2) as usize]),
+            10 => p.ctl(OPUS_SET_PHASE_INVERSION_DISABLED_REQUEST, rng.range(0, 1)),
+            _ => {
+                if allow_channels {
+                    p.ctl(CELT_SET_CHANNELS_REQUEST, rng.range(1, 2));
+                } else if rng.range(0, 3) == 0 {
+                    p.ctl(OPUS_RESET_STATE, 0);
+                }
+            }
+        }
+    }
+
+    fn nbytes(rng: &mut Rng) -> i32 {
+        match rng.range(0, 9) {
+            0 => rng.range(2, 40),
+            1 => rng.range(40, 400),
+            2 => 1276,
+            3 => 2000,
+            _ => 1275,
+        }
+    }
+
+    fn random_stream(channels: usize, seed: u64, nframes: usize, allow_channels: bool, prefix: bool) {
+        let mut p = Pair::new(channels);
+        let mut rng = Rng::new(seed);
+        let mut sig = SigGen::new(seed + 1);
+        p.ctl(OPUS_SET_COMPLEXITY_REQUEST, rng.range(0, 10));
+        p.ctl(OPUS_SET_BITRATE_REQUEST, BITRATES[rng.range(0, BITRATES.len() as i32 - 1) as usize]);
+        for _ in 0..nframes {
+            while rng.range(0, 3) == 0 {
+                random_ctl(&mut p, &mut rng, allow_channels);
+            }
+            let pcm = sig.frame(channels);
+            let n = nbytes(&mut rng);
+            if prefix {
+                let bits: Vec<(u32, u32)> =
+                    (0..rng.range(0, 6)).map(|_| (rng.range(0, 1) as u32, rng.range(1, 15) as u32)).collect();
+                p.encode(&pcm, n, Some(&bits));
+            } else {
+                p.encode(&pcm, n, None);
+            }
+        }
+    }
+
+    #[test]
+    fn encode_random_mono() {
+        for seed in 0..4 {
+            random_stream(1, 100 + seed, 250, false, false);
+        }
+    }
+
+    #[test]
+    fn encode_random_stereo() {
+        for seed in 0..4 {
+            random_stream(2, 200 + seed, 250, false, false);
+        }
+    }
+
+    #[test]
+    fn encode_random_stereo_stream_channels() {
+        for seed in 0..4 {
+            random_stream(2, 300 + seed, 250, true, false);
+        }
+    }
+
+    #[test]
+    fn encode_random_external_coder() {
+        for (ch, seed) in [(1, 400), (2, 401), (2, 402)] {
+            random_stream(ch, seed, 200, ch == 2, true);
+        }
+    }
+
+    /// Fixed grid of bitrate x complexity x constrained VBR on music, mono / stereo / C=1 of CC=2.
+    #[test]
+    fn encode_grid() {
+        for (channels, stream_channels) in [(1usize, 1), (2, 2), (2, 1)] {
+            for &cvbr in &[1, 0] {
+                for &bitrate in &[6000, 16000, 32000, 64000, 128000, 256000, 510000] {
+                    let mut p = Pair::new(channels);
+                    p.ctl(CELT_SET_CHANNELS_REQUEST, stream_channels);
+                    p.ctl(OPUS_SET_VBR_CONSTRAINT_REQUEST, cvbr);
+                    p.ctl(OPUS_SET_BITRATE_REQUEST, bitrate);
+                    let mut g = MusicGen::new(bitrate as u64);
+                    g.hit_period = 5000;
+                    for complexity in [0, 1, 2, 3, 4, 5, 8, 10] {
+                        p.ctl(OPUS_SET_COMPLEXITY_REQUEST, complexity);
+                        for _ in 0..6 {
+                            let pcm = g.next_frame(FS, channels);
+                            p.encode(&pcm, 1275, None);
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    /// Opus layer (RESTRICTED_CELT): C `opus_encode_float` vs `OpusEncoder::encode_float`.
+    #[test]
+    fn opus_layer_matches() {
+        for (channels, bitrate, complexity, cvbr, dtx, loss) in [
+            (1usize, 32000, 10, true, false, 0),
+            (1, 12000, 5, false, true, 5),
+            (2, 96000, 9, true, false, 0),
+            (2, 24000, 3, false, true, 10),
+            (2, 256000, 10, true, true, 0),
+        ] {
+            let mut cr = c::RefEncoder::new(channels);
+            cr.set_bitrate(bitrate);
+            cr.set_complexity(complexity);
+            cr.set_vbr(true);
+            cr.set_vbr_constraint(cvbr);
+            cr.set_dtx(dtx);
+            cr.set_packet_loss(loss);
+            let mut re = Box::new(OpusEncoder::new_zeroed());
+            assert_eq!(re.init(channels as i32), 0);
+            re.set_bitrate(bitrate);
+            re.set_complexity(complexity);
+            re.set_vbr_constraint(cvbr as i32);
+            re.set_dtx(dtx as i32);
+            re.set_packet_loss_perc(loss);
+            let mut sig = SigGen::new(bitrate as u64 + channels as u64);
+            for f in 0..300 {
+                let pcm = sig.frame(channels);
+                let mut a = vec![0u8; 1276];
+                let mut b = vec![0u8; 1276];
+                let na = cr.encode_float(&pcm, FS, &mut a);
+                let nb = re.encode_float(&pcm, &mut b);
+                assert_eq!(na, nb, "ch {channels} br {bitrate} frame {f}: length");
+                assert_eq!(a[..na.max(0) as usize], b[..nb.max(0) as usize], "frame {f}: packet");
+                assert_eq!(cr.final_range(), re.get_final_range(), "frame {f}: final range");
+                assert_eq!(cr.in_dtx() as i32, re.get_in_dtx(), "frame {f}: in_dtx");
+            }
+        }
+    }
+
+    /// Sustained pitched signals (pre-filter on, tapset decisions 0..2), with the pitch, noise,
+    /// bitrate, complexity and loss rate varied.
+    #[test]
+    fn encode_pitched() {
+        let mut taps = [0usize; 3];
+        for (k, channels) in [1usize, 2, 2].into_iter().enumerate() {
+            for (j, &f0) in [90.0, 210.0, 600.0, 850.0].iter().enumerate() {
+                let mut p = Pair::new(channels);
+                if k == 2 {
+                    p.ctl(CELT_SET_CHANNELS_REQUEST, 1);
+                }
+                p.ctl(OPUS_SET_BITRATE_REQUEST, [24000, 48000, 96000, 160000][j]);
+                p.ctl(OPUS_SET_PACKET_LOSS_PERC_REQUEST, [0, 3, 0, 5][j]);
+                let mut sig = SigGen::new(f0 as u64);
+                sig.pick();
+                (sig.kind, sig.f0, sig.amp, sig.mix, sig.left) = (Kind::Saw, f0, 0.3, (j % 2) as f32, 1000);
+                for i in 0..48 {
+                    if i % 8 == 0 {
+                        p.ctl(OPUS_SET_COMPLEXITY_REQUEST, [10, 5, 8, 4, 7, 2][i / 8]);
+                    }
+                    p.encode(&sig.frame(channels), 1275, None);
+                    taps[p.r.tapset_decision as usize] += 1;
+                }
+            }
+        }
+        assert!(taps.iter().all(|&t| t > 0), "tapset coverage {taps:?}");
+    }
 }
 
 #[cfg(test)]
