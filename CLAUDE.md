@@ -25,7 +25,7 @@ Run `bun install` before `lint:*` or `e2e` when `node_modules` is missing or sta
 Setup (Linux and Windows):
 - `bun scripts/build_llama.ts`: libllama, libmtmd, Vulkan, CPU variants, `libllama-shim.so` into `vendor/llama.cpp` (`--shim` only recompiles `src/llama-shim.c`)
 - `bun scripts/build_audiocpp.ts`: `vendor/audio.cpp/libaudiocpp.so` from the pinned commit plus `scripts/patches/audiocpp-abort.patch` (AVX2 unless `--native`)
-- `bun scripts/build_soxr.ts`: `vendor/soxr/libsoxr.so.0` (`soxr.dll`) from the pinned release tarball; required, opened before libaudiocpp (see Invariants)
+- `bun scripts/build_soxr.ts`: `vendor/soxr/libsoxr.so.0` (`soxr.dll`) from the pinned commit of soxr's git repository; required, opened before libaudiocpp (see Invariants)
 - `bun scripts/fetch_models.ts`: models (about 17.9 GiB) and example voices; `--model <id>`, `HF_ENDPOINT`
 - `bun scripts/fetch_web_libs.ts`: `public/vendor/` (not in git): PDF libraries, undoc (Word), QOA codec; needed by `e2e`, QOA tests, packaging
 - `bun scripts/build_appimage.ts`, `bun scripts/build_installer.ts` (need both engines built; `WINDOWS.md`)

@@ -9,23 +9,23 @@
 // built here before libaudiocpp, so audio.cpp is always handed this one, never another that is
 // installed.
 //
-// Needs cmake (3.5 or later), a C compiler, tar (with xz) and nothing else; ninja is used when it
-// is installed. On Windows, Visual Studio 2022 (or its Build Tools) with the "Desktop development with
+// Needs git, cmake (3.5 or later) and a C compiler; ninja is used when it is installed. On Windows, Visual Studio 2022 (or its Build Tools) with the "Desktop development with
 // C++" workload; the result is soxr.dll. Building needs no administrator rights.
 
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { soxrLibraryPath, soxrVersion } from "../src/audiocpp-ffi";
-import { COMPILERS, download, msvc, requireTools, run, windows } from "./build_tools";
+import { checkout, COMPILERS, msvc, requireTools, run, windows } from "./build_tools";
 
 const VERSION = "0.1.3";
-/** The release tarball is downloaded by this checksum, so the source is what was reviewed. */
-const SOURCE = {
-  url: `https://downloads.sourceforge.net/project/soxr/soxr-${VERSION}-Source.tar.xz`,
-  sha256: "b111c15fdc8c029989330ff559184198c161100a59312f5dc19ddeb9b5a15889",
-};
-const ARCHIVE = "soxr.tar.xz";
+/**
+ * The commit of the tag 0.1.3, fetched by this id so the source is what was reviewed. Its tree is the
+ * release tarball's (soxr-0.1.3-Source.tar.xz) plus files the build does not use. A git fetch, not the
+ * tarball: `tar` of a Windows runner hung on the .xz.
+ */
+const COMMIT = "945b592b70470e29f917f4de89b4281fbbd540c0";
+const REPO = "https://git.code.sf.net/p/soxr/code";
 
 const flags = new Set(Bun.argv.slice(2));
 for (const flag of flags) {
@@ -38,25 +38,19 @@ const keep = flags.has("--keep");
 const root = resolve(import.meta.dir, "..");
 const dest = join(root, "vendor", "soxr");
 const work = join(root, "vendor", ".build", "soxr");
-const source = join(work, `soxr-${VERSION}-Source`);
+const source = join(work, "src");
 const build = join(work, "build");
 
 requireTools(
-  ["cmake", "tar", ...COMPILERS],
-  "on Debian and Ubuntu: sudo apt install build-essential cmake ninja-build xz-utils",
+  ["git", "cmake", ...COMPILERS],
+  "on Debian and Ubuntu: sudo apt install build-essential git cmake ninja-build",
 );
 const visualStudio = windows ? await msvc() : undefined;
 
 if (!keep) {
   await rm(work, { recursive: true, force: true });
 }
-if (!(await Bun.file(join(source, "CMakeLists.txt")).exists())) {
-  await rm(work, { recursive: true, force: true });
-  await mkdir(work, { recursive: true });
-  await Bun.write(join(work, ARCHIVE), await download(SOURCE.url, SOURCE.sha256));
-  // A relative name: tar takes "C:" in an absolute path on Windows for a remote host.
-  await run(["tar", "-xf", ARCHIVE], work);
-}
+await checkout(REPO, COMMIT, source);
 
 const started = performance.now();
 await run([

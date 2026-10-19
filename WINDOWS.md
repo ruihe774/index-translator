@@ -36,7 +36,7 @@ CRLF and do not commit CRLF. Editors and `sed -i` in Git Bash keep LF; check wit
 ## Building the engines
 
 `bun scripts/build_llama.ts`, `bun scripts/build_audiocpp.ts` and `bun scripts/build_soxr.ts` (libsoxr, as
-`soxr.dll`; it needs `tar` from Windows 10 or Git, and only the Visual Studio tools) build for Windows with no administrator
+`soxr.dll`; it needs only Git, CMake and the Visual Studio tools) build for Windows with no administrator
 rights. They need: Git, CMake (on the PATH), Visual Studio 2022 or its Build Tools with the "Desktop
 development with C++" workload (found with `vswhere`; `vcvars64.bat` supplies `cl`), and the Vulkan SDK
 (`glslc`, headers, `vulkan-1.lib`; sets `VULKAN_SDK`). Ninja is not needed: CMake's Visual Studio
