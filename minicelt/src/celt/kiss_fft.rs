@@ -29,7 +29,6 @@ pub struct kiss_fft_state {
     pub twiddles: &'static [kiss_twiddle_cpx],
 }
 
-
 // SAFETY: repr(C) pair of f32, no padding, every bit pattern valid.
 unsafe impl crate::stack::Pod for kiss_fft_cpx {}
 
@@ -272,106 +271,5 @@ pub fn opus_fft_impl(st: &kiss_fft_state, fout: &mut [kiss_fft_cpx]) {
             _ => {}
         }
         m = m2;
-    }
-}
-
-/// opus_fft_c: forward FFT, `fin` and `fout` must not alias. The encoder only uses
-/// `opus_fft_impl` (via the MDCT); this is the test entry point against C.
-#[cfg(test)]
-pub fn opus_fft(st: &kiss_fft_state, fin: &[kiss_fft_cpx], fout: &mut [kiss_fft_cpx]) {
-    let scale = st.scale;
-
-    /* Bit-reverse the input */
-    for i in 0..st.nfft as usize {
-        let x = fin[i];
-        let b = st.bitrev[i] as usize;
-        fout[b].r = x.r * scale;
-        fout[b].i = x.i * scale;
-    }
-    opus_fft_impl(st, fout);
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::celt::modes::mode48000_960_120;
-    use crate::testutil::Rng;
-    use core::ffi::c_void;
-    use minicelt_oracle as c;
-
-    fn bits(v: &[kiss_fft_cpx]) -> Vec<(u32, u32)> {
-        v.iter().map(|x| (x.r.to_bits(), x.i.to_bits())).collect()
-    }
-
-    fn rand_cpx(rng: &mut Rng, n: usize, scale: f32) -> Vec<kiss_fft_cpx> {
-        (0..n).map(|_| kiss_fft_cpx { r: rng.f32_unit() * scale, i: rng.f32_unit() * scale }).collect()
-    }
-
-    #[test]
-    fn opus_fft_matches_c() {
-        let mi = c::mode_info(c::mode48000());
-        let mut rng = Rng::new(7);
-        for shift in 0..4 {
-            let st = mode48000_960_120.mdct.kfft[shift];
-            let cst = mi.kfft[shift];
-            assert_eq!(st.nfft, 480 >> shift);
-            let n = st.nfft as usize;
-            for iter in 0..300 {
-                let scale = [1.0, 1e-3, 1e4, 30000.0][iter % 4];
-                let fin = rand_cpx(&mut rng, n, scale);
-                let mut fo_r = vec![kiss_fft_cpx { r: f32::from_bits(0x7fc00001), i: 0.0 }; n];
-                let mut fo_c = fo_r.clone();
-                opus_fft(st, &fin, &mut fo_r);
-                unsafe { c::opus_fft_c(cst, fin.as_ptr() as *const c_void, fo_c.as_mut_ptr() as *mut c_void) };
-                assert_eq!(bits(&fo_r), bits(&fo_c), "nfft {n} iter {iter}");
-            }
-        }
-    }
-
-    #[test]
-    fn opus_fft_impl_matches_c() {
-        // opus_fft_impl on arbitrary (not bit-reversed) data is the same code path in C via opus_fft_c
-        // with scale; here only check that opus_fft_impl is what opus_fft uses.
-        let st = mode48000_960_120.mdct.kfft[3];
-        let mut rng = Rng::new(3);
-        let fin = rand_cpx(&mut rng, 60, 1.0);
-        let mut a = vec![kiss_fft_cpx::default(); 60];
-        for i in 0..60 {
-            a[st.bitrev[i] as usize] = kiss_fft_cpx { r: fin[i].r * st.scale, i: fin[i].i * st.scale };
-        }
-        opus_fft_impl(st, &mut a);
-        let mut b = vec![kiss_fft_cpx::default(); 60];
-        opus_fft(st, &fin, &mut b);
-        assert_eq!(bits(&a), bits(&b));
-    }
-
-    #[test]
-    fn bfly2_matches_c() {
-        let mut rng = Rng::new(11);
-        for iter in 0..200 {
-            let n = 1 + iter % 8;
-            let v = rand_cpx(&mut rng, 8 * n, 100.0);
-            let mut a = v.clone();
-            let mut b = v.clone();
-            kf_bfly2(&mut a, 4, n as i32);
-            unsafe { c::oracle_kf_bfly2(b.as_mut_ptr() as *mut c_void, 4, n as i32) };
-            assert_eq!(bits(&a), bits(&b));
-        }
-    }
-
-    #[test]
-    fn bfly4_m1_matches_c() {
-        let mi = c::mode_info(c::mode48000());
-        let st = mode48000_960_120.mdct.kfft[0];
-        let mut rng = Rng::new(12);
-        for iter in 0..200 {
-            let n = 1 + iter % 30;
-            let v = rand_cpx(&mut rng, 4 * n, 100.0);
-            let mut a = v.clone();
-            let mut b = v.clone();
-            kf_bfly4(&mut a, 1, st, 1, n as i32, 1);
-            unsafe { c::oracle_kf_bfly4(b.as_mut_ptr() as *mut c_void, 1, mi.kfft[0], 1, n as i32, 1) };
-            assert_eq!(bits(&a), bits(&b));
-        }
     }
 }

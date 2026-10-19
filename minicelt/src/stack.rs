@@ -17,7 +17,8 @@ use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 
 /// Scratch size: the measured worst-case peak is 52736 bytes (stereo `opus_encode`, whose
-/// float copy of the input sits below the encoder's 45056 bytes; `stack::tests`), plus headroom.
+/// float copy of the input sits below the encoder's 45056 bytes; measured with `peak()` by the
+/// oracle tests at the tag `minicelt-oracle-tests`), plus headroom.
 pub const GLOBAL_STACK_SIZE: usize = 57344;
 
 #[repr(C, align(16))]
@@ -93,47 +94,4 @@ impl Drop for StackGuard {
 /// High-water mark of the scratch buffer in bytes.
 pub fn peak() -> usize {
     unsafe { *SCRATCH.peak.get() }
-}
-
-#[cfg(test)]
-mod tests {
-    use crate::opus::encoder::OpusEncoder;
-    use crate::testutil::{Rng, music, noise};
-    use std::boxed::Box;
-    use std::vec::Vec;
-
-    /// Worst-case pseudostack use over the configuration space (allocation sizes depend on the
-    /// channel count, complexity and block decisions, not on the signal values). Run alone
-    /// (`oracle-test.sh 2 stack::tests --nocapture`): `peak()` is global to the test binary.
-    #[test]
-    fn peak_fits() {
-        let mut rng = Rng::new(3);
-        for channels in 1..=2usize {
-            let mut frames: Vec<Vec<f32>> = music(1, 40, 960, channels);
-            frames.extend(noise(2, 20, 960, channels, 0.5));
-            frames.extend((0..20).map(|i| {
-                let mut f = std::vec![0.0f32; 960 * channels];
-                f[(i * 37) % 960 * channels] = 0.9;
-                f
-            }));
-            for complexity in 0..=10 {
-                for &bitrate in &[6000, 24000, 64000, 128000, 256000, 510000, -1] {
-                    let mut st: Box<OpusEncoder> = Box::new(OpusEncoder::new_zeroed());
-                    assert_eq!(st.init(channels as i32), 0);
-                    st.set_bitrate(bitrate);
-                    st.set_complexity(complexity);
-                    st.set_vbr_constraint(rng.range(0, 1));
-                    let mut out = [0u8; 1276];
-                    for f in &frames {
-                        assert!(st.encode_float(f, &mut out) > 0);
-                        /* opus_encode allocates the float copy of the input on top. */
-                        let pcm: Vec<i16> = f.iter().map(|&x| (x * 32768.0).clamp(-32768.0, 32767.0) as i16).collect();
-                        assert!(st.encode(&pcm, &mut out) > 0);
-                    }
-                }
-            }
-        }
-        std::println!("pseudostack peak: {} bytes (GLOBAL_STACK_SIZE {})", super::peak(), super::GLOBAL_STACK_SIZE);
-        assert!(super::peak() <= super::GLOBAL_STACK_SIZE);
-    }
 }

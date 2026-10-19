@@ -14,19 +14,20 @@ Rust port of the libopus CELT-only float encoder for wasm32. Read `PORTING.md` b
 
 - `src/celt`, `src/opus`: one Rust module per C file, C names kept.
 - `wasm/`: the `minicelt-wasm` cdylib with the `minicelt_*` exports.
-- `test/compare.ts` (Deno FFI) + `test/shim.c` + `test/analysis_stub.c`: differential test against
-  `third_party/opus`. `scripts/gen_tables.py` generates the tables.
+- `test/compare.ts` (Deno) + `test/shim.c` + `test/analysis_stub.c`: differential test against the
+  fork's C built to wasm (`test/build-cwasm.sh`) and native `third_party/opus`. `scripts/gen_tables.py` generates the tables.
 
 ## Commands (from the workspace root)
 
 - `scripts/build.sh celt [2|3|all] [release|checked|both]` -> `target/minicelt-wasm{2,3}[-checked].wasm`
-- `scripts/test.sh celt [--quick]` builds everything and runs the comparison.
+- `scripts/test.sh celt [--quick]` builds everything and runs the comparison. There are no Rust
+  unit tests (the per-function C oracle is kept at the tag `minicelt-oracle-tests`).
 
 ## Rules
 
-- Bit-exactness with libopus 1.6.1 + the fork's WASM kernels (built to wasm, same engine) is the test
-  goal; the kernels sum in lane order, so native scalar libopus is only a quality cross-check. Match C numeric precision exactly
-  (integer promotion, `f32` vs `f64`); never hand-vectorize plain C loops.
+- Bit-exactness with libopus 1.6.1 + the fork's WASM kernels (built to wasm, same engine) is the
+  test goal; the kernels sum in lane order, so native scalar libopus is only a quality cross-check.
+  Match C numeric precision exactly (integer promotion, `f32` vs `f64`); never hand-vectorize plain C loops.
 - Where the fork has a WASM SIMD kernel, port it with `core::arch::wasm32`; add no scalar fallback.
   Relaxed SIMD uses `cfg(target_feature = "relaxed-simd")`.
 - Keep C function/field/constant names. Comment density follows the C comments that explain the algorithm.

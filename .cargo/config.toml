@@ -3,10 +3,5 @@
 [build]
 target = "wasm32-unknown-unknown"
 
-# Oracle tests (minicelt/scripts/oracle-test.sh) run as wasm32-wasip1 binaries under Node's WASI.
-[target.wasm32-wasip1]
-runner = "minicelt/scripts/wasi-run"
-rustflags = ["-Ctarget-feature=+simd128"]
-
 [target.wasm32-unknown-unknown]
 rustflags = ["-Ctarget-feature=+simd128"]

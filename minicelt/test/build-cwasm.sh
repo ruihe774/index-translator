@@ -6,7 +6,7 @@
 #   target/native/minicelt-cwasm2.wasm   -msimd128
 #   target/native/minicelt-cwasm3.wasm   -msimd128 -mrelaxed-simd
 # They export the shim_* functions plus malloc/free and _initialize. Flags and source lists follow
-# minicelt/oracle/build.rs; -ffp-contract=off so that only explicit relaxed_madd intrinsics fuse.
+# the per-function oracle (tag minicelt-oracle-tests); -ffp-contract=off so that only explicit relaxed_madd intrinsics fuse.
 # cwasm3 is the bit-exact reference for the WASM 3.0 minicelt build (same engine, same FMA behaviour).
 set -e
 cd "$(dirname "$0")/../.."
