@@ -19,9 +19,6 @@
 //!   * `variable_HP_smth2_Q15`/`cutoff_Hz` only feed the VOIP high-pass (`hp_cutoff`);
 //!   * `HB_gain == prev_HB_gain == Q15ONE` (hybrid only), so `gain_fade` never runs;
 //!   * `compute_stereo_width`/`width_mem`: the width only feeds the AUDIO/VOIP mode decision;
-//!   * `peak_signal_energy`/`compute_frame_energy`: the energy-based `activity` only reaches
-//!     `decide_dtx_mode`, which runs only if `!silk_mode.useDTX`, i.e. (with use_dtx) only for
-//!     digital silence, where `activity = 0` regardless;
 //!   * `max_rate` (hybrid bandwidth cap), the mode-0 `equiv_rate` after the channel decision
 //!     (mode decision only), `prev_channels`/`prev_framesize`/`silk_bw_switch`/`nonfinal_frame`
 //!     and the SILK control fields other than the ones kept in `silk_EncControlStruct` below.
@@ -29,7 +26,7 @@
 //! `OpusEncoder` is statically sizable (`new_zeroed` is `const`, no allocation); call `init`
 //! before use.
 
-use crate::celt::arch::{IMAX, IMIN, celt_isnan};
+use crate::celt::arch::{IMAX, IMIN, MAX32, celt_isnan};
 use crate::celt::celt_encoder::{
     CELTEncoder, celt_encode_with_ec, celt_encoder_get_final_range, celt_encoder_init, celt_encoder_set_bitrate,
     celt_encoder_set_channels, celt_encoder_set_complexity, celt_encoder_set_end_band, celt_encoder_set_lsb_depth,
@@ -52,6 +49,7 @@ const PACKET_SIZE_CAP: i32 = 1276;
 /// Input limit: `MAX_ENCODING_DEPTH` for the float API.
 const MAX_ENCODING_DEPTH: i32 = 24;
 const VERY_SMALL: f32 = 1e-30f32;
+const PSEUDO_SNR_THRESHOLD: f32 = 316.23f32; /* 10^(25/10) */
 
 /* From silk/define.h */
 const NB_SPEECH_FRAMES_BEFORE_DTX: i32 = 10; /* eq 200 ms */
@@ -126,6 +124,7 @@ pub struct OpusEncoder {
     auto_bandwidth: i32,
     first: i32,
     nb_no_activity_ms_Q1: i32,
+    peak_signal_energy: f32,
     rangeFinal: u32,
 }
 
@@ -251,6 +250,11 @@ fn compute_equiv_rate(bitrate: i32, channels: i32, frame_rate: i32, vbr: i32, mo
     equiv
 }
 
+fn compute_frame_energy(pcm: &[f32], frame_size: i32, channels: i32) -> f32 {
+    let len = frame_size * channels;
+    celt_inner_prod(pcm, pcm, len) / len as f32
+}
+
 fn is_digital_silence(pcm: &[f32], frame_size: i32, channels: i32, lsb_depth: i32) -> bool {
     let sample_max = celt_maxabs_res(pcm, frame_size * channels);
     sample_max <= 1.0f32 / (1i32 << lsb_depth) as f32
@@ -315,6 +319,7 @@ impl OpusEncoder {
             auto_bandwidth: 0,
             first: 0,
             nb_no_activity_ms_Q1: 0,
+            peak_signal_energy: 0.0,
             rangeFinal: 0,
         }
     }
@@ -569,8 +574,16 @@ impl OpusEncoder {
         if !is_silence {
             self.voice_ratio = -1;
         }
-        /* detected_bandwidth = 0 (no analysis). Peak signal energy tracking: dead, see the
-        module comment. compute_stereo_width(): dead, see the module comment. */
+        /* detected_bandwidth = 0 (no analysis). */
+
+        /* Track the peak signal energy (analysis_info.valid == 0) */
+        if !is_silence {
+            self.peak_signal_energy = MAX32(
+                0.999f32 * self.peak_signal_energy,
+                compute_frame_energy(pcm, frame_size, self.channels),
+            );
+        }
+        /* compute_stereo_width(): dead, see the module comment. */
         self.bitrate_bps = self.user_bitrate_to_bitrate(frame_size, max_data_bytes);
 
         let frame_rate = FS / frame_size;
@@ -764,13 +777,14 @@ impl OpusEncoder {
         let total_buffer = 0usize;
         let channels = self.channels as usize;
 
-        let activity: i32;
+        let mut activity: i32 = VAD_NO_DECISION;
         if is_silence {
-            activity = 0;
-        } else {
-            /* C computes an energy-based activity for CELT-only here; it can only reach
-            decide_dtx_mode() for digital silence (see below), so it is not ported. */
-            activity = VAD_NO_DECISION;
+            activity = !is_silence as i32;
+        } else if self.mode == MODE_CELT_ONLY {
+            /* (analysis_info->valid == 0) */
+            let noise_energy = compute_frame_energy(pcm, frame_size, self.channels);
+            /* Boosting peak energy a bit because we didn't just average the active frames. */
+            activity = (self.peak_signal_energy < (PSEUDO_SNR_THRESHOLD * (0.5f32 * noise_energy))) as i32;
         }
 
         /* silk_bw_switch == 0; redundancy is off for CELT-only: redundancy_bytes = 0.
@@ -900,7 +914,8 @@ impl OpusEncoder {
 
         /* DTX decision */
         if self.use_dtx != 0 && self.silk_mode.useDTX == 0 {
-            /* Only reached for digital silence. */
+            /* silk_mode.useDTX = use_dtx && !is_silence, so this is only reached for digital
+            silence (activity == 0). */
             debug_assert!(is_silence && activity == 0);
             if decide_dtx_mode(activity, &mut self.nb_no_activity_ms_Q1, 2 * 1000 * frame_size / FS) != 0 {
                 self.rangeFinal = 0;
@@ -926,5 +941,152 @@ impl OpusEncoder {
         ret += 1;
         /* use_vbr: no padding */
         ret
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::testutil::{Rng, c_mode, music};
+    use minicelt_oracle as c;
+    use std::vec::Vec;
+
+    fn bits(v: &[f32]) -> Vec<u32> {
+        v.iter().map(|x| x.to_bits()).collect()
+    }
+
+    #[test]
+    fn gen_toc_matches_c() {
+        let cases: [(i32, &[i32], &[i32]); 3] = [
+            (MODE_SILK_ONLY, &[10, 25, 50, 100], &[1101, 1102, 1103]),
+            (MODE_HYBRID, &[50, 100], &[1104, 1105]),
+            (MODE_CELT_ONLY, &[50, 100, 200, 400], &[1101, 1102, 1103, 1104, 1105]),
+        ];
+        for (mode, rates, bws) in cases {
+            for &fr in rates {
+                for &bw in bws {
+                    for ch in 1..=2 {
+                        assert_eq!(gen_toc(mode, fr, bw, ch), unsafe { c::oracle_gen_toc(mode, fr, bw, ch) }, "{mode} {fr} {bw} {ch}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn dc_reject_matches_c() {
+        let mut rng = Rng::new(11);
+        for ch in 1..=2usize {
+            let (mut mr, mut mc) = ([0f32; 4], [0f32; 4]);
+            let frames = music(3, 20, 960, ch);
+            for (k, f) in frames.iter().enumerate() {
+                let mut x = f.clone();
+                if k % 5 == 4 {
+                    x = rng.f32_vec(960 * ch, 2.0);
+                }
+                let (mut or, mut oc) = (std::vec![0f32; 960 * ch], std::vec![0f32; 960 * ch]);
+                dc_reject(&x, 3, &mut or, &mut mr, 960, ch as i32, FS);
+                unsafe { c::oracle_dc_reject(x.as_ptr(), 3, oc.as_mut_ptr(), mc.as_mut_ptr(), 960, ch as i32, FS) };
+                assert_eq!(bits(&or), bits(&oc), "ch={ch} k={k}");
+                assert_eq!(bits(&mr), bits(&mc), "hp_mem ch={ch} k={k}");
+            }
+        }
+    }
+
+    #[test]
+    fn stereo_fade_matches_c() {
+        let mut rng = Rng::new(5);
+        let mi = c::mode_info(c_mode());
+        let window = unsafe { core::slice::from_raw_parts(mi.window, mi.overlap as usize) };
+        for iter in 0..200 {
+            let x = rng.f32_vec(960 * 2, 1.0);
+            let q = |r: &mut Rng| (r.range(0, 16384) as f32) * (1.0f32 / 16384.0f32);
+            let (g1, g2) = if iter % 4 == 0 { (1.0, q(&mut rng)) } else { (q(&mut rng), q(&mut rng)) };
+            let (mut br, mut bc) = (x.clone(), x.clone());
+            stereo_fade(&mut br, g1, g2, 120, 960, 2, window, FS);
+            unsafe { c::oracle_stereo_fade(bc.as_ptr(), bc.as_mut_ptr(), g1, g2, 120, 960, 2, window.as_ptr(), FS) };
+            assert_eq!(bits(&br), bits(&bc), "g1={g1} g2={g2}");
+        }
+    }
+
+    #[test]
+    fn user_bitrate_to_bitrate_matches_c() {
+        for ch in 1..=2 {
+            let mut r = OpusEncoder::new_zeroed();
+            assert_eq!(r.init(ch), OPUS_OK);
+            let mut e = c::RefEncoder::new(ch as usize);
+            for b in [OPUS_AUTO, OPUS_BITRATE_MAX, 501, 6000, 32000, 128000, 510000, 1500000] {
+                assert_eq!(r.set_bitrate(b), OPUS_OK);
+                e.set_bitrate(b);
+                for fs in [0, 960] {
+                    for mdb in [1, 3, 20, 100, 1276, 1276 * 6] {
+                        let c = unsafe { c::oracle_user_bitrate_to_bitrate(e.as_ptr(), fs, mdb) };
+                        assert_eq!(r.user_bitrate_to_bitrate(fs, mdb), c, "ch={ch} b={b} fs={fs} mdb={mdb}");
+                    }
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn compute_equiv_rate_matches_c() {
+        let mut rng = Rng::new(9);
+        for _ in 0..20000 {
+            let bitrate = rng.range(500, 3_062_400);
+            let ch = rng.range(1, 2);
+            let fr = [50, 100, 200, 400, 25][rng.range(0, 4) as usize];
+            let vbr = rng.range(0, 1);
+            let mode = [0, MODE_SILK_ONLY, MODE_HYBRID, MODE_CELT_ONLY][rng.range(0, 3) as usize];
+            let cx = rng.range(0, 10);
+            let loss = rng.range(0, 100);
+            assert_eq!(compute_equiv_rate(bitrate, ch, fr, vbr, mode, cx, loss), unsafe {
+                c::oracle_compute_equiv_rate(bitrate, ch, fr, vbr, mode, cx, loss)
+            });
+        }
+    }
+
+    #[test]
+    fn compute_frame_energy_matches_c() {
+        let mut rng = Rng::new(13);
+        for ch in 1..=2 {
+            for (k, f) in music(4, 10, 960, ch as usize).iter().enumerate() {
+                let x = if k % 3 == 2 { rng.f32_vec(960 * ch as usize, 1.5) } else { f.clone() };
+                let a = compute_frame_energy(&x, 960, ch);
+                let b = unsafe { c::oracle_compute_frame_energy(x.as_ptr(), 960, ch, 0) };
+                assert_eq!(a.to_bits(), b.to_bits(), "ch={ch} k={k}");
+            }
+        }
+    }
+
+    #[test]
+    fn decide_dtx_mode_matches_c() {
+        let mut rng = Rng::new(17);
+        let (mut nr, mut nc) = (0i32, 0i32);
+        for i in 0..20000 {
+            let act = if (i / 50) % 2 == 0 { 0 } else { (rng.range(0, 9) == 0) as i32 };
+            let fms = [5, 10, 20, 40, 120][rng.range(0, 4) as usize] * 2;
+            let a = decide_dtx_mode(act, &mut nr, fms);
+            let b = unsafe { c::oracle_decide_dtx_mode(act, &mut nc, fms) };
+            assert_eq!((a, nr), (b, nc), "i={i}");
+        }
+    }
+
+    #[test]
+    fn is_digital_silence_matches_c() {
+        let mut rng = Rng::new(19);
+        for i in 0..4000 {
+            let lsb = rng.range(8, 24);
+            let ch = rng.range(1, 2);
+            let thr = 1.0f32 / (1i32 << lsb) as f32;
+            let scale = [0.0, thr * 0.5, thr, thr * 1.0001, thr * 2.0, 1.0][(i % 6) as usize];
+            let mut x = rng.f32_vec(960 * ch as usize, scale);
+            if i % 7 == 0 {
+                let j = rng.range(0, 960 * ch - 1) as usize;
+                x[j] = if i % 2 == 0 { thr } else { -thr };
+            }
+            let a = is_digital_silence(&x, 960, ch, lsb) as i32;
+            let b = unsafe { c::is_digital_silence(x.as_ptr(), 960, ch, lsb) };
+            assert_eq!(a, b, "i={i} lsb={lsb}");
+        }
     }
 }

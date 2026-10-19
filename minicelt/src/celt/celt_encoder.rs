@@ -1600,7 +1600,7 @@ pub fn celt_encoder_reset_state(st: &mut CELTEncoder) {
     }
     st.vbr_offset = 0;
     st.delayedIntra = 1.0;
-    st.spread_decision = 2; /* SPREAD_NORMAL */
+    st.spread_decision = crate::celt::bands::SPREAD_NORMAL;
     st.tonal_average = 256;
     st.hf_average = 0;
     st.tapset_decision = 0;
@@ -1630,4 +1630,67 @@ pub fn celt_encode_with_ec(
 ) -> i32 {
     let _ = (st, pcm, frame_size, compressed, nbCompressedBytes, enc);
     todo!("celt_encode_with_ec: ported by the CELT encoder group")
+}
+
+#[cfg(test)]
+mod api_tests {
+    use super::*;
+    use minicelt_oracle as c;
+    use std::vec::Vec;
+
+    /// The Rust state in the C memory layout for `channels` (fixed fields from `channels`
+    /// on, i.e. without the mode pointer, then the trailing arrays at `channels` size).
+    fn rust_bytes(st: &CELTEncoder, channels: usize) -> Vec<u8> {
+        fn raw<T>(v: &[T]) -> &[u8] {
+            unsafe { core::slice::from_raw_parts(v.as_ptr() as *const u8, core::mem::size_of_val(v)) }
+        }
+        let base = st as *const CELTEncoder as *const u8;
+        let (a, b) = (core::mem::offset_of!(CELTEncoder, channels), core::mem::offset_of!(CELTEncoder, in_mem));
+        let mut out = unsafe { core::slice::from_raw_parts(base.add(a), b - a) }.to_vec();
+        let cb = COMBFILTER_MAXPERIOD as usize;
+        out.extend_from_slice(raw(&st.in_mem[..channels * OVERLAP]));
+        out.extend_from_slice(raw(&st.prefilter_mem[..channels * cb]));
+        out.extend_from_slice(raw(&st.oldBandE[..channels * NB_EBANDS]));
+        out.extend_from_slice(raw(&st.oldLogE[..channels * NB_EBANDS]));
+        out.extend_from_slice(raw(&st.oldLogE2[..channels * NB_EBANDS]));
+        out.extend_from_slice(raw(&st.energyError[..channels * NB_EBANDS]));
+        out
+    }
+
+    fn c_init(channels: usize) -> Vec<u8> {
+        let n = unsafe { c::celt_encoder_get_size(channels as i32) } as usize;
+        let mut buf = std::vec![0xA5u8; n + 16];
+        let p = ((buf.as_mut_ptr() as usize + 15) & !15) as *mut u8;
+        let r = unsafe { c::oracle_opus_custom_encoder_init_arch(p as *mut _, crate::testutil::c_mode(), channels as i32, 0) };
+        assert_eq!(r, crate::opus::defines::OPUS_OK);
+        let off = core::mem::offset_of!(CELTEncoder, channels);
+        unsafe { core::slice::from_raw_parts(p.add(off), n - off) }.to_vec()
+    }
+
+    #[test]
+    fn celt_encoder_init_matches_c() {
+        for ch in 1..=2usize {
+            let mut st = CELTEncoder::new_zeroed();
+            // Dirty state, so the test sees what init clears.
+            unsafe {
+                let start = core::mem::offset_of!(CELTEncoder, channels);
+                let p = &mut st as *mut CELTEncoder as *mut u8;
+                core::ptr::write_bytes(p.add(start), 0x5A, core::mem::size_of::<CELTEncoder>() - start);
+            }
+            assert_eq!(celt_encoder_init(&mut st, 48000, ch as i32), crate::opus::defines::OPUS_OK);
+            assert_eq!(rust_bytes(&st, ch), c_init(ch), "channels={ch}");
+            assert!(core::ptr::eq(st.mode, &mode48000_960_120));
+
+            // OPUS_RESET_STATE on a dirty state gives the init state again (as in C, where
+            // init ends with the reset and only the settings before `rng` survive).
+            let want = rust_bytes(&st, ch);
+            unsafe {
+                let start = core::mem::offset_of!(CELTEncoder, rng);
+                let p = &mut st as *mut CELTEncoder as *mut u8;
+                core::ptr::write_bytes(p.add(start), 0x3C, core::mem::size_of::<CELTEncoder>() - start);
+            }
+            celt_encoder_reset_state(&mut st);
+            assert_eq!(rust_bytes(&st, ch), want, "reset channels={ch}");
+        }
+    }
 }
