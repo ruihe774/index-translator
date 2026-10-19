@@ -1,0 +1,31 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+      - uses: denoland/setup-deno@v2
+        with:
+          deno-version: v2.x
+      - name: Install CMake and Ninja
+        run: sudo apt-get update && sudo apt-get install -y cmake ninja-build
+      - uses: Swatinem/rust-cache@v2
+      # Builds native libopus, the release and checked wasm2/wasm3 builds, then compares them.
+      - name: Test
+        run: scripts/test.sh
+      - name: Upload wasm builds
+        uses: actions/upload-artifact@v4
+        with:
+          name: minisilk-wasm
+          path: target/minisilk-wasm[23].wasm
