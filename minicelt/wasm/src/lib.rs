@@ -45,24 +45,24 @@ fn channels() -> usize {
 pub extern "C" fn minicelt_init(channels: i32, bitrate: i32, complexity: i32, vbr_constraint: i32, dtx: i32) -> i32 {
     unsafe { *addr_of_mut!(CHANNELS) = 0 };
     let e = enc();
-    let r = e.init(channels);
-    if r < 0 {
-        return r;
+    let mut r = e.init(channels);
+    if r >= 0 {
+        r = e.set_bitrate(bitrate);
     }
-    unsafe { *addr_of_mut!(CHANNELS) = channels as usize };
-    let r = e.set_bitrate(bitrate);
-    if r < 0 {
-        return r;
+    if r >= 0 {
+        r = e.set_complexity(complexity);
     }
-    let r = e.set_complexity(complexity);
-    if r < 0 {
-        return r;
+    if r >= 0 {
+        r = e.set_vbr_constraint(vbr_constraint);
     }
-    let r = e.set_vbr_constraint(vbr_constraint);
-    if r < 0 {
-        return r;
+    if r >= 0 {
+        r = e.set_dtx(dtx);
     }
-    e.set_dtx(dtx)
+    // Leave the encoder unusable unless every setting was accepted.
+    if r >= 0 {
+        unsafe { *addr_of_mut!(CHANNELS) = channels as usize };
+    }
+    r
 }
 
 #[unsafe(no_mangle)]
