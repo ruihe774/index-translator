@@ -25,6 +25,7 @@ pub const OPUS_SET_PACKET_LOSS_PERC_REQUEST: c_int = 4014;
 pub const OPUS_SET_DTX_REQUEST: c_int = 4016;
 pub const OPUS_GET_LOOKAHEAD_REQUEST: c_int = 4027;
 pub const OPUS_GET_FINAL_RANGE_REQUEST: c_int = 4031;
+pub const OPUS_GET_IN_DTX_REQUEST: c_int = 4049;
 
 unsafe extern "C" {
     pub fn opus_encoder_create(fs: i32, channels: c_int, application: c_int, error: *mut c_int) -> *mut OpusEncoder;
@@ -57,6 +58,43 @@ impl RefEncoder {
     }
     pub fn raw(&self) -> *mut OpusEncoder {
         self.0
+    }
+    fn ctl_set(&mut self, request: c_int, value: i32) -> i32 {
+        unsafe { opus_encoder_ctl(self.0, request, value) }
+    }
+    pub fn set_bitrate(&mut self, v: i32) -> i32 {
+        self.ctl_set(OPUS_SET_BITRATE_REQUEST, v)
+    }
+    pub fn set_complexity(&mut self, v: i32) -> i32 {
+        self.ctl_set(OPUS_SET_COMPLEXITY_REQUEST, v)
+    }
+    pub fn set_dtx(&mut self, v: i32) -> i32 {
+        self.ctl_set(OPUS_SET_DTX_REQUEST, v)
+    }
+    pub fn set_packet_loss_perc(&mut self, v: i32) -> i32 {
+        self.ctl_set(OPUS_SET_PACKET_LOSS_PERC_REQUEST, v)
+    }
+    fn ctl_get(&self, request: c_int) -> i32 {
+        let mut v: i32 = 0;
+        let r = unsafe { opus_encoder_ctl(self.0, request, &mut v as *mut i32) };
+        assert_eq!(r, OPUS_OK);
+        v
+    }
+    pub fn lookahead(&self) -> i32 {
+        self.ctl_get(OPUS_GET_LOOKAHEAD_REQUEST)
+    }
+    pub fn final_range(&self) -> u32 {
+        self.ctl_get(OPUS_GET_FINAL_RANGE_REQUEST) as u32
+    }
+    pub fn in_dtx(&self) -> i32 {
+        self.ctl_get(OPUS_GET_IN_DTX_REQUEST)
+    }
+    /// `opus_encode` with an arbitrary frame size (the slice length) and output buffer.
+    pub fn encode_any(&mut self, pcm: &[i16], out: &mut [u8]) -> i32 {
+        unsafe { opus_encode(self.0, pcm.as_ptr(), pcm.len() as c_int, out.as_mut_ptr(), out.len() as i32) }
+    }
+    pub fn encode_float_any(&mut self, pcm: &[f32], out: &mut [u8]) -> i32 {
+        unsafe { opus_encode_float(self.0, pcm.as_ptr(), pcm.len() as c_int, out.as_mut_ptr(), out.len() as i32) }
     }
     /// Encodes one 20 ms frame (320 samples).
     pub fn encode(&mut self, pcm: &[i16; 320], out: &mut [u8]) -> i32 {
