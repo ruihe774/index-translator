@@ -9,37 +9,10 @@
 
 /* Order-th order LPC analysis filter (C: silk_LPC_analysis_filter{6,8,10,12,16}_FLP, one
    fully unrolled function per order), does not write the first Order samples. The
-   prediction is summed left to right in float, exactly as the unrolled C expressions.
-
-   With relaxed SIMD, clang auto-vectorizes these loops (4 outputs at a time) and fuses the
-   multiply-adds of the unrolled expression into f32x4.relaxed_madd. With C's contraction
-   rule (the left operand of `+` is preferred) the chain is
-   `t = madd(x0, c0, x1 * c1); t = madd(x_j, c_j, t)` for j = 2..order. The remaining
-   (length - order) % 4 samples are computed by the scalar loop (no fusion). */
+   prediction is summed left to right in float, exactly as the unrolled C expressions. */
 #[inline(always)]
 fn silk_LPC_analysis_filterN_FLP(r_LPC: &mut [f32], PredCoef: &[f32], s: &[f32], length: usize, order: usize) {
     let mut ix = order;
-
-    #[cfg(target_feature = "relaxed-simd")]
-    {
-        use core::arch::wasm32::*;
-        assert!(r_LPC.len() >= length && s.len() >= length && PredCoef.len() >= order);
-        let end = order + (length.saturating_sub(order) & !3);
-        while ix < end {
-            // SAFETY: loads cover s[ix - order .. ix + 4] and the store r_LPC[ix .. ix + 4],
-            // with ix >= order and ix + 4 <= end <= length.
-            unsafe {
-                let ld = |i: usize| v128_load(s.as_ptr().add(i) as *const v128);
-                let mut t = f32x4_mul(ld(ix - 2), f32x4_splat(PredCoef[1]));
-                t = f32x4_relaxed_madd(ld(ix - 1), f32x4_splat(PredCoef[0]), t);
-                for j in 2..order {
-                    t = f32x4_relaxed_madd(ld(ix - 1 - j), f32x4_splat(PredCoef[j]), t);
-                }
-                v128_store(r_LPC.as_mut_ptr().add(ix) as *mut v128, f32x4_sub(ld(ix), t));
-            }
-            ix += 4;
-        }
-    }
 
     while ix < length {
         /* short-term prediction */

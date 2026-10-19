@@ -30,36 +30,7 @@ pub fn silk_LTP_analysis_filter_FLP(
 
         /* LTP analysis FIR filter */
         let n = (subfr_length + pre_length) as usize;
-        #[allow(unused_mut)]
-        let mut i0 = 0usize;
-        /* With relaxed SIMD, clang auto-vectorizes this loop over i (4 at a time) and fuses
-        the multiply-subtracts into f32x4.relaxed_madd with the negated coefficients; the
-        remaining n % 4 samples are computed by the scalar loop (no fusion). */
-        #[cfg(target_feature = "relaxed-simd")]
-        {
-            use core::arch::wasm32::*;
-            let nvec = n & !3;
-            while i0 < nvec {
-                let first = (x_ptr + i0 as isize) as usize;
-                let lag0 = (x_lag_ptr + i0 as isize - (LTP_ORDER_ / 2) as isize) as usize;
-                assert!(first + 4 <= x.len() && lag0 + 4 + LTP_ORDER_ - 1 <= x.len());
-                assert!(LTP_res_ptr + i0 + 4 <= LTP_res.len());
-                // SAFETY: bounds checked by the asserts above (every load lies within
-                // x[first .. first + 4] or x[lag0 .. lag0 + 4 + LTP_ORDER - 1]).
-                unsafe {
-                    let mut acc = v128_load(x.as_ptr().add(first) as *const v128);
-                    for j in 0..LTP_ORDER_ {
-                        let xl = v128_load(x.as_ptr().add(lag0 + LTP_ORDER_ - 1 - j) as *const v128);
-                        acc = f32x4_relaxed_madd(f32x4_splat(-Btmp[j]), xl, acc);
-                    }
-                    acc = f32x4_mul(acc, f32x4_splat(inv_gain));
-                    v128_store(LTP_res.as_mut_ptr().add(LTP_res_ptr + i0) as *mut v128, acc);
-                }
-                i0 += 4;
-            }
-            x_lag_ptr += nvec as isize;
-        }
-        for i in i0..n {
+        for i in 0..n {
             let out = &mut LTP_res[LTP_res_ptr + i];
             *out = x[(x_ptr + i as isize) as usize];
             /* Subtract long-term prediction */

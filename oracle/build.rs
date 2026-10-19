@@ -67,6 +67,10 @@ fn main() {
         "-O2".into(),
         "-g".into(),
         "-msimd128".into(),
+        // Only explicit relaxed_madd intrinsics may fuse; with contraction on, clang would
+        // also fuse multiply-adds in loops it auto-vectorizes (with -mrelaxed-simd), making
+        // the reference depend on the optimizer rather than on the source.
+        "-ffp-contract=off".into(),
         "-DHAVE_CONFIG_H".into(),
     ];
     if relaxed {

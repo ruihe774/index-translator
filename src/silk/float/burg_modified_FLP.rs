@@ -58,29 +58,7 @@ pub fn silk_burg_modified_FLP(
                 tmp1 += x_ptr[n - k - 1] as f64 * Atmp;
                 tmp2 += x_ptr[sl - n + k] as f64 * Atmp;
             }
-            #[allow(unused_mut)]
-            let mut k0 = 0usize;
-            /* With relaxed SIMD, clang auto-vectorizes this loop (2 lanes at a time) and fuses
-            the multiply-subtracts into f64x2.relaxed_madd with the negated tmp1 / tmp2; the
-            odd remaining iteration is computed by the scalar code (no fusion). */
-            #[cfg(target_feature = "relaxed-simd")]
-            {
-                use core::arch::wasm32::*;
-                let (m1, m2) = (f64x2_splat(-tmp1), f64x2_splat(-tmp2));
-                while k0 + 2 <= n + 1 {
-                    let k = k0;
-                    let xf = f64x2(x_ptr[n - k] as f64, x_ptr[n - k - 1] as f64);
-                    let xb = f64x2(x_ptr[sl - n + k - 1] as f64, x_ptr[sl - n + k] as f64);
-                    let rf = f64x2_relaxed_madd(m1, xf, f64x2(CAf[k], CAf[k + 1]));
-                    let rb = f64x2_relaxed_madd(m2, xb, f64x2(CAb[k], CAb[k + 1]));
-                    CAf[k] = f64x2_extract_lane::<0>(rf);
-                    CAf[k + 1] = f64x2_extract_lane::<1>(rf);
-                    CAb[k] = f64x2_extract_lane::<0>(rb);
-                    CAb[k + 1] = f64x2_extract_lane::<1>(rb);
-                    k0 += 2;
-                }
-            }
-            for k in k0..=n {
+            for k in 0..=n {
                 CAf[k] -= tmp1 * x_ptr[n - k] as f64;
                 CAb[k] -= tmp2 * x_ptr[sl - n + k - 1] as f64;
             }
@@ -145,28 +123,7 @@ pub fn silk_burg_modified_FLP(
         }
 
         /* Update C * Af and C * Ab */
-        #[allow(unused_mut)]
-        let mut k0 = 0usize;
-        /* With relaxed SIMD, clang auto-vectorizes this loop (2 lanes at a time) and fuses the
-        multiply-adds into f64x2.relaxed_madd; the odd remaining iteration is scalar (no fusion). */
-        #[cfg(target_feature = "relaxed-simd")]
-        {
-            use core::arch::wasm32::*;
-            let rcv = f64x2_splat(rc);
-            while k0 + 2 <= n + 2 {
-                let k = k0;
-                let old_f = f64x2(CAf[k], CAf[k + 1]);
-                let ab = f64x2(CAb[n + 1 - k], CAb[n - k]);
-                let nf = f64x2_relaxed_madd(rcv, ab, old_f);
-                let nb = f64x2_relaxed_madd(rcv, old_f, ab);
-                CAf[k] = f64x2_extract_lane::<0>(nf);
-                CAf[k + 1] = f64x2_extract_lane::<1>(nf);
-                CAb[n + 1 - k] = f64x2_extract_lane::<0>(nb);
-                CAb[n - k] = f64x2_extract_lane::<1>(nb);
-                k0 += 2;
-            }
-        }
-        for k in k0..=n + 1 {
+        for k in 0..=n + 1 {
             let tmp1 = CAf[k];
             CAf[k] += rc * CAb[n + 1 - k];
             CAb[n + 1 - k] += rc * tmp1;

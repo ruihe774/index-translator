@@ -49,8 +49,12 @@ One Rust module per C file, with the C file name (`silk/NLSF_VQ.c` →
   operand is `double` (a `1.0` literal, a `double` variable, `log10()` etc.).
   Reproduce the exact precision of every operation with `as f64`/`as f32`.
   Getting this wrong shows up as a bit-exactness failure.
-- Rust does not contract `a * b + c` into an FMA, and neither does clang for
-  scalar wasm code, so plain expressions match.
+- Rust does not contract `a * b + c` into an FMA. The oracle is built with
+  `-ffp-contract=off`, so C only fuses where the source explicitly uses a
+  relaxed madd intrinsic; plain expressions match. (With contraction on, clang
+  fuses multiply-adds in loops it auto-vectorizes under `-mrelaxed-simd`, which
+  would make the reference depend on the optimizer.) Never hand-vectorize a
+  plain C loop to imitate compiler output.
 - C `(opus_int)x` on a float truncates; Rust `x as i32` truncates and saturates.
   `silk_float2int`/`float2int` round half to even (`f32.nearest`).
 - Arrays: prefer slices (`&[i16]`, `&mut [f32]`). Where C uses negative
