@@ -12,6 +12,7 @@ pub const BITRES: i32 = 3;
 
 /// The entropy encoder/decoder context.
 #[repr(C)]
+#[derive(Clone, Copy)]
 pub struct ec_ctx {
     /// Buffered input/output.
     pub buf: *mut u8,
