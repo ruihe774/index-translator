@@ -1,4 +1,4 @@
-//! Port of celt/mdct.h and celt/mdct.c (upstream libopus 1.6.1; forward MDCT, float build, non-PFA).
+//! Port of celt/mdct.h and celt/mdct.c (forward MDCT, float build, non-PFA).
 //! The twiddles are planar: `t[i]` = cos, `t[N4+i]` = -sin.
 
 use super::kiss_fft::{kiss_fft_cpx, kiss_fft_state, kiss_twiddle_scalar, opus_fft_impl};

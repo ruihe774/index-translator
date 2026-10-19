@@ -1,7 +1,5 @@
 //! Port of celt/entenc.c (with the constants of celt/mfrngcod.h).
 
-#![allow(non_camel_case_types)]
-
 use crate::celt::entcode::*;
 
 /// The number of bits to output at a time.
@@ -16,8 +14,6 @@ pub const EC_CODE_SHIFT: i32 = EC_CODE_BITS - EC_SYM_BITS - 1;
 pub const EC_CODE_TOP: u32 = 1u32 << (EC_CODE_BITS - 1);
 /// Low-order bit of the high-order range symbol.
 pub const EC_CODE_BOT: u32 = EC_CODE_TOP >> EC_SYM_BITS;
-/// The number of bits available for the last, partial symbol in the code field.
-pub const EC_CODE_EXTRA: i32 = (EC_CODE_BITS - 2) % EC_SYM_BITS + 1;
 
 /* A range encoder.
 See entdec.c and the references for implementation details. */
@@ -159,18 +155,6 @@ pub unsafe fn ec_enc_icdf_ptr(this: &mut ec_enc, s: i32, icdf: *const u8, ftb: u
     ec_enc_normalize(this);
 }
 
-pub fn ec_enc_icdf16(this: &mut ec_enc, s: i32, icdf: &[u16], ftb: u32) {
-    let r = this.rng >> ftb;
-    let s = s as usize;
-    if s > 0 {
-        this.val = this.val.wrapping_add(this.rng.wrapping_sub(r.wrapping_mul(icdf[s - 1] as u32)));
-        this.rng = r.wrapping_mul(icdf[s - 1] as u32 - icdf[s] as u32);
-    } else {
-        this.rng = this.rng.wrapping_sub(r.wrapping_mul(icdf[s] as u32));
-    }
-    ec_enc_normalize(this);
-}
-
 pub fn ec_enc_uint(this: &mut ec_enc, fl: u32, ft: u32) {
     /* In order to optimize EC_ILOG(), it is undefined for the value 0. */
     debug_assert!(ft > 1);
@@ -206,25 +190,6 @@ pub fn ec_enc_bits(this: &mut ec_enc, fl: u32, bits: u32) {
     this.end_window = window;
     this.nend_bits = used;
     this.nbits_total += bits as i32;
-}
-
-pub fn ec_enc_patch_initial_bits(this: &mut ec_enc, val: u32, nbits: u32) {
-    debug_assert!(nbits <= EC_SYM_BITS as u32);
-    let shift = EC_SYM_BITS as u32 - nbits;
-    let mask: u32 = ((1u32 << nbits) - 1) << shift;
-    if this.offs > 0 {
-        /* The first byte has been finalized. */
-        unsafe { *this.buf = ((*this.buf as u32 & !mask) | (val << shift)) as u8 };
-    } else if this.rem >= 0 {
-        /* The first byte is still awaiting carry propagation. */
-        this.rem = ((this.rem as u32 & !mask) | (val << shift)) as i32;
-    } else if this.rng <= (EC_CODE_TOP >> nbits) {
-        /* The renormalization loop has never been run. */
-        this.val = (this.val & !(mask << EC_CODE_SHIFT)) | (val << (EC_CODE_SHIFT as u32 + shift));
-    } else {
-        /* The encoder hasn't even encoded _nbits of data yet. */
-        this.error = -1;
-    }
 }
 
 pub fn ec_enc_shrink(this: &mut ec_enc, size: u32) {
@@ -364,8 +329,12 @@ mod tests {
                             ec_enc_icdf(&mut er, s, &icdf, ftb);
                             unsafe { c::ec_enc_icdf(&mut ec as *mut ec_enc as *mut c_void, s, icdf.as_ptr(), ftb) };
                         } else {
-                            ec_enc_icdf16(&mut er, s, &icdf16, ftb);
-                            unsafe { c::ec_enc_icdf16(&mut ec as *mut ec_enc as *mut c_void, s, icdf16.as_ptr(), ftb) };
+                            /* ec_enc_icdf16 (QEXT only) is not ported; code the same symbol
+                            with ec_encode_bin. */
+                            let fl = if s > 0 { total as u32 - icdf16[s as usize - 1] as u32 } else { 0 };
+                            let fh = total as u32 - icdf16[s as usize] as u32;
+                            ec_encode_bin(&mut er, fl, fh, ftb);
+                            unsafe { c::ec_encode_bin(&mut ec as *mut ec_enc as *mut c_void, fl, fh, ftb) };
                         }
                     }
                     5 => {
@@ -387,8 +356,8 @@ mod tests {
                     8 => {
                         let nbits = rng.range(1, 8) as u32;
                         let v = rng.next_u32() & ((1u32 << nbits) - 1);
-                        ec_enc_patch_initial_bits(&mut er, v, nbits);
-                        unsafe { c::ec_enc_patch_initial_bits(&mut ec as *mut ec_enc as *mut c_void, v, nbits) };
+                        ec_enc_bits(&mut er, v, nbits);
+                        unsafe { c::ec_enc_bits(&mut ec as *mut ec_enc as *mut c_void, v, nbits) };
                     }
                     _ => {
                         let used = er.offs + er.end_offs;

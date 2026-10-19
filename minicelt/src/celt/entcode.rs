@@ -1,7 +1,5 @@
 //! Port of celt/entcode.h and celt/entcode.c (encoder side).
 
-#![allow(non_camel_case_types)]
-
 pub type ec_window = u32;
 
 pub const EC_WINDOW_SIZE: i32 = 32;

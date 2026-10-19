@@ -9,10 +9,7 @@ static LOG2_FRAC_TABLE: [u8; 24] = [
     0, 8, 13, 16, 19, 21, 23, 24, 26, 27, 28, 29, 30, 31, 32, 32, 33, 34, 34, 35, 36, 36, 37, 37,
 ];
 
-pub const MAX_PSEUDO: i32 = 40;
 pub const LOG_MAX_PSEUDO: i32 = 6;
-
-pub const CELT_MAX_PULSES: i32 = 128;
 
 pub const MAX_FINE_BITS: i32 = 8;
 

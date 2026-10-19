@@ -26,7 +26,7 @@
 //! `OpusEncoder` is statically sizable (`new_zeroed` is `const`, no allocation); call `init`
 //! before use.
 
-use crate::celt::arch::{IMAX, IMIN, MAX32, celt_isnan};
+use crate::celt::arch::{IMAX, IMIN, MAX_ENCODING_DEPTH, MAX32, VERY_SMALL, celt_isnan};
 use crate::celt::celt_encoder::{
     CELTEncoder, celt_encode_with_ec, celt_encoder_get_final_range, celt_encoder_init, celt_encoder_set_bitrate,
     celt_encoder_set_channels, celt_encoder_set_complexity, celt_encoder_set_end_band, celt_encoder_set_lsb_depth,
@@ -46,9 +46,6 @@ const FS: i32 = 48000;
 const FRAME_SIZE: i32 = 960;
 /// 1276 bytes: the largest Opus frame.
 const PACKET_SIZE_CAP: i32 = 1276;
-/// Input limit: `MAX_ENCODING_DEPTH` for the float API.
-const MAX_ENCODING_DEPTH: i32 = 24;
-const VERY_SMALL: f32 = 1e-30f32;
 const PSEUDO_SNR_THRESHOLD: f32 = 316.23f32; /* 10^(25/10) */
 
 /* From silk/define.h */

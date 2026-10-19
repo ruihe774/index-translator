@@ -16,9 +16,9 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 
-/// Scratch size: the measured worst-case peak is 45056 bytes (stereo, `stack::tests`), plus
-/// headroom.
-pub const GLOBAL_STACK_SIZE: usize = 49152;
+/// Scratch size: the measured worst-case peak is 52736 bytes (stereo `opus_encode`, whose
+/// float copy of the input sits below the encoder's 45056 bytes; `stack::tests`), plus headroom.
+pub const GLOBAL_STACK_SIZE: usize = 57344;
 
 #[repr(C, align(16))]
 struct Scratch {
@@ -126,6 +126,9 @@ mod tests {
                     let mut out = [0u8; 1276];
                     for f in &frames {
                         assert!(st.encode_float(f, &mut out) > 0);
+                        /* opus_encode allocates the float copy of the input on top. */
+                        let pcm: Vec<i16> = f.iter().map(|&x| (x * 32768.0).clamp(-32768.0, 32767.0) as i16).collect();
+                        assert!(st.encode(&pcm, &mut out) > 0);
                     }
                 }
             }

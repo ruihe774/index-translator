@@ -158,22 +158,6 @@ pub fn celt_pitch_xcorr(_x: &[f32], _y: &[f32], xcorr: &mut [f32], len: i32, max
     }
 }
 
-/// `xcorr_kernel_wasm`: `sum[k] += sum_j x[j] * y[j + k]` for k in 0..4, j in 0..len.
-/// Reads `x[0..len]` and `y[0..len + 3]`.
-pub fn xcorr_kernel(x: &[f32], y: &[f32], sum: &mut [f32; 4], len: i32) {
-    debug_assert!(len >= 3);
-    let len = len.max(0) as usize;
-    assert!(x.len() >= len && y.len() >= len + 3);
-    // SAFETY: xcorr4_float reads x[0..len] and y[0..len+3]; sum is 4 floats.
-    unsafe {
-        let s = v128_load(sum.as_ptr() as *const v128);
-        v128_store(
-            sum.as_mut_ptr() as *mut v128,
-            f32x4_add(s, xcorr4_float(x.as_ptr(), y.as_ptr(), len)),
-        );
-    }
-}
-
 /// `dual_inner_prod_wasm`: `*xy1 = sum x[i]*y01[i]`, `*xy2 = sum x[i]*y02[i]`, i in 0..N.
 pub fn dual_inner_prod(x: &[f32], y01: &[f32], y02: &[f32], N: i32, xy1: &mut f32, xy2: &mut f32) {
     let n = N.max(0) as usize;
@@ -616,13 +600,6 @@ mod tests {
                 dual_inner_prod(&x, &y, &y2, n as i32, &mut a1, &mut a2);
                 c::oracle_dual_inner_prod(x.as_ptr(), y.as_ptr(), y2.as_ptr(), n as i32, &mut b1, &mut b2);
                 assert_eq!((a1.to_bits(), a2.to_bits()), (b1.to_bits(), b2.to_bits()), "dual n={n}");
-                if n >= 3 {
-                    let init = [rng.f32_unit(), rng.f32_unit(), rng.f32_unit(), rng.f32_unit()];
-                    let (mut sa, mut sb) = (init, init);
-                    xcorr_kernel(&x, &y, &mut sa, n as i32);
-                    c::oracle_xcorr_kernel(x.as_ptr(), y.as_ptr(), sb.as_mut_ptr(), n as i32);
-                    assert_eq!(bits(&sa), bits(&sb), "xcorr_kernel n={n}");
-                }
                 // celt_pitch_xcorr
                 let len = n;
                 let max_pitch = 1 + rng.range(0, 45) as usize;

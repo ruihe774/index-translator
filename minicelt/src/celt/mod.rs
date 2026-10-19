@@ -6,7 +6,6 @@ pub mod celt_lpc;
 pub mod cwrs;
 pub mod entcode;
 pub mod entenc;
-pub mod float_cast;
 pub mod kiss_fft;
 pub mod laplace;
 pub mod mathops;
