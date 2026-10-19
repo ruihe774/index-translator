@@ -1,6 +1,6 @@
 [workspace]
 resolver = "3"
-members = ["minisilk", "minisilk/wasm"]
+members = ["minisilk", "minisilk/wasm", "minicelt", "minicelt/wasm"]
 
 [profile.release]
 opt-level = "s"

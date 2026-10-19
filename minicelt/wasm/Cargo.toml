@@ -1,0 +1,12 @@
+[package]
+name = "minicelt-wasm"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "wasm32-unknown-unknown cdylib exposing the minicelt encoder"
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+minicelt = { path = ".." }
