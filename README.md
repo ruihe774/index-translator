@@ -1,4 +1,4 @@
-# minisilk / minicelt
+# MiniOpus (minisilk / minicelt)
 
 Minimal Opus encoders for WebAssembly: Rust ports of the libopus 1.6.1 float encoder, `no_std`,
 no allocation, using WASM SIMD (which upstream libopus does not). Each produces valid Opus
