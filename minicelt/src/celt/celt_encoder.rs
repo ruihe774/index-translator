@@ -1423,3 +1423,211 @@ pub fn compute_vbr(
 }
 
 // group E: everything else.
+
+/* ------------------------------------------------------------------------------------------
+ * group G: encoder API used by src/opus_encoder.c (CELT-only).
+ *
+ * celt_encoder_init / opus_custom_encoder_init_arch and the subset of opus_custom_encoder_ctl
+ * that the Opus layer uses, one function per request. Not ported: CELT_SET_ANALYSIS (the
+ * analysis is never valid, st.analysis stays zeroed from the reset), CELT_SET_SILK_INFO
+ * (hybrid only), OPUS_SET_ENERGY_MASK, OPUS_SET_LFE, OPUS_SET_QEXT, CELT_GET_MODE (always
+ * `st.mode`), CELT_SET_INPUT_CLIPPING (custom modes only).
+ * ---------------------------------------------------------------------------------------- */
+
+/* Paths are spelled out in this section (no `use`) so it cannot clash with the imports of
+the encoder body above. */
+
+/// opus_custom_encoder_init_arch(st, mode48000_960_120, channels) followed by the
+/// `upsample = resampling_factor(sampling_rate)` of celt_encoder_init. Only 48 kHz is
+/// supported (upsample == 1).
+pub fn celt_encoder_init(st: &mut CELTEncoder, sampling_rate: i32, channels: i32) -> i32 {
+    debug_assert!(sampling_rate == 48000);
+    if sampling_rate != 48000 {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    /* opus_custom_encoder_init_arch() */
+    if channels < 0 || channels > 2 {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+
+    *st = CELTEncoder::new_zeroed();
+
+    st.mode = &mode48000_960_120;
+    st.channels = channels;
+    st.stream_channels = channels;
+
+    st.upsample = 1;
+    st.start = 0;
+    st.end = st.mode.effEBands;
+    st.signalling = 1;
+    st.arch = 0;
+
+    st.constrained_vbr = 1;
+    st.clip = 1;
+
+    st.bitrate = crate::opus::defines::OPUS_BITRATE_MAX;
+    st.vbr = 0;
+    st.force_intra = 0;
+    st.complexity = 5;
+    st.lsb_depth = 24;
+
+    celt_encoder_reset_state(st);
+
+    /* celt_encoder_init(): resampling_factor(48000) */
+    st.upsample = 1;
+    crate::opus::defines::OPUS_OK
+}
+
+/// OPUS_SET_COMPLEXITY
+pub fn celt_encoder_set_complexity(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value < 0 || value > 10 {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    st.complexity = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// CELT_SET_START_BAND
+pub fn celt_encoder_set_start_band(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value < 0 || value >= st.mode.nbEBands {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    st.start = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// CELT_SET_END_BAND
+pub fn celt_encoder_set_end_band(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value < 1 || value > st.mode.nbEBands {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    st.end = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// CELT_SET_PREDICTION
+pub fn celt_encoder_set_prediction(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value < 0 || value > 2 {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    st.disable_pf = (value <= 1) as i32;
+    st.force_intra = (value == 0) as i32;
+    crate::opus::defines::OPUS_OK
+}
+
+/// OPUS_SET_PACKET_LOSS_PERC
+pub fn celt_encoder_set_packet_loss_perc(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value < 0 || value > 100 {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    st.loss_rate = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// OPUS_SET_VBR_CONSTRAINT (no validation, as in C)
+pub fn celt_encoder_set_vbr_constraint(st: &mut CELTEncoder, value: i32) -> i32 {
+    st.constrained_vbr = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// OPUS_SET_VBR (no validation, as in C). minicelt only supports VBR (`value == 1`) when
+/// encoding.
+pub fn celt_encoder_set_vbr(st: &mut CELTEncoder, value: i32) -> i32 {
+    st.vbr = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// OPUS_SET_BITRATE
+pub fn celt_encoder_set_bitrate(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value <= 500 && value != crate::opus::defines::OPUS_BITRATE_MAX {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    let value = super::arch::IMIN(value, 750000 * st.channels);
+    st.bitrate = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// CELT_SET_CHANNELS
+pub fn celt_encoder_set_channels(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value < 1 || value > 2 {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    st.stream_channels = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// OPUS_SET_LSB_DEPTH
+pub fn celt_encoder_set_lsb_depth(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value < 8 || value > 24 {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    st.lsb_depth = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// OPUS_SET_PHASE_INVERSION_DISABLED
+pub fn celt_encoder_set_phase_inversion_disabled(st: &mut CELTEncoder, value: i32) -> i32 {
+    if value < 0 || value > 1 {
+        return crate::opus::defines::OPUS_BAD_ARG;
+    }
+    st.disable_inv = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// CELT_SET_SIGNALLING (no validation, as in C). The Opus layer sets 0; minicelt does not
+/// support the Opus custom header (`signalling != 0`) when encoding.
+pub fn celt_encoder_set_signalling(st: &mut CELTEncoder, value: i32) -> i32 {
+    st.signalling = value;
+    crate::opus::defines::OPUS_OK
+}
+
+/// OPUS_RESET_STATE
+pub fn celt_encoder_reset_state(st: &mut CELTEncoder) {
+    /* Clears everything from ENCODER_RESET_START (rng) to the end of the struct, including
+    the trailing arrays (here sized for MAX_CHANNELS; C clears channels' worth). */
+    let start = core::mem::offset_of!(CELTEncoder, rng);
+    let size = core::mem::size_of::<CELTEncoder>();
+    // SAFETY: every field from rng on is an integer, a float, an array of those, a struct of
+    // those (AnalysisInfo, SILKInfo) or a raw pointer (energy_mask), for all of which the
+    // all-zero bit pattern is valid (null for the pointer); `mode` lies before `rng`.
+    unsafe {
+        core::ptr::write_bytes((st as *mut CELTEncoder as *mut u8).add(start), 0, size - start);
+    }
+    let n = (st.channels * st.mode.nbEBands) as usize;
+    for i in 0..n {
+        st.oldLogE2[i] = -28.0f32;
+        st.oldLogE[i] = st.oldLogE2[i];
+    }
+    st.vbr_offset = 0;
+    st.delayedIntra = 1.0;
+    st.spread_decision = 2; /* SPREAD_NORMAL */
+    st.tonal_average = 256;
+    st.hf_average = 0;
+    st.tapset_decision = 0;
+}
+
+/// OPUS_GET_FINAL_RANGE
+pub fn celt_encoder_get_final_range(st: &CELTEncoder) -> u32 {
+    st.rng
+}
+
+/// Encodes one frame (celt/celt_encoder.c, implemented by the CELT port).
+///
+/// Contract: `pcm` holds `frame_size` interleaved samples of `st.channels` channels
+/// (`pcm.len() >= frame_size * st.channels`, float scale +-1 i.e. opus_res); `frame_size`
+/// is 960 here. If `enc` is `None`, the function creates its own range coder over
+/// `compressed[0..nbCompressedBytes]`; otherwise it continues coding into `enc` (which the
+/// caller initialised, e.g. on `data + 1` after the TOC byte) and `compressed` may be null.
+/// Returns the number of bytes written (`nbCompressedBytes` after ec_enc_shrink in VBR)
+/// or a negative Opus error code; on return `st.rng` holds the final range.
+pub fn celt_encode_with_ec(
+    st: &mut CELTEncoder,
+    pcm: &[f32],
+    frame_size: i32,
+    compressed: *mut u8,
+    nbCompressedBytes: i32,
+    enc: Option<&mut crate::celt::entcode::ec_enc>,
+) -> i32 {
+    let _ = (st, pcm, frame_size, compressed, nbCompressedBytes, enc);
+    todo!("celt_encode_with_ec: ported by the CELT encoder group")
+}

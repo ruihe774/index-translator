@@ -8,6 +8,9 @@ pub const OPUS_INTERNAL_ERROR: i32 = -3;
 pub const OPUS_AUTO: i32 = -1000;
 pub const OPUS_BITRATE_MAX: i32 = -1;
 
+pub const OPUS_SIGNAL_VOICE: i32 = 3001;
+pub const OPUS_SIGNAL_MUSIC: i32 = 3002;
+
 pub const OPUS_BANDWIDTH_NARROWBAND: i32 = 1101;
 pub const OPUS_BANDWIDTH_MEDIUMBAND: i32 = 1102;
 pub const OPUS_BANDWIDTH_WIDEBAND: i32 = 1103;
