@@ -1,17 +1,6 @@
-[package]
-name = "minisilk"
-version = "0.1.0"
-edition = "2024"
-
-[lib]
-doctest = false
-test = false
-
-[dependencies]
-libm = "0.2.16"
-
 [workspace]
-members = ["wasm"]
+resolver = "3"
+members = ["minisilk", "minisilk/wasm"]
 
 [profile.release]
 opt-level = "s"
@@ -19,7 +8,7 @@ lto = true
 codegen-units = 1
 panic = "abort"
 
-# Release code with debug_assert!s and integer overflow checks, for test/compare.ts.
+# Release code with debug_assert!s and integer overflow checks, for the compare.ts tests.
 [profile.checked]
 inherits = "release"
 debug-assertions = true

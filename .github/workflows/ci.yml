@@ -23,9 +23,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       # Builds native libopus, the release and checked wasm2/wasm3 builds, then compares them.
       - name: Test
-        run: scripts/test.sh
+        run: scripts/test.sh all
       - name: Upload wasm builds
         uses: actions/upload-artifact@v4
         with:
-          name: minisilk-wasm
-          path: target/minisilk-wasm[23].wasm
+          name: wasm
+          path: target/mini*-wasm[23].wasm

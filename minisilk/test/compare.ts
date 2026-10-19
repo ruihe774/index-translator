@@ -1,10 +1,10 @@
 // Differential test of the minisilk wasm builds against natively built upstream libopus.
 //
-//   scripts/test.sh [--quick] [audio files...]
-//   (= test/build-native.sh && scripts/build.sh all both &&
-//      deno run --allow-read --allow-ffi --allow-run test/compare.ts [--quick] [audio files...])
+//   scripts/test.sh silk [--quick] [audio files...]
+//   (= scripts/build-native.sh && scripts/build.sh silk all both &&
+//      deno run --allow-read --allow-ffi --allow-run minisilk/test/compare.ts [--quick] [audio files...])
 //
-// For every native library (target/native/libopus-{scalar,rtcd}.so) x wasm build
+// For every native library (target/native/minisilk-{scalar,rtcd}.so) x wasm build
 // (target/minisilk-wasm{2,3}[-checked].wasm) x signal x configuration it encodes the same input with both
 // encoders and compares packets, OPUS_GET_FINAL_RANGE and OPUS_GET_IN_DTX frame by frame. Every
 // minisilk packet is also decoded by the native decoder, whose final range must equal the
@@ -13,7 +13,7 @@
 // The speech corpus is test/audio/*.wav (16 kHz mono 16-bit; see THIRD_PARTY_NOTICES.md).
 // Audio files given as arguments replace it; files in other formats are decoded with ffmpeg.
 
-const root = new URL('..', import.meta.url).pathname;
+const root = new URL('../..', import.meta.url).pathname;
 const FRAME = 320;
 const CAP = 1276;
 const quick = Deno.args.includes('--quick');
@@ -22,7 +22,7 @@ const files = Deno.args.filter((a) => !a.startsWith('--'));
 // ---------- native libopus ----------
 
 function loadNative(name: string) {
-  const lib = Deno.dlopen(`${root}target/native/libopus-${name}.so`, {
+  const lib = Deno.dlopen(`${root}target/native/minisilk-${name}.so`, {
     shim_enc_create: { parameters: ['i32', 'i32', 'i32', 'buffer'], result: 'pointer' },
     shim_enc_destroy: { parameters: ['pointer'], result: 'void' },
     shim_enc_set_bitrate: { parameters: ['pointer', 'i32'], result: 'i32' },

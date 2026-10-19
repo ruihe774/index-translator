@@ -78,24 +78,24 @@ One Rust module per C file, with the C file name (`silk/NLSF_VQ.c` →
 
 ## Tests
 
-There are no Rust unit tests. `test/compare.ts` (Deno) drives the wasm builds
+There are no Rust unit tests. `minisilk/test/compare.ts` (Deno) drives the wasm builds
 through their exports next to natively built upstream libopus (via FFI and the
-non-variadic wrappers in `test/shim.c`) and compares the output frame by frame:
+non-variadic wrappers in `minisilk/test/shim.c`) and compares the output frame by frame:
 
 ```sh
 git submodule update --init      # third_party/opus (libopus v1.6.1)
-scripts/test.sh [--quick] [audio files...]
+scripts/test.sh silk [--quick] [audio files...]
 ```
 
 Requirements: Rust with the `wasm32-unknown-unknown` target, a C compiler,
-CMake, Ninja and Deno. `scripts/test.sh` runs `test/build-native.sh` once (rerun
-it after changing `test/shim.c` or the submodule), `scripts/build.sh all both`,
-then the comparison.
+CMake, Ninja and Deno. Paths are relative to the workspace root. `scripts/test.sh`
+runs `scripts/build-native.sh` once (rerun it after changing `test/shim.c` or the
+submodule), `scripts/build.sh silk all both`, then the comparison.
 
-- `test/build-native.sh` builds `target/native/libopus-scalar.so` (intrinsics
-  off, `-ffp-contract=off`) and `libopus-rtcd.so` (upstream defaults, SSE/AVX2
-  on x86).
-- `scripts/build.sh all both` builds the release wasm and the `checked` ones
+- `scripts/build-native.sh` builds `target/native/minisilk-scalar.so` (intrinsics
+  off) and `minisilk-rtcd.so` (upstream defaults, SSE/AVX2 on x86), both with
+  `-ffp-contract=off`.
+- `scripts/build.sh silk all both` builds the release wasm and the `checked` ones
   (the `checked` Cargo profile: release code with `debug_assert!`s and overflow
   checks, which trap on failure).
 - Inputs: the speech recordings in `test/audio` (see
@@ -109,5 +109,5 @@ then the comparison.
   packet is also decoded natively and its decoder final range checked.
 - A mismatch shows only where the stream diverges. The per-function
   differential tests against a wasm build of the C (one per ported function,
-  comparing whole encoder states) are at the git tag `wasm-oracle-tests`; check
-  it out to localize a regression.
+  comparing whole encoder states) are in commit `adfc1f7` (the parent of `c58066e`,
+  which dropped them); check it out to localize a regression.

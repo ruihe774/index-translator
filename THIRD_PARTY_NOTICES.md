@@ -2,10 +2,12 @@
 
 ## libopus
 
-- `src/` is a port of the libopus SILK encoder (and the parts of CELT and the Opus layer it
+- `minisilk/src/` is a port of the libopus SILK encoder (and the parts of CELT and the Opus
+  layer it uses) and is a derivative work of libopus.
+- `minicelt/src/` is a port of the libopus CELT encoder (and the parts of the Opus layer it
   uses) and is a derivative work of libopus.
 - `third_party/opus` is a git submodule of upstream libopus (https://github.com/xiph/opus,
-  tag `v1.6.1`), used only by the tests (`test/build-native.sh`).
+  tag `v1.6.1`), used only by the tests (`scripts/build-native.sh`).
 
 License: BSD-3-Clause, reproduced from libopus `COPYING`:
 
