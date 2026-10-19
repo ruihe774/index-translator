@@ -3,7 +3,7 @@
 //! frames and (constrained) VBR, with DTX and without the tonality analysis. `no_std`, no
 //! allocation; scratch memory is a static pseudostack (see `stack`).
 
-#![no_std]
+#![cfg_attr(not(test), no_std)]
 #![allow(non_snake_case, non_camel_case_types, non_upper_case_globals)]
 #![allow(clippy::all)]
 
@@ -15,3 +15,10 @@ compile_error!("minicelt requires -Ctarget-feature=+simd128");
 pub mod celt;
 pub mod opus;
 pub mod stack;
+
+#[cfg(test)]
+extern crate minicelt_oracle;
+#[cfg(test)]
+pub mod testutil;
+#[cfg(test)]
+mod layout_tests;
