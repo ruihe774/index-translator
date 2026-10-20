@@ -11,7 +11,6 @@ pub const BITRES: i32 = 3;
 
 /// The entropy encoder/decoder context. Copied by value (struct assignment) to save and
 /// restore the coder state.
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct ec_ctx {
     /// Buffered input/output.

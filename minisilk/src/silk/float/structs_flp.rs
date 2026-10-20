@@ -9,7 +9,6 @@ const MAX_NB_SUBFR_: usize = MAX_NB_SUBFR as usize;
 const MAX_LPC_ORDER_: usize = MAX_LPC_ORDER as usize;
 
 /// Noise shaping analysis state
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct silk_shape_state_FLP {
     pub LastGainIndex: i8,
@@ -18,7 +17,6 @@ pub struct silk_shape_state_FLP {
 }
 
 /// Encoder state FLP
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct silk_encoder_state_FLP {
     pub sCmn: silk_encoder_state,    /* Common struct, shared with fixed-point code */
@@ -30,7 +28,6 @@ pub struct silk_encoder_state_FLP {
 }
 
 /// Encoder control FLP
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct silk_encoder_control_FLP {
     /* Prediction and coding parameters */
@@ -60,7 +57,6 @@ pub struct silk_encoder_control_FLP {
 }
 
 /// Encoder Super Struct (mono: a single channel state)
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct silk_encoder {
     pub nBitsExceeded: i32,

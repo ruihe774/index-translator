@@ -13,7 +13,6 @@ const VAD_N_BANDS_: usize = VAD_N_BANDS as usize;
 const INPUT_DELAY_: usize = INPUT_DELAY as usize;
 
 /// Noise shaping quantization state
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct silk_nsq_state {
     pub xq: [i16; 2 * MAX_FRAME_LENGTH_], /* Buffer for quantized output signal */
@@ -31,7 +30,6 @@ pub struct silk_nsq_state {
 }
 
 /// VAD state
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct silk_VAD_state {
     pub AnaState: [i32; 2],                     /* Analysis filterbank state: 0-8 kHz */
@@ -47,7 +45,6 @@ pub struct silk_VAD_state {
 }
 
 /// Structure containing NLSF codebook
-#[repr(C)]
 pub struct silk_NLSF_CB_struct {
     pub nVectors: i16,
     pub order: i16,
@@ -66,7 +63,6 @@ pub struct silk_NLSF_CB_struct {
 // SAFETY: the codebooks are immutable tables.
 unsafe impl Sync for silk_NLSF_CB_struct {}
 
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct SideInfoIndices {
     pub GainsIndices: [i8; MAX_NB_SUBFR_],
@@ -83,7 +79,6 @@ pub struct SideInfoIndices {
 }
 
 /// Encoder state
-#[repr(C)]
 #[derive(Clone, Copy)]
 pub struct silk_encoder_state {
     pub variable_HP_smth1_Q15: i32,             /* State of first smoother */

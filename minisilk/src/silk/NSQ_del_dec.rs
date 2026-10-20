@@ -28,7 +28,6 @@ const MAX_SUB_FRAME_LENGTH_: usize = MAX_SUB_FRAME_LENGTH as usize;
 /* silk_noise_shape_quantizer_del_dec_wasm() assumes QUANT_LEVEL_ADJUST_Q10 == 80 */
 const _: () = assert!(QUANT_LEVEL_ADJUST_Q10 == 80);
 
-#[repr(C)]
 #[derive(Clone, Copy)]
 struct NSQ_del_decs_wasm_struct {
     sLPC_Q14: [[i32; WASM_DEL_DEC_STATES]; MAX_SUB_FRAME_LENGTH_ + NSQ_LPC_BUF_LENGTH_],

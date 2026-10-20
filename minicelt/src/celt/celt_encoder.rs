@@ -35,7 +35,6 @@ pub const NB_EBANDS: usize = 21;
 /// `force_intra`, `disable_pf`, `disable_inv`, `signalling`, `lfe`, `arch`, `energy_mask`, `analysis`,
 /// `silk_info`, `mode`) are not stored. The all-zero state has no pointers, so the static
 /// encoder lives in `.bss`.
-#[repr(C)]
 pub struct CELTEncoder {
     pub channels: i32,
     pub stream_channels: i32,

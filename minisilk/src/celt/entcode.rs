@@ -3,7 +3,6 @@
 #![allow(non_camel_case_types)]
 
 /// The entropy encoder/decoder context.
-#[repr(C)]
 pub struct ec_ctx {
     /// Buffered input/output.
     pub buf: *mut u8,
