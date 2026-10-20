@@ -1,5 +1,6 @@
 //! Port of celt/entcode.h and celt/entcode.c (encoder side).
 
+use super::arch::Ix;
 pub type ec_window = u32;
 
 pub const EC_WINDOW_SIZE: i32 = 32;
@@ -84,7 +85,7 @@ pub fn ec_tell_frac(this: &ec_ctx) -> u32 {
     let mut l = ec_ilog(this.rng);
     let r = this.rng >> (l - 16);
     let mut b = ((r >> 12) - 8) as usize;
-    b += (r > correction[b]) as usize;
+    b += (r > correction.at(b)) as usize;
     l = (l << 3) + b as i32;
     nbits.wrapping_sub(l as u32)
 }

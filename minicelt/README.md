@@ -1,8 +1,8 @@
 # minicelt
 
 A minimal Opus encoder: a Rust port of the libopus CELT-only float encoder
-(`OPUS_APPLICATION_RESTRICTED_CELT`), designed for WebAssembly. `no_std`, no allocation (a 48 KiB
-static scratch buffer). WASM SIMD is used (which the upstream libopus does not; the kernels are ported
+(`OPUS_APPLICATION_RESTRICTED_CELT`), designed for WebAssembly. `no_std`, no allocation (a 16 KiB
+static scratch buffer; the whole module, state included, fits in one 64 KiB wasm memory page). WASM SIMD is used (which the upstream libopus does not; the kernels are ported
 from https://github.com/ruihe774/opus-wasm-simd, branch `v1.6.1-wasm-simd`). Its packets are valid
 Opus and agree with libopus 1.6.1 (scalar C) within a tolerance: SIMD changes the order of float sums,
 so a share of the packets differ from scalar's without a measurable effect on quality or size, as
@@ -26,7 +26,7 @@ Requires Rust with the `wasm32-unknown-unknown` target. From the workspace root:
 scripts/build.sh celt [2|3|all] [release|checked|both]
 ```
 
-This writes `target/minicelt-wasm2.wasm` and `target/minicelt-wasm3.wasm` (about 125 KB each).
+This writes `target/minicelt-wasm2.wasm` and `target/minicelt-wasm3.wasm` (about 63 KB each).
 The `checked` builds keep debug assertions and overflow checks and are used by the tests.
 
 ## Use
@@ -36,7 +36,7 @@ The `.wasm` exports a single static encoder (see `wasm/src/lib.rs`):
 | Export | |
 |---|---|
 | `minicelt_init(channels, bitrate, complexity, vbr_constraint, dtx)` | (re)initialise; returns 0 or a negative Opus error |
-| `minicelt_input_ptr()` / `minicelt_input_i16_ptr()` | input buffer for 960 interleaved samples per channel (f32 in ±1, or i16) |
+| `minicelt_input_ptr()` / `minicelt_input_i16_ptr()` | the input buffer (one buffer: both pointers are equal) for 960 interleaved samples per channel (f32 in ±1, or i16); the encoder works in it, so rewrite it before every `minicelt_encode*()` |
 | `minicelt_encode()` / `minicelt_encode_i16()` | encode one frame; returns the packet length or a negative error |
 | `minicelt_output_ptr()` | packet bytes (capacity 1276) |
 | `minicelt_set_bitrate/complexity/vbr_constraint/dtx/packet_loss_perc/bandwidth(v)` | mirror the `OPUS_SET_*` ctls |

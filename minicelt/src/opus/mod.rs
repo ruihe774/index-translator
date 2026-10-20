@@ -1,2 +1,2 @@
-pub mod defines;
+pub(crate) mod defines;
 pub mod encoder;

@@ -12,6 +12,6 @@ compile_error!("minicelt only supports wasm32 (build with -Ctarget-feature=+simd
 #[cfg(not(target_feature = "simd128"))]
 compile_error!("minicelt requires -Ctarget-feature=+simd128");
 
-pub mod celt;
+mod celt;
 pub mod opus;
 pub mod stack;

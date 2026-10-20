@@ -4,6 +4,7 @@
 //! In the float build `celt_inner_prod_norm` and `celt_inner_prod_norm_shift` are
 //! `celt_inner_prod`, and `norm_scaleup`/`norm_scaledown` are no-ops.
 
+use super::arch::Ix;
 use core::arch::wasm32::*;
 
 use super::arch::EPSILON;
@@ -19,19 +20,19 @@ fn exp_rotation1(X: &mut [f32], len: i32, stride: i32, c: f32, s: f32) {
     let stride = stride as usize;
     let mut i = 0usize;
     while (i as i32) < len - stride as i32 {
-        let x1 = X[i];
-        let x2 = X[i + stride];
-        X[i + stride] = c * x2 + s * x1;
-        X[i] = c * x1 + ms * x2;
+        let x1 = X.at(i);
+        let x2 = X.at(i + stride);
+        *X.at_mut(i + stride) = c * x2 + s * x1;
+        *X.at_mut(i) = c * x1 + ms * x2;
         i += 1;
     }
     let mut i = len - 2 * stride as i32 - 1;
     while i >= 0 {
         let p = i as usize;
-        let x1 = X[p];
-        let x2 = X[p + stride];
-        X[p + stride] = c * x2 + s * x1;
-        X[p] = c * x1 + ms * x2;
+        let x1 = X.at(p);
+        let x2 = X.at(p + stride);
+        *X.at_mut(p + stride) = c * x2 + s * x1;
+        *X.at_mut(p) = c * x1 + ms * x2;
         i -= 1;
     }
 }
@@ -43,7 +44,7 @@ pub fn exp_rotation(X: &mut [f32], mut len: i32, dir: i32, stride: i32, K: i32, 
     if 2 * K >= len || spread == SPREAD_NONE {
         return;
     }
-    let factor = SPREAD_FACTOR[(spread - 1) as usize];
+    let factor = SPREAD_FACTOR.at((spread - 1) as usize);
 
     let gain: f32 = (1.0f32 * len as f32) / ((len + factor * K) as f32);
     let theta: f32 = 0.5f32 * (gain * gain);
@@ -63,7 +64,7 @@ pub fn exp_rotation(X: &mut [f32], mut len: i32, dir: i32, stride: i32, K: i32, 
     extract_collapse_mask().*/
     len = celt_udiv(len as u32, stride as u32) as i32;
     for i in 0..stride {
-        let x = &mut X[(i * len) as usize..];
+        let x = X.rg_mut((i * len) as usize..);
         if dir < 0 {
             if stride2 != 0 {
                 exp_rotation1(x, len, stride2, s, c);
@@ -83,7 +84,7 @@ fn normalise_residual(iy: &[i32], X: &mut [f32], N: i32, Ryy: f32, gain: f32) {
     let t = Ryy;
     let g = celt_rsqrt_norm32(t) * gain;
     for i in 0..N as usize {
-        X[i] = iy[i] as f32 * g;
+        *X.at_mut(i) = iy.at(i) as f32 * g;
     }
 }
 
@@ -98,7 +99,7 @@ fn extract_collapse_mask(iy: &[i32], N: i32, B: i32) -> u32 {
     for i in 0..B as usize {
         let mut tmp: u32 = 0;
         for j in 0..N0 {
-            tmp |= iy[i * N0 + j] as u32;
+            tmp |= iy.at(i * N0 + j) as u32;
         }
         collapse_mask |= ((tmp != 0) as u32) << i;
     }
@@ -137,7 +138,7 @@ fn wasm_i32x4_hsum(a: v128) -> i32 {
 /// `iy` needs room for N+3 entries (whole vectors of 4 are stored).
 pub fn op_pvq_search(_X: &[f32], iy: &mut [i32], K: i32, N: i32) -> f32 {
     let n = N as usize;
-    assert!(N > 0 && _X.len() >= n && iy.len() >= (n + 3) & !3);
+    debug_assert!(N > 0 && _X.len() >= n && iy.len() >= (n + 3) & !3);
     let st = stack::save();
     /* X and y are padded with (at least) 8 entries for the search loop. */
     let y = st.alloc::<f32>(n + 8);
@@ -332,7 +333,7 @@ pub fn alg_quant(X: &mut [f32], N: i32, K: i32, spread: i32, B: i32, enc: &mut e
 
     let yy = op_pvq_search(X, iy, K, N);
     let collapse_mask = extract_collapse_mask(iy, N, B);
-    encode_pulses(&iy[..N as usize], N, K, enc);
+    encode_pulses(iy.rg(..N as usize), N, K, enc);
     if resynth != 0 {
         normalise_residual(iy, X, N, yy, gain);
     }
@@ -350,7 +351,7 @@ pub fn renormalise_vector(X: &mut [f32], N: i32, gain: f32) {
     let g: f32 = celt_rsqrt_norm(t) * gain;
 
     for i in 0..N as usize {
-        X[i] = g * X[i];
+        *X.at_mut(i) = g * X.at(i);
     }
     /*return celt_sqrt(E);*/
 }
@@ -360,8 +361,8 @@ pub fn stereo_itheta(X: &[f32], Y: &[f32], stereo: i32, N: i32) -> i32 {
     let mut Eside: f32 = 0.0;
     if stereo != 0 {
         for i in 0..N as usize {
-            let m = X[i] + Y[i];
-            let s = X[i] - Y[i];
+            let m = X.at(i) + Y.at(i);
+            let s = X.at(i) - Y.at(i);
             Emid = Emid + m * m;
             Eside = Eside + s * s;
         }
@@ -371,5 +372,5 @@ pub fn stereo_itheta(X: &[f32], Y: &[f32], stereo: i32, N: i32) -> i32 {
     }
     let mid = celt_sqrt32(Emid);
     let side = celt_sqrt32(Eside);
-    libm::floor((0.5f32 + 65536.0f32 * 16384.0 * celt_atan2p_norm(side, mid)) as f64) as i32
+    crate::celt::arch::floor64((0.5f32 + 65536.0f32 * 16384.0 * celt_atan2p_norm(side, mid)) as f64) as i32
 }

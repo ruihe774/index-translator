@@ -10,3 +10,6 @@ crate-type = ["cdylib"]
 
 [dependencies]
 minicelt = { path = ".." }
+
+[features]
+stack-peak = ["minicelt/stack-peak"]

@@ -9,11 +9,12 @@
 //! folding source `lowband` and the output `lowband_out` point into the `norm` buffer, and
 //! without resynthesis `lowband_scratch` points into X itself.
 
+use super::arch::Ix;
 use super::arch::{IMAX, IMIN, MIN32, Q31ONE};
 use super::entcode::{BITRES, EC_ILOG, celt_sudiv, celt_udiv, ec_ctx, ec_tell_frac};
 use super::entenc::{ec_enc_bit_logp, ec_enc_bits, ec_enc_uint, ec_encode};
 use super::mathops::celt_sqrt;
-use super::modes::CELTMode;
+use super::modes;
 use super::pitch::celt_inner_prod;
 use super::rate::{QTHETA_OFFSET, QTHETA_OFFSET_TWOPHASE, bits2pulses, get_pulses, pulses2bits};
 use super::vq::{alg_quant, renormalise_vector, stereo_itheta};
@@ -44,15 +45,15 @@ unsafe fn slice<'a>(p: *const f32, n: i32) -> &'a [f32] {
 pub fn hysteresis_decision(val: f32, thresholds: &[f32], hysteresis: &[f32], N: i32, prev: i32) -> i32 {
     let mut i = 0;
     while i < N {
-        if val < thresholds[i as usize] {
+        if val < thresholds.at(i as usize) {
             break;
         }
         i += 1;
     }
-    if i > prev && val < thresholds[prev as usize] + hysteresis[prev as usize] {
+    if i > prev && val < thresholds.at(prev as usize) + hysteresis.at(prev as usize) {
         i = prev;
     }
-    if i < prev && val > thresholds[(prev - 1) as usize] - hysteresis[(prev - 1) as usize] {
+    if i < prev && val > thresholds.at((prev - 1) as usize) - hysteresis.at((prev - 1) as usize) {
         i = prev;
     }
     i
@@ -87,29 +88,33 @@ pub fn bitexact_log2tan(mut isin: i32, mut icos: i32) -> i32 {
 }
 
 /// Compute the amplitude (sqrt energy) in each of the bands
-pub fn compute_band_energies(m: &CELTMode, X: &[f32], bandE: &mut [f32], end: i32, C: i32, LM: i32) {
-    let eBands = m.eBands;
-    let N = m.shortMdctSize << LM;
+pub fn compute_band_energies(X: &[f32], bandE: &mut [f32], end: i32, C: i32) {
+    /* LM == 3 */
+    let LM = 3;
+    let eBands = modes::eBands;
+    let N = modes::shortMdctSize << LM;
     for c in 0..C {
         for i in 0..end as usize {
-            let off = (c * N + ((eBands[i] as i32) << LM)) as usize;
-            let len = ((eBands[i + 1] as i32) - (eBands[i] as i32)) << LM;
-            let sum: f32 = 1e-27f32 + celt_inner_prod(&X[off..], &X[off..], len);
-            bandE[i + (c * m.nbEBands) as usize] = celt_sqrt(sum);
+            let off = (c * N + ((eBands.at(i) as i32) << LM)) as usize;
+            let len = ((eBands.at(i + 1) as i32) - (eBands.at(i) as i32)) << LM;
+            let sum: f32 = 1e-27f32 + celt_inner_prod(X.rg(off..), X.rg(off..), len);
+            *bandE.at_mut(i + (c * modes::nbEBands) as usize) = celt_sqrt(sum);
         }
     }
 }
 
 /// Normalise each band such that the energy is one.
-pub fn normalise_bands(m: &CELTMode, freq: &[f32], X: &mut [f32], bandE: &[f32], end: i32, C: i32, M: i32) {
-    let eBands = m.eBands;
-    let N = M * m.shortMdctSize;
+pub fn normalise_bands(freq: &[f32], X: &mut [f32], bandE: &[f32], end: i32, C: i32) {
+    /* M == 8 */
+    let M = 8;
+    let eBands = modes::eBands;
+    let N = M * modes::shortMdctSize;
     for c in 0..C {
         for i in 0..end as usize {
-            let g: f32 = 1.0f32 / (1e-27f32 + bandE[i + (c * m.nbEBands) as usize]);
-            for j in M * eBands[i] as i32..M * eBands[i + 1] as i32 {
+            let g: f32 = 1.0f32 / (1e-27f32 + bandE.at(i + (c * modes::nbEBands) as usize));
+            for j in M * eBands.at(i) as i32..M * eBands.at(i + 1) as i32 {
                 let k = (j + c * N) as usize;
-                X[k] = freq[k] * g;
+                *X.at_mut(k) = freq.at(k) * g;
             }
         }
     }
@@ -127,29 +132,29 @@ fn compute_channel_weights(mut Ex: f32, mut Ey: f32, w: &mut [f32; 2]) {
     /* Adjustment to make the weights a bit more conservative. */
     Ex = Ex + minE / 3.0;
     Ey = Ey + minE / 3.0;
-    w[0] = Ex;
-    w[1] = Ey;
+    *w.at_mut(0) = Ex;
+    *w.at_mut(1) = Ey;
 }
 
-fn intensity_stereo(m: &CELTMode, X: &mut [f32], Y: &[f32], bandE: &[f32], bandID: i32, N: i32) {
+fn intensity_stereo(X: &mut [f32], Y: &[f32], bandE: &[f32], bandID: i32, N: i32) {
     let i = bandID as usize;
-    let left = bandE[i];
-    let right = bandE[i + m.nbEBands as usize];
+    let left = bandE.at(i);
+    let right = bandE.at(i + modes::nbEBands as usize);
     let norm: f32 = super::arch::EPSILON + celt_sqrt(super::arch::EPSILON + left * left + right * right);
     let a1 = left / norm;
     let a2 = right / norm;
     for j in 0..N as usize {
-        X[j] = a1 * X[j] + a2 * Y[j];
+        *X.at_mut(j) = a1 * X.at(j) + a2 * Y.at(j);
         /* Side is not encoded, no need to calculate */
     }
 }
 
 fn stereo_split(X: &mut [f32], Y: &mut [f32], N: i32) {
     for j in 0..N as usize {
-        let l = 0.70710678f32 * X[j];
-        let r = 0.70710678f32 * Y[j];
-        X[j] = l + r;
-        Y[j] = r - l;
+        let l = 0.70710678f32 * X.at(j);
+        let r = 0.70710678f32 * Y.at(j);
+        *X.at_mut(j) = l + r;
+        *Y.at_mut(j) = r - l;
     }
 }
 
@@ -163,7 +168,7 @@ fn stereo_merge(X: &mut [f32], Y: &mut [f32], mid: f32, N: i32) {
     let El = mid * mid + side - 2.0 * xp;
     let Er = mid * mid + side + 2.0 * xp;
     if Er < 6e-4f32 || El < 6e-4f32 {
-        Y[..N as usize].copy_from_slice(&X[..N as usize]);
+        Y.rg_mut(..N as usize).copy_from_slice(X.rg(..N as usize));
         return;
     }
 
@@ -172,16 +177,15 @@ fn stereo_merge(X: &mut [f32], Y: &mut [f32], mid: f32, N: i32) {
 
     for j in 0..N as usize {
         /* Apply mid scaling (side is already scaled) */
-        let l = mid * X[j];
-        let r = Y[j];
-        X[j] = lgain * (l - r);
-        Y[j] = rgain * (l + r);
+        let l = mid * X.at(j);
+        let r = Y.at(j);
+        *X.at_mut(j) = lgain * (l - r);
+        *Y.at_mut(j) = rgain * (l + r);
     }
 }
 
 /// Decide whether we should spread the pulses in the current frame
 pub fn spreading_decision(
-    m: &CELTMode,
     X: &[f32],
     average: &mut i32,
     last_decision: i32,
@@ -190,56 +194,57 @@ pub fn spreading_decision(
     update_hf: i32,
     end: i32,
     C: i32,
-    M: i32,
     spread_weight: &[i32],
 ) -> i32 {
+    /* M == 8 */
+    let M = 8;
     let mut sum: i32 = 0;
     let mut nbBands: i32 = 0;
-    let eBands = m.eBands;
+    let eBands = modes::eBands;
     let mut hf_sum: i32 = 0;
 
     debug_assert!(end > 0);
 
-    let N0 = M * m.shortMdctSize;
+    let N0 = M * modes::shortMdctSize;
 
-    if M * (eBands[end as usize] as i32 - eBands[(end - 1) as usize] as i32) <= 8 {
+    if M * (eBands.at(end as usize) as i32 - eBands.at((end - 1) as usize) as i32) <= 8 {
         return SPREAD_NONE;
     }
     for c in 0..C {
         for i in 0..end as usize {
             let mut tcount = [0i32; 3];
-            let x = &X[(M * eBands[i] as i32 + c * N0) as usize..];
-            let N = M * (eBands[i + 1] as i32 - eBands[i] as i32);
+            let x = X.rg((M * eBands.at(i) as i32 + c * N0) as usize..);
+            let N = M * (eBands.at(i + 1) as i32 - eBands.at(i) as i32);
             if N <= 8 {
                 continue;
             }
             /* Compute rough CDF of |x[j]| */
             for j in 0..N as usize {
-                let x2N: f32 = (x[j] * x[j]) * N as f32; /* Q13 */
+                let x2N: f32 = (x.at(j) * x.at(j)) * N as f32; /* Q13 */
                 if x2N < 0.25f32 {
-                    tcount[0] += 1;
+                    *tcount.at_mut(0) += 1;
                 }
                 if x2N < 0.0625f32 {
-                    tcount[1] += 1;
+                    *tcount.at_mut(1) += 1;
                 }
                 if x2N < 0.015625f32 {
-                    tcount[2] += 1;
+                    *tcount.at_mut(2) += 1;
                 }
             }
 
             /* Only include four last bands (8 kHz and up) */
-            if i as i32 > m.nbEBands - 4 {
-                hf_sum += celt_udiv((32 * (tcount[1] + tcount[0])) as u32, N as u32) as i32;
+            if i as i32 > modes::nbEBands - 4 {
+                hf_sum += celt_udiv((32 * (tcount.at(1) + tcount.at(0))) as u32, N as u32) as i32;
             }
-            let tmp = (2 * tcount[2] >= N) as i32 + (2 * tcount[1] >= N) as i32 + (2 * tcount[0] >= N) as i32;
-            sum += tmp * spread_weight[i];
-            nbBands += spread_weight[i];
+            let tmp = (2 * tcount.at(2) >= N) as i32 + (2 * tcount.at(1) >= N) as i32 + (2 * tcount.at(0) >= N) as i32;
+            sum += tmp * spread_weight.at(i);
+            nbBands += spread_weight.at(i);
         }
     }
 
     if update_hf != 0 {
         if hf_sum != 0 {
-            hf_sum = celt_udiv(hf_sum as u32, (C * (4 - m.nbEBands + end)) as u32) as i32;
+            hf_sum = celt_udiv(hf_sum as u32, (C * (4 - modes::nbEBands + end)) as u32) as i32;
         }
         *hf_average = (*hf_average + hf_sum) >> 1;
         hf_sum = *hf_average;
@@ -293,20 +298,20 @@ fn deinterleave_hadamard(X: &mut [f32], N0: i32, stride: i32, hadamard: i32) {
     debug_assert!(stride > 0);
     let (N0, stride) = (N0 as usize, stride as usize);
     if hadamard != 0 {
-        let ordery = &ordery_table[stride - 2..];
+        let ordery = ordery_table.rg(stride - 2..);
         for i in 0..stride {
             for j in 0..N0 {
-                tmp[ordery[i] as usize * N0 + j] = X[j * stride + i];
+                *tmp.at_mut(ordery.at(i) as usize * N0 + j) = X.at(j * stride + i);
             }
         }
     } else {
         for i in 0..stride {
             for j in 0..N0 {
-                tmp[i * N0 + j] = X[j * stride + i];
+                *tmp.at_mut(i * N0 + j) = X.at(j * stride + i);
             }
         }
     }
-    X[..N].copy_from_slice(tmp);
+    X.rg_mut(..N).copy_from_slice(tmp);
 }
 
 fn interleave_hadamard(X: &mut [f32], N0: i32, stride: i32, hadamard: i32) {
@@ -315,20 +320,20 @@ fn interleave_hadamard(X: &mut [f32], N0: i32, stride: i32, hadamard: i32) {
     let tmp = st.alloc::<f32>(N);
     let (N0, stride) = (N0 as usize, stride as usize);
     if hadamard != 0 {
-        let ordery = &ordery_table[stride - 2..];
+        let ordery = ordery_table.rg(stride - 2..);
         for i in 0..stride {
             for j in 0..N0 {
-                tmp[j * stride + i] = X[ordery[i] as usize * N0 + j];
+                *tmp.at_mut(j * stride + i) = X.at(ordery.at(i) as usize * N0 + j);
             }
         }
     } else {
         for i in 0..stride {
             for j in 0..N0 {
-                tmp[j * stride + i] = X[i * N0 + j];
+                *tmp.at_mut(j * stride + i) = X.at(i * N0 + j);
             }
         }
     }
-    X[..N].copy_from_slice(tmp);
+    X.rg_mut(..N).copy_from_slice(tmp);
 }
 
 pub fn haar1(X: &mut [f32], mut N0: i32, stride: i32) {
@@ -336,10 +341,10 @@ pub fn haar1(X: &mut [f32], mut N0: i32, stride: i32) {
     let stride = stride as usize;
     for i in 0..stride {
         for j in 0..N0 as usize {
-            let tmp1 = 0.70710678f32 * X[stride * 2 * j + i];
-            let tmp2 = 0.70710678f32 * X[stride * (2 * j + 1) + i];
-            X[stride * 2 * j + i] = tmp1 + tmp2;
-            X[stride * (2 * j + 1) + i] = tmp1 - tmp2;
+            let tmp1 = 0.70710678f32 * X.at(stride * 2 * j + i);
+            let tmp2 = 0.70710678f32 * X.at(stride * (2 * j + 1) + i);
+            *X.at_mut(stride * 2 * j + i) = tmp1 + tmp2;
+            *X.at_mut(stride * (2 * j + 1) + i) = tmp1 - tmp2;
         }
     }
 }
@@ -363,20 +368,18 @@ fn compute_qn(N: i32, b: i32, offset: i32, pulse_cap: i32, stereo: i32) -> i32 {
     if qb < (1 << BITRES >> 1) {
         qn = 1;
     } else {
-        qn = exp2_table8[(qb & 0x7) as usize] as i32 >> (14 - (qb >> BITRES));
+        qn = exp2_table8.at((qb & 0x7) as usize) as i32 >> (14 - (qb >> BITRES));
         qn = (qn + 1) >> 1 << 1;
     }
     debug_assert!(qn <= 256);
     qn
 }
 
-/// struct band_ctx (`arch` dropped; `encode` is always 1). Copied by value to save and
-/// restore the state in the theta RDO.
+/// struct band_ctx (`arch` dropped; `encode` is always 1, `disable_inv` always 0). Copied by
+/// value to save and restore the state in the theta RDO.
 #[derive(Clone, Copy)]
 pub struct band_ctx<'a> {
-    pub encode: i32,
     pub resynth: i32,
-    pub m: &'a CELTMode,
     pub i: i32,
     pub intensity: i32,
     pub spread: i32,
@@ -386,7 +389,6 @@ pub struct band_ctx<'a> {
     pub bandE: &'a [f32],
     pub seed: u32,
     pub theta_round: i32,
-    pub disable_inv: i32,
     pub avoid_split_noise: i32,
 }
 
@@ -421,14 +423,13 @@ unsafe fn compute_theta(
     let iside: i32;
     let mut inv: i32 = 0;
 
-    let m = ctx.m;
     let i = ctx.i;
     let intensity = ctx.intensity;
     let ec = unsafe { &mut *ctx.ec };
     let bandE = ctx.bandE;
 
     /* Decide on the resolution to give to the split parameter theta */
-    let pulse_cap = m.logN[i as usize] as i32 + LM * (1 << BITRES);
+    let pulse_cap = modes::logN.at(i as usize) as i32 + LM * (1 << BITRES);
     let offset =
         (pulse_cap >> 1) - if stereo != 0 && N == 2 { QTHETA_OFFSET_TWOPHASE } else { QTHETA_OFFSET };
     let mut qn = compute_qn(N, *b, offset, pulse_cap, stereo);
@@ -501,7 +502,7 @@ unsafe fn compute_theta(
         if stereo != 0 {
             unsafe {
                 if itheta == 0 {
-                    intensity_stereo(m, slice_mut(X, N), slice(Y, N), bandE, i, N);
+                    intensity_stereo(slice_mut(X, N), slice(Y, N), bandE, i, N);
                 } else {
                     stereo_split(slice_mut(X, N), slice_mut(Y, N), N);
                 }
@@ -510,20 +511,16 @@ unsafe fn compute_theta(
         /* NOTE: Renormalising X and Y *may* help fixed-point a bit at very high rate.
         Let's do that at higher complexity */
     } else if stereo != 0 {
-        inv = (itheta > 8192 && ctx.disable_inv == 0) as i32;
+        inv = (itheta > 8192) as i32;
         if inv != 0 {
             for j in 0..N as usize {
                 unsafe { *Y.add(j) = -*Y.add(j) };
             }
         }
-        unsafe { intensity_stereo(m, slice_mut(X, N), slice(Y, N), bandE, i, N) };
+        unsafe { intensity_stereo(slice_mut(X, N), slice(Y, N), bandE, i, N) };
         if *b > 2 << BITRES && ctx.remaining_bits > 2 << BITRES {
             ec_enc_bit_logp(ec, inv, 2);
         } else {
-            inv = 0;
-        }
-        /* inv flag override to avoid problems with downmixing. */
-        if ctx.disable_inv != 0 {
             inv = 0;
         }
         itheta = 0;
@@ -602,16 +599,15 @@ unsafe fn quant_partition(
     let B0 = B;
     let mut cm: u32 = 0;
 
-    let m = ctx.m;
     let i = ctx.i;
     let spread = ctx.spread;
 
     /* If we need 1.5 more bit than we can produce, split the band in two. */
-    let cache_off = m.cache.index[((LM + 1) * m.nbEBands + i) as usize] as i32;
+    let cache_off = modes::cache_index.at(((LM + 1) * modes::nbEBands + i) as usize) as i32;
     if LM != -1 && {
         debug_assert!(cache_off >= 0);
-        let cache = &m.cache.bits[cache_off as usize..];
-        b > cache[cache[0] as usize] as i32 + 12
+        let cache = modes::cache_bits.rg(cache_off as usize..);
+        b > cache.at(cache.at(0) as usize) as i32 + 12
     } && N > 2
     {
         let mut sctx = split_ctx::default();
@@ -672,15 +668,15 @@ unsafe fn quant_partition(
         }
     } else {
         /* This is the basic no-split case */
-        let mut q = bits2pulses(m, i, LM, b);
-        let mut curr_bits = pulses2bits(m, i, LM, q);
+        let mut q = bits2pulses(i, LM, b);
+        let mut curr_bits = pulses2bits(i, LM, q);
         ctx.remaining_bits -= curr_bits;
 
         /* Ensures we can never bust the budget */
         while ctx.remaining_bits < 0 && q > 0 {
             ctx.remaining_bits += curr_bits;
             q -= 1;
-            curr_bits = pulses2bits(m, i, LM, q);
+            curr_bits = pulses2bits(i, LM, q);
             ctx.remaining_bits -= curr_bits;
         }
 
@@ -704,7 +700,7 @@ unsafe fn quant_partition(
                         /* Noise */
                         for j in 0..N as usize {
                             ctx.seed = celt_lcg_rand(ctx.seed);
-                            x[j] = ((ctx.seed as i32) >> 20) as f32;
+                            *x.at_mut(j) = ((ctx.seed as i32) >> 20) as f32;
                         }
                         cm = cm_mask;
                     } else {
@@ -714,7 +710,7 @@ unsafe fn quant_partition(
                             /* About 48 dB below the "normal" folding level */
                             let mut tmp: f32 = 1.0f32 / 256.0;
                             tmp = if (ctx.seed) & 0x8000 != 0 { tmp } else { -tmp };
-                            x[j] = unsafe { *lowband.add(j) } + tmp;
+                            *x.at_mut(j) = unsafe { *lowband.add(j) } + tmp;
                         }
                         cm = fill as u32;
                     }
@@ -784,8 +780,8 @@ unsafe fn quant_band(
                 haar1(slice_mut(lowband, N), N >> k, 1 << k);
             }
         }
-        fill = bit_interleave_table[(fill & 0xF) as usize] as i32
-            | (bit_interleave_table[(fill >> 4) as usize] as i32) << 2;
+        fill = bit_interleave_table.at((fill & 0xF) as usize) as i32
+            | (bit_interleave_table.at((fill >> 4) as usize) as i32) << 2;
     }
     B >>= recombine;
     N_B <<= recombine;
@@ -840,16 +836,16 @@ unsafe fn quant_band(
         for k in 0..recombine {
             static bit_deinterleave_table: [u8; 16] =
                 [0x00, 0x03, 0x0C, 0x0F, 0x30, 0x33, 0x3C, 0x3F, 0xC0, 0xC3, 0xCC, 0xCF, 0xF0, 0xF3, 0xFC, 0xFF];
-            cm = bit_deinterleave_table[cm as usize] as u32;
+            cm = bit_deinterleave_table.at(cm as usize) as u32;
             haar1(x, N0 >> k, 1 << k);
         }
         B <<= recombine;
 
         /* Scale output for later folding */
         if !lowband_out.is_null() {
-            let n: f32 = libm::sqrt(N0 as f64) as f32;
+            let n: f32 = crate::celt::arch::sqrt64(N0 as f64) as f32;
             for j in 0..N0 as usize {
-                unsafe { *lowband_out.add(j) = n * x[j] };
+                unsafe { *lowband_out.add(j) = n * x.at(j) };
             }
         }
         cm &= ((1 << B) - 1) as u32;
@@ -888,7 +884,7 @@ unsafe fn quant_band_stereo(
     let orig_fill = fill;
 
     {
-        let (bi, bs) = (ctx.bandE[ctx.i as usize], ctx.bandE[(ctx.m.nbEBands + ctx.i) as usize]);
+        let (bi, bs) = (ctx.bandE.at(ctx.i as usize), ctx.bandE.at((modes::nbEBands + ctx.i) as usize));
         if bi < MIN_STEREO_ENERGY || bs < MIN_STEREO_ENERGY {
             unsafe {
                 if bi > bs {
@@ -1005,31 +1001,11 @@ unsafe fn quant_band_stereo(
     cm
 }
 
-/// # Safety
-/// `norm` (and `norm2` if `dual_stereo`) valid for `M*eBands[start+2]` floats.
-unsafe fn special_hybrid_folding(m: &CELTMode, norm: *mut f32, norm2: *mut f32, start: i32, M: i32, dual_stereo: i32) {
-    let eBands = m.eBands;
-    let s = start as usize;
-    let n1 = M * (eBands[s + 1] as i32 - eBands[s] as i32);
-    let n2 = M * (eBands[s + 2] as i32 - eBands[s + 1] as i32);
-    /* Duplicate enough of the first band folding data to be able to fold the second band.
-    Copies no data for CELT-only mode. */
-    debug_assert!(n2 - n1 >= 0);
-    unsafe {
-        ptr::copy(norm.add((2 * n1 - n2) as usize), norm.add(n1 as usize), (n2 - n1) as usize);
-        if dual_stereo != 0 {
-            ptr::copy(norm2.add((2 * n1 - n2) as usize), norm2.add(n1 as usize), (n2 - n1) as usize);
-        }
-    }
-}
-
 /// Quantisation/encoding of the residual spectrum (`encode` = 1).
 ///
 /// `X_` and `Y_` are the two channels of the normalised spectrum (in C, `X` and `X+N` of one
 /// buffer); each must hold at least `M*eBands[end]` values. `Y_` is `None` for mono.
 pub fn quant_all_bands(
-    m: &CELTMode,
-    start: i32,
     end: i32,
     X_: &mut [f32],
     Y_: Option<&mut [f32]>,
@@ -1044,27 +1020,28 @@ pub fn quant_all_bands(
     total_bits: i32,
     mut balance: i32,
     ec: &mut ec_ctx,
-    LM: i32,
     codedBands: i32,
     seed: &mut u32,
     complexity: i32,
-    disable_inv: i32,
 ) {
-    let eBands = m.eBands;
-    let eb = |k: i32| eBands[k as usize] as i32;
-    let nb = m.nbEBands;
+    /* start == 0, LM == 3 (so M == 8) */
+    let start = 0;
+    let LM = 3;
+    let eBands = modes::eBands;
+    let eb = |k: i32| eBands.at(k as usize) as i32;
+    let nb = modes::nbEBands;
     let mut update_lowband = 1;
     let C: i32 = if Y_.is_some() { 2 } else { 1 };
     let theta_rdo = Y_.is_some() && dual_stereo == 0 && complexity >= 8;
     let resynth = theta_rdo;
 
     let M = 1 << LM;
-    assert!(X_.len() >= (M * eb(end)) as usize);
-    assert!(collapse_masks.len() >= (C * end) as usize);
+    debug_assert!(X_.len() >= (M * eb(end)) as usize);
+    debug_assert!(collapse_masks.len() >= (C * end) as usize);
     let X_p: *mut f32 = X_.as_mut_ptr();
     let Y_p: *mut f32 = match Y_ {
         Some(y) => {
-            assert!(y.len() >= (M * eb(end)) as usize);
+            debug_assert!(y.len() >= (M * eb(end)) as usize);
             y.as_mut_ptr()
         }
         None => ptr::null_mut(),
@@ -1076,10 +1053,14 @@ pub fn quant_all_bands(
     let B = if shortBlocks != 0 { M } else { 1 };
     let norm_offset = M * eb(start);
     /* No need to allocate norm for the last band because we don't need an
-    output in that band. */
-    let _norm = st.alloc::<f32>((C * (M * eb(nb - 1) - norm_offset)) as usize);
+    output in that band. norm (the folding source) is only read and written by the resynthesis
+    (the lowband stays NULL without it, and the N == 1 case that writes lowband_out regardless
+    does not occur at LM == 3), and the resynthesis (theta RDO) needs dual_stereo == 0, i.e.
+    no norm2: so there is one buffer with resynth and none without (the dual stereo calls get
+    `norm` too, which is then never dereferenced). */
+    debug_assert!(!resynth || dual_stereo == 0);
+    let _norm = st.alloc::<f32>(if resynth { (M * eb(nb - 1) - norm_offset) as usize } else { 0 });
     let norm: *mut f32 = _norm.as_mut_ptr();
-    let norm2: *mut f32 = norm.wrapping_add((M * eb(nb - 1) - norm_offset) as usize);
 
     /* For decoding, we can use the last band as scratch space because we don't need that
     scratch space for the last band and we don't care about the data there until we're
@@ -1089,7 +1070,7 @@ pub fn quant_all_bands(
     let mut lowband_scratch: *mut f32 = if resynth {
         _lowband_scratch.as_mut_ptr()
     } else {
-        X_p.wrapping_add((M * eb(m.effEBands - 1)) as usize)
+        X_p.wrapping_add((M * eb(modes::effEBands - 1)) as usize)
     };
     let X_save = st.alloc::<f32>(resynth_alloc);
     let Y_save = st.alloc::<f32>(resynth_alloc);
@@ -1099,9 +1080,7 @@ pub fn quant_all_bands(
 
     let mut lowband_offset = 0;
     let mut ctx = band_ctx {
-        encode: 1,
         resynth: resynth as i32,
-        m,
         i: 0,
         intensity,
         spread,
@@ -1111,7 +1090,6 @@ pub fn quant_all_bands(
         bandE,
         seed: *seed,
         theta_round: 0,
-        disable_inv,
         /* Avoid injecting noise in the first band on transients. */
         avoid_split_noise: (B > 1) as i32,
     };
@@ -1139,7 +1117,7 @@ pub fn quant_all_bands(
         ctx.remaining_bits = remaining_bits;
         let b = if i <= codedBands - 1 {
             let curr_balance = celt_sudiv(balance, IMIN(3, codedBands - i));
-            IMAX(0, IMIN(16383, IMIN(remaining_bits + 1, pulses[i as usize] + curr_balance)))
+            IMAX(0, IMIN(16383, IMIN(remaining_bits + 1, pulses.at(i as usize) + curr_balance)))
         } else {
             0
         };
@@ -1148,13 +1126,11 @@ pub fn quant_all_bands(
         {
             lowband_offset = i;
         }
-        if i == start + 1 {
-            unsafe { special_hybrid_folding(m, norm, norm2, start, M, dual_stereo) };
-        }
+        /* special_hybrid_folding copies no data for start == 0 */
 
-        let tf_change = tf_res[i as usize];
+        let tf_change = tf_res.at(i as usize);
         ctx.tf_change = tf_change;
-        if i >= m.effEBands {
+        if i >= modes::effEBands {
             X = norm;
             if !Y_p.is_null() {
                 Y = norm;
@@ -1188,8 +1164,8 @@ pub fn quant_all_bands(
             y_cm = 0;
             let mut fold_i = fold_start;
             loop {
-                x_cm |= collapse_masks[(fold_i * C + 0) as usize] as u32;
-                y_cm |= collapse_masks[(fold_i * C + C - 1) as usize] as u32;
+                x_cm |= collapse_masks.at((fold_i * C + 0) as usize) as u32;
+                y_cm |= collapse_masks.at((fold_i * C + C - 1) as usize) as u32;
                 fold_i += 1;
                 if fold_i >= fold_end {
                     break;
@@ -1206,11 +1182,7 @@ pub fn quant_all_bands(
         if dual_stereo != 0 && i == intensity {
             /* Switch off dual stereo to do intensity. */
             dual_stereo = 0;
-            if resynth {
-                for j in 0..(M * eb(i) - norm_offset) as usize {
-                    unsafe { *norm.add(j) = 0.5f32 * (*norm.add(j) + *norm2.add(j)) };
-                }
-            }
+            /* (the norm/norm2 average is resynth-only, and resynth has dual_stereo == 0) */
         }
         let lowband = |n: *mut f32| {
             if effective_lowband != -1 { n.wrapping_add(effective_lowband as usize) } else { ptr::null_mut() }
@@ -1222,35 +1194,35 @@ pub fn quant_all_bands(
             if dual_stereo != 0 {
                 x_cm = quant_band(&mut ctx, X, N, b / 2, B, lowband(norm), LM, lowband_out(norm), Q31ONE,
                     lowband_scratch, x_cm as i32);
-                y_cm = quant_band(&mut ctx, Y, N, b / 2, B, lowband(norm2), LM, lowband_out(norm2), Q31ONE,
+                y_cm = quant_band(&mut ctx, Y, N, b / 2, B, lowband(norm), LM, lowband_out(norm), Q31ONE,
                     lowband_scratch, y_cm as i32);
             } else {
                 if !Y.is_null() {
                     if theta_rdo && i < intensity {
                         let mut w = [0.0f32; 2];
-                        compute_channel_weights(bandE[i as usize], bandE[(i + nb) as usize], &mut w);
+                        compute_channel_weights(bandE.at(i as usize), bandE.at((i + nb) as usize), &mut w);
                         /* Make a copy. */
                         let cm = x_cm | y_cm;
                         let ec_save: ec_ctx = *ec;
                         let ctx_save = ctx;
                         let n = N as usize;
-                        X_save[..n].copy_from_slice(slice(X, N));
-                        Y_save[..n].copy_from_slice(slice(Y, N));
+                        X_save.rg_mut(..n).copy_from_slice(slice(X, N));
+                        Y_save.rg_mut(..n).copy_from_slice(slice(Y, N));
                         /* Encode and round down. */
                         ctx.theta_round = -1;
                         x_cm = quant_band_stereo(&mut ctx, X, Y, N, b, B, lowband(norm), LM, lowband_out(norm),
                             lowband_scratch, cm as i32);
-                        let dist0: f32 = w[0] * celt_inner_prod(X_save, slice(X, N), N)
-                            + w[1] * celt_inner_prod(Y_save, slice(Y, N), N);
+                        let dist0: f32 = w.at(0) * celt_inner_prod(X_save, slice(X, N), N)
+                            + w.at(1) * celt_inner_prod(Y_save, slice(Y, N), N);
 
                         /* Save first result. */
                         let cm2 = x_cm;
                         let ec_save2: ec_ctx = *ec;
                         let ctx_save2 = ctx;
-                        X_save2[..n].copy_from_slice(slice(X, N));
-                        Y_save2[..n].copy_from_slice(slice(Y, N));
+                        X_save2.rg_mut(..n).copy_from_slice(slice(X, N));
+                        Y_save2.rg_mut(..n).copy_from_slice(slice(Y, N));
                         if !last {
-                            norm_save2[..n].copy_from_slice(slice(lowband_out(norm), N));
+                            norm_save2.rg_mut(..n).copy_from_slice(slice(lowband_out(norm), N));
                         }
                         let nstart_bytes = ec_save.offs as i32;
                         let nend_bytes = ec_save.storage as i32;
@@ -1260,25 +1232,22 @@ pub fn quant_all_bands(
                         /* Restore */
                         *ec = ec_save;
                         ctx = ctx_save;
-                        slice_mut(X, N).copy_from_slice(&X_save[..n]);
-                        slice_mut(Y, N).copy_from_slice(&Y_save[..n]);
-                        if i == start + 1 {
-                            special_hybrid_folding(m, norm, norm2, start, M, dual_stereo);
-                        }
+                        slice_mut(X, N).copy_from_slice(X_save.rg(..n));
+                        slice_mut(Y, N).copy_from_slice(Y_save.rg(..n));
                         /* Encode and round up. */
                         ctx.theta_round = 1;
                         x_cm = quant_band_stereo(&mut ctx, X, Y, N, b, B, lowband(norm), LM, lowband_out(norm),
                             lowband_scratch, cm as i32);
-                        let dist1: f32 = w[0] * celt_inner_prod(X_save, slice(X, N), N)
-                            + w[1] * celt_inner_prod(Y_save, slice(Y, N), N);
+                        let dist1: f32 = w.at(0) * celt_inner_prod(X_save, slice(X, N), N)
+                            + w.at(1) * celt_inner_prod(Y_save, slice(Y, N), N);
                         if dist0 >= dist1 {
                             x_cm = cm2;
                             *ec = ec_save2;
                             ctx = ctx_save2;
-                            slice_mut(X, N).copy_from_slice(&X_save2[..n]);
-                            slice_mut(Y, N).copy_from_slice(&Y_save2[..n]);
+                            slice_mut(X, N).copy_from_slice(X_save2.rg(..n));
+                            slice_mut(Y, N).copy_from_slice(Y_save2.rg(..n));
                             if !last {
-                                slice_mut(lowband_out(norm), N).copy_from_slice(&norm_save2[..n]);
+                                slice_mut(lowband_out(norm), N).copy_from_slice(norm_save2.rg(..n));
                             }
                             ptr::copy_nonoverlapping(bytes_save.as_ptr(), bytes_buf, save_bytes);
                         }
@@ -1294,9 +1263,9 @@ pub fn quant_all_bands(
                 y_cm = x_cm;
             }
         }
-        collapse_masks[(i * C + 0) as usize] = x_cm as u8;
-        collapse_masks[(i * C + C - 1) as usize] = y_cm as u8;
-        balance += pulses[i as usize] + tell;
+        *collapse_masks.at_mut((i * C + 0) as usize) = x_cm as u8;
+        *collapse_masks.at_mut((i * C + C - 1) as usize) = y_cm as u8;
+        balance += pulses.at(i as usize) + tell;
 
         /* Update the folding position only as long as we have 1 bit/sample depth. */
         update_lowband = (b > (N << BITRES)) as i32;

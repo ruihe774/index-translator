@@ -15,7 +15,8 @@ Tests.
 
 - 48 kHz input (`upsample == 1`), mono or stereo (`channels` 1 or 2, chosen at
   init), 20 ms frames (`LM == 3`, `frame_size == 960`; short blocks are still
-  used for transients). The only mode is the static `mode48000_960_120`.
+  used for transients). The only mode is `mode48000_960_120`, whose fields are
+  the constants and statics of `celt::modes` (`modes::nbEBands`, `modes::eBands`, ...).
 - VBR, with constrained VBR on (the libopus default) or off. No CBR
   (`vbr_rate == 0` paths are removed with a `debug_assert!`).
 - DTX is supported (Opus layer).
@@ -34,11 +35,11 @@ Tests.
   `dual_inner_prod_wasm`, `celt_pitch_xcorr_wasm` (with its `xcorr_kernel_wasm` part),
   `comb_filter_const_wasm` (pitch_wasm.c). The MDCT, FFT and `bands.c` have no
   kernels and are ported as plain scalar code.
-- Branches that are unreachable under the fixed configuration (other modes or
-  rates, CBR, QEXT, decoder-only `encode == 0` paths) may be removed when doing
-  so is trivial; leave a `debug_assert!` of the assumption. Functions shared
-  with the decoder lose their `encode` parameter (always 1). When in doubt,
-  port as-is.
+- Everything that cannot matter in this configuration is removed (see
+  "Trimming" below), not ported: other modes or rates, CBR, QEXT, decoder-only
+  `encode == 0` paths, state and parameters that are constant. Functions shared
+  with the decoder lose their `encode` parameter (always 1). Where an assumption
+  is not obvious from the code, a `debug_assert!` states it.
 
 ## Layout
 
@@ -53,7 +54,7 @@ go into the module of the matching `.c` file.
 | `arch.h` (types, `MIN16`/`MAX32`/`IMIN`/..., `celt_isnan`, `ABS16`) | `celt::arch` |
 | `mathops.h`, `mathops.c` (float) | `celt::mathops` |
 | `entcode.h`/`entcode.c`, `entenc.c` | `celt::entcode`, `celt::entenc` |
-| `modes.h`, `static_modes_float.h` | `celt::modes`, `celt::static_modes_float` (generated) |
+| `modes.h`, `static_modes_float.h` | `celt::modes` (the mode's constants), `celt::static_modes_float` (generated, trimmed) |
 | `kiss_fft.h`/`.c`, `mdct.h`/`.c` | `celt::kiss_fft`, `celt::mdct` |
 | `pitch.h`/`.c` + `wasm/pitch_wasm.c` | `celt::pitch` |
 | `vq.h`/`.c` + `wasm/vq_wasm.c` | `celt::vq` |
@@ -62,13 +63,70 @@ go into the module of the matching `.c` file.
 | `opus_defines.h`, `opus_private.h` constants | `opus::defines` |
 | `stack_alloc.h` | `stack` |
 
-`CELTMode`, `kiss_fft_state`, `mdct_lookup` and `PulseCache` hold their tables
-as `&'static` slices instead of pointers (they are only ever the static mode).
-`CELTEncoder` keeps the C layout; its trailing variable-size arrays (`in_mem`,
+`CELTEncoder` keeps the C layout where it can; its trailing variable-size arrays (`in_mem`,
 `prefilter_mem`, `oldBandE`, `oldLogE`, `oldLogE2`, `energyError`) are fixed
 arrays sized for two channels and indexed with the C per-channel strides
 (`c*overlap`, `c*COMBFILTER_MAXPERIOD`, `c*nbEBands`), so for stereo the
-bytes equal the C allocation.
+bytes equal the C allocation. The struct has no pointers and no non-zero initial value, so the
+static encoder is in `.bss` and costs nothing in the `.wasm` file.
+
+## Trimming
+
+The crate is trimmed to the fixed configuration: size (code and memory) is the main optimization,
+and git has what was removed. Rules for what to keep when changing it: delete what produces no
+difference (performance, numbers or bitstream) in the configuration, and check with the
+bit-exact comparison below. What was removed or specialized:
+
+- Unreachable configurations: modes other than the 48 kHz/960 one (and their `CELTMode`
+  struct, now constants; allocation, cache, twiddle and window tables of other frame sizes), LM
+  other than 3 (functions lost their `LM`, `M`, `start`, `m` parameters; `tf_select_table`,
+  `e_prob_model`, `pred_coef`/`beta_coef`, `cache_caps` keep only the LM 3 data; `compute_mdcts`
+  and `clt_mdct_forward` only know the shifts 0 and 3), `effEnd == end`, `start == 0`
+  (`special_hybrid_folding` and the `start`-dependent code are gone), `upsample`, hybrid-only code
+  (weak transients, ...), the `OPUS_SET_*` ctls the exports do not offer.
+- State that is constant: `CELTEncoder` lost `mode`, `start`, `vbr`, `clip`, `upsample`,
+  `force_intra`, `disable_pf`, `disable_inv`, `signalling`, `lfe`, `arch`, `energy_mask`, `analysis`,
+  `silk_info`, `preemph_memD`; `OpusEncoder` lost `silk_mode`, `signal_type`, `force_channels`,
+  `max_bandwidth`, `lsb_depth`, `voice_ratio`, `peak_signal_energy`, `prev_mode`, ... The CELT setters
+  are plain field writes. The Opus layer is straight-line code with the constants folded in
+  (`voice_est == 48`, so the mono/stereo threshold and the bandwidth thresholds are constants;
+  `max_data_bytes == 1276`; the activity decision, which only the unreachable SILK path used, is
+  gone; the DTX decision only ever sees digital silence).
+- Tables that are not stored: the `CELT_PVQ_U_DATA` table (1272 `u32`) is built at init by the
+  recurrence (`cwrs::init_cwrs`), the FFT twiddles from their first octant by symmetry and the
+  bit-reversal tables by `compute_bitrev_table` (`kiss_fft::init_fft`). They live in `.bss`.
+  `scripts/gen_tables.py` checks that the rules reproduce libopus' tables bit for bit (the PVQ
+  recurrence was checked against celt/cwrs.c once, entry by entry). The MDCT twiddles and the
+  window are not derivable bit-exactly (the C tables are not correctly rounded libm values) and stay.
+- libm: `sqrt` and `floor` are the wasm instructions (`arch::sqrt64`, `arch::floor64`);
+  `celt_cos_norm` is the part of libm's `cos` that its angles reach, and `acos64` libm's `acos`
+  with the hardware `sqrt` (both bit for bit equal to `libm`'s, checked exhaustively over the
+  inputs they can see). Only `log` and `exp` are still `libm`'s.
+- Bounds checks: indexing goes through `arch::Ix` (`x.at(i)`, `*x.at_mut(i) = v`,
+  `x.rg(a..b)`), unchecked like C in release and checked in the `checked` profile (debug
+  assertions). This removed several hundred panic sites (about 14 KB of code and source
+  locations) at no change in behaviour. New code should use it, and run the `checked` tests.
+- Memory: the pseudostack is 16 KiB (was 56 KiB) and the shadow stack 2 KiB (was 1 MiB), so the whole
+  module is one 64 KiB wasm page (was 18). What got the pseudostack down: `norm` of
+  `quant_all_bands` only exists when the theta RDO resynthesises (without it the folding source
+  is never read), the C `X` buffer is the `in` buffer, which with the PCM copy is the caller's static
+  input buffer (`wasm/src/lib.rs`: `IN_BUF_FRAME` samples per channel, clobbered by encoding, and the
+  i16 input is converted in place in it), `run_prefilter` reads the pitch analysis input in place and
+  only allocates its `_pre` buffer after the analysis, and the MDCT output is scoped.
+
+Measuring the memory (both variants and both profiles): `cargo build --release -p minicelt-wasm
+--features stack-peak` exports `minicelt_stack_peak()` (the pseudostack high-water mark, see
+`stack.rs`), which is read after encoding a corpus of speech and synthetic signals over the settings
+grid; the shadow stack is measured by building with `MINICELT_SHADOW_STACK=16384` (the
+build script of `minicelt/wasm`), filling the first 16384 bytes of the instance's memory with a
+pattern before encoding and finding the lowest byte written afterwards (708 bytes). The pseudostack
+peak is 16376 bytes, reached by the stereo prefilter every frame.
+
+Regression check for trims that must not change anything: encode a corpus with a previous build and
+the new one and require identical packets, final ranges and `in_dtx` (the tolerance gate below
+does not see small changes). Mono/stereo, complexity 0..10, bitrates from 500 to 750000, constrained VBR
+on/off, packet loss, bandwidths, DTX, i16/f32, dynamic ctl changes and the speech corpus were used,
+both variants. The trim from 121629/121558 to the current size changed no packet.
 
 ## Translation rules
 
@@ -94,8 +152,8 @@ bytes equal the C allocation.
   variable, `floor()`, `log()`, `sqrt()`, `exp()`, `cos()`, ...). Reproduce the
   exact precision of every operation with `as f64`/`as f32`; `int` operands
   combined with `float` become `float`. Getting this wrong shows up as a
-  bit-exactness failure. libm functions: `libm::` (double: `exp`, `log`,
-  `floor`, ...; float: `floorf`, `fabsf`, ...), exactly the precision C calls.
+  bit-exactness failure. libm functions: `libm::` (double: `exp`, `log`) or the
+  `arch`/`mathops` equivalents (see Trimming), exactly the precision C calls.
 - Rust does not contract `a * b + c` into an FMA, and the reference is built
   with `-ffp-contract=off`, so plain expressions match. Never hand-vectorize a
   plain C loop to imitate compiler output.
@@ -103,10 +161,11 @@ bytes equal the C allocation.
   `float2int` (`lrintf`) would be `libm::rintf` (round half to even); the encoder does not
   use it.
   `floor(.5+x)` stays exactly that.
-- Arrays: prefer slices (`&[f32]`, `&mut [i32]`). Where C uses negative
-  offsets or pointer arithmetic into a larger buffer, pass the buffer plus an
-  offset, or use raw pointers; `unsafe` is allowed anywhere. C argument order is
-  kept; `const T *` → `&[T]`, `T *` output → `&mut [T]` / `&mut T`.
+- Arrays: prefer slices (`&[f32]`, `&mut [i32]`), indexed with `arch::Ix` (`x.at(i)`,
+  `*x.at_mut(i) = v`, `x.rg(a..b)`, `x.rg_mut(a..b)`: unchecked in release, checked in the
+  `checked` profile). Where C uses negative offsets or pointer arithmetic into a larger buffer,
+  pass the buffer plus an offset, or use raw pointers; `unsafe` is allowed anywhere. C argument
+  order is kept; `const T *` → `&[T]`, `T *` output → `&mut [T]` / `&mut T`.
 - `celt_assert`/`celt_sig_assert` → `debug_assert!`. Drop `arch` parameters.
 - Plain C arithmetic uses plain Rust operators, so `checked` builds trap on
   integer overflow. Use `wrapping_*` exactly where C relies on wraparound
@@ -117,7 +176,9 @@ bytes equal the C allocation.
   let x = st.alloc::<i32>(n);      // ALLOC(x, n, opus_int32)
   // RESTORE_STACK when st goes out of scope
   ```
-  Allocated memory is not cleared, as in C. `ALLOC_NONE` → nothing.
+  Allocated memory is not cleared, as in C. `ALLOC_NONE` → nothing. The pseudostack
+  (`GLOBAL_STACK_SIZE`) is sized to the measured peak: allocate in scopes that end as early as
+  possible (see Trimming) and re-measure after changes.
 - `celt_udiv`/`celt_sudiv`: `USE_SMALL_DIV_TABLE` is not defined (it is ARM
   only), so they are plain `/`.
 - Keep the C comments that explain the algorithm; drop the boilerplate.

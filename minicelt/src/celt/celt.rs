@@ -1,64 +1,9 @@
 //! Port of celt/celt.h and the encoder-side parts of celt/celt.c.
 
+use super::arch::Ix;
 use super::arch::{COEF_ONE, IMAX};
-use super::modes::CELTMode;
+use super::modes;
 use super::pitch::comb_filter_const;
-
-pub const LEAK_BANDS: usize = 19;
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct AnalysisInfo {
-    pub valid: i32,
-    pub tonality: f32,
-    pub tonality_slope: f32,
-    pub noisiness: f32,
-    pub activity: f32,
-    pub music_prob: f32,
-    pub music_prob_min: f32,
-    pub music_prob_max: f32,
-    pub bandwidth: i32,
-    pub activity_probability: f32,
-    pub max_pitch_ratio: f32,
-    /* Store as Q6 char to save space. */
-    pub leak_boost: [u8; LEAK_BANDS],
-}
-
-impl AnalysisInfo {
-    pub const fn new_zeroed() -> Self {
-        AnalysisInfo {
-            valid: 0,
-            tonality: 0.0,
-            tonality_slope: 0.0,
-            noisiness: 0.0,
-            activity: 0.0,
-            music_prob: 0.0,
-            music_prob_min: 0.0,
-            music_prob_max: 0.0,
-            bandwidth: 0,
-            activity_probability: 0.0,
-            max_pitch_ratio: 0.0,
-            leak_boost: [0; LEAK_BANDS],
-        }
-    }
-}
-
-#[repr(C)]
-#[derive(Clone, Copy)]
-pub struct SILKInfo {
-    pub signalType: i32,
-    pub offset: i32,
-}
-
-#[inline(always)]
-pub fn bits_to_bitrate(bits: i32, Fs: i32, frame_size: i32) -> i32 {
-    bits * (6 * Fs / frame_size) / 6
-}
-
-#[inline(always)]
-pub fn bitrate_to_bits(bitrate: i32, Fs: i32, frame_size: i32) -> i32 {
-    bitrate * 6 / (6 * Fs / frame_size)
-}
 
 pub static trim_icdf: [u8; 11] = [126, 124, 119, 109, 87, 41, 19, 9, 4, 2, 0];
 /* Probs: NONE: 21.875%, LIGHT: 6.25%, NORMAL: 65.625%, AGGRESSIVE: 6.25% */
@@ -84,7 +29,6 @@ static gains: [[f32; 3]; 3] = [
 /// # Safety
 /// `x` must have `max(T0,T1,15)+2` readable floats before it and `N` after it; `y` must have
 /// `N` writable floats. `y == x` (in place) is allowed; the regions otherwise must not overlap.
-/// `window` must have `overlap` entries.
 pub unsafe fn comb_filter(
     y: *mut f32,
     x: *const f32,
@@ -95,8 +39,6 @@ pub unsafe fn comb_filter(
     g1: f32,
     tapset0: i32,
     tapset1: i32,
-    window: &[f32],
-    mut overlap: i32,
 ) {
     unsafe {
         if g0 == 0.0 && g1 == 0.0 {
@@ -110,25 +52,24 @@ pub unsafe fn comb_filter(
         to have then be at least 2 to avoid processing garbage data. */
         T0 = IMAX(T0, COMBFILTER_MINPERIOD);
         T1 = IMAX(T1, COMBFILTER_MINPERIOD);
-        let g00 = g0 * gains[tapset0 as usize][0];
-        let g01 = g0 * gains[tapset0 as usize][1];
-        let g02 = g0 * gains[tapset0 as usize][2];
-        let g10 = g1 * gains[tapset1 as usize][0];
-        let g11 = g1 * gains[tapset1 as usize][1];
-        let g12 = g1 * gains[tapset1 as usize][2];
+        let g00 = g0 * gains.at(tapset0 as usize).at(0);
+        let g01 = g0 * gains.at(tapset0 as usize).at(1);
+        let g02 = g0 * gains.at(tapset0 as usize).at(2);
+        let g10 = g1 * gains.at(tapset1 as usize).at(0);
+        let g11 = g1 * gains.at(tapset1 as usize).at(1);
+        let g12 = g1 * gains.at(tapset1 as usize).at(2);
         let (t0, t1) = (T0 as isize, T1 as isize);
         let mut x1 = *x.offset(-t1 + 1);
         let mut x2 = *x.offset(-t1);
         let mut x3 = *x.offset(-t1 - 1);
         let mut x4 = *x.offset(-t1 - 2);
         /* If the filter didn't change, we don't need the overlap */
-        if g0 == g1 && T0 == T1 && tapset0 == tapset1 {
-            overlap = 0;
-        }
+        let overlap = if g0 == g1 && T0 == T1 && tapset0 == tapset1 { 0 } else { modes::overlap };
+        let window = &modes::window;
         let mut i: isize = 0;
         while i < overlap as isize {
             let x0 = *x.offset(i - t1 + 2);
-            let f: f32 = window[i as usize] * window[i as usize];
+            let f: f32 = window.at(i as usize) * window.at(i as usize);
             *y.offset(i) = *x.offset(i)
                 + ((COEF_ONE - f) * g00) * *x.offset(i - t0)
                 + ((COEF_ONE - f) * g01) * (*x.offset(i - t0 + 1) + *x.offset(i - t0 - 1))
@@ -155,19 +96,14 @@ pub unsafe fn comb_filter(
     }
 }
 
-/* The tf_select_table second index is 4*isTransient + 2*tf_select + per_band_flag */
-pub static tf_select_table: [[i8; 8]; 4] = [
-    /*isTransient=0     isTransient=1 */
-    [0, -1, 0, -1, 0, -1, 0, -1], /* 2.5 ms */
-    [0, -1, 0, -2, 1, 0, 1, -1],  /* 5 ms */
-    [0, -2, 0, -3, 2, 0, 1, -1],  /* 10 ms */
-    [0, -2, 0, -3, 3, 0, 1, -1],  /* 20 ms */
-];
+/* The tf_select_table second index is 4*isTransient + 2*tf_select + per_band_flag; only the
+20 ms (LM == 3) row exists. */
+pub static tf_select_table: [i8; 8] = [0, -2, 0, -3, 3, 0, 1, -1];
 
-pub fn init_caps(m: &CELTMode, cap: &mut [i32], LM: i32, C: i32) {
-    for i in 0..m.nbEBands {
-        let N = (m.eBands[i as usize + 1] as i32 - m.eBands[i as usize] as i32) << LM;
-        cap[i as usize] =
-            (m.cache.caps[(m.nbEBands * (2 * LM + C - 1) + i) as usize] as i32 + 64) * C * N >> 2;
+/// init_caps for LM == 3; `cache_caps` only holds the rows of LM 3, indexed by `(C-1)*nbEBands + i`.
+pub fn init_caps(cap: &mut [i32], C: i32) {
+    for i in 0..modes::nbEBands {
+        let N = (modes::eBands.at(i as usize + 1) as i32 - modes::eBands.at(i as usize) as i32) << 3;
+        *cap.at_mut(i as usize) = (modes::cache_caps.at(((C - 1) * modes::nbEBands + i) as usize) as i32 + 64) * C * N >> 2;
     }
 }

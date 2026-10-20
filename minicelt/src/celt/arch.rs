@@ -7,13 +7,14 @@
 //! zeros) are functions here. The float types (`opus_val16`, `celt_sig`, `celt_norm`, ...) are
 //! all `f32`.
 
+use core::arch::wasm32::{f64x2_extract_lane, f64x2_floor, f64x2_splat, f64x2_sqrt};
+
 pub const CELT_SIG_SCALE: f32 = 32768.0;
 
 pub const Q31ONE: f32 = 1.0;
 pub const COEF_ONE: f32 = 1.0;
 pub const EPSILON: f32 = 1e-15;
 pub const VERY_SMALL: f32 = 1e-30;
-pub const MAX_ENCODING_DEPTH: i32 = 24;
 
 /// MIN16/MIN32/MING/FMIN: `a < b ? a : b`
 #[inline(always)]
@@ -51,9 +52,63 @@ pub fn celt_isnan(x: f32) -> bool {
 /// ABS16/ABS32: `(float)fabs(x)`
 #[inline(always)]
 pub fn ABS16(x: f32) -> f32 {
-    libm::fabsf(x)
+    x.abs()
 }
 #[inline(always)]
 pub fn ABS32(x: f32) -> f32 {
-    libm::fabsf(x)
+    x.abs()
+}
+
+/// `sqrt(x)` (double): the single wasm instruction (correctly rounded, like libm's).
+#[inline(always)]
+pub fn sqrt64(x: f64) -> f64 {
+    f64x2_extract_lane::<0>(f64x2_sqrt(f64x2_splat(x)))
+}
+
+/// `floor(x)` (double): the single wasm instruction.
+#[inline(always)]
+pub fn floor64(x: f64) -> f64 {
+    f64x2_extract_lane::<0>(f64x2_floor(f64x2_splat(x)))
+}
+
+/// Indexing and range slicing as in C: no bounds check (`at`/`at_mut` replace `x[i]`,
+/// `rg`/`rg_mut` replace `x[a..b]`, `&x[a..]`, ...). With debug assertions on (the `checked`
+/// profile that the tests run) they are the ordinary bounds-checked operations, so an index that
+/// is out of range traps there. The callers' indices are in range by construction, as in the C
+/// code; the release build thereby drops several hundred panic sites and their source locations
+/// (about 15 % of the module).
+pub trait Ix<T: Copy> {
+    fn at(&self, i: usize) -> T;
+    fn at_mut(&mut self, i: usize) -> &mut T;
+    fn rg<R: core::slice::SliceIndex<[T], Output = [T]>>(&self, r: R) -> &[T];
+    fn rg_mut<R: core::slice::SliceIndex<[T], Output = [T]>>(&mut self, r: R) -> &mut [T];
+}
+
+impl<T: Copy> Ix<T> for [T] {
+    #[inline(always)]
+    fn at(&self, i: usize) -> T {
+        if cfg!(debug_assertions) {
+            self[i]
+        } else {
+            // SAFETY: see the trait documentation.
+            unsafe { *self.get_unchecked(i) }
+        }
+    }
+    #[inline(always)]
+    fn rg<R: core::slice::SliceIndex<[T], Output = [T]>>(&self, r: R) -> &[T] {
+        if cfg!(debug_assertions) { &self[r] } else { unsafe { self.get_unchecked(r) } }
+    }
+    #[inline(always)]
+    fn rg_mut<R: core::slice::SliceIndex<[T], Output = [T]>>(&mut self, r: R) -> &mut [T] {
+        if cfg!(debug_assertions) { &mut self[r] } else { unsafe { self.get_unchecked_mut(r) } }
+    }
+    #[inline(always)]
+    fn at_mut(&mut self, i: usize) -> &mut T {
+        if cfg!(debug_assertions) {
+            &mut self[i]
+        } else {
+            // SAFETY: see the trait documentation.
+            unsafe { self.get_unchecked_mut(i) }
+        }
+    }
 }

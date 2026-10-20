@@ -1,6 +1,7 @@
 //! Port of celt/pitch.c and the float kernels of celt/wasm/pitch_wasm.c
 //! (opus_val16 = opus_val32 = f32).
 
+use super::arch::Ix;
 use core::arch::wasm32::*;
 
 use super::arch::{MAX16, MAX32};
@@ -45,7 +46,7 @@ fn wasm_f32x4_hsum(a: v128) -> f32 {
 
 pub fn celt_inner_prod(x: &[f32], y: &[f32], N: i32) -> f32 {
     let n = N.max(0) as usize;
-    assert!(x.len() >= n && y.len() >= n);
+    debug_assert!(x.len() >= n && y.len() >= n);
     let (px, py) = (x.as_ptr(), y.as_ptr());
     // SAFETY: every vector load reads 4 floats at an index i with i + 4 <= n.
     unsafe {
@@ -63,7 +64,7 @@ pub fn celt_inner_prod(x: &[f32], y: &[f32], N: i32) -> f32 {
         }
         let mut xy = wasm_f32x4_hsum(f32x4_add(sum0, sum1));
         while i < n {
-            xy = xy + x[i] * y[i];
+            xy = xy + x.at(i) * y.at(i);
             i += 1;
         }
         xy
@@ -79,7 +80,7 @@ unsafe fn xcorr4_float(x: *const f32, y: *const f32, len: usize) -> v128 {
         let mut sum2 = sum0;
         let mut sum3 = sum0;
         /* Same lag-per-lane layout as the C kernel and SSE port: each x[j] is
-        broadcast and multiplied with y[j..j+3]. */
+        broadcast and multiplied with y.rg(j..j+3). */
         let mut j = 0usize;
         while j + 3 < len {
             let xj = ld(x.add(j));
@@ -102,8 +103,8 @@ unsafe fn xcorr4_float(x: *const f32, y: *const f32, len: usize) -> v128 {
 pub fn celt_pitch_xcorr(_x: &[f32], _y: &[f32], xcorr: &mut [f32], len: i32, max_pitch: i32) {
     debug_assert!(max_pitch > 0);
     let (len, max_pitch) = (len.max(0) as usize, max_pitch.max(0) as usize);
-    assert!(_x.len() >= len && xcorr.len() >= max_pitch);
-    assert!(_y.len() + 1 >= len + max_pitch);
+    debug_assert!(_x.len() >= len && xcorr.len() >= max_pitch);
+    debug_assert!(_y.len() + 1 >= len + max_pitch);
     let (px, py, po) = (_x.as_ptr(), _y.as_ptr(), xcorr.as_mut_ptr());
     // SAFETY: the C kernel's accesses stay within _x[0..len], _y[0..len+max_pitch-1] and
     // xcorr[0..max_pitch]; checked by the asserts above.
@@ -152,7 +153,7 @@ pub fn celt_pitch_xcorr(_x: &[f32], _y: &[f32], xcorr: &mut [f32], len: i32, max
         }
         /* In case max_pitch isn't a multiple of 4, do non-unrolled version. */
         while i < max_pitch {
-            xcorr[i] = celt_inner_prod(_x, &_y[i..], len as i32);
+            *xcorr.at_mut(i) = celt_inner_prod(_x, &_y[i..], len as i32);
             i += 1;
         }
     }
@@ -161,7 +162,7 @@ pub fn celt_pitch_xcorr(_x: &[f32], _y: &[f32], xcorr: &mut [f32], len: i32, max
 /// `dual_inner_prod_wasm`: `*xy1 = sum x[i]*y01[i]`, `*xy2 = sum x[i]*y02[i]`, i in 0..N.
 pub fn dual_inner_prod(x: &[f32], y01: &[f32], y02: &[f32], N: i32, xy1: &mut f32, xy2: &mut f32) {
     let n = N.max(0) as usize;
-    assert!(x.len() >= n && y01.len() >= n && y02.len() >= n);
+    debug_assert!(x.len() >= n && y01.len() >= n && y02.len() >= n);
     let (px, p1, p2) = (x.as_ptr(), y01.as_ptr(), y02.as_ptr());
     // SAFETY: every vector load reads 4 floats at an index i with i + 4 <= n.
     unsafe {
@@ -188,8 +189,8 @@ pub fn dual_inner_prod(x: &[f32], y01: &[f32], y02: &[f32], N: i32, xy1: &mut f3
         let mut xy01 = wasm_f32x4_hsum(f32x4_add(sum1a, sum1b));
         let mut xy02 = wasm_f32x4_hsum(f32x4_add(sum2a, sum2b));
         while i < n {
-            xy01 = xy01 + x[i] * y01[i];
-            xy02 = xy02 + x[i] * y02[i];
+            xy01 = xy01 + x.at(i) * y01.at(i);
+            xy02 = xy02 + x.at(i) * y02.at(i);
             i += 1;
         }
         *xy1 = xy01;
@@ -268,34 +269,34 @@ fn find_best_pitch(xcorr: &[f32], y: &[f32], len: i32, max_pitch: i32, best_pitc
     let mut Syy: f32 = 1.0;
     let mut best_num: [f32; 2] = [-1.0, -1.0];
     let mut best_den: [f32; 2] = [0.0, 0.0];
-    best_pitch[0] = 0;
-    best_pitch[1] = 1;
+    *best_pitch.at_mut(0) = 0;
+    *best_pitch.at_mut(1) = 1;
     for j in 0..len {
-        Syy = Syy + y[j] * y[j];
+        Syy = Syy + y.at(j) * y.at(j);
     }
     for i in 0..max_pitch {
-        if xcorr[i] > 0.0 {
-            let mut xcorr16: f32 = xcorr[i];
+        if xcorr.at(i) > 0.0 {
+            let mut xcorr16: f32 = xcorr.at(i);
             /* Considering the range of xcorr16, this should avoid both underflows
             and overflows (inf) when squaring xcorr16 */
             xcorr16 *= 1e-12;
             let num: f32 = xcorr16 * xcorr16;
-            if num * best_den[1] > best_num[1] * Syy {
-                if num * best_den[0] > best_num[0] * Syy {
-                    best_num[1] = best_num[0];
-                    best_den[1] = best_den[0];
-                    best_pitch[1] = best_pitch[0];
-                    best_num[0] = num;
-                    best_den[0] = Syy;
-                    best_pitch[0] = i as i32;
+            if num * best_den.at(1) > best_num.at(1) * Syy {
+                if num * best_den.at(0) > best_num.at(0) * Syy {
+                    *best_num.at_mut(1) = best_num.at(0);
+                    *best_den.at_mut(1) = best_den.at(0);
+                    *best_pitch.at_mut(1) = best_pitch.at(0);
+                    *best_num.at_mut(0) = num;
+                    *best_den.at_mut(0) = Syy;
+                    *best_pitch.at_mut(0) = i as i32;
                 } else {
-                    best_num[1] = num;
-                    best_den[1] = Syy;
-                    best_pitch[1] = i as i32;
+                    *best_num.at_mut(1) = num;
+                    *best_den.at_mut(1) = Syy;
+                    *best_pitch.at_mut(1) = i as i32;
                 }
             }
         }
-        Syy += y[i + len] * y[i + len] - y[i] * y[i];
+        Syy += y.at(i + len) * y.at(i + len) - y.at(i) * y.at(i);
         Syy = MAX32(1.0, Syy);
     }
 }
@@ -304,7 +305,7 @@ fn celt_fir5(x: &mut [f32], num: &[f32; 5], N: i32) {
     let [num0, num1, num2, num3, num4] = *num;
     let (mut mem0, mut mem1, mut mem2, mut mem3, mut mem4) = (0.0f32, 0.0f32, 0.0f32, 0.0f32, 0.0f32);
     for i in 0..N as usize {
-        let mut sum: f32 = x[i];
+        let mut sum: f32 = x.at(i);
         sum = sum + num0 * mem0;
         sum = sum + num1 * mem1;
         sum = sum + num2 * mem2;
@@ -314,15 +315,20 @@ fn celt_fir5(x: &mut [f32], num: &[f32; 5], N: i32) {
         mem3 = mem2;
         mem2 = mem1;
         mem1 = mem0;
-        mem0 = x[i];
-        x[i] = sum;
+        mem0 = x.at(i);
+        *x.at_mut(i) = sum;
     }
 }
 
-/// `x` holds the `C` channel buffers (each at least `len*factor` samples); `x_lp` receives
-/// `len` downsampled, whitened samples.
-pub fn pitch_downsample(x: &[&[f32]], x_lp: &mut [f32], len: i32, C: i32, factor: i32) {
+/// The `C` channel buffers `x` of the C code are `[prefilter_mem | new samples]` of each channel
+/// (`COMBFILTER_MAXPERIOD` history samples, then `len*factor - COMBFILTER_MAXPERIOD` new ones),
+/// read in place: `hist[c*COMBFILTER_MAXPERIOD + j]` for `j < COMBFILTER_MAXPERIOD`, else
+/// `new[new_off + c*new_stride + j - COMBFILTER_MAXPERIOD]`. `x_lp` receives `len` downsampled,
+/// whitened samples.
+pub fn pitch_downsample(hist: &[f32], new: &[f32], new_off: usize, new_stride: usize, x_lp: &mut [f32], len: i32, C: i32, factor: i32) {
     debug_assert!(C == 1 || C == 2);
+    const MP: usize = 1024; /* COMBFILTER_MAXPERIOD */
+    let x = |c: usize, j: usize| if j < MP { hist.at(c * MP + j) } else { new.at(new_off + c * new_stride + j - MP) };
     let mut ac = [0.0f32; 5];
     let mut tmp: f32 = 1.0;
     let mut lpc = [0.0f32; 4];
@@ -331,38 +337,38 @@ pub fn pitch_downsample(x: &[&[f32]], x_lp: &mut [f32], len: i32, C: i32, factor
     let offset = (factor / 2) as usize;
     let factor = factor as usize;
     let n = len as usize;
-    assert!(x.len() >= C as usize && x_lp.len() >= n);
+    debug_assert!(x_lp.len() >= n);
     for i in 1..n {
-        x_lp[i] = 0.25 * x[0][factor * i - offset] + 0.25 * x[0][factor * i + offset] + 0.5 * x[0][factor * i];
+        *x_lp.at_mut(i) = 0.25 * x(0, factor * i - offset) + 0.25 * x(0, factor * i + offset) + 0.5 * x(0, factor * i);
     }
-    x_lp[0] = 0.25 * x[0][offset] + 0.5 * x[0][0];
+    *x_lp.at_mut(0) = 0.25 * x(0, offset) + 0.5 * x(0, 0);
     if C == 2 {
         for i in 1..n {
-            x_lp[i] += 0.25 * x[1][factor * i - offset] + 0.25 * x[1][factor * i + offset] + 0.5 * x[1][factor * i];
+            *x_lp.at_mut(i) += 0.25 * x(1, factor * i - offset) + 0.25 * x(1, factor * i + offset) + 0.5 * x(1, factor * i);
         }
-        x_lp[0] += 0.25 * x[1][offset] + 0.5 * x[1][0];
+        *x_lp.at_mut(0) += 0.25 * x(1, offset) + 0.5 * x(1, 0);
     }
-    _celt_autocorr(x_lp, &mut ac, &[], 0, 4, len);
+    _celt_autocorr(x_lp, &mut ac, 4, len);
 
     /* Noise floor -40 dB */
-    ac[0] *= 1.0001;
+    *ac.at_mut(0) *= 1.0001;
     /* Lag windowing */
     for i in 1..=4usize {
         /*ac[i] *= exp(-.5*(2*M_PI*.002*i)*(2*M_PI*.002*i));*/
-        ac[i] -= ac[i] * (0.008 * i as f32) * (0.008 * i as f32);
+        *ac.at_mut(i) -= ac.at(i) * (0.008 * i as f32) * (0.008 * i as f32);
     }
 
     _celt_lpc(&mut lpc, &ac, 4);
     for i in 0..4 {
         tmp = 0.9 * tmp;
-        lpc[i] = lpc[i] * tmp;
+        *lpc.at_mut(i) = lpc.at(i) * tmp;
     }
     /* Add a zero */
-    lpc2[0] = lpc[0] + 0.8;
-    lpc2[1] = lpc[1] + c1 * lpc[0];
-    lpc2[2] = lpc[2] + c1 * lpc[1];
-    lpc2[3] = lpc[3] + c1 * lpc[2];
-    lpc2[4] = c1 * lpc[3];
+    *lpc2.at_mut(0) = lpc.at(0) + 0.8;
+    *lpc2.at_mut(1) = lpc.at(1) + c1 * lpc.at(0);
+    *lpc2.at_mut(2) = lpc.at(2) + c1 * lpc.at(1);
+    *lpc2.at_mut(3) = lpc.at(3) + c1 * lpc.at(2);
+    *lpc2.at_mut(4) = c1 * lpc.at(3);
     celt_fir5(x_lp, &lpc2, len);
 }
 
@@ -381,10 +387,10 @@ pub fn pitch_search(x_lp: &[f32], y: &[f32], len: i32, max_pitch: i32, pitch: &m
 
     /* Downsample by 2 again */
     for j in 0..(len >> 2) as usize {
-        x_lp4[j] = x_lp[2 * j];
+        *x_lp4.at_mut(j) = x_lp.at(2 * j);
     }
     for j in 0..(lag >> 2) as usize {
-        y_lp4[j] = y[2 * j];
+        *y_lp4.at_mut(j) = y.at(2 * j);
     }
 
     /* Coarse search with 4x decimation */
@@ -394,22 +400,22 @@ pub fn pitch_search(x_lp: &[f32], y: &[f32], len: i32, max_pitch: i32, pitch: &m
 
     /* Finer search with 2x decimation */
     for i in 0..(max_pitch >> 1) {
-        xcorr[i as usize] = 0.0;
-        if (i - 2 * best_pitch[0]).abs() > 2 && (i - 2 * best_pitch[1]).abs() > 2 {
+        *xcorr.at_mut(i as usize) = 0.0;
+        if (i - 2 * best_pitch.at(0)).abs() > 2 && (i - 2 * best_pitch.at(1)).abs() > 2 {
             continue;
         }
-        let sum = celt_inner_prod(x_lp, &y[i as usize..], len >> 1);
-        xcorr[i as usize] = MAX32(-1.0, sum);
+        let sum = celt_inner_prod(x_lp, y.rg(i as usize..), len >> 1);
+        *xcorr.at_mut(i as usize) = MAX32(-1.0, sum);
     }
     find_best_pitch(xcorr, y, len >> 1, max_pitch >> 1, &mut best_pitch);
 
     /* Refine by pseudo-interpolation */
     let offset: i32;
-    if best_pitch[0] > 0 && best_pitch[0] < (max_pitch >> 1) - 1 {
-        let b0 = best_pitch[0] as usize;
-        let a = xcorr[b0 - 1];
-        let b = xcorr[b0];
-        let c = xcorr[b0 + 1];
+    if best_pitch.at(0) > 0 && best_pitch.at(0) < (max_pitch >> 1) - 1 {
+        let b0 = best_pitch.at(0) as usize;
+        let a = xcorr.at(b0 - 1);
+        let b = xcorr.at(b0);
+        let c = xcorr.at(b0 + 1);
         if (c - a) > 0.7 * (b - a) {
             offset = 1;
         } else if (a - c) > 0.7 * (b - c) {
@@ -465,14 +471,14 @@ pub fn remove_doubling(
     T = *T0_;
     T0 = T;
     let yy_lookup = st.alloc::<f32>(maxperiod as usize + 1);
-    dual_inner_prod(&x[base..], &x[base..], &x[base - T0 as usize..], N, &mut xx, &mut xy);
-    yy_lookup[0] = xx;
+    dual_inner_prod(x.rg(base..), x.rg(base..), x.rg(base - T0 as usize..), N, &mut xx, &mut xy);
+    *yy_lookup.at_mut(0) = xx;
     let mut yy = xx;
     for i in 1..=maxperiod as usize {
-        yy = yy + x[base - i] * x[base - i] - x[base + nn - i] * x[base + nn - i];
-        yy_lookup[i] = MAX32(0.0, yy);
+        yy = yy + x.at(base - i) * x.at(base - i) - x.at(base + nn - i) * x.at(base + nn - i);
+        *yy_lookup.at_mut(i) = MAX32(0.0, yy);
     }
-    yy = yy_lookup[T0 as usize];
+    yy = yy_lookup.at(T0 as usize);
     let mut best_xy = xy;
     let mut best_yy = yy;
     let mut g = compute_pitch_gain(xy, xx, yy);
@@ -492,18 +498,18 @@ pub fn remove_doubling(
                 T1b = T0 + T1;
             }
         } else {
-            T1b = (2 * second_check[k as usize] * T0 + k) / (2 * k);
+            T1b = (2 * second_check.at(k as usize) * T0 + k) / (2 * k);
         }
         dual_inner_prod(
-            &x[base..],
-            &x[base - T1 as usize..],
-            &x[base - T1b as usize..],
+            x.rg(base..),
+            x.rg(base - T1 as usize..),
+            x.rg(base - T1b as usize..),
             N,
             &mut xy,
             &mut xy2,
         );
         xy = 0.5 * (xy + xy2);
-        yy = 0.5 * (yy_lookup[T1 as usize] + yy_lookup[T1b as usize]);
+        yy = 0.5 * (yy_lookup.at(T1 as usize) + yy_lookup.at(T1b as usize));
         let g1 = compute_pitch_gain(xy, xx, yy);
         let cont: f32;
         if (T1 - prev_period).abs() <= 1 {
@@ -537,11 +543,11 @@ pub fn remove_doubling(
     }
 
     for k in 0..3i32 {
-        xcorr[k as usize] = celt_inner_prod(&x[base..], &x[base - (T + k - 1) as usize..], N);
+        *xcorr.at_mut(k as usize) = celt_inner_prod(&x[base..], &x[base - (T + k - 1) as usize..], N);
     }
-    if (xcorr[2] - xcorr[0]) > 0.7 * (xcorr[1] - xcorr[0]) {
+    if (xcorr.at(2) - xcorr.at(0)) > 0.7 * (xcorr.at(1) - xcorr.at(0)) {
         offset = 1;
-    } else if (xcorr[0] - xcorr[2]) > 0.7 * (xcorr[1] - xcorr[2]) {
+    } else if (xcorr.at(0) - xcorr.at(2)) > 0.7 * (xcorr.at(1) - xcorr.at(2)) {
         offset = -1;
     } else {
         offset = 0;

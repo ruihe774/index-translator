@@ -10,6 +10,14 @@ The header is run through a minimal preprocessor (#if/#ifdef/#ifndef/#else/#endi
 that configuration) so only the live branch is converted; the 96 kHz QEXT mode drops out.
 Float literals are parsed exactly and re-emitted as the shortest decimal that parses back to the
 same f32 (verified here).
+
+Trimmed to the fixed configuration (20 ms frames only, shifts 0 and 3 of the MDCT: long blocks
+and the 8 short blocks): the FFT states, bit-reversal tables and MDCT twiddles of the other
+shifts and the allocation caps of the other frame sizes are dropped. The mode itself is not
+emitted: its scalar fields are constants in `modes.rs` (checked against the header here).
+The FFT twiddles are emitted as the first octant only (`fft_twiddles48000_960_octant`) and the
+bit-reversal tables are not emitted: `kiss_fft.rs` rebuilds both at init (the symmetry rules and
+`compute_bitrev_table` are mirrored here and checked to reproduce the header's tables exactly).
 """
 import re
 import sys
@@ -243,15 +251,55 @@ def emit_array(name, cty, decl_len, init, row=None):
 
 
 def emit_fft_state(name, init):
+    # pub: mdct.rs picks the state by shift
     nfft, scale, shift, factors, bitrev, twiddles, arch_fft = init
-    assert arch_fft == "NULL"  # dropped in Rust
+    assert arch_fft == "NULL"  # dropped in Rust; nfft is only implied by the tables
     assert len(factors) == 16
     sc = rust_f32(scale)
     check_literal(scale, sc)
     fac = ", ".join(int_lit(f) for f in factors)
-    return (f"static {name}: kiss_fft_state = kiss_fft_state {{\n"
-            f"    nfft: {int_lit(nfft)},\n    scale: {sc},\n    shift: {int_lit(shift)},\n"
-            f"    factors: [{fac}],\n    bitrev: &{bitrev},\n    twiddles: &{twiddles},\n}};\n")
+    return (f"pub static {name}: kiss_fft_state = kiss_fft_state {{\n"
+            f"    scale: {sc},\n    shift: {int_lit(shift)},\n"
+            f"    factors: [{fac}],\n}};\n")
+
+
+def neg(x):
+    return x[1:] if x.startswith("-") else "-" + x
+
+
+def unfold_twiddles(octant):
+    """The kiss_fft.rs rule: 480 twiddles from the first octant (k = 0..=60) by symmetry,
+    with the three axis points (k = 120, 240, 360) taken from the cos/sin of exact multiples of pi/2."""
+    t = list(octant) + [None] * (480 - len(octant))
+    for k in range(61, 121):
+        r, i = t[120 - k]
+        t[k] = (neg(i), neg(r))
+    for k in range(121, 240):
+        r, i = t[k - 120]
+        t[k] = (i, neg(r))
+    for k in range(240, 480):
+        r, i = t[k - 240]
+        t[k] = (neg(r), neg(i))
+    return t
+
+
+def bitrev_table(factors, nfft):
+    """compute_bitrev_table(0, bitrev, 1, 1, factors) of kiss_fft.c."""
+    out = [0] * nfft
+
+    def rec(Fout, f, fstride, in_stride, fac):
+        p, m = fac[0], fac[1]
+        if m == 1:
+            for j in range(p):
+                out[f] = Fout + j
+                f += fstride * in_stride
+        else:
+            for j in range(p):
+                rec(Fout, f, fstride * p, in_stride, fac[2:])
+                f += fstride * in_stride
+                Fout += m
+    rec(0, 0, 1, 1, factors)
+    return out
 
 
 def parse_mode(text):
@@ -286,14 +334,54 @@ def main():
     assert nb == int(nbEBands) == int(effEBands)
     assert len(mc["band_allocation"][2]) == int(nbAllocVectors) * nb
 
+    # Fixed configuration: only LM 3 (long blocks, shift 0) and 8 short blocks (shift 3).
+    n, maxshift, kf, trig = mdct
+    assert (int(Fs), int(overlap), int(nbEBands), int(effEBands), int(maxLM), int(nbShortMdcts),
+            int(shortMdctSize), int(nbAllocVectors), int(n), int(maxshift)) == \
+        (48000, 120, 21, 21, 3, 8, 120, 11, 1920, 3), "modes.rs hard-codes these"
+    assert rust_f32(preemph[0]) == "0.8500061" and [rust_f32(x) for x in preemph[1:]] == ["0.0", "1.0", "1.0"]
+    kf = [k[1:] for k in kf]
+    keep_states = [kf[0], kf[3]]
+    for k in kf[1:3]:  # dropped shifts: also their bit-reversal tables
+        tabs.pop(states[k][4])
+        del states[k]
+    # FFT twiddles: first octant only, bit-reversal tables rebuilt at init (both verified here)
+    tw_name = states[keep_states[0]][5]
+    assert tw_name == states[keep_states[1]][5]
+    tw = tabs[tw_name]
+    full = [(rust_f32(e[0]), rust_f32(e[1])) for e in tw[2]]
+    octant = tw[2][:61]
+    un = unfold_twiddles([(rust_f32(e[0]), rust_f32(e[1])) for e in octant])
+    axis = {120: ("6.123234e-17", "-1.0"), 240: ("-1.0", "-1.2246469e-16"), 360: ("-1.8369701e-16", "1.0")}
+    for k in axis:
+        un[k] = axis[k]
+    assert un == full, "twiddle symmetry rule does not reproduce the header table"
+    for k in keep_states:
+        st = states[k]
+        fac = [int(x) for x in st[3]]
+        br = [int(x) for x in tabs[st[4]][2]]
+        assert bitrev_table(fac, len(br)) == br, f"bitrev {k}"
+        tabs.pop(st[4])
+    tabs[tw_name] = (tw[0], 61, octant)
+    # trig layout: shift s starts after the (N >> j) entries of the shifts before it
+    t = tabs[trig]
+    nt = [1920 >> 1, 960 >> 1, 480 >> 1, 240 >> 1]  # entries per shift: 960, 480, 240, 120
+    assert len(t[2]) == sum(nt)
+    tabs[trig] = (t[0], sum([nt[0], nt[3]]), t[2][:nt[0]] + t[2][sum(nt[:3]):])
+    # allocation caps: rows (2*LM+C-1) for LM = 3, C = 1, 2 only
+    c = tabs[cache[3]]
+    assert len(c[2]) == 8 * 21
+    rows = [c[2][21 * r:21 * (r + 1)] for r in range(len(c[2]) // 21)]
+    tabs[cache[3]] = (c[0], 42, rows[6] + rows[7])
+
     out = ["//! Port of celt/static_modes_float.h (generated by scripts/gen_tables.py from libopus 1.6.1)",
            "//!",
            "//! Also holds `eband5ms` and `band_allocation` from celt/modes.c. Float build, no",
-           "//! ENABLE_PFA / ENABLE_QEXT / CUSTOM_MODES: only the 48 kHz / 960 mode.",
+           "//! ENABLE_PFA / ENABLE_QEXT / CUSTOM_MODES: only the 48 kHz / 960 mode, trimmed to what",
+           "//! 20 ms frames use (see the generator): `mdct_twiddles960` holds the shift 0 and shift 3",
+           "//! tables only, `cache_caps50` only the LM 3 rows (`(C-1)*nbEBands + band`).",
            "",
            "use super::kiss_fft::{kiss_fft_state, kiss_twiddle_cpx};",
-           "use super::mdct::mdct_lookup;",
-           "use super::modes::{CELTMode, PulseCache};",
            ""]
 
     def tab(name, t, row=None):
@@ -305,45 +393,8 @@ def main():
     for name, t in tabs.items():
         tab(name, t)
     for name, init in states.items():
-        assert init[4] in tabs and init[5] in tabs, name
         out.append(emit_fft_state(name, init))
-    # mode
-    wn, lg = window, logN
-    pre = ", ".join(rust_f32(p) for p in preemph)
-    for p in preemph:
-        check_literal(p, rust_f32(p))
-    n, maxshift, kf, trig = mdct
-    assert len(kf) == 4 and all(k.startswith("&") for k in kf)
-    kf = [k[1:] for k in kf]
-    csize, cidx, cbits, ccaps = cache
-    out.append(f"""pub static {mname}: CELTMode = CELTMode {{
-    Fs: {int_lit(Fs)},
-    overlap: {int_lit(overlap)},
-    nbEBands: {int_lit(nbEBands)},
-    effEBands: {int_lit(effEBands)},
-    preemph: [{pre}],
-    eBands: &{eBands},
-    maxLM: {int_lit(maxLM)},
-    nbShortMdcts: {int_lit(nbShortMdcts)},
-    shortMdctSize: {int_lit(shortMdctSize)},
-    nbAllocVectors: {int_lit(nbAllocVectors)},
-    allocVectors: &{allocVectors},
-    logN: &{lg},
-    window: &{wn},
-    mdct: mdct_lookup {{
-        n: {int_lit(n)},
-        maxshift: {int_lit(maxshift)},
-        kfft: [\n{pack(["&" + k for k in kf], indent=12)}\n        ],
-        trig: &{trig},
-    }},
-    cache: PulseCache {{
-        size: {int_lit(csize)},
-        index: &{cidx},
-        bits: &{cbits},
-        caps: &{ccaps},
-    }},
-}};
-""")
+    assert list(states) == keep_states
     dst.mkdir(parents=True, exist_ok=True)
     (dst / "static_modes_float.rs").write_text("\n".join(out))
     print(f"{dst / 'static_modes_float.rs'}: {len(tabs) + 2} tables, {len(states)} fft states")

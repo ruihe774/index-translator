@@ -16,15 +16,31 @@ use core::cell::UnsafeCell;
 use core::marker::PhantomData;
 use core::mem::{align_of, size_of};
 
-/// Scratch size: the measured worst-case peak is 52736 bytes (stereo `opus_encode`, whose
-/// float copy of the input sits below the encoder's 45056 bytes; measured with `peak()` by the
-/// oracle tests at the tag `minicelt-oracle-tests`), plus headroom.
-pub const GLOBAL_STACK_SIZE: usize = 57344;
+/// Scratch size in bytes: the measured worst-case peak, 16376 bytes, rounded up to the 16-byte
+/// alignment of the buffer.
+///
+/// The peak is reached in every stereo frame (it does not depend on the signal or the settings) when
+/// `run_prefilter` allocates its `CC*(960+1024)` float `_pre` buffer (15872 bytes) on top of the
+/// 504 bytes of band energies of `celt_encode_with_ec`; the other phases stay below: the MDCT
+/// (15864 for stereo), the pitch analysis, the band quantisation with the stereo theta RDO
+/// (about 13 KB), mono encoders (about half). The PCM/`in`/`X` buffer lives in the caller's input
+/// buffer instead of here (see `OpusEncoder::encode_float`).
+///
+/// How it was measured: build with the `stack-peak` feature (`cargo build --release -p
+/// minicelt-wasm --features stack-peak`, both variants and the `checked` profile), which tracks
+/// the high-water mark of `alloc` and exports it as `minicelt_stack_peak()`, and read it after
+/// encoding the speech corpus plus synthetic signals (noise, tones, clicks, clipping, silence with
+/// DTX) at mono/stereo x complexity 0..10 x bitrates 500..750000 and `OPUS_AUTO`/`OPUS_BITRATE_MAX`
+/// x constrained VBR on/off x packet loss 0/20 x all bandwidths, i16 and f32 input. The value was
+/// 16376 for every configuration with the prefilter phase and for both variants. (Before the
+/// trim: 54144 on the same corpus, 57344 allocated.)
+pub const GLOBAL_STACK_SIZE: usize = 16384;
 
 #[repr(C, align(16))]
 struct Scratch {
     buf: UnsafeCell<[u8; GLOBAL_STACK_SIZE]>,
     top: UnsafeCell<usize>,
+    #[cfg(feature = "stack-peak")]
     peak: UnsafeCell<usize>,
 }
 
@@ -34,6 +50,7 @@ unsafe impl Sync for Scratch {}
 static SCRATCH: Scratch = Scratch {
     buf: UnsafeCell::new([0; GLOBAL_STACK_SIZE]),
     top: UnsafeCell::new(0),
+    #[cfg(feature = "stack-peak")]
     peak: UnsafeCell::new(0),
 };
 
@@ -75,9 +92,12 @@ impl StackGuard {
                 panic!("pseudostack overflow");
             }
             *top = end;
-            let peak = &mut *SCRATCH.peak.get();
-            if end > *peak {
-                *peak = end;
+            #[cfg(feature = "stack-peak")]
+            {
+                let peak = &mut *SCRATCH.peak.get();
+                if end > *peak {
+                    *peak = end;
+                }
             }
             core::slice::from_raw_parts_mut(base.add(start) as *mut T, n)
         }
@@ -91,7 +111,8 @@ impl Drop for StackGuard {
     }
 }
 
-/// High-water mark of the scratch buffer in bytes.
+/// High-water mark of the scratch buffer in bytes (`stack-peak` feature only).
+#[cfg(feature = "stack-peak")]
 pub fn peak() -> usize {
     unsafe { *SCRATCH.peak.get() }
 }

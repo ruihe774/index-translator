@@ -1,5 +1,6 @@
 //! Port of celt/mathops.h and celt/mathops.c (float build, without FLOAT_APPROX).
 
+use super::arch::Ix;
 use super::arch::{MAX16, MAX32, MIN16};
 
 /// PI from celt/mathops.h (a double constant).
@@ -9,8 +10,8 @@ pub fn celt_maxabs16(x: &[f32], len: i32) -> f32 {
     let mut maxval: f32 = 0.0;
     let mut minval: f32 = 0.0;
     for i in 0..len as usize {
-        maxval = MAX16(maxval, x[i]);
-        minval = MIN16(minval, x[i]);
+        maxval = MAX16(maxval, x.at(i));
+        minval = MIN16(minval, x.at(i));
     }
     MAX32(maxval, -minval)
 }
@@ -67,7 +68,7 @@ pub fn celt_atan2p_norm(y: f32, x: f32) -> f32 {
 /// `(float)sqrt(x)`; also celt_sqrt32.
 #[inline(always)]
 pub fn celt_sqrt(x: f32) -> f32 {
-    libm::sqrt(x as f64) as f32
+    crate::celt::arch::sqrt64(x as f64) as f32
 }
 #[inline(always)]
 pub fn celt_sqrt32(x: f32) -> f32 {
@@ -86,10 +87,52 @@ pub fn celt_rsqrt_norm(x: f32) -> f32 {
 pub fn celt_rsqrt_norm32(x: f32) -> f32 {
     celt_rsqrt(x)
 }
-/// `(float)cos((.5f*PI)*(x))`
-#[inline(always)]
+/// `(float)cos((.5f*PI)*(x))` for `0 < x < 1` (its only use, exp_rotation, passes `theta` and
+/// `1 - theta` with `theta < .5`). This is libm's `cos` (FreeBSD s_cos.c) restricted to the
+/// angles `0 < a < pi/2` that this gives, without the general argument reduction: up to pi/4
+/// `k_cos(a, 0)`, above it the `n == 1` case of `rem_pio2` (a - pi/2 in two parts) and
+/// `-k_sin`. The result is bit for bit that of `libm::cos` (checked for every `(len, K, spread)`
+/// that exp_rotation can see, and far beyond).
 pub fn celt_cos_norm(x: f32) -> f32 {
-    libm::cos((0.5f32 as f64 * PI) * x as f64) as f32
+    const C: [f64; 6] = [
+        4.16666666666666019037e-02,
+        -1.38888888888741095749e-03,
+        2.48015872894767294178e-05,
+        -2.75573143513906633035e-07,
+        2.08757232129817482790e-09,
+        -1.13596475577881948265e-11,
+    ];
+    const S1: f64 = -1.66666666666666324348e-01;
+    const S: [f64; 5] = [
+        8.33333333332248946124e-03,
+        -1.98412698298579493134e-04,
+        2.75573137070700676789e-06,
+        -2.50507602534068634195e-08,
+        1.58969099521155010221e-10,
+    ];
+    const PIO2_1: f64 = 1.57079632673412561417e+00;
+    const PIO2_1T: f64 = 6.07710050650619224932e-11;
+    let a = (0.5f32 as f64 * PI) * x as f64;
+    debug_assert!(a > 0.0 && a < 1.5707);
+    if (a.to_bits() >> 32) as u32 <= 0x3fe921fb {
+        /* |a| ~< pi/4: k_cos(a, 0) */
+        let z = a * a;
+        let w = z * z;
+        let r = z * (C.at(0) + z * (C.at(1) + z * C.at(2))) + w * w * (C.at(3) + z * (C.at(4) + z * C.at(5)));
+        let hz = 0.5 * z;
+        let w = 1.0 - hz;
+        (w + (((1.0 - w) - hz) + z * r)) as f32
+    } else {
+        /* rem_pio2 for pi/4 < a <= 3pi/4: n = 1, then cos(a) = -k_sin(y0, y1, 1) */
+        let z = a - PIO2_1;
+        let y0 = z - PIO2_1T;
+        let y1 = (z - y0) - PIO2_1T;
+        let z = y0 * y0;
+        let w = z * z;
+        let r = S.at(0) + z * (S.at(1) + z * S.at(2)) + z * w * (S.at(3) + z * S.at(4));
+        let v = z * y0;
+        (-(y0 - ((z * (0.5 * y1 - v * r) - y1) - v * S1))) as f32
+    }
 }
 /// `1.f/(x)`
 #[inline(always)]
@@ -113,4 +156,56 @@ pub fn celt_log2_db(x: f32) -> f32 {
 #[inline(always)]
 pub fn celt_exp2_db(x: f32) -> f32 {
     celt_exp2(x)
+}
+
+/// `acos(x)` (double) for `|x| < 1`: libm's `acos` (FreeBSD e_acos.c) with the hardware
+/// `sqrt` and without the special cases. Bit for bit that of `libm::acos` (checked for every
+/// `f32` with `|x| < 1`, which covers the `0.5f * lpc[0]` its only caller passes).
+pub fn acos64(x: f64) -> f64 {
+    const PIO2_HI: f64 = 1.57079632679489655800e+00;
+    const PIO2_LO: f64 = 6.12323399573676603587e-17;
+    const PS: [f64; 6] = [
+        1.66666666666666657415e-01,
+        -3.25565818622400915405e-01,
+        2.01212532134862925881e-01,
+        -4.00555345006794114027e-02,
+        7.91534994289814532176e-04,
+        3.47933107596021167570e-05,
+    ];
+    const QS: [f64; 4] = [
+        -2.40339491173441421878e+00,
+        2.02094576023350569471e+00,
+        -6.88283971605453293030e-01,
+        7.70381505559019352791e-02,
+    ];
+    let r = |z: f64| -> f64 {
+        let p = z * (PS[0] + z * (PS[1] + z * (PS[2] + z * (PS[3] + z * (PS[4] + z * PS[5])))));
+        let q = 1.0 + z * (QS[0] + z * (QS[1] + z * (QS[2] + z * QS[3])));
+        p / q
+    };
+    let hx = (x.to_bits() >> 32) as u32;
+    let ix = hx & 0x7fffffff;
+    debug_assert!(ix < 0x3ff00000);
+    if ix < 0x3fe00000 {
+        /* |x| < 0.5 */
+        if ix <= 0x3c600000 {
+            /* |x| < 2**-57 (+ the inexact flag of libm) */
+            return PIO2_HI + f64::from_bits(0x3870000000000000);
+        }
+        return PIO2_HI - (x - (PIO2_LO - x * r(x * x)));
+    }
+    if (hx >> 31) != 0 {
+        /* x < -0.5 */
+        let z = (1.0 + x) * 0.5;
+        let s = super::arch::sqrt64(z);
+        let w = r(z) * s - PIO2_LO;
+        return 2. * (PIO2_HI - (s + w));
+    }
+    /* x > 0.5 */
+    let z = (1.0 - x) * 0.5;
+    let s = super::arch::sqrt64(z);
+    let df = f64::from_bits(s.to_bits() & 0xff_ff_ff_ff_00_00_00_00);
+    let c = (z - df * df) / (s + df);
+    let w = r(z) * s + c;
+    2. * (df + w)
 }

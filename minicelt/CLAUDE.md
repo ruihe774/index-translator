@@ -8,14 +8,19 @@ Rust port of the libopus CELT-only float encoder for wasm32. Read `PORTING.md` b
 - wasm32 only (no native build); variants WASM 2.0 (`+simd128`) and 3.0 (`+relaxed-simd`).
 - 48 kHz, mono or stereo, 20 ms frames, VBR with constrained VBR on/off, DTX.
   No CBR, no tonality analysis, no other rates or frame sizes, no QEXT/DRED/custom modes.
-- `no_std`, no alloc. Scratch memory is the static pseudostack in `src/stack.rs`.
+- `no_std`, no alloc. Scratch memory is the static pseudostack in `src/stack.rs` (16 KiB, sized to
+  the measured peak: see its doc comment and PORTING.md "Trimming" before changing allocations).
+- Trimmed to the scope above: code, state and tables that cannot matter in it are removed, size
+  (code and memory) is the main optimization (the module is one wasm page). Trims must keep the
+  packets identical (PORTING.md "Trimming").
 
 ## Layout
 
 - `src/celt`, `src/opus`: one Rust module per C file, C names kept.
 - `wasm/`: the `minicelt-wasm` cdylib with the `minicelt_*` exports.
 - `test/compare.ts` (Deno) + `test/shim.c` + `test/analysis_stub.c`: differential test against native
-  `third_party/opus` (scalar C as the oracle, by tolerance). `scripts/gen_tables.py` generates the tables.
+  `third_party/opus` (scalar C as the oracle, by tolerance). `scripts/gen_tables.py` generates
+  `src/celt/static_modes_float.rs` (trimmed to the scope).
 
 ## Commands (from the workspace root)
 
