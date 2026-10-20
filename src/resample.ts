@@ -8,14 +8,21 @@ import { existsSync } from "node:fs";
 
 import { soxrLibraryPath } from "./audiocpp-ffi";
 
+// A soxr_quality_spec_t: precision (bits), phase_response (50 = linear), passband_end and stopband_begin
+// (fractions of the lower Nyquist rate), then `e` and `flags` (zero; six doubles cover the struct's padding
+// whether `unsigned long` is 32 or 64 bits). A NULL spec is not libsoxr's "HQ" recipe: it rolls off from
+// about 0.8 of Nyquist (-3.5 dB at 9 kHz, -22 dB at 10 kHz for 22.05 kHz audio), which cut the top of the
+// engine's speech before the Opus encoder; this one is flat to 0.95 (10.4 kHz at 22.05 kHz).
+const QUALITY_SPEC = new Float64Array([20, 50, 0.95, 1, 0, 0]);
+
 function bind(dir: string) {
   const path = soxrLibraryPath(dir);
   if (!existsSync(path)) {
     throw new Error(`libsoxr not found in ${dir}; run: bun scripts/build_soxr.ts`);
   }
   return dlopen(path, {
-    // soxr_error_t is a string, null when it worked; the three specs are left to their defaults:
-    // 32-bit float samples, interleaved, the "high quality" recipe.
+    // soxr_error_t is a string, null when it worked; the io and runtime specs are left to their defaults
+    // (32-bit float samples, interleaved).
     soxr_oneshot: {
       args: ["f64", "f64", "u32", "ptr", "usize", "ptr", "ptr", "usize", "ptr", "ptr", "ptr", "ptr"],
       returns: "ptr",
@@ -49,7 +56,7 @@ export function soxrResampler(dir: string): Resample {
       BigInt(capacity),
       done.subarray(1, 2),
       null,
-      null,
+      QUALITY_SPEC,
       null,
     );
     if (error) {
