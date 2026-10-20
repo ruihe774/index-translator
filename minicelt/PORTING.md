@@ -114,13 +114,14 @@ bit-exact comparison below. What was removed or specialized:
   i16 input is converted in place in it), `run_prefilter` reads the pitch analysis input in place and
   only allocates its `_pre` buffer after the analysis, and the MDCT output is scoped.
 
-Measuring the memory (both variants and both profiles): `cargo build --release -p minicelt-wasm
---features stack-peak` exports `minicelt_stack_peak()` (the pseudostack high-water mark, see
-`stack.rs`), which is read after encoding a corpus of speech and synthetic signals over the settings
-grid; the shadow stack is measured by building with `MINICELT_SHADOW_STACK=16384` (the
-build script of `minicelt/wasm`), filling the first 16384 bytes of the instance's memory with a
-pattern before encoding and finding the lowest byte written afterwards (708 bytes). The pseudostack
-peak is 16376 bytes, reached by the stereo prefilter every frame.
+Measuring the memory: `minicelt/test/stack_peak.ts` (build and run commands in its header). It sweeps
+2592 configurations (mono/stereo x complexity x bitrates x constrained VBR x packet loss x bandwidth,
+i16/f32 input, speech corpus and synthetic signals) and prints the pseudostack high-water mark, read
+from `minicelt_stack_peak()` of a `--features stack-peak` build, and the shadow-stack depth, found
+by painting the first `MINICELT_SHADOW_STACK` bytes of linear memory (the build script of
+`minicelt/wasm`; use 16384 to measure) and scanning for the lowest byte written. Current numbers,
+for both variants and both profiles: pseudostack peak 16376 bytes (the stereo prefilter, every
+frame), shadow stack 708 bytes.
 
 Regression check for trims that must not change anything: encode a corpus with a previous build and
 the new one and require identical packets, final ranges and `in_dtx` (the tolerance gate below
