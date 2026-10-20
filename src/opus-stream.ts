@@ -26,6 +26,8 @@ const RATE = 48_000;
 const PER_SAMPLE = 1;
 const BITRATE = 64_000;
 const COMPLEXITY = 6;
+/** OPUS_BANDWIDTH_SUPERWIDEBAND (12 kHz): the engine's audio is 22.05 kHz, so nothing above 11 kHz is coded. */
+const BANDWIDTH = 1104;
 
 /** Where scripts/fetch_minicelt.ts puts the encoder, beside the engine directory `audioDir`. */
 export const miniceltPath = (audioDir: string) => join(audioDir, "..", "minicelt", "minicelt-wasm3.wasm");
@@ -33,6 +35,7 @@ export const miniceltPath = (audioDir: string) => join(audioDir, "..", "minicelt
 interface Minicelt {
   memory: WebAssembly.Memory;
   minicelt_init(channels: number, bitrate: number, complexity: number, vbrConstraint: number, dtx: number): number;
+  minicelt_set_bandwidth(bandwidth: number): number;
   minicelt_input_ptr(): number;
   minicelt_output_ptr(): number;
   minicelt_encode(): number;
@@ -51,6 +54,10 @@ function start(module: WebAssembly.Module): Minicelt {
   const status = encoder.minicelt_init(1, BITRATE, COMPLEXITY, 1, 0);
   if (status < 0) {
     throw new Error(`minicelt_init failed with ${status}`);
+  }
+  const bandwidth = encoder.minicelt_set_bandwidth(BANDWIDTH);
+  if (bandwidth < 0) {
+    throw new Error(`minicelt_set_bandwidth failed with ${bandwidth}`);
   }
   return encoder;
 }

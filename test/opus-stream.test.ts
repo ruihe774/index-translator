@@ -226,10 +226,10 @@ describe.skipIf(!installed)("opusResponse", () => {
     expect(preSkip % 3).toBe(0);
     // The decoder drops preSkip: 2.5 s at 48 kHz remain.
     expect(all.at(-1)!.granule - preSkip).toBe(2.5 * 48_000);
-    // Every packet is a 20 ms CELT frame: TOC config 31, code 0.
+    // Every packet is a 20 ms super-wideband CELT frame: TOC config 27, code 0.
     for (const p of all.slice(2)) {
       for (const data of p.packets) {
-        expect(data[0]! >> 3).toBe(31);
+        expect(data[0]! >> 3).toBe(27);
         expect(data[0]! & 3).toBe(0);
       }
     }
