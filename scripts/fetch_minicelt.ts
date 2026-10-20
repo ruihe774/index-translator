@@ -11,7 +11,7 @@ import { join, resolve } from "node:path";
 
 import { fetchFileLibrary, type FileLibrary, isPresent } from "./fetch_web_libs";
 
-const COMMIT = "39d122d281015905ce92159bd24bada603e4ab71";
+const COMMIT = "d944fd1cc001eba9e2d056ff4aa12908b152e7c5";
 const RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${COMMIT}`;
 
 export const MINICELT: FileLibrary = {
@@ -21,7 +21,7 @@ export const MINICELT: FileLibrary = {
     {
       to: "minicelt-wasm3.wasm",
       url: `${RAW}/target/minicelt-wasm3.wasm`,
-      sha256: "9e7d6d3e7cd0ea92a3173f8e430007d09412e04252cb37bb995d7fe423821823",
+      sha256: "533ca47b62c4dd1c46d20190fad2ccf73c36b2971902e88e24a1f21ebf5636c6",
     },
     {
       to: "COPYING",
