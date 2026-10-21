@@ -38,7 +38,7 @@ function only(selector: string): HTMLElement | null {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- called by src/webpage.ts in the page
-async function extractPage(loadWaitMs: number, renderWaitMs: number): Promise<ExtractedPage> {
+async function extractPage(loadWaitMs: number, quietMs: number, renderWaitMs: number): Promise<ExtractedPage> {
   // The view reports a navigation when it commits; the page's own scripts may still be filling it.
   // Not `readyState`: it is "complete" just before the `load` handlers run. `loadEventEnd` is set
   // once they have; a listener added now runs after the page's own, then one task more.
@@ -49,8 +49,25 @@ async function extractPage(loadWaitMs: number, renderWaitMs: number): Promise<Ex
       setTimeout(resolve, loadWaitMs);
     });
   }
-  // Many pages only start filling themselves on `load`; give their scripts a moment to finish.
-  await new Promise((resolve) => void setTimeout(resolve, renderWaitMs));
+  // Many pages only start filling themselves on `load`: wait until the DOM stays unchanged for
+  // `quietMs`, or `renderWaitMs` at most for a page that never stops (a clock, a carousel).
+  // Attributes are not watched: animations change styles without changing the text.
+  await new Promise<void>((resolve) => {
+    let quiet: ReturnType<typeof setTimeout> | undefined;
+    const done = () => {
+      observer.disconnect();
+      clearTimeout(quiet);
+      clearTimeout(limit);
+      resolve();
+    };
+    const observer = new MutationObserver(() => {
+      clearTimeout(quiet);
+      quiet = setTimeout(done, quietMs);
+    });
+    observer.observe(document.documentElement, { childList: true, subtree: true, characterData: true });
+    quiet = setTimeout(done, quietMs);
+    const limit = setTimeout(done, renderWaitMs);
+  });
   // A page that marks its content as one <main> or <article> is taken at its word; the header,
   // navigation and footer around it are left out. Several of them (a list of posts) or none: the
   // whole body.

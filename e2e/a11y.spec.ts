@@ -495,12 +495,13 @@ for (const scheme of ["light", "dark"] as const) {
     expect(results.violations).toStrictEqual([]);
 
     await WEBPAGE_DIALOG(app.page).getByRole("button", { name: "Fetch page" }).click();
-    await expect(app.meta).toHaveText("Fetching the page…");
-    await expect(app.meta).toHaveAttribute("role", "status");
+    await expect(app.page.locator("#count")).toHaveText("Fetching the page…");
+    await expect(app.page.locator("#source-status")).toHaveText("Fetching the page…");
+    await expect(app.page.locator("#source-status")).toHaveAttribute("role", "status");
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
 
-    await expect(app.meta).toContainText("Fetched");
+    await expect(app.page.locator("#source-status")).toContainText("Fetched");
     await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
@@ -538,7 +539,7 @@ test("the fetch-a-page dialog is keyboard operable: Cancel first, focus stays in
   await expect(dialog).toBeVisible();
   await dialog.getByRole("button", { name: "Fetch page" }).focus();
   await app.page.keyboard.press("Enter");
-  await expect(app.meta).toContainText("Fetched");
+  await expect(app.page.locator("#source-status")).toContainText("Fetched");
   await expect(app.translate).toBeFocused();
 });
 

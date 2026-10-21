@@ -47,6 +47,16 @@ const PAGES: Record<string, string> = {
     <script>addEventListener("load", () => {
       document.body.insertAdjacentHTML("beforeend", "<p>Added on load.</p>");
     });</script>`,
+  // Renders in steps after load, each sooner than the quiet time after the one before.
+  "/rendering": `<!doctype html><title>Rendering</title><body><p>Shell.</p>
+    <script>addEventListener("load", () => {
+      for (const n of [1, 2, 3]) {
+        setTimeout(() => document.body.insertAdjacentHTML("beforeend", "<p>Part " + n + ".</p>"), 200 * n);
+      }
+    });</script>`,
+  // Never stops changing.
+  "/busy": `<!doctype html><title>Busy</title><body><p>Content.</p><p id="clock">0</p>
+    <script>let n = 0; setInterval(() => { document.getElementById("clock").textContent = String(++n); }, 100);</script>`,
 };
 
 let server: ReturnType<typeof Bun.serve>;
@@ -109,6 +119,26 @@ describe.skipIf(!installed)("webViewFetcher", () => {
   test("waits for the page to load and its scripts to run", async () => {
     const page = await fetcher.fetch(new URL(`${base}/late`), local, new AbortController().signal);
     expect(page.markdown).toBe("Static.\n\nAdded on load.");
+  }, 30_000);
+
+  test("reads a page once its DOM has been quiet for a moment, not after a fixed wait", async () => {
+    let started = performance.now();
+    let page = await fetcher.fetch(new URL(`${base}/rendering`), local, new AbortController().signal);
+    expect(page.markdown).toBe("Shell.\n\nPart 1.\n\nPart 2.\n\nPart 3.");
+    expect(performance.now() - started).toBeLessThan(2000);
+
+    started = performance.now();
+    page = await fetcher.fetch(new URL(`${base}/list`), local, new AbortController().signal);
+    expect(performance.now() - started).toBeLessThan(1500);
+    expect(page.markdown).toContain("First post");
+  }, 30_000);
+
+  test("a page that never stops changing is read after the longest render wait", async () => {
+    const started = performance.now();
+    const page = await fetcher.fetch(new URL(`${base}/busy`), local, new AbortController().signal);
+    expect(page.markdown).toStartWith("Content.");
+    expect(performance.now() - started).toBeGreaterThan(4500);
+    expect(performance.now() - started).toBeLessThan(10_000);
   }, 30_000);
 
   test("a redirect to a host that is not allowed is refused", async () => {

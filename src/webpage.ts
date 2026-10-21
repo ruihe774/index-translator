@@ -32,8 +32,12 @@ export class WebpageForbiddenError extends Error {}
 
 /** How long the page's `load` event is waited for after it is first shown; then it is read as it is. */
 const LOAD_WAIT_MS = 30_000;
-/** After `load`, time for the page's scripts to render what they fetch (a single-page app's content). */
-const RENDER_WAIT_MS = 2000;
+/**
+ * After `load`, the page's scripts may still render what they fetch (a single-page app's content):
+ * it is read once its DOM has not changed for QUIET_MS, or after RENDER_WAIT_MS however busy it is.
+ */
+const QUIET_MS = 500;
+const RENDER_WAIT_MS = 5000;
 /** The whole fetch, from opening the view to the Markdown. */
 const TIMEOUT_MS = 60_000;
 const IDLE_CLOSE_MS = 60_000;
@@ -51,7 +55,7 @@ async function pageScript(turndown: string): Promise<string> {
   const extract = new Bun.Transpiler({ loader: "ts" }).transformSync(
     await Bun.file(join(import.meta.dir, "page", "extract.ts")).text(),
   );
-  return `(async () => {\n${await Bun.file(turndown).text()}\n${extract}\nreturn await extractPage(${LOAD_WAIT_MS}, ${RENDER_WAIT_MS});\n})()`;
+  return `(async () => {\n${await Bun.file(turndown).text()}\n${extract}\nreturn await extractPage(${LOAD_WAIT_MS}, ${QUIET_MS}, ${RENDER_WAIT_MS});\n})()`;
 }
 
 function isWebpage(v: unknown): v is Webpage {

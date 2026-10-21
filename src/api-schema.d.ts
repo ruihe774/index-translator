@@ -249,7 +249,8 @@ export interface paths {
          * Fetch a web page as Markdown
          * @description Opens `url` in a headless browser on the server (the system WebKit on macOS, an installed
          *     Chrome, Chromium, Edge or Brave elsewhere), waits for the page to load (at most 30
-         *     seconds, then it is read as it is) and two seconds more for its scripts to render, and answers its content as Markdown. Nothing is
+         *     seconds, then it is read as it is), lets its scripts render until the page has not changed for
+         *     half a second (at most five seconds more), and answers its content as Markdown. Nothing is
          *     translated: the client puts the Markdown in front of the user, who translates it with
          *     `POST /translate`.
          *

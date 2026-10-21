@@ -12,6 +12,11 @@ const MARKDOWN = "# A fetched page\n\nIts first paragraph.\n\nIts [second](https
 const dialog = (page: Page) => page.getByRole("dialog", { name: "Fetch this web page?" });
 /** The text box by id: it holds the source also while the preview is shown in its place. */
 const box = (page: Page) => page.locator("#text");
+/** Under the box: the letter count, which says while a page is fetched. */
+const count = (page: Page) => page.locator("#count");
+/** What a screen reader is told about the box (visually hidden). */
+const status = (page: Page) => page.locator("#source-status");
+const textError = (page: Page) => page.locator("#text-error");
 
 /** Opens the page once the server's status is in, which says whether pages can be fetched. */
 async function openReady(app: AppPage) {
@@ -33,7 +38,11 @@ test("an address alone is offered as a page; its Markdown becomes the source, sh
   await expect(dialog(app.page).getByRole("button", { name: "Cancel" })).toBeFocused();
   await dialog(app.page).getByRole("button", { name: "Fetch page" }).click();
 
-  await expect(app.meta).toHaveText("Fetched “A fetched page”. Translate it when you are ready.");
+  await expect(status(app.page)).toHaveText("Fetched “A fetched page”. Translate it when you are ready.");
+  await expect(status(app.page)).toHaveAttribute("role", "status");
+  await expect(count(app.page)).toHaveText(/^\d+ letters$/);
+  // The status line under the translation is the translation's.
+  await expect(app.meta).toHaveText("");
   await expect(box(app.page)).toHaveValue(MARKDOWN);
   await expect(box(app.page)).toBeHidden();
   await expect(app.page.locator("#source-view").getByRole("heading", { name: "A fetched page" })).toBeVisible();
@@ -102,10 +111,14 @@ test("a page that cannot be fetched says why and leaves the address in the box",
   await app.text.fill("example.com/missing");
   await app.translate.click();
   await dialog(app.page).getByRole("button", { name: "Fetch page" }).click();
-  await expect(app.meta).toHaveText(
-    "The page could not be fetched: the page could not be opened: net::ERR_NAME_NOT_RESOLVED.",
-  );
-  await expect(app.meta).toHaveAttribute("role", "alert");
+  const why = "The page could not be fetched: the page could not be opened: net::ERR_NAME_NOT_RESOLVED.";
+  // The box's own error, which describes it, and said to a screen reader.
+  await expect(textError(app.page)).toHaveText(why);
+  await expect(textError(app.page)).toBeVisible();
+  await expect(app.text).toHaveAttribute("aria-invalid", "true");
+  await expect(app.text).toHaveAccessibleDescription(`17 letters ${why}`);
+  await expect(status(app.page)).toHaveText(why);
+  await expect(app.meta).toHaveText("");
   await expect(app.text).toHaveValue("example.com/missing");
   await expect(app.translate).toBeFocused();
 
@@ -113,9 +126,12 @@ test("a page that cannot be fetched says why and leaves the address in the box",
   await app.text.fill("https://other.test/");
   await app.translate.click();
   await dialog(app.page).getByRole("button", { name: "Fetch page" }).click();
-  await expect(app.meta).toContainText(
+  await expect(textError(app.page)).toHaveText(
     "This server may not fetch that page: other.test is not in ALLOWED_WEBPAGE_DOMAINS.",
   );
+  // Editing the box takes the error away, as for any other error of the box.
+  await app.text.fill("https://example.com/");
+  await expect(textError(app.page)).toBeHidden();
   expect((await mock.state()).webpage.requests).toStrictEqual(["https://example.com/missing"]);
 });
 
@@ -125,11 +141,18 @@ test("Stop ends a fetch that takes long", async ({ app, mock }) => {
   await app.text.fill("example.com");
   await app.translate.click();
   await dialog(app.page).getByRole("button", { name: "Fetch page" }).click();
-  await expect(app.meta).toHaveText("Fetching the page…");
-  await expect(app.stop).toBeFocused();
+  await expect(count(app.page)).toHaveText("Fetching the page…");
+  await expect(status(app.page)).toHaveText("Fetching the page…");
+  await expect(app.meta).toHaveText("");
+  // Typing does not put the letter count back while the fetch runs.
+  await app.text.press("End");
+  await app.text.pressSequentially("/");
+  await app.page.waitForTimeout(300);
+  await expect(count(app.page)).toHaveText("Fetching the page…");
   await app.stop.click();
-  await expect(app.meta).toHaveText("Stopped.");
+  await expect(status(app.page)).toHaveText("Stopped.");
+  await expect(count(app.page)).toHaveText("10 letters");
   await expect(app.translate).toBeFocused();
-  await expect(app.text).toHaveValue("example.com");
+  await expect(app.text).toHaveValue("example.com/");
   await expect.poll(async () => (await mock.state()).webpage.aborted).toBe(1);
 });

@@ -273,7 +273,8 @@ Paste the address of a page into the box, alone (`https://example.com/post`, or 
 `example.com/post`), and click **Translate**. The app asks first: **Fetch page** has the server open
 the page and put its text into the box as Markdown, shown formatted (**Raw** brings back the text box);
 **Translate as text** translates the address itself; **Cancel** does neither. Look the text over, then
-click **Translate** again to translate it. **Stop** ends a fetch that takes long.
+click **Translate** again to translate it. While the page is fetched, the line under the box says so
+where it otherwise counts letters; **Stop** ends a fetch that takes long.
 
 The server opens the page in a browser without a window, as a visitor who is not signed in: scripts
 run, nothing you are signed in to is seen. When the page marks out its main content (an article, or

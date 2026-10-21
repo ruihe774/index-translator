@@ -62,6 +62,8 @@ const fromSelect = $<HTMLSelectElement>("from");
 const toSelect = $<HTMLSelectElement>("to");
 const textInput = $<HTMLTextAreaElement>("text");
 const countEl = $("count");
+/** Says what happens to the source box (a page being fetched) to screen readers; `#count` shows it. */
+const sourceStatus = $("source-status");
 const textError = $("text-error");
 const adviceEl = $("advice");
 const modelSwitch = $<ViewSwitch>("model-switch");
@@ -198,7 +200,10 @@ function refreshSelection() {
     options.disabled = false;
     return s;
   }
-  setText(countEl, `${number.format(s.letters)} letters`);
+  // While a page is fetched the count says so instead (`fetchWebpage`).
+  if (!fetchingPage) {
+    setText(countEl, `${number.format(s.letters)} letters`);
+  }
   setText(adviceEl, adviceMessage(s, fromSelect.value, toSelect.value, languageNote));
   const documentModel = s.model === DOCUMENT_MODEL && s.reason !== "manual-document-unusable";
   options.disabled = documentModel;
@@ -263,6 +268,8 @@ async function loadLanguages() {
 let healthSeq = 0;
 /** The server can fetch web pages (`webpage` in /health): only then is an address in the box offered as one. */
 let webpageAvailable = false;
+/** A page is being fetched into the source box. */
+let fetchingPage = false;
 
 async function pollHealth() {
   // One chain at a time: any pending follow-up poll is replaced by this one.
@@ -743,7 +750,9 @@ async function translate() {
 //
 // An address alone in the box is offered as a page to fetch. The server opens it (POST /webpage)
 // and answers its content as Markdown, which goes into the box like an opened file, shown as a
-// preview; translating it is a second Translate. Only the address goes to the server.
+// preview; translating it is a second Translate. Only the address goes to the server. What happens
+// is said under the box, where the letter count is, and errors as the box's own; the status line
+// under the translation keeps the last translation's.
 
 function askWebpage(link: string): Promise<string> {
   return ask({
@@ -763,7 +772,11 @@ async function fetchWebpage(url: string) {
   const controller = new AbortController();
   setState({ running: controller });
   stopBtn.focus();
-  metaEl.show("Fetching the page…");
+  fetchingPage = true;
+  setText(countEl, "Fetching the page…");
+  sourceStatus.textContent = "Fetching the page…";
+  /** Said when the fetch ends, unless the page took the box (its preview says enough). */
+  let outcome = "";
   let stopped = false;
   stopBtn.onclick = () => {
     stopped = true;
@@ -782,19 +795,25 @@ async function fetchWebpage(url: string) {
     }
     const page = (await res.json()) as Webpage;
     if (!page.markdown.trim()) {
-      fail("The page has no text to translate.");
+      outcome = "The page has no text to translate.";
+      showFieldError(textError, textInput, outcome);
       return;
     }
+    fetchingPage = false;
     loadSource(page.markdown, true);
     openUi.deselect();
-    metaEl.show(`Fetched “${page.title || page.url}”. Translate it when you are ready.`);
+    outcome = `Fetched “${page.title || page.url}”. Translate it when you are ready.`;
   } catch (e) {
     if (stopped) {
-      metaEl.show("Stopped.");
+      outcome = "Stopped.";
     } else {
-      fail(e instanceof ApiFailure ? describeWebpageError(e.body, e.status) : failureMessage(e));
+      outcome = e instanceof ApiFailure ? describeWebpageError(e.body, e.status) : failureMessage(e);
+      showFieldError(textError, textInput, outcome);
     }
   } finally {
+    fetchingPage = false;
+    refreshSelection();
+    sourceStatus.textContent = outcome;
     stopBtn.onclick = null;
     const hadFocus = document.activeElement === stopBtn || document.activeElement === document.body;
     setState({ running: null });
