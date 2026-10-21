@@ -88,6 +88,7 @@ const placeholderEl = $("placeholder");
 // The panes scroll when the text is longer than they are: then they take focus, so the keyboard can scroll them.
 focusableWhenScrolling(sourceArea, "Source text, rendered", true);
 focusableWhenScrolling(outputArea, "Translation text", true);
+focusableWhenScrolling(countEl, "Source status", true);
 /** The one line under the translation: progress, the result's numbers, a stop or an error. */
 const metaEl = $<MetaLine>("meta");
 const notesEl = $("notes");
