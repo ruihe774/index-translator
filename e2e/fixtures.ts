@@ -27,6 +27,18 @@ export interface MockKnobs {
     failWith?: string;
     voices?: Voice[];
   };
+  /**
+   * The mock browser of `POST /webpage` (the server allows `example.com` and `*.example.com`):
+   * `problem` makes it unavailable, `failWith` fails a fetch, `redirectTo` lands the page elsewhere.
+   */
+  webpage?: {
+    problem?: string;
+    title?: string;
+    markdown?: string;
+    redirectTo?: string;
+    delayMs?: number;
+    failWith?: string;
+  };
 }
 
 export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs">> {
@@ -36,6 +48,8 @@ export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs"
   launches: string[];
   /** `requests` are the utterances asked of the speech engine, in order. */
   speech: { requests: { text: string; lang: string; voice: string; speed: number }[] };
+  /** `requests` are the addresses asked of the mock browser, in order. */
+  webpage: { requests: string[]; aborted: number };
 }
 
 export interface Mock {

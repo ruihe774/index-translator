@@ -23,6 +23,7 @@ describe("loadConfig defaults", () => {
       maxQueue: 8,
       allowedOrigins: [],
       allowedHosts: [],
+      allowedWebpageDomains: [],
       openBrowser: true,
       devReload: false,
       speech: true,

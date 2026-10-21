@@ -6,8 +6,9 @@
 // A second, control server lets a test script what the mock engine says:
 //   GET    /mock           current knobs and the generations requested so far
 //   POST   /mock           set knobs: { chunks?, delayMs?, finish?, failWith?, failLaunch?, ready?,
-//                          speech?: { state?, delayMs?, audioSeconds?, failWith? } }; `speech` in the answer holds
-//                          the utterances requested from the mock speech engine
+//                          speech?: { state?, delayMs?, audioSeconds?, failWith? },
+//                          webpage?: { problem?, title?, markdown?, redirectTo?, delayMs?, failWith? } };
+//                          `speech` and `webpage` in the answer hold what the mock engines were asked
 //   DELETE /mock           reset knobs and forget recorded requests
 //   POST   /mock/restart   unload the engine so the next request loads its model again
 // Tests call it through e2e/fixtures.ts.
@@ -22,10 +23,13 @@ import {
   launcher,
   mock,
   mockSpeech,
+  mockWebpage,
   resetMock,
   resetMockSpeech,
+  resetMockWebpage,
   speechLauncher,
   waitReady,
+  webpageFetcher,
 } from "../test/helpers/mock-engine";
 
 const port = Number(process.env.E2E_PORT ?? 3100);
@@ -40,9 +44,11 @@ const app = await startApp(
     maxQueue: 1,
     defaultModel: CHAT,
     audioDir: join(import.meta.dir, "..", "vendor", "audio.cpp"),
+    allowedWebpageDomains: ["example.com", "*.example.com"],
   }),
   launcher,
   speechLauncher,
+  webpageFetcher,
 );
 await waitReady(app);
 
@@ -71,9 +77,13 @@ const control = Bun.serve({
       if (patch.speech) {
         Object.assign(mockSpeech, patch.speech);
       }
+      if (patch.webpage) {
+        Object.assign(mockWebpage, patch.webpage);
+      }
     } else if (req.method === "DELETE") {
       resetMock();
       resetMockSpeech();
+      resetMockWebpage();
       mock.requests.length = 0;
       mock.aborted = 0;
       mock.launches.length = 0;
@@ -83,7 +93,7 @@ const control = Bun.serve({
       ...rest,
       ...(image && { image: { bytes: image.length, png: image[0] === 0x89 && image[1] === 0x50 } }),
     }));
-    return Response.json({ ...mock, requests, models: { CHAT, DOCUMENT }, speech: mockSpeech });
+    return Response.json({ ...mock, requests, models: { CHAT, DOCUMENT }, speech: mockSpeech, webpage: mockWebpage });
   },
 });
 

@@ -17,6 +17,7 @@ names them and says where the full texts are. The AppImage carries this file in
 | cJSON, SentencePiece and the Abseil subset that comes with SentencePiece, in audio.cpp's source tree (`external/`) | Compiled into `libaudiocpp.so` | Each under its own license (MIT, Apache-2.0, Apache-2.0); the files are in audio.cpp's repository at the pinned commit | `external/*/LICENSE` there |
 | [libsoxr](https://sourceforge.net/projects/soxr/) (the SoX Resampler Library, `libsoxr.so.0`; `soxr.dll` in the Windows installer), version and commit pinned in `scripts/build_soxr.ts`, built unchanged | Resampling for audio.cpp (the voice samples) and for the Opus encoder (the speech) | LGPL-2.1 or later, Copyright (c) 2007-18 robs; the PFFFT code in it is under a BSD-like license (Copyright (c) 2013 Julien Pommier, and 2004 University Corporation for Atmospheric Research for the FFTPACK parts), stated in its source file; it is a separate shared library that can be replaced by another build of the same version, and its source is the repository at the pinned commit (the same files as the release tarball `soxr-0.1.3-Source.tar.xz`) | `vendor/soxr/LICENCE` and `vendor/soxr/COPYING.LGPL` |
 | minicelt (the `miniopus` branch of this app's repository, a Rust port of the CELT encoder of [libopus](https://opus-codec.org) built for WebAssembly, pinned by commit in `scripts/fetch_minicelt.ts`) | Encoding the speech stream as Opus; libsoxr also resamples the audio it takes | BSD-3-Clause, as a derivative of libopus (Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon), with the royalty-free patent licenses named in the text | `vendor/minicelt/COPYING` |
+| [turndown](https://github.com/mixmark-io/turndown) (its browser build, `dist/turndown.js` of the npm package), pinned in `scripts/fetch_turndown.ts` | Runs inside a web page the server opens: the page's HTML as Markdown | MIT, Copyright (c) 2017 Dom Christie | `vendor/turndown/LICENSE` |
 | [Bun](https://bun.sh) (`usr/bin/bun` in the AppImage) | JavaScript runtime and HTTP server | MIT for Bun itself; the executable also contains statically linked components under their own licenses, among them JavaScriptCore (LGPL-2.0 or later) | <https://bun.com/docs/project/licensing> |
 
 | [pdf-inspector](https://github.com/firecrawl/pdf-inspector), its WebAssembly build (`@firecrawl/pdf-inspector-wasm`), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: the text of a PDF page as Markdown | MIT, Copyright (c) 2026 Firecrawl; the binary embeds CMaps derived from Adobe's CMap resources (BSD 3-Clause, Copyright 1990-2009 Adobe Systems Incorporated) | `public/vendor/pdf-inspector/LICENSE` |
@@ -34,7 +35,8 @@ The AppImage is packed with [appimagetool](https://github.com/AppImage/appimaget
 AppImage file; their notices are in those projects' repositories.
 
 Not included in the AppImage and taken from the system: the C and C++ runtime libraries, `libgomp`,
-the Vulkan loader and the GPU driver, `curl` (used by `fetch`).
+the Vulkan loader and the GPU driver, `curl` (used by `fetch`), and the browser that opens web pages
+for translation (Chrome, Chromium, Edge or Brave; the system WebKit on macOS).
 
 The web app (`public/`) loads no fonts or scripts from the network. Its only third-party code is the
 two PDF libraries, undoc and the QOA codec above, in `public/vendor/`: files of this app's own server, downloaded by

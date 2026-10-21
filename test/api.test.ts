@@ -48,6 +48,7 @@ describe("metadata endpoints", () => {
       queue: { running: false, waiting: 0, max_waiting: 1 },
       // The test config points at directories that do not exist.
       speech: { status: "unavailable", error: "the speech engine is not installed; run bun scripts/build_audiocpp.ts" },
+      webpage: { status: "unavailable", error: "no domains are allowed; list them in ALLOWED_WEBPAGE_DOMAINS" },
     });
   });
 

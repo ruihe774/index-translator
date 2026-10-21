@@ -3,7 +3,17 @@
 import type { Server } from "bun";
 
 import { acceptWeight } from "./accept";
-import { hostAllowed, type HostRule, originAllowed, type OriginRule, parseHostRule, parseOriginRule } from "./access";
+import {
+  domainAllowed,
+  type DomainRule,
+  hostAllowed,
+  type HostRule,
+  originAllowed,
+  type OriginRule,
+  parseDomainRule,
+  parseHostRule,
+  parseOriginRule,
+} from "./access";
 import type {
   ErrorCode,
   ErrorDetails,
@@ -17,6 +27,7 @@ import type {
   TranslateResponse,
   Voice,
   VoiceList,
+  Webpage,
 } from "./api";
 import { soxrDir } from "./audiocpp-ffi";
 import { type Config, CONTEXT_MARGIN } from "./config";
@@ -57,6 +68,14 @@ import {
 } from "./speech";
 import { createStaticServer } from "./static";
 import { type Pcm, readWav } from "./wav";
+import {
+  MAX_WEBPAGE_FETCHES,
+  WebpageError,
+  type WebpageFetcher,
+  WebpageForbiddenError,
+  WebpageUnavailableError,
+  webViewFetcher,
+} from "./webpage";
 
 const API = "/api/v1";
 const DEFAULT_OUTPUT_RATIO = 4;
@@ -137,6 +156,15 @@ function errorResponse(e: unknown): Response {
   if (e instanceof SpeechError) {
     return json<ErrorResponse>({ error: { code: "speech_error", message: e.message } }, 502);
   }
+  if (e instanceof WebpageError) {
+    return json<ErrorResponse>({ error: { code: "webpage_error", message: e.message } }, 502);
+  }
+  if (e instanceof WebpageForbiddenError) {
+    return json<ErrorResponse>({ error: { code: "forbidden_webpage", message: e.message } }, 403);
+  }
+  if (e instanceof WebpageUnavailableError) {
+    return json<ErrorResponse>({ error: { code: "webpage_unavailable", message: e.message } }, 503);
+  }
   console.error("[api] unexpected error:", e);
   return json<ErrorResponse>({ error: { code: "internal_error", message: "internal server error" } }, 500);
 }
@@ -186,10 +214,11 @@ function optionalStringArray(body: Record<string, unknown>, field: string): stri
 
 const LOOPBACK_HOSTS = ["localhost", "127.0.0.1", "::1"];
 
-/** What `checkHost` and `checkOrigin` compare against, parsed once; an invalid entry throws here. */
+/** What `checkHost`, `checkOrigin` and `POST /webpage` compare against, parsed once; an invalid entry throws here. */
 interface Access {
   hosts: HostRule[];
   origins: OriginRule[];
+  webpages: DomainRule[];
 }
 
 function compileAccess(cfg: Config): Access {
@@ -198,6 +227,7 @@ function compileAccess(cfg: Config): Access {
   return {
     hosts: [...LOOPBACK_HOSTS, own].map(exact).concat(cfg.allowedHosts.map(parseHostRule)),
     origins: cfg.allowedOrigins.map(parseOriginRule),
+    webpages: cfg.allowedWebpageDomains.map(parseDomainRule),
   };
 }
 
@@ -467,6 +497,7 @@ export async function startApp(
   cfg: Config,
   launch: Launcher = launchNative,
   launchSpeech: SpeechLauncher = nativeSpeech,
+  fetchPage: WebpageFetcher = webViewFetcher(),
 ): Promise<App> {
   const access = compileAccess(cfg);
   const engine = new Engine(cfg, launch);
@@ -1010,6 +1041,58 @@ export async function startApp(
     }
   }
 
+  /** Why `POST /webpage` cannot be used, or undefined when it can be tried. */
+  async function webpageProblem(): Promise<string | undefined> {
+    if (access.webpages.length === 0) {
+      return "no domains are allowed; list them in ALLOWED_WEBPAGE_DOMAINS";
+    }
+    return fetchPage.problem();
+  }
+
+  let webpagesRunning = 0;
+
+  async function fetchWebpage(body: Record<string, unknown>, signal: AbortSignal): Promise<Webpage> {
+    const raw = optionalString(body, "url", 8192)?.trim();
+    let url: URL | undefined;
+    try {
+      url = raw ? new URL(raw) : undefined;
+    } catch {
+      // reported below
+    }
+    if (!url || (url.protocol !== "http:" && url.protocol !== "https:") || !url.hostname) {
+      throw invalid("url must be an absolute http or https address", "url");
+    }
+    if (url.username || url.password) {
+      throw invalid("url must not carry a user name or password", "url");
+    }
+    const problem = await webpageProblem();
+    if (problem) {
+      throw new WebpageUnavailableError(problem);
+    }
+    const allowed = (u: URL) =>
+      (u.protocol === "http:" || u.protocol === "https:") && domainAllowed(access.webpages, u);
+    if (!allowed(url)) {
+      throw new WebpageForbiddenError(`${url.hostname} is not in ALLOWED_WEBPAGE_DOMAINS`);
+    }
+    if (webpagesRunning >= MAX_WEBPAGE_FETCHES) {
+      throw new ApiError(
+        429,
+        "queue_full",
+        `${MAX_WEBPAGE_FETCHES} web pages are being fetched already; try again in a moment`,
+        undefined,
+        { "retry-after": "5" },
+      );
+    }
+    webpagesRunning++;
+    try {
+      return await fetchPage.fetch(url, allowed, signal);
+    } catch (e) {
+      throw signal.aborted ? cancelled() : e;
+    } finally {
+      webpagesRunning--;
+    }
+  }
+
   const methodNotAllowed = (allow: string) =>
     errorResponse(new ApiError(405, "method_not_allowed", `use ${allow}`, undefined, { allow }));
 
@@ -1041,6 +1124,7 @@ export async function startApp(
               return methodNotAllowed("GET");
             }
             const memory = await engine.gpuMemory();
+            const webpageStatus = await webpageProblem();
             return json<Health>(
               {
                 status: engine.state,
@@ -1050,6 +1134,7 @@ export async function startApp(
                 ...(memory && { gpu_memory: { total_bytes: memory.total, free_bytes: memory.free } }),
                 queue: { running: queue.running, waiting: queue.depth, max_waiting: cfg.maxQueue },
                 speech: { status: speech.state, error: speech.error },
+                webpage: webpageStatus ? { status: "unavailable", error: webpageStatus } : { status: "available" },
               },
               engine.state === "ready" ? 200 : 503,
             );
@@ -1110,6 +1195,15 @@ export async function startApp(
             // The first request starts the engine and loads the model.
             server.timeout(req, 0);
             return await speak(input, req);
+          }
+          case "/webpage": {
+            if (req.method !== "POST") {
+              return methodNotAllowed("POST");
+            }
+            const body = await parseBody(req);
+            // Opening a page may take up to its own limit (src/webpage.ts), beyond Bun's idle timeout.
+            server.timeout(req, 0);
+            return json<Webpage>(await fetchWebpage(body, req.signal));
           }
           case "/openapi.yaml": {
             if (req.method !== "GET") {

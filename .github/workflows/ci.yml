@@ -55,6 +55,10 @@ jobs:
       - name: Fetch the Opus encoder
         run: bun scripts/fetch_minicelt.ts
 
+      # test/webpage.test.ts opens pages in the runner's Chrome and converts them with turndown.
+      - name: Fetch the web page converter
+        run: bun scripts/fetch_turndown.ts
+
       - name: Cache libsoxr
         id: soxr
         uses: actions/cache@v6
@@ -195,6 +199,9 @@ jobs:
 
       - name: Fetch the Opus encoder
         run: bun scripts/fetch_minicelt.ts
+
+      - name: Fetch the web page converter
+        run: bun scripts/fetch_turndown.ts
 
       - name: Build the AppImage
         run: bun scripts/build_appimage.ts
@@ -426,6 +433,9 @@ jobs:
 
       - name: Fetch the Opus encoder
         run: bun scripts/fetch_minicelt.ts
+
+      - name: Fetch the web page converter
+        run: bun scripts/fetch_turndown.ts
 
       - name: Build the installer
         run: bun scripts/build_installer.ts

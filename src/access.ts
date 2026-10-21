@@ -1,9 +1,10 @@
 /**
- * The patterns of `ALLOWED_HOSTS` and `ALLOWED_ORIGINS`, parsed once at startup.
+ * The patterns of `ALLOWED_HOSTS`, `ALLOWED_ORIGINS` and `ALLOWED_WEBPAGE_DOMAINS`, parsed once at startup.
  *
  * Hosts (the `Host` header, against DNS rebinding): `name`, `*.name`, either with `:port`.
  * Origins (the `Origin` header, against other web pages): `scheme://name[:port]` or `scheme://*.name[:port]`.
  * A bare `*` is refused in both: it would turn the protection off.
+ * Webpage domains (what `POST /webpage` may open): `name`, `*.name` or `*`.
  */
 
 const NAME_CHARS = /^[^\s/?#@*\\]+$/;
@@ -108,6 +109,43 @@ export function parseOriginRule(entry: string): OriginRule {
 
 function nameMatches(rule: { name: string; wildcard: boolean }, host: string): boolean {
   return rule.wildcard ? host.length > rule.name.length + 1 && host.endsWith(`.${rule.name}`) : host === rule.name;
+}
+
+/**
+ * A pattern of `ALLOWED_WEBPAGE_DOMAINS`: the hosts whose pages `POST /webpage` may open. `name` or `*.name`
+ * as in `ALLOWED_HOSTS` but without a port (any port matches), or a bare `*`, which allows every host:
+ * here the server is the one making the request, on behalf of a user who can reach it anyway.
+ */
+export type DomainRule = { any: true } | { any: false; name: string; wildcard: boolean };
+
+export function parseDomainRule(entry: string): DomainRule {
+  const setting = "ALLOWED_WEBPAGE_DOMAINS";
+  const value = entry.trim().toLowerCase();
+  if (value === "*") {
+    return { any: true };
+  }
+  if (value.includes("://") || value.includes("/")) {
+    fail(setting, entry, "must be a domain (`example.com`), without a scheme or a path");
+  }
+  const wildcard = value.startsWith("*.");
+  const bare = wildcard ? value.slice(2) : value;
+  if (!bare || !NAME_CHARS.test(bare)) {
+    fail(setting, entry, "is not a domain; use `example.com`, `*.example.com` or `*`");
+  }
+  const name = canonicalName(bare);
+  if (!name) {
+    fail(setting, entry, "is not a valid domain");
+  }
+  if (wildcard && (name.includes(":") || /^[\d.]+$/.test(name))) {
+    fail(setting, entry, "puts a wildcard on an IP address, which has no subdomains");
+  }
+  return { any: false, name, wildcard };
+}
+
+/** Whether `url`'s host is one of `rules`. */
+export function domainAllowed(rules: readonly DomainRule[], url: URL): boolean {
+  const host = url.hostname.replace(/^\[(.*)\]$/, "$1");
+  return rules.some((r) => r.any || nameMatches(r, host));
 }
 
 /** Whether the `Host` header value (`name`, `name:port`, `[v6]:port`) is one of `rules`. */

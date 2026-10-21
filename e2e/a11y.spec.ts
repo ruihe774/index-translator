@@ -478,6 +478,89 @@ test("the link dialog needs no horizontal scrolling at 320 px and its buttons ar
   }
 });
 
+// A web address alone in the box: the same dialog asks whether to fetch the page (e2e/webpage.spec.ts).
+
+const WEBPAGE_DIALOG = (page: Page) => page.getByRole("dialog", { name: "Fetch this web page?" });
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`the fetch-a-page dialog, the fetch and the fetched page pass axe in ${scheme} mode`, async ({ app, mock }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await mock.set({ webpage: { delayMs: 500 } });
+    await app.open();
+    await expect(app.engine).toContainText("Engine ready");
+    await app.text.fill("example.com/post");
+    await app.translate.click();
+    await expect(WEBPAGE_DIALOG(app.page)).toBeVisible();
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    await WEBPAGE_DIALOG(app.page).getByRole("button", { name: "Fetch page" }).click();
+    await expect(app.meta).toHaveText("Fetching the page…");
+    await expect(app.meta).toHaveAttribute("role", "status");
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    await expect(app.meta).toContainText("Fetched");
+    await app.page.evaluate(() => Promise.all(document.getAnimations().map((a) => a.finished)));
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+  });
+}
+
+test("the fetch-a-page dialog is keyboard operable: Cancel first, focus stays in, Esc returns it to Translate", async ({
+  app,
+}) => {
+  await app.open();
+  await expect(app.engine).toContainText("Engine ready");
+  await app.text.fill("https://example.com/");
+  await app.translate.focus();
+  await app.page.keyboard.press("Enter");
+  const dialog = WEBPAGE_DIALOG(app.page);
+  await expect(dialog).toBeVisible();
+  await expect(dialog).toHaveAccessibleDescription(/The text is a web address/);
+  const buttons = dialog.getByRole("button");
+  await expect(buttons).toHaveText(["Cancel", "Translate as text", "Fetch page"]);
+  await expect(buttons.first()).toBeFocused();
+  for (let i = 0; i < 5; i++) {
+    await app.page.keyboard.press("Tab");
+    expect(
+      await app.page.evaluate(
+        () => document.activeElement === document.body || !!document.activeElement?.closest("dialog"),
+      ),
+    ).toBe(true);
+  }
+  await app.page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+  await expect(app.translate).toBeFocused();
+
+  // Fetching by keyboard: focus goes to Stop while it runs, to Translate when the page is in.
+  await app.page.keyboard.press("Enter");
+  await expect(dialog).toBeVisible();
+  await dialog.getByRole("button", { name: "Fetch page" }).focus();
+  await app.page.keyboard.press("Enter");
+  await expect(app.meta).toContainText("Fetched");
+  await expect(app.translate).toBeFocused();
+});
+
+test("the fetch-a-page dialog needs no horizontal scrolling at 320 px and its buttons are 44 px", async ({ app }) => {
+  await app.page.setViewportSize({ width: 320, height: 640 });
+  await app.open();
+  await expect(app.engine).toContainText("Engine ready");
+  await app.text.fill(`https://www.example.com/${"a-long-path-segment/".repeat(6)}`);
+  await app.translate.click();
+  const dialog = WEBPAGE_DIALOG(app.page);
+  await expect(dialog).toBeVisible();
+  const box = await dialog.boundingBox();
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(320);
+  expect(await dialog.evaluate((d) => d.scrollWidth - d.clientWidth)).toBeLessThanOrEqual(0);
+  for (const b of await dialog.getByRole("button").all()) {
+    const size = (await b.boundingBox())!;
+    expect(size.height).toBeGreaterThanOrEqual(44);
+    expect(size.x + size.width).toBeLessThanOrEqual(box!.x + box!.width);
+  }
+});
+
 test("the Model switch buttons report their state and are reachable by keyboard", async ({ app }) => {
   await app.open();
   await app.model("Automatic").focus();

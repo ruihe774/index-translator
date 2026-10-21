@@ -51,6 +51,10 @@ info:
     the same size. Closing the connection cancels the utterance; what that does depends on how
     far it got, see `POST /speech`.
 
+    **Web pages.** `POST /webpage` opens a web page in a headless browser on the server and
+    answers its content as Markdown, for a client to translate as a text. It is off unless the
+    server lists the domains it may open (`ALLOWED_WEBPAGE_DOMAINS`).
+
     **Errors.** Every error response has the same JSON envelope, see `Error`. Any `/api/v1`
     path called with a method it does not have answers `405` (`method_not_allowed`, with an
     `Allow` header), and an unknown path `404` (`not_found`). Every operation can also answer
@@ -60,6 +64,7 @@ servers:
 tags:
   - name: translation
   - name: speech
+  - name: webpage
   - name: service
 paths:
   /speech:
@@ -553,6 +558,101 @@ paths:
           $ref: "#/components/responses/Forbidden"
         "500":
           $ref: "#/components/responses/InternalError"
+  /webpage:
+    post:
+      tags: [webpage]
+      operationId: fetchWebpage
+      summary: Fetch a web page as Markdown
+      description: |
+        Opens `url` in a headless browser on the server (the system WebKit on macOS, an installed
+        Chrome, Chromium, Edge or Brave elsewhere), waits for the page to load (at most 30
+        seconds, then it is read as it is) and two seconds more for its scripts to render, and answers its content as Markdown. Nothing is
+        translated: the client puts the Markdown in front of the user, who translates it with
+        `POST /translate`.
+
+        The page runs its scripts as in a browser, in a private session without cookies, so what
+        is taken is what a reader who is not signed in sees. When the page marks its content with
+        one `<main>` (or `role="main"`) the rest is left out, and within it one `<article>` if
+        there is exactly one. Navigation, sidebars, the page's own header and footer, forms,
+        scripts and whatever the page hides are left out. Links and images keep absolute
+        addresses; a link that is not `http`, `https` or `mailto` keeps only its text.
+
+        The server opens only hosts that `ALLOWED_WEBPAGE_DOMAINS` covers (`example.com`,
+        `*.example.com` for its subdomains, or `*` for any host), on any port; anything else is
+        refused (`403`, `forbidden_webpage`). A page that redirects, or whose script moves on, to
+        a host outside the list is refused too, but the browser will have made that request. With
+        no domains listed every request is `503` (`webpage_unavailable`), and `webpage` in
+        `GET /health` says so.
+
+        At most two pages are fetched at a time (`429`, `queue_full`); a fetch takes at most 60
+        seconds. Closing the connection stops it. It does not use the translation queue.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/WebpageRequest"
+            example:
+              url: https://example.com/articles/42
+      responses:
+        "200":
+          description: The page's content.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Webpage"
+        "400":
+          description: "`url` is missing or not an absolute `http` or `https` address (`invalid_request`, `details.field` `url`)."
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          description: |
+            The page's host is not in `ALLOWED_WEBPAGE_DOMAINS`, or the page went on to one that is
+            not (`forbidden_webpage`); or the call itself is refused, see `Forbidden`
+            (`forbidden_origin`, `forbidden_host`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "413":
+          description: The request body exceeds 4 MiB (`body_too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          description: Two pages are being fetched already (`queue_full`).
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+              description: Suggested delay in seconds.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          description: |
+            The page could not be opened (the name does not resolve, the connection fails), did not
+            finish within 60 seconds, or could not be read (`webpage_error`). The message says which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: |
+            Fetching web pages is not available (`webpage_unavailable`): no domains are allowed, the
+            Markdown converter (turndown) is not installed, or no browser was found. The message says which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
   /models:
     get:
       tags: [service]
@@ -1145,6 +1245,41 @@ components:
             error:
               type: string
               description: Why speech is `unavailable`, or why the model could not be loaded last time.
+        webpage:
+          type: object
+          description: |
+            `POST /webpage`. `available` when domains are allowed and the Markdown converter is
+            installed; whether a browser is there shows only when a page is fetched.
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [available, unavailable]
+            error:
+              type: string
+              description: Why fetching web pages is `unavailable`.
+    WebpageRequest:
+      type: object
+      required: [url]
+      properties:
+        url:
+          type: string
+          format: uri
+          maxLength: 8192
+          description: An absolute `http` or `https` address, without a user name or password.
+    Webpage:
+      type: object
+      required: [url, title, markdown]
+      properties:
+        url:
+          type: string
+          description: Where the page ended up, after redirects.
+        title:
+          type: string
+          description: The page's title; empty when it has none.
+        markdown:
+          type: string
+          description: The page's content as Markdown (CommonMark, ATX headings, fenced code); empty when it has no text.
     SpeechStatus:
       type: string
       enum: [unavailable, stopped, starting, ready, error]
@@ -1326,6 +1461,9 @@ components:
                 - engine_unavailable
                 - speech_error
                 - speech_unavailable
+                - webpage_error
+                - webpage_unavailable
+                - forbidden_webpage
                 - not_found
                 - method_not_allowed
                 - unsupported_media_type

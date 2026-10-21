@@ -142,12 +142,14 @@ bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from 
 bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, example voices
 bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and compress speech in the browser (13 MB), into public/vendor/
+bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into Markdown (27 KB), into vendor/
 ```
 
 Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
 Markdown files, and says that PDF and Word support is not installed. Reading aloud then sends its audio
 as QOA or WAV instead of the smaller Opus (`bun scripts/fetch_minicelt.ts` installs the Opus encoder; it needs
-the libsoxr that `build_soxr.ts` builds).
+the libsoxr that `build_soxr.ts` builds). Translating a web page by its address needs `fetch_turndown.ts`
+and is off until you allow some sites (see Translate a web page, below).
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and `build_soxr.ts` and download only the
 translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.
@@ -260,6 +262,31 @@ mixes several. **Clear** removes the picture and brings the text box back.
   fills a 16 GiB card. If the server says that images cannot be
   translated, the encoder file is missing: run `fetch` again (see [Install](#install)).
 - A transparent background is treated as white.
+
+</details>
+
+<details>
+<summary><b>Translate a web page</b>: paste its address</summary>
+
+
+Paste the address of a page into the box, alone (`https://example.com/post`, or just
+`example.com/post`), and click **Translate**. The app asks first: **Fetch page** has the server open
+the page and put its text into the box as Markdown, shown formatted (**Raw** brings back the text box);
+**Translate as text** translates the address itself; **Cancel** does neither. Look the text over, then
+click **Translate** again to translate it. **Stop** ends a fetch that takes long.
+
+The server opens the page in a browser without a window, as a visitor who is not signed in: scripts
+run, nothing you are signed in to is seen. When the page marks out its main content (an article, or
+the page's main part), only that is taken; menus, sidebars, the page's header and footer, forms and
+whatever the page hides are left out. Links keep their full addresses.
+
+This is the one feature that makes the server go on the internet, so it is off until you list the
+sites it may open in `ALLOWED_WEBPAGE_DOMAINS` (see Settings): for example
+`ALLOWED_WEBPAGE_DOMAINS=en.wikipedia.org,*.example.com`, or `*` for any site. A page on another site,
+or one that sends the browser to another site, is refused. The server needs a browser to open pages
+with: Chrome, Chromium, Edge or Brave installed (set `BUN_CHROME_PATH` to its program if it is
+somewhere unusual; on macOS the system's WebKit is used). Only the address goes to the server; the
+page's text comes back to your browser and is translated like any other text.
 
 </details>
 
@@ -400,6 +427,7 @@ closed); flags work as above.
 | `LLAMA_THREADS` | half the CPU threads | CPU threads for the engine; matters when running on the CPU |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
+| `ALLOWED_WEBPAGE_DOMAINS` | none (off) | Sites whose pages the app may fetch for translation, comma separated: `example.com`, `*.example.com` (its subdomains) or `*` (any site) |
 | `MODELS_DIR` | `models/`; AppImage: `~/.local/share/index-translator/models`; Windows installer: `models\` in the install folder | Folder with the models; `fetch` downloads into it |
 | `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices`; Windows installer: `voices\` in the install folder | Folder with the voice recordings (`.wav`) |
 | `SPEECH_IDLE_UNLOAD` | `300` | Seconds without listening after which the speech model leaves the GPU; `0` keeps it loaded |

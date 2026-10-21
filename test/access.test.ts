@@ -1,10 +1,18 @@
 import { describe, expect, test } from "bun:test";
 
-import { hostAllowed, originAllowed, parseHostRule, parseOriginRule } from "../src/access";
+import {
+  domainAllowed,
+  hostAllowed,
+  originAllowed,
+  parseDomainRule,
+  parseHostRule,
+  parseOriginRule,
+} from "../src/access";
 import { loadConfig } from "../src/config";
 
 const hosts = (...entries: string[]) => entries.map(parseHostRule);
 const origins = (...entries: string[]) => entries.map(parseOriginRule);
+const domains = (...entries: string[]) => entries.map(parseDomainRule);
 
 describe("ALLOWED_HOSTS patterns", () => {
   test("a name matches any port, in any case", () => {
@@ -98,15 +106,60 @@ describe("ALLOWED_ORIGINS patterns", () => {
   });
 });
 
+describe("ALLOWED_WEBPAGE_DOMAINS patterns", () => {
+  const allowed = (rules: string[], url: string) => domainAllowed(domains(...rules), new URL(url));
+
+  test("a name matches that host on any scheme and port, in any case", () => {
+    expect(allowed(["Example.com"], "https://example.com/a")).toBe(true);
+    expect(allowed(["example.com"], "http://EXAMPLE.com:8080/")).toBe(true);
+    expect(allowed(["example.com"], "https://www.example.com/")).toBe(false);
+    expect(allowed(["example.com"], "https://example.com.evil.test/")).toBe(false);
+  });
+
+  test("*.name matches subdomains only; * matches every host", () => {
+    expect(allowed(["*.example.com"], "https://a.b.example.com/")).toBe(true);
+    expect(allowed(["*.example.com"], "https://example.com/")).toBe(false);
+    expect(allowed(["*.example.com"], "https://badexample.com/")).toBe(false);
+    expect(allowed(["*"], "https://anything.test/")).toBe(true);
+    expect(allowed(["*"], "http://127.0.0.1:3000/")).toBe(true);
+    expect(allowed([], "https://example.com/")).toBe(false);
+  });
+
+  test("IP addresses and international names compare in their canonical form", () => {
+    expect(allowed(["[::1]"], "http://[::1]:8080/")).toBe(true);
+    expect(allowed(["::1"], "http://[::1]/")).toBe(true);
+    expect(allowed(["192.168.0.1"], "http://192.168.0.1/")).toBe(true);
+    expect(allowed(["bücher.example"], "https://xn--bcher-kva.example/")).toBe(true);
+  });
+
+  test("entries that could never match are refused", () => {
+    for (const bad of [
+      "https://example.com",
+      "example.com/path",
+      "example.com:8080",
+      "*.192.168.0.1",
+      "a*.example",
+      "*.",
+    ]) {
+      expect(() => parseDomainRule(bad)).toThrow(/ALLOWED_WEBPAGE_DOMAINS/);
+    }
+  });
+});
+
 describe("loadConfig validates the lists", () => {
   test("a bad entry stops startup, with the setting named", () => {
     expect(() => loadConfig({ ALLOWED_HOSTS: "*" }, [])).toThrow(/ALLOWED_HOSTS/);
     expect(() => loadConfig({}, ["--allowed-origins", "*"])).toThrow(/ALLOWED_ORIGINS/);
+    expect(() => loadConfig({}, ["--allowed-webpage-domains", "https://a.example"])).toThrow(/ALLOWED_WEBPAGE_DOMAINS/);
   });
 
   test("patterns pass through unchanged", () => {
     const cfg = loadConfig({ ALLOWED_HOSTS: "*.example.com, a:80", ALLOWED_ORIGINS: "https://*.example.com" }, []);
     expect(cfg.allowedHosts).toStrictEqual(["*.example.com", "a:80"]);
     expect(cfg.allowedOrigins).toStrictEqual(["https://*.example.com"]);
+    expect(loadConfig({ ALLOWED_WEBPAGE_DOMAINS: "*, example.com" }, []).allowedWebpageDomains).toStrictEqual([
+      "*",
+      "example.com",
+    ]);
   });
 });

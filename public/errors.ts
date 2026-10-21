@@ -40,6 +40,15 @@ export function describeError(e: ApiErrorBody | undefined, status?: number): str
     case "speech_error": {
       return `Reading aloud failed${e.message ? `: ${e.message}` : ""}.`;
     }
+    case "webpage_unavailable": {
+      return `Web pages cannot be fetched on this server${e.message ? `: ${e.message}` : ""}.`;
+    }
+    case "forbidden_webpage": {
+      return `This server may not fetch that page${e.message ? `: ${e.message}` : ""}.`;
+    }
+    case "webpage_error": {
+      return `The page could not be fetched${e.message ? `: ${e.message}` : ""}.`;
+    }
     default: {
       break;
     }
@@ -55,4 +64,12 @@ export function describeError(e: ApiErrorBody | undefined, status?: number): str
     return e.message;
   }
   return status ? `The server answered with an error (HTTP ${status}).` : "Something went wrong.";
+}
+
+/** `describeError` for `POST /webpage`, whose full queue is the server's few browser tabs, not the translator's. */
+export function describeWebpageError(e: ApiErrorBody | undefined, status?: number): string {
+  if (e?.code === "queue_full" || (!e?.code && status === 429)) {
+    return "Other web pages are being fetched. Try again in a moment.";
+  }
+  return describeError(e, status);
 }

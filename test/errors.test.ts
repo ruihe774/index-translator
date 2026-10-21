@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { type ApiErrorBody, describeError } from "../public/errors";
+import { type ApiErrorBody, describeError, describeWebpageError } from "../public/errors";
 
 // The same grouping the browser uses, so the expected numbers match on any locale.
 const fmt = (n: number) => n.toLocaleString();
@@ -169,5 +169,26 @@ describe("describeError: fallbacks", () => {
 
   test("an error event with no message and status 0 says something went wrong", () => {
     expect(describeError({ code: "internal_error" }, 0)).toBe("Something went wrong.");
+  });
+});
+
+describe("describeWebpageError", () => {
+  test("says what went wrong with the page, in the server's words", () => {
+    expect(describeWebpageError({ code: "webpage_error", message: "net::ERR_NAME_NOT_RESOLVED" }, 502)).toBe(
+      "The page could not be fetched: net::ERR_NAME_NOT_RESOLVED.",
+    );
+    expect(describeWebpageError({ code: "forbidden_webpage", message: "a.test is not allowed" }, 403)).toBe(
+      "This server may not fetch that page: a.test is not allowed.",
+    );
+    expect(describeWebpageError({ code: "webpage_unavailable" }, 503)).toBe(
+      "Web pages cannot be fetched on this server.",
+    );
+  });
+
+  test("a full queue is the fetches, not the translator", () => {
+    expect(describeWebpageError({ code: "queue_full", message: "x" }, 429)).toBe(
+      "Other web pages are being fetched. Try again in a moment.",
+    );
+    expect(describeWebpageError(undefined, 429)).toBe("Other web pages are being fetched. Try again in a moment.");
   });
 });

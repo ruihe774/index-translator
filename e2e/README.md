@@ -18,6 +18,10 @@
 - `speech.spec.ts` also runs the QOA stream (the default way speech reaches the page) against the
   real codec in `public/vendor/qoa/`, and the fallbacks to WAV (codec files not served; a stream
   that cannot be decoded).
+- `webpage.spec.ts`: a web address alone in the box, against the mock browser of `POST /webpage`,
+  which answers every page with set Markdown and records the addresses (`webpage` in `/mock`); the
+  mock server allows `example.com` and `*.example.com`. The real browser path is
+  `test/webpage.test.ts` (`bun test`).
 - `integration.spec.ts`: real page, API stubbed with `page.route`, for error codes and SSE framing.
 
 Setup: `bun install`, then `bunx playwright install chromium`, or set `CHROMIUM_PATH` to an

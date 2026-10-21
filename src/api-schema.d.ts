@@ -236,6 +236,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/webpage": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Fetch a web page as Markdown
+         * @description Opens `url` in a headless browser on the server (the system WebKit on macOS, an installed
+         *     Chrome, Chromium, Edge or Brave elsewhere), waits for the page to load (at most 30
+         *     seconds, then it is read as it is) and two seconds more for its scripts to render, and answers its content as Markdown. Nothing is
+         *     translated: the client puts the Markdown in front of the user, who translates it with
+         *     `POST /translate`.
+         *
+         *     The page runs its scripts as in a browser, in a private session without cookies, so what
+         *     is taken is what a reader who is not signed in sees. When the page marks its content with
+         *     one `<main>` (or `role="main"`) the rest is left out, and within it one `<article>` if
+         *     there is exactly one. Navigation, sidebars, the page's own header and footer, forms,
+         *     scripts and whatever the page hides are left out. Links and images keep absolute
+         *     addresses; a link that is not `http`, `https` or `mailto` keeps only its text.
+         *
+         *     The server opens only hosts that `ALLOWED_WEBPAGE_DOMAINS` covers (`example.com`,
+         *     `*.example.com` for its subdomains, or `*` for any host), on any port; anything else is
+         *     refused (`403`, `forbidden_webpage`). A page that redirects, or whose script moves on, to
+         *     a host outside the list is refused too, but the browser will have made that request. With
+         *     no domains listed every request is `503` (`webpage_unavailable`), and `webpage` in
+         *     `GET /health` says so.
+         *
+         *     At most two pages are fetched at a time (`429`, `queue_full`); a fetch takes at most 60
+         *     seconds. Closing the connection stops it. It does not use the translation queue.
+         */
+        post: operations["fetchWebpage"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/models": {
         parameters: {
             query?: never;
@@ -585,6 +626,31 @@ export interface components {
                 /** @description Why speech is `unavailable`, or why the model could not be loaded last time. */
                 error?: string;
             };
+            /**
+             * @description `POST /webpage`. `available` when domains are allowed and the Markdown converter is
+             *     installed; whether a browser is there shows only when a page is fetched.
+             */
+            webpage?: {
+                /** @enum {string} */
+                status: "available" | "unavailable";
+                /** @description Why fetching web pages is `unavailable`. */
+                error?: string;
+            };
+        };
+        WebpageRequest: {
+            /**
+             * Format: uri
+             * @description An absolute `http` or `https` address, without a user name or password.
+             */
+            url: string;
+        };
+        Webpage: {
+            /** @description Where the page ended up, after redirects. */
+            url: string;
+            /** @description The page's title; empty when it has none. */
+            title: string;
+            /** @description The page's content as Markdown (CommonMark, ATX headings, fenced code); empty when it has no text. */
+            markdown: string;
         };
         /**
          * @description `unavailable`: turned off, or the engine or its model is not installed. `stopped`:
@@ -690,7 +756,7 @@ export interface components {
                  *     (see `ErrorEvent`): a client that closed its connection never sees a response.
                  * @enum {string}
                  */
-                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
+                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
                 /** @description For people, not for programs; its wording can change. Go by `code`. */
                 message: string;
                 details?: components["schemas"]["ErrorDetails"];
@@ -884,6 +950,8 @@ export type Timings = components['schemas']['Timings'];
 export type Limits = components['schemas']['Limits'];
 export type Language = components['schemas']['Language'];
 export type Health = components['schemas']['Health'];
+export type WebpageRequest = components['schemas']['WebpageRequest'];
+export type Webpage = components['schemas']['Webpage'];
 export type SpeechStatus = components['schemas']['SpeechStatus'];
 export type SpeechRequest = components['schemas']['SpeechRequest'];
 export type Voice = components['schemas']['Voice'];
@@ -1209,6 +1277,103 @@ export interface operations {
                 headers: {
                     /** @description Suggested delay in seconds (2). */
                     "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    fetchWebpage: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "url": "https://example.com/articles/42"
+                 *     }
+                 */
+                "application/json": components["schemas"]["WebpageRequest"];
+            };
+        };
+        responses: {
+            /** @description The page's content. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Webpage"];
+                };
+            };
+            /** @description `url` is missing or not an absolute `http` or `https` address (`invalid_request`, `details.field` `url`). */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description The page's host is not in `ALLOWED_WEBPAGE_DOMAINS`, or the page went on to one that is
+             *     not (`forbidden_webpage`); or the call itself is refused, see `Forbidden`
+             *     (`forbidden_origin`, `forbidden_host`).
+             */
+            403: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /** @description The request body exceeds 4 MiB (`body_too_large`). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            415: components["responses"]["UnsupportedMediaType"];
+            /** @description Two pages are being fetched already (`queue_full`). */
+            429: {
+                headers: {
+                    /** @description Suggested delay in seconds. */
+                    "Retry-After"?: number;
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            500: components["responses"]["InternalError"];
+            /**
+             * @description The page could not be opened (the name does not resolve, the connection fails), did not
+             *     finish within 60 seconds, or could not be read (`webpage_error`). The message says which.
+             */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description Fetching web pages is not available (`webpage_unavailable`): no domains are allowed, the
+             *     Markdown converter (turndown) is not installed, or no browser was found. The message says which.
+             */
+            503: {
+                headers: {
                     [name: string]: unknown;
                 };
                 content: {

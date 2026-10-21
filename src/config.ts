@@ -1,6 +1,6 @@
 import { join, resolve } from "node:path";
 
-import { parseHostRule, parseOriginRule } from "./access";
+import { parseDomainRule, parseHostRule, parseOriginRule } from "./access";
 import { DEFAULT_MODEL_ID, findModel } from "./models";
 
 const root = resolve(import.meta.dir, "..");
@@ -54,6 +54,8 @@ export interface Config {
   allowedOrigins: string[];
   /** Host names besides loopback and HOST that /api/v1 accepts, e.g. behind a proxy. */
   allowedHosts: string[];
+  /** Domains whose pages `POST /webpage` may open (`example.com`, `*.example.com`, `*`); none turns it off. */
+  allowedWebpageDomains: string[];
   /** Open the web app in the default browser once the server is listening. */
   openBrowser: boolean;
   /** Development: reload the open page when `public/` changes or the server restarts. */
@@ -80,6 +82,7 @@ export const SETTING_NAMES = [
   "PORT",
   "ALLOWED_ORIGINS",
   "ALLOWED_HOSTS",
+  "ALLOWED_WEBPAGE_DOMAINS",
   "MODELS_DIR",
   "DEFAULT_MODEL",
   "CTX_SIZE",
@@ -148,9 +151,11 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
   }
   const allowedOrigins = list(env, "ALLOWED_ORIGINS");
   const allowedHosts = list(env, "ALLOWED_HOSTS");
+  const allowedWebpageDomains = list(env, "ALLOWED_WEBPAGE_DOMAINS");
   // Fail at startup on an entry that could never match, rather than refuse requests later.
   void allowedOrigins.map(parseOriginRule);
   void allowedHosts.map(parseHostRule);
+  void allowedWebpageDomains.map(parseDomainRule);
   return {
     host: env.HOST ?? "127.0.0.1",
     port: int(env, "PORT", 3000, { max: 65_535 }),
@@ -167,6 +172,7 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     maxQueue: int(env, "MAX_QUEUE", 8),
     allowedOrigins,
     allowedHosts,
+    allowedWebpageDomains,
     openBrowser: env.OPEN_BROWSER !== "0",
     devReload: env.DEV_RELOAD === "1",
     speech: env.SPEECH !== "0",
@@ -188,6 +194,8 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
     "browser origins allowed to call the API cross-origin, comma separated: https://app.example.com, https://*.example.com",
   ALLOWED_HOSTS:
     "extra Host header names (comma separated: app.example.com, *.example.com, name:port), needed when HOST is 0.0.0.0 or ::",
+  ALLOWED_WEBPAGE_DOMAINS:
+    "domains whose web pages may be fetched for translation, comma separated: example.com, *.example.com, or * for any (default none: off)",
   MODELS_DIR: "directory with the GGUF translation models (default models/)",
   DEFAULT_MODEL: "model loaded at startup (default index-translate-9b)",
   CTX_SIZE: "context size shared by prompt and output (default 65536)",

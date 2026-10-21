@@ -6,7 +6,7 @@
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
 // since the engines are packed as built, bun scripts/build_soxr.ts, and bun scripts/fetch_web_libs.ts (the web app's PDF
-// and Word libraries and the QOA codec of the speech stream, packed with public/), and bun scripts/fetch_minicelt.ts (the Opus encoder). The Bun that is packed is the one running this script.
+// and Word libraries and the QOA codec of the speech stream, packed with public/), bun scripts/fetch_minicelt.ts (the Opus encoder) and bun scripts/fetch_turndown.ts (web pages as Markdown). The Bun that is packed is the one running this script.
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
 // for `fetch`. Layout and start script: packaging/appimage/.
@@ -21,6 +21,7 @@ import { libraryPath as audioLibrary, soxrLibraryPath } from "../src/audiocpp-ff
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { download, output, run } from "./build_tools";
 import { requireMinicelt } from "./fetch_minicelt";
+import { requireTurndown } from "./fetch_turndown";
 import { requireWebLibs } from "./fetch_web_libs";
 
 /** The checksums of the two downloaded tools, per architecture (`process.arch` names the key). */
@@ -79,8 +80,9 @@ for (const [file, script] of [
 }
 // The web app's libraries are packed with public/; an AppImage without them could not open PDF or Word files, and would send speech as WAV.
 await requireWebLibs(join(root, "public", "vendor"));
-// Likewise the Opus encoder of the speech stream.
+// Likewise the Opus encoder of the speech stream, and the Markdown converter of fetched web pages.
 await requireMinicelt(join(root, "vendor"));
+await requireTurndown(join(root, "vendor"));
 
 /** The file at `path` as pinned, downloaded unless a copy with the right checksum is already there. */
 async function tool(pin: { url: string; sha256: string }, path: string): Promise<void> {
@@ -112,6 +114,8 @@ for (const name of await readdir(join(root, "src"))) {
     await cp(join(root, "src", name), join(app, "src", name));
   }
 }
+// What src/webpage.ts runs inside a fetched page.
+await cp(join(root, "src", "page", "extract.ts"), join(app, "src", "page", "extract.ts"));
 await cp(join(root, "public"), join(app, "public"), { recursive: true });
 await cp(join(root, "prompts"), join(app, "prompts"), { recursive: true });
 await cp(join(root, "docs", "openapi.yaml"), join(app, "docs", "openapi.yaml"));
@@ -123,6 +127,7 @@ await copyEngine(llama, join(app, "vendor", "llama.cpp"));
 await copyEngine(audio, join(app, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(app, "vendor", "soxr"));
 await cp(join(root, "vendor", "minicelt"), join(app, "vendor", "minicelt"), { recursive: true });
+await cp(join(root, "vendor", "turndown"), join(app, "vendor", "turndown"), { recursive: true });
 
 const commit = (await output(["git", "describe", "--tags", "--always", "--dirty"], root)) || "unknown";
 const version = [

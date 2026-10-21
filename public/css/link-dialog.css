@@ -10,7 +10,7 @@
     background: rgb(0 0 0 / 0.5);
   }
 
-  &[data-paired="false"] {
+  &.warn {
     border: 2px solid var(--warn-border);
   }
 

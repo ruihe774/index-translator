@@ -28,6 +28,8 @@ export type SpeechRequest = Schemas["SpeechRequest"];
 export type SpeechLanguage = SpeechRequest["lang"];
 export type Voice = Schemas["Voice"];
 export type VoiceList = Schemas["VoiceList"];
+export type WebpageRequest = Schemas["WebpageRequest"];
+export type Webpage = Schemas["Webpage"];
 
 /** The error envelope of every error response. */
 export type ErrorResponse = Schemas["Error"];

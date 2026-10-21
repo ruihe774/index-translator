@@ -8,7 +8,7 @@
 // Usage: bun scripts/build_installer.ts
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts && bun scripts/build_soxr.ts, and
-// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries and QOA codec) and bun scripts/fetch_minicelt.ts (the Opus encoder). The Bun that is packed is
+// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries and QOA codec), bun scripts/fetch_minicelt.ts (the Opus encoder) and bun scripts/fetch_turndown.ts (web pages as Markdown). The Bun that is packed is
 // the one running this script. Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
@@ -19,6 +19,7 @@ import { libraryPath as audioLibrary, soxrLibraryPath } from "../src/audiocpp-ff
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { download, output, run } from "./build_tools";
 import { requireMinicelt } from "./fetch_minicelt";
+import { requireTurndown } from "./fetch_turndown";
 import { requireWebLibs } from "./fetch_web_libs";
 
 if (process.platform !== "win32" || process.arch !== "x64") {
@@ -54,8 +55,9 @@ for (const [file, script] of [
 }
 // The web app's libraries are packed with public/; an installation without them could not open PDF or Word files, and would send speech as WAV.
 await requireWebLibs(join(root, "public", "vendor"));
-// Likewise the Opus encoder of the speech stream.
+// Likewise the Opus encoder of the speech stream, and the Markdown converter of fetched web pages.
 await requireMinicelt(join(root, "vendor"));
+await requireTurndown(join(root, "vendor"));
 
 /** Copies an engine's directory as it is: the DLLs and licenses, not the headers or import libraries. */
 async function copyEngine(from: string, to: string): Promise<void> {
@@ -112,6 +114,8 @@ for (const name of await readdir(join(root, "src"))) {
     await cp(join(root, "src", name), join(stage, "src", name));
   }
 }
+// What src/webpage.ts runs inside a fetched page.
+await cp(join(root, "src", "page", "extract.ts"), join(stage, "src", "page", "extract.ts"));
 await cp(join(root, "public"), join(stage, "public"), { recursive: true });
 await cp(join(root, "prompts"), join(stage, "prompts"), { recursive: true });
 await cp(join(root, "docs", "openapi.yaml"), join(stage, "docs", "openapi.yaml"));
@@ -123,6 +127,7 @@ await copyEngine(llama, join(stage, "vendor", "llama.cpp"));
 await copyEngine(audio, join(stage, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(stage, "vendor", "soxr"));
 await cp(join(root, "vendor", "minicelt"), join(stage, "vendor", "minicelt"), { recursive: true });
+await cp(join(root, "vendor", "turndown"), join(stage, "vendor", "turndown"), { recursive: true });
 await cp(launcher, join(stage, "launcher.exe"));
 await cp(process.execPath, join(stage, "bun.exe"));
 

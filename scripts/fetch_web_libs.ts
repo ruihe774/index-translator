@@ -15,8 +15,8 @@ import { dirname, join, resolve } from "node:path";
 
 import { download } from "./build_tools";
 
-interface Library {
-  /** Directory under public/vendor/. */
+export interface Library {
+  /** Directory under public/vendor/ (vendor/ for the server's own, scripts/fetch_turndown.ts). */
   dir: string;
   version: string;
   url: string;
@@ -229,7 +229,7 @@ export async function fetchFileLibrary(lib: FileLibrary, vendor: string): Promis
   console.log(`ok ${lib.dir} ${lib.version.slice(0, 7)} (${lib.files.length} files, ${(bytes / 1024).toFixed(0)} KiB)`);
 }
 
-async function fetchLibrary(lib: Library, vendor: string): Promise<void> {
+export async function fetchLibrary(lib: Library, vendor: string): Promise<void> {
   const dir = join(vendor, lib.dir);
   if (await isPresent(lib, vendor)) {
     console.log(`ok ${lib.dir} ${lib.version} (already there)`);

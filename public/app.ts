@@ -2,7 +2,7 @@
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
-import type { Health, Language } from "../src/api.ts";
+import type { Health, Language, Webpage } from "../src/api.ts";
 import { API, ApiFailure, failureMessage } from "./api.ts";
 // eslint-disable-next-line import/no-unassigned-import -- custom element definitions
 import "./elements/index.ts";
@@ -11,10 +11,10 @@ import type { PdfPages } from "./elements/pdf-pages.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { ViewSwitch } from "./elements/view-switch.ts";
 import type { VoiceSettings } from "./elements/voice-settings.ts";
-import type { ApiErrorBody } from "./errors.ts";
+import { type ApiErrorBody, describeWebpageError } from "./errors.ts";
 import { initHistoryUi } from "./history-ui.ts";
 import { type HistoryEntry, loadHistory, newId, saveHistory, withEntry } from "./history.ts";
-import { confirmLink } from "./link-dialog.ts";
+import { ask, confirmLink } from "./link-dialog.ts";
 import { type LinkReference, linkReference } from "./links.ts";
 import { checkLinks, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
 import { looksLikeMarkdown } from "./markdown.ts";
@@ -42,6 +42,7 @@ import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
 import { bindRender, setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
 import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
+import { webpageLink } from "./webpage-link.ts";
 
 const HEALTH_LOADING_POLL_MS = 2000;
 const HEALTH_POLL_MS = 5000;
@@ -260,6 +261,8 @@ async function loadLanguages() {
 
 /** Counts up for each poll; a response from an earlier poll is stale and must not overwrite a newer one. */
 let healthSeq = 0;
+/** The server can fetch web pages (`webpage` in /health): only then is an address in the box offered as one. */
+let webpageAvailable = false;
 
 async function pollHealth() {
   // One chain at a time: any pending follow-up poll is replaced by this one.
@@ -275,7 +278,9 @@ async function pollHealth() {
   let problem: boolean;
   try {
     const res = await fetch(`${API}/health`);
-    ({ text, loading, vram, problem } = healthMessage((await res.json()) as Health));
+    const health = (await res.json()) as Health;
+    ({ text, loading, vram, problem } = healthMessage(health));
+    webpageAvailable = health.webpage?.status === "available";
   } catch {
     text = "The server cannot be reached.";
     problem = true;
@@ -543,6 +548,19 @@ async function translate() {
   }
   showFieldError(textError, textInput, null);
 
+  // Nothing but a web address: the page itself may be what is meant.
+  const link = image || !webpageAvailable ? null : webpageLink(text);
+  if (link) {
+    const answer = await askWebpage(link);
+    if (answer === "fetch") {
+      await fetchWebpage(link);
+      return;
+    }
+    if (answer !== "text") {
+      return;
+    }
+  }
+
   const sel = refreshSelection();
   if (!image && sel.reason === "manual-document-unusable") {
     fail(selectionMessage(sel).text);
@@ -718,6 +736,71 @@ async function translate() {
     placeholderEl.hidden = state.translation.length > 0;
     refreshSync();
     void pollHealth();
+  }
+}
+
+// ---- a web page as the source ----------------------------------------------------------------
+//
+// An address alone in the box is offered as a page to fetch. The server opens it (POST /webpage)
+// and answers its content as Markdown, which goes into the box like an opened file, shown as a
+// preview; translating it is a second Translate. Only the address goes to the server.
+
+function askWebpage(link: string): Promise<string> {
+  return ask({
+    title: "Fetch this web page?",
+    message:
+      "The text is a web address. The server can open the page and put its text in the box, ready to translate. Or the address can be translated as it is.",
+    target: link,
+    choices: [
+      { value: "text", label: "Translate as text" },
+      { value: "fetch", label: "Fetch page" },
+    ],
+  });
+}
+
+async function fetchWebpage(url: string) {
+  speech.stop();
+  const controller = new AbortController();
+  setState({ running: controller });
+  stopBtn.focus();
+  metaEl.show("Fetching the page…");
+  let stopped = false;
+  stopBtn.onclick = () => {
+    stopped = true;
+    controller.abort();
+  };
+  try {
+    const res = await fetch(`${API}/webpage`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ url }),
+      signal: controller.signal,
+    });
+    if (!res.ok) {
+      const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
+      throw new ApiFailure(payload?.error ?? {}, res.status);
+    }
+    const page = (await res.json()) as Webpage;
+    if (!page.markdown.trim()) {
+      fail("The page has no text to translate.");
+      return;
+    }
+    loadSource(page.markdown, true);
+    openUi.deselect();
+    metaEl.show(`Fetched “${page.title || page.url}”. Translate it when you are ready.`);
+  } catch (e) {
+    if (stopped) {
+      metaEl.show("Stopped.");
+    } else {
+      fail(e instanceof ApiFailure ? describeWebpageError(e.body, e.status) : failureMessage(e));
+    }
+  } finally {
+    stopBtn.onclick = null;
+    const hadFocus = document.activeElement === stopBtn || document.activeElement === document.body;
+    setState({ running: null });
+    if (hadFocus) {
+      translateBtn.focus();
+    }
   }
 }
 

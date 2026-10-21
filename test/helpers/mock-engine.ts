@@ -29,6 +29,7 @@ import {
   validateSample,
   type Voice,
 } from "../../src/speech";
+import { WebpageError, type WebpageFetcher, WebpageForbiddenError } from "../../src/webpage";
 
 export const root = resolve(import.meta.dir, "..", "..");
 
@@ -325,6 +326,60 @@ export const speechLauncher: SpeechLauncher = () => ({
   async stop() {},
 });
 
+const DEFAULT_MARKDOWN = "# Example page\n\nThe first paragraph.\n\nThe [second](https://example.com/two) paragraph.";
+
+export const mockWebpage = {
+  /** What `problem()` answers: set, every fetch is refused as when turndown is not installed. */
+  problem: undefined as string | undefined,
+  title: "Example page",
+  markdown: DEFAULT_MARKDOWN,
+  /** Where the page ends up, when not where it was asked to go: checked against the allowed domains. */
+  redirectTo: undefined as string | undefined,
+  delayMs: 0,
+  /** Makes the fetch fail as when the page cannot be opened. */
+  failWith: undefined as string | undefined,
+  /** Every address asked for. */
+  requests: [] as string[],
+  aborted: 0,
+};
+
+export function resetMockWebpage(): void {
+  mockWebpage.problem = undefined;
+  mockWebpage.title = "Example page";
+  mockWebpage.markdown = DEFAULT_MARKDOWN;
+  mockWebpage.redirectTo = undefined;
+  mockWebpage.delayMs = 0;
+  mockWebpage.failWith = undefined;
+  mockWebpage.requests.length = 0;
+  mockWebpage.aborted = 0;
+}
+
+/** Stands in for the browser of `POST /webpage`: answers every page with `mockWebpage.markdown`. */
+export const webpageFetcher: WebpageFetcher = {
+  problem: () => Promise.resolve(mockWebpage.problem),
+  async fetch(url, allowed, signal) {
+    mockWebpage.requests.push(url.href);
+    if (mockWebpage.delayMs) {
+      await Promise.race([
+        Bun.sleep(mockWebpage.delayMs),
+        new Promise((wake) => void signal.addEventListener("abort", wake)),
+      ]);
+    }
+    if (signal.aborted) {
+      mockWebpage.aborted++;
+      signal.throwIfAborted();
+    }
+    if (mockWebpage.failWith) {
+      throw new WebpageError(mockWebpage.failWith);
+    }
+    const at = mockWebpage.redirectTo ?? url.href;
+    if (!allowed(new URL(at))) {
+      throw new WebpageForbiddenError(`the page went on to ${at}, which is not in ALLOWED_WEBPAGE_DOMAINS`);
+    }
+    return { url: at, title: mockWebpage.title, markdown: mockWebpage.markdown };
+  },
+};
+
 export function config(overrides: Partial<Config> = {}): Config {
   return {
     host: "127.0.0.1",
@@ -341,6 +396,7 @@ export function config(overrides: Partial<Config> = {}): Config {
     maxQueue: 1,
     allowedOrigins: [],
     allowedHosts: [],
+    allowedWebpageDomains: [],
     openBrowser: false,
     devReload: false,
     speech: true,
