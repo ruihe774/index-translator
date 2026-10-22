@@ -7,7 +7,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import type { AlignedPair, SegmentedText, SegmentStatus } from "./api";
+import type { AlignedPair, AlignUnit, SegmentedText, SegmentStatus } from "./api";
 import type { Config } from "./config";
 import { inferenceThreads } from "./cpu";
 import { libraryPath } from "./onnxruntime-ffi";
@@ -20,9 +20,12 @@ export const MAX_SEGMENT_CHARS = 20_000;
 export const MAX_SEGMENT_TEXTS = 256;
 /** Positions less likely than this to end a sentence are not reported. */
 export const MIN_BOUNDARY_PROBABILITY = 0.001;
-/** Most sentences on each side of one `POST /align`. */
+/** Most sentences or paragraphs on each side of one `POST /align`. */
 export const MAX_ALIGN_SENTENCES = 256;
-/** Most UTF-16 code units in all the sentences of one `POST /align`. */
+/**
+ * Most UTF-16 code units in all the sentences of one `POST /align`. Paragraphs are not limited by it:
+ * only their openings are read, at most 2 × 256 of a few hundred characters.
+ */
 export const MAX_ALIGN_CHARS = MAX_SEGMENT_CHARS;
 
 export class SegmentError extends Error {}
@@ -48,8 +51,8 @@ export interface Segmenter extends ModelStatus {
    * never run, a running one stops after its current batch.
    */
   segment(texts: string[], signal: AbortSignal): Promise<SegmentedText[]>;
-  /** Which sentences of `target` translate which of `source`, as `POST /align` answers it; rejects as `segment` does. */
-  align(source: string[], target: string[], signal: AbortSignal): Promise<AlignedPair[]>;
+  /** Which sentences or paragraphs of `target` translate which of `source`, as `POST /align` answers it; rejects as `segment` does. */
+  align(unit: AlignUnit, source: string[], target: string[], signal: AbortSignal): Promise<AlignedPair[]>;
   stop(): Promise<void>;
 }
 
@@ -314,8 +317,8 @@ export class NativeSegmenter implements Segmenter {
     return reply.texts;
   }
 
-  async align(source: string[], target: string[], signal: AbortSignal): Promise<AlignedPair[]> {
-    const reply = await this.aligner.run((abort) => ({ type: "align", source, target, abort }), signal);
+  async align(unit: AlignUnit, source: string[], target: string[], signal: AbortSignal): Promise<AlignedPair[]> {
+    const reply = await this.aligner.run((abort) => ({ type: "align", unit, source, target, abort }), signal);
     if (reply.type !== "alignment") {
       throw new SegmentError(`unexpected ${reply.type} reply to an alignment`);
     }

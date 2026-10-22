@@ -7,7 +7,7 @@
 // per pair of sentence lists for the page's life (up to `MAX_CACHED`), and a failure of any kind stops
 // asking for a while (`BACKOFF_MS`), as `segment.ts` does.
 
-import type { AlignedPair, Alignment, AlignRequest, Health } from "../src/api.ts";
+import type { AlignedPair, Alignment, AlignRequest, AlignUnit, Health } from "../src/api.ts";
 import { API, ApiFailure } from "./api.ts";
 import type { ApiErrorBody } from "./errors.ts";
 
@@ -21,8 +21,13 @@ export const BACKOFF_MS = 10_000;
 export type PostAlign = (source: string[], target: string[], signal: AbortSignal) => Promise<AlignedPair[]>;
 
 /** One request to the server. */
-export async function postAlign(source: string[], target: string[], signal: AbortSignal): Promise<AlignedPair[]> {
-  const body: AlignRequest = { source, target };
+export async function postAlign(
+  source: string[],
+  target: string[],
+  signal: AbortSignal,
+  unit: AlignUnit = "sentences",
+): Promise<AlignedPair[]> {
+  const body: AlignRequest = { unit, source, target };
   const res = await fetch(`${API}/align`, {
     method: "POST",
     headers: { "content-type": "application/json" },

@@ -6,6 +6,7 @@ import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
+import type { AlignUnit } from "../src/api";
 import { loadConfig } from "../src/config";
 import { WordPieceTokenizer } from "../src/labse";
 import { libraryPath } from "../src/onnxruntime-ffi";
@@ -21,9 +22,14 @@ const segmenter = new NativeSegmenter(cfg);
 afterAll(() => segmenter.stop());
 
 /** The pairs as [source indexes, target indexes]. */
-async function pairs(source: string[], target: string[], signal = new AbortController().signal) {
-  return (await segmenter.align(source, target, signal)).map((p) => [p.source, p.target]);
+async function pairs(source: string[], target: string[], unit: AlignUnit = "sentences") {
+  return (await segmenter.align(unit, source, target, new AbortController().signal)).map((p) => [p.source, p.target]);
 }
+
+const paragraphsOf = (name: string) =>
+  readFileSync(join(import.meta.dir, "fixtures", name), "utf8")
+    .trim()
+    .split(/\n\s*\n/);
 
 describe.skipIf(!installed)("LaBSE on ONNX Runtime", () => {
   test("the tokenizer gives Hugging Face's ids", () => {
@@ -94,7 +100,33 @@ describe.skipIf(!installed)("LaBSE on ONNX Runtime", () => {
 
   test("an abort is answered at once, and the next request still runs", async () => {
     const many = Array.from({ length: 200 }, (_, i) => `Sentence ${i} is about something else entirely.`);
-    await expect(segmenter.align(many, many, AbortSignal.timeout(5))).rejects.toThrow();
+    await expect(segmenter.align("sentences", many, many, AbortSignal.timeout(5))).rejects.toThrow();
     await expect(pairs(["Yes."], ["Oui."])).resolves.toStrictEqual([[[0], [0]]]);
+  });
+
+  // The essays and NativeLong's Chinese translation of them (30 paragraphs each), damaged on purpose.
+  describe("paragraphs", () => {
+    const en = paragraphsOf("essays.en.txt");
+    const zh = paragraphsOf("essays.zh.txt");
+    const odd = (got: number[][][]) => got.filter(([s, t]) => s!.length !== 1 || t!.length !== 1 || s![0] !== t![0]);
+
+    test("a whole translation pairs one to one", async () => {
+      expect(zh).toHaveLength(en.length);
+      expect(odd(await pairs(en, zh, "paragraphs"))).toStrictEqual([]);
+    });
+
+    test("a dropped paragraph has no counterpart; the ones after it pair on", async () => {
+      const got = await pairs(en, zh.toSpliced(12, 1), "paragraphs");
+      expect(got[12]).toStrictEqual([[12], []]);
+      expect(got.slice(13).every(([s, t]) => t![0] === s![0]! - 1)).toBe(true);
+    });
+
+    test("two merged into one, and one split in two, are told apart from a drop", async () => {
+      const merged = zh.toSpliced(5, 2, zh[5]! + zh[6]!);
+      expect((await pairs(en, merged, "paragraphs"))[5]).toStrictEqual([[5, 6], [5]]);
+      const [first, ...rest] = zh[20]!.split(/(?<=。)/);
+      const split = zh.toSpliced(20, 1, first!, rest.join(""));
+      expect((await pairs(en, split, "paragraphs"))[20]).toStrictEqual([[20], [20, 21]]);
+    });
   });
 });

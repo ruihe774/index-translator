@@ -39,11 +39,19 @@ afterAll(async () => {
 const align = (body: unknown, init: RequestInit = {}) => postTo(app.server.url.origin, "/api/v1/align", body, init);
 
 describe("POST /align", () => {
-  test("answers the aligner's pairs", async () => {
+  test("answers the aligner's pairs; the unit is sentences unless asked otherwise", async () => {
     const body = { source: ["One.", "Two."], target: ["Un.", "Deux.", "Trois."] };
     const res = await align(body);
     expect(res.status).toBe(200);
     await expect(bodyOf<Alignment>(res)).resolves.toStrictEqual({ pairs: mockPairs(2, 3) });
+    expect(mockAlign.requests).toStrictEqual([{ unit: "sentences", ...body }]);
+  });
+
+  test("paragraphs: passed on as such, and not held to max_chars", async () => {
+    const body = { unit: "paragraphs" as const, source: ["a".repeat(MAX_ALIGN_CHARS), "b"], target: ["c"] };
+    const res = await align(body);
+    expect(res.status).toBe(200);
+    await expect(bodyOf<Alignment>(res)).resolves.toStrictEqual({ pairs: mockPairs(2, 1, "paragraphs") });
     expect(mockAlign.requests).toStrictEqual([body]);
   });
 
@@ -54,6 +62,7 @@ describe("POST /align", () => {
     ["an empty side", { source: ["a"], target: [] }, "target"],
     ["too many", { source: ["a"], target: Array.from({ length: MAX_ALIGN_SENTENCES + 1 }, () => "a") }, "target"],
     ["too long in all", { source: ["a".repeat(MAX_ALIGN_CHARS)], target: ["b"] }, "source"],
+    ["an unknown unit", { unit: "words", source: ["a"], target: ["b"] }, "unit"],
   ])("%s is refused before the model is asked", async (_name, body, field) => {
     const res = await align(body);
     expect(res.status).toBe(400);

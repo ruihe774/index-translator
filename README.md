@@ -50,7 +50,7 @@ service. It runs the Index-Translate 9B models on your GPU, with no accounts, qu
 | 📑 **Opens PDFs locally** | Text, Markdown, PDF and Word files are read in your browser. One click on a page thumbnail turns it into Markdown. |
 | 🔊 **Reads aloud** | Hear the source or the translation, from any paragraph, in Chinese, English, Japanese, Spanish or Arabic, with voices and speed (IndexTTS-2.5, also local). |
 | 📚 **Terminology and style** | Glossary, hard rules ("keep placeholders unchanged"), soft style guidance and a genre such as academic paper or subtitles. |
-| ✅ **Tells you what went missing** | Models can silently drop or repeat paragraphs. The app counts paragraphs and warns you; when they match, click one side to jump to the same paragraph on the other. |
+| ✅ **Tells you what went missing** | Models can silently drop or repeat paragraphs. The app counts paragraphs, warns you and names the paragraphs that went missing, were merged or were repeated; click one side to jump to the matching paragraph on the other. |
 | ✍️ **Markdown stays Markdown** | Headings, lists, tables and code are shown formatted as they stream in, with Raw / Preview per side. Copy returns the Markdown. |
 
 Also: streaming with **Stop**, correct Chinese and Japanese typography, an interface checked against WCAG 2.2 AA
@@ -394,13 +394,19 @@ oddly in any language.
 
 Language models can occasionally drop or repeat paragraphs, and this is not reported as an error.
 After each translation, the app compares the number of paragraphs with the source. If they differ,
-it shows a warning. When you see one:
+it shows a warning. When the sentence alignment model is installed, it then finds which paragraphs
+of the translation go with which of the source, and the warning names the places where they part:
+a paragraph that seems to be missing, one with no counterpart in the source (added or repeated),
+two merged into one or one split in two. It reads only the start of each paragraph and its length,
+so it finds dropped, merged and repeated paragraphs, but a translation that put paragraphs in another
+order is only flagged around the place. When you see a warning:
 
-- compare the translation with the original, paragraph by paragraph;
+- compare the translation with the original at the places it names, or paragraph by paragraph;
 - for a long text, try the other model, or split the text into sections and translate each one.
 
-When the counts match, you can click a paragraph on either side to scroll the other side to the
-same paragraph. This stops once you edit your text.
+When the paragraphs are matched (the counts are the same, or the alignment model matched them), you
+can click a paragraph on either side to scroll the other side to its counterpart; a paragraph with
+none does not move the other side. This stops once you edit your text.
 
 Resting the pointer on a text that is shown formatted (the source in **Preview**, or the translation)
 also marks the sentence under it: a pale tint, in another colour than the paragraph's, and an underline.
@@ -409,7 +415,7 @@ browser's own rules otherwise. Nothing is marked while a translation is running,
 text box you type in. It needs a recent browser (for example Chrome 128, Firefox 140 or Safari 26.2);
 older ones simply show no mark.
 
-When the paragraph counts match and the source is shown in **Preview**, the sentence's translation in
+When the paragraphs are matched and the source is shown in **Preview**, the sentence's translation in
 the other pane is marked too (or, on the translation's side, the source sentence it translates): one
 sentence may go with up to four on the other side, and all of them are marked together. The sentence
 alignment model finds them, for the paragraph under the pointer, after the sentence segmentation model
@@ -452,7 +458,7 @@ closed); flags work as above.
 | `SEGMENT` | on | `0` turns the sentence segmentation model off; reading aloud then finds sentences by the browser's rules |
 | `SEGMENT_THREADS` | the fast cores, at most 8 | CPU threads for the sentence segmentation and alignment models, chosen like `LLAMA_THREADS` |
 | `SEGMENT_IDLE_UNLOAD` | `300` | Seconds without use after which the sentence segmentation model (about 0.4 GiB of memory) or the alignment model (about 0.5 GiB) is freed; `0` keeps them loaded |
-| `ALIGN` | on | `0` turns the sentence alignment model off; only the sentence under the pointer is marked |
+| `ALIGN` | on | `0` turns the sentence alignment model off: only the sentence under the pointer is marked, and paragraphs are matched only when the counts are the same |
 
 Only one translation runs at a time. Other requests wait in line.
 

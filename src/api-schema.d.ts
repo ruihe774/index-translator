@@ -132,21 +132,29 @@ export interface paths {
         get?: never;
         put?: never;
         /**
-         * Which sentences of a translation translate which of its source
-         * @description Matches the sentences of `source` with those of `target`, its translation, in order: every
-         *     sentence of each side is in exactly one pair, and the pairs follow both texts. A pair is one
-         *     source sentence with up to four target sentences, up to four source sentences with one target
-         *     sentence, two with two, or one sentence of either side with nothing (it has no counterpart).
-         *     Each sentence is embedded with LaBSE; a group's embedding is the sum of its sentences', and
-         *     the path is the one of least distance, which weighs the cosine of a pair, its similarity to
-         *     the sentences around it, the number of sentences and their lengths in characters (the method
-         *     of AIlign, arXiv:2403.11921, without its anchor points: the texts are meant to be one block
-         *     and its translation, not whole books).
+         * Which sentences, or paragraphs, of a translation translate which of its source
+         * @description Matches the items of `source` with those of `target`, its translation, in order: every
+         *     item of each side is in exactly one pair, and the pairs follow both texts. A pair is one
+         *     source item with up to four target items, up to four source items with one target item, two
+         *     with two, or one item of either side with nothing (it has no counterpart). Each item is
+         *     embedded with LaBSE; a group's embedding is the sum of its items', and the path is the one
+         *     of least distance, which weighs the cosine of a pair, its similarity to the items around it,
+         *     the number of items and their lengths in characters (the method of AIlign,
+         *     arXiv:2403.11921, without its anchor points: the texts are meant to be one block and its
+         *     translation, or the paragraphs of one document, not whole books).
          *
-         *     At most 256 sentences on each side and `max_chars` UTF-16 code units in all (see `align` in
-         *     `GET /health`); a sentence longer than the model's 512 tokens is read up to there. It runs
-         *     on the segmentation thread and in its queue (`429`). Closing the connection drops a waiting
-         *     request; a running one stops within one batch of the model.
+         *     `unit` says what the items are. `sentences` (the default): at most `max_chars` UTF-16 code
+         *     units in all (see `align` in `GET /health`), and an item longer than the model's 512 tokens
+         *     is read up to there. `paragraphs`: only the opening of each paragraph is embedded (about 80
+         *     characters of the source's, and as many of the target's as the texts' length ratio makes of
+         *     that), while its length is the whole paragraph's; that is what tells a merged or split
+         *     paragraph from a dropped one. An item with no counterpart costs less than it does between
+         *     sentences, so a paragraph the translation left out comes out alone (one with nothing)
+         *     rather than joined to a neighbour. `max_chars` does not apply; the body limit does.
+         *
+         *     At most 256 items on each side. It runs on the segmentation thread and in its queue
+         *     (`429`). Closing the connection drops a waiting request; a running one stops within one
+         *     batch of the model.
          */
         post: operations["align"];
         delete?: never;
@@ -706,13 +714,13 @@ export interface components {
                  */
                 max_chars: number;
             };
-            /** @description The sentence alignment model (`POST /align`). It does not affect `status` or the HTTP status of this endpoint. */
+            /** @description The alignment model (`POST /align`). It does not affect `status` or the HTTP status of this endpoint. */
             align?: {
                 status: components["schemas"]["SegmentStatus"];
                 /** @description Why alignment is `unavailable`, or why the model could not be loaded last time. */
                 error?: string;
                 /**
-                 * @description Most UTF-16 code units one `POST /align` may hold in all its sentences.
+                 * @description Most UTF-16 code units one `POST /align` of sentences may hold in all of them (paragraphs are not limited by it).
                  * @example 20000
                  */
                 max_chars: number;
@@ -760,19 +768,27 @@ export interface components {
          */
         SegmentStatus: "unavailable" | "stopped" | "starting" | "ready" | "error";
         AlignRequest: {
-            /** @description The source's sentences, in order. */
+            unit?: components["schemas"]["AlignUnit"];
+            /** @description The source's sentences or paragraphs, in order. */
             source: string[];
-            /** @description The translation's sentences, in order. */
+            /** @description The translation's sentences or paragraphs, in order. */
             target: string[];
         };
+        /**
+         * @description What `source` and `target` hold. `paragraphs` are read by their openings and weighed by
+         *     their whole lengths, and an item with no counterpart is cheaper; see `POST /align`.
+         * @default sentences
+         * @enum {string}
+         */
+        AlignUnit: "sentences" | "paragraphs";
         Alignment: {
-            /** @description Every sentence of both sides in exactly one pair, in the order of both texts. */
+            /** @description Every item of both sides in exactly one pair, in the order of both texts. */
             pairs: components["schemas"]["AlignedPair"][];
         };
         AlignedPair: {
-            /** @description Consecutive indexes into `source`; empty when the target sentences have no counterpart. */
+            /** @description Consecutive indexes into `source`; empty when the target items have no counterpart. */
             source: number[];
-            /** @description Consecutive indexes into `target`; empty when the source sentences have no counterpart. */
+            /** @description Consecutive indexes into `target`; empty when the source items have no counterpart. */
             target: number[];
             /** @description Cosine of the two groups' embeddings, three decimals; 0 when a side is empty. */
             similarity: number;
@@ -994,8 +1010,8 @@ export interface components {
             };
         };
         /**
-         * @description Too many translations, speech requests or segmentation requests are already waiting
-         *     (`queue_full`); each has its own queue.
+         * @description Too many translations, speech requests or segmentation and alignment requests are already
+         *     waiting (`queue_full`); each of the three has its own queue.
          */
         QueueFull: {
             headers: {
@@ -1096,6 +1112,7 @@ export type Webpage = components['schemas']['Webpage'];
 export type SpeechStatus = components['schemas']['SpeechStatus'];
 export type SegmentStatus = components['schemas']['SegmentStatus'];
 export type AlignRequest = components['schemas']['AlignRequest'];
+export type AlignUnit = components['schemas']['AlignUnit'];
 export type Alignment = components['schemas']['Alignment'];
 export type AlignedPair = components['schemas']['AlignedPair'];
 export type SegmentRequest = components['schemas']['SegmentRequest'];
@@ -1427,9 +1444,9 @@ export interface operations {
                 };
             };
             /**
-             * @description `source` or `target` is missing, not an array of strings, empty or longer than 256, or the
-             *     two hold more than `max_chars` UTF-16 code units in all (`invalid_request`,
-             *     `details.field` names which).
+             * @description `source` or `target` is missing, not an array of strings, empty or longer than 256,
+             *     `unit` is neither `sentences` nor `paragraphs`, or sentences hold more than `max_chars`
+             *     UTF-16 code units in all (`invalid_request`, `details.field` names which).
              */
             400: {
                 headers: {
@@ -1462,7 +1479,7 @@ export interface operations {
                 };
             };
             /**
-             * @description Sentence alignment is not available (`align_unavailable`): it is turned off, or ONNX
+             * @description Alignment is not available (`align_unavailable`): it is turned off, or ONNX
              *     Runtime or the model is not installed. The message says which.
              */
             503: {

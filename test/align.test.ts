@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { alignSentences, type Sentences } from "../src/align";
+import { alignSentences, OPENING, openings, type Sentences } from "../src/align";
 
 const DIMS = 16;
 
@@ -74,5 +74,62 @@ describe("alignSentences", () => {
 
   test("one sentence on each side is one pair, whatever they say", () => {
     expect(pairsOf(side([[0]]), side([[1]]))).toStrictEqual([[[0], [0]]]);
+  });
+});
+
+describe("paragraphs", () => {
+  // Openings that half resemble the neighbours, as related paragraphs of one document do.
+  const near = (k: number) => [k, 8 + (k % 4)];
+  const paragraphs = (ks: number[], lengths?: number[]): Sentences => ({
+    embeddings: ks.map((k) => meaning(...near(k))),
+    lengths: lengths ?? ks.map(() => 600),
+  });
+
+  test("a paragraph the translation left out stands alone; as sentences it joins a neighbour", () => {
+    const source = paragraphs([0, 1, 2, 3, 4]);
+    const target = paragraphs([0, 1, 3, 4]);
+    const shapes = (unit: "sentences" | "paragraphs") =>
+      alignSentences(source, target, unit).map((p) => [p.source, p.target]);
+    expect(shapes("paragraphs")).toStrictEqual([
+      [[0], [0]],
+      [[1], [1]],
+      [[2], []],
+      [[3], [2]],
+      [[4], [3]],
+    ]);
+    expect(shapes("sentences").some(([s]) => s!.length === 2)).toBe(true);
+  });
+
+  test("two merged into one: the opening is the first one's, the length is both", () => {
+    const source = paragraphs([0, 1, 2, 3]);
+    const target = paragraphs([0, 1, 3], [600, 1200, 600]);
+    expect(alignSentences(source, target, "paragraphs").map((p) => [p.source, p.target])).toStrictEqual([
+      [[0], [0]],
+      [[1, 2], [1]],
+      [[3], [2]],
+    ]);
+  });
+});
+
+describe("openings", () => {
+  test("the source's first OPENING characters, back to a space when the cut is inside a word", () => {
+    const words = Array.from({ length: 40 }, (_, k) => `w${k}`).join(" ");
+    const { source } = openings([words], [words]);
+    expect(source[0]!.length).toBeLessThanOrEqual(OPENING);
+    expect(words.startsWith(source[0]!)).toBe(true);
+    expect(words[source[0]!.length]).toBe(" ");
+  });
+
+  test("text without spaces is cut where it is; a short paragraph is whole", () => {
+    const { source } = openings(["字".repeat(200), "短。"], ["x"]);
+    expect(source).toStrictEqual(["字".repeat(OPENING), "短。"]);
+  });
+
+  test("the target's opening is scaled by the texts' length ratio, within bounds", () => {
+    const zh = "字".repeat(300);
+    const en = "x".repeat(1000);
+    expect(openings([zh], [en]).target[0]).toHaveLength(Math.round(OPENING * (1000 / 300)));
+    expect(openings(["x".repeat(10_000)], ["y".repeat(10)]).target[0]).toHaveLength(10);
+    expect(openings(["x".repeat(100)], ["y".repeat(10_000)]).target[0]).toHaveLength(OPENING * 4);
   });
 });

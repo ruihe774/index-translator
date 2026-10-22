@@ -8,7 +8,7 @@
 
 import { join, resolve } from "node:path";
 
-import type { AlignedPair, ErrorBody, ErrorResponse, SegmentedText, TranslateEvents } from "../../src/api";
+import type { AlignedPair, AlignUnit, ErrorBody, ErrorResponse, SegmentedText, TranslateEvents } from "../../src/api";
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
 import {
@@ -408,14 +408,26 @@ export const mockAlign = {
   state: "stopped" as SegmentState,
   /** The answer to give instead of `mockPairs`. */
   pairs: undefined as AlignedPair[] | undefined,
-  /** Every request's sentences. */
-  requests: [] as { source: string[]; target: string[] }[],
+  /** Every request's unit and items. */
+  requests: [] as { unit: AlignUnit; source: string[]; target: string[] }[],
 };
 
-/** What the mock aligner answers: sentence i with sentence i, what is left over of the longer side joined to the last pair. */
-export function mockPairs(sourceCount: number, targetCount: number): AlignedPair[] {
+/**
+ * What the mock aligner answers: item i with item i, and what is left over of the longer side joined to
+ * the last pair (sentences) or alone, with no counterpart (paragraphs, as the model leaves a dropped one).
+ */
+export function mockPairs(sourceCount: number, targetCount: number, unit: AlignUnit = "sentences"): AlignedPair[] {
   const shared = Math.min(sourceCount, targetCount);
   const pairs = Array.from({ length: shared }, (_, i) => ({ source: [i], target: [i], similarity: 0.8 }));
+  if (unit === "paragraphs") {
+    for (let i = shared; i < sourceCount; i++) {
+      pairs.push({ source: [i], target: [], similarity: 0 });
+    }
+    for (let i = shared; i < targetCount; i++) {
+      pairs.push({ source: [], target: [i], similarity: 0 });
+    }
+    return pairs;
+  }
   const last = pairs.at(-1)!;
   for (let i = shared; i < sourceCount; i++) {
     last.source.push(i);
@@ -480,8 +492,8 @@ export const segmentLauncher: SegmentLauncher = () => ({
       return mockAlign.state === "unavailable" ? "the alignment model is not installed" : undefined;
     },
   },
-  async align(source, target, signal) {
-    mockAlign.requests.push({ source, target });
+  async align(unit, source, target, signal) {
+    mockAlign.requests.push({ unit, source, target });
     if (mockSegment.delayMs) {
       await Promise.race([
         Bun.sleep(mockSegment.delayMs),
@@ -493,7 +505,7 @@ export const segmentLauncher: SegmentLauncher = () => ({
       throw new SegmentError(mockSegment.failWith);
     }
     mockAlign.state = "ready";
-    return mockAlign.pairs ?? mockPairs(source.length, target.length);
+    return mockAlign.pairs ?? mockPairs(source.length, target.length, unit);
   },
   async stop() {},
 });

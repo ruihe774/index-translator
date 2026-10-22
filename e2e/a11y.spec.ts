@@ -644,6 +644,47 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
+for (const scheme of ["light", "dark"] as const) {
+  test(`paragraphs matched by the aligner: the detailed note is in a live list, the group shade and axe pass in ${scheme} mode`, async ({
+    app,
+    mock,
+  }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    // Four paragraphs; the translation merged the second and third.
+    await mock.set({
+      chunks: ["Un.\n\n", "Deux. Trois.\n\n", "Quatre.\n"],
+      align: {
+        pairs: [
+          { source: [0], target: [0], similarity: 0.9 },
+          { source: [1, 2], target: [1], similarity: 0.9 },
+          { source: [3], target: [2], similarity: 0.9 },
+        ],
+      },
+    });
+    await app.open();
+    await app.from.selectOption("en");
+    await app.to.selectOption("fr");
+    await app.text.fill("# One\n\nTwo.\n\nThree.\n\nFour.\n");
+    await app.translate.click();
+    await expect(app.meta).toContainText("generated");
+    await expect(app.page.locator("#notes")).toHaveAttribute("aria-live", "polite");
+    await expect(app.notes.first()).toHaveText(
+      "The source has 4 paragraphs and the translation has 3. Paragraphs 2–3 of the source seem merged into paragraph 2 of the translation. Check it against the source.",
+    );
+    await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
+    await settle(app.page);
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    // The merged paragraph's counterpart is both source paragraphs, shaded with the same rule.
+    await app.output.locator("p").nth(1).hover();
+    await expect(app.page.locator("#source-view .linked")).toHaveCount(2);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+    await app.page.mouse.move(0, 0);
+  });
+}
+
 test("rendered Markdown: wide tables and code blocks are reachable by keyboard, nothing overflows at 320 px", async ({
   app,
   mock,

@@ -57,10 +57,12 @@ info:
     cut a document into utterances for `POST /speech`. Like the speech model it is loaded by the
     first request and unloaded after a while without one.
 
-    **Sentence alignment.** `POST /align` tells which sentences of a translation translate which
-    sentences of its source, with LaBSE sentence embeddings on the same thread and in the same
-    queue as `POST /segment`, loaded and unloaded the same way. The client sends the sentences of
-    one source block and of its translation, cut as it likes (the web app cuts where SaT says).
+    **Alignment.** `POST /align` tells which sentences of a translation translate which
+    sentences of its source, or which paragraphs translate which, with LaBSE sentence embeddings
+    on the same thread and in the same queue as `POST /segment`, loaded and unloaded the same way.
+    For sentences the client sends those of one source block and of its translation, cut as it
+    likes (the web app cuts where SaT says); for paragraphs, every paragraph of both texts (the
+    web app asks when a translation does not have as many as its source).
 
     **Web pages.** `POST /webpage` opens a web page in a headless browser on the server and
     answers its content as Markdown, for a client to translate as a text. It is off unless the
@@ -352,22 +354,30 @@ paths:
     post:
       tags: [segment]
       operationId: align
-      summary: Which sentences of a translation translate which of its source
+      summary: Which sentences, or paragraphs, of a translation translate which of its source
       description: |
-        Matches the sentences of `source` with those of `target`, its translation, in order: every
-        sentence of each side is in exactly one pair, and the pairs follow both texts. A pair is one
-        source sentence with up to four target sentences, up to four source sentences with one target
-        sentence, two with two, or one sentence of either side with nothing (it has no counterpart).
-        Each sentence is embedded with LaBSE; a group's embedding is the sum of its sentences', and
-        the path is the one of least distance, which weighs the cosine of a pair, its similarity to
-        the sentences around it, the number of sentences and their lengths in characters (the method
-        of AIlign, arXiv:2403.11921, without its anchor points: the texts are meant to be one block
-        and its translation, not whole books).
+        Matches the items of `source` with those of `target`, its translation, in order: every
+        item of each side is in exactly one pair, and the pairs follow both texts. A pair is one
+        source item with up to four target items, up to four source items with one target item, two
+        with two, or one item of either side with nothing (it has no counterpart). Each item is
+        embedded with LaBSE; a group's embedding is the sum of its items', and the path is the one
+        of least distance, which weighs the cosine of a pair, its similarity to the items around it,
+        the number of items and their lengths in characters (the method of AIlign,
+        arXiv:2403.11921, without its anchor points: the texts are meant to be one block and its
+        translation, or the paragraphs of one document, not whole books).
 
-        At most 256 sentences on each side and `max_chars` UTF-16 code units in all (see `align` in
-        `GET /health`); a sentence longer than the model's 512 tokens is read up to there. It runs
-        on the segmentation thread and in its queue (`429`). Closing the connection drops a waiting
-        request; a running one stops within one batch of the model.
+        `unit` says what the items are. `sentences` (the default): at most `max_chars` UTF-16 code
+        units in all (see `align` in `GET /health`), and an item longer than the model's 512 tokens
+        is read up to there. `paragraphs`: only the opening of each paragraph is embedded (about 80
+        characters of the source's, and as many of the target's as the texts' length ratio makes of
+        that), while its length is the whole paragraph's; that is what tells a merged or split
+        paragraph from a dropped one. An item with no counterpart costs less than it does between
+        sentences, so a paragraph the translation left out comes out alone (one with nothing)
+        rather than joined to a neighbour. `max_chars` does not apply; the body limit does.
+
+        At most 256 items on each side. It runs on the segmentation thread and in its queue
+        (`429`). Closing the connection drops a waiting request; a running one stops within one
+        batch of the model.
       requestBody:
         required: true
         content:
@@ -395,9 +405,9 @@ paths:
                     similarity: 0.861
         "400":
           description: |
-            `source` or `target` is missing, not an array of strings, empty or longer than 256, or the
-            two hold more than `max_chars` UTF-16 code units in all (`invalid_request`,
-            `details.field` names which).
+            `source` or `target` is missing, not an array of strings, empty or longer than 256,
+            `unit` is neither `sentences` nor `paragraphs`, or sentences hold more than `max_chars`
+            UTF-16 code units in all (`invalid_request`, `details.field` names which).
           content:
             application/json:
               schema:
@@ -424,7 +434,7 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: |
-            Sentence alignment is not available (`align_unavailable`): it is turned off, or ONNX
+            Alignment is not available (`align_unavailable`): it is turned off, or ONNX
             Runtime or the model is not installed. The message says which.
           content:
             application/json:
@@ -1439,7 +1449,7 @@ components:
               examples: [20000]
         align:
           type: object
-          description: The sentence alignment model (`POST /align`). It does not affect `status` or the HTTP status of this endpoint.
+          description: The alignment model (`POST /align`). It does not affect `status` or the HTTP status of this endpoint.
           required: [status, max_chars]
           properties:
             status:
@@ -1449,7 +1459,7 @@ components:
               description: Why alignment is `unavailable`, or why the model could not be loaded last time.
             max_chars:
               type: integer
-              description: Most UTF-16 code units one `POST /align` may hold in all its sentences.
+              description: Most UTF-16 code units one `POST /align` of sentences may hold in all of them (paragraphs are not limited by it).
               examples: [20000]
         webpage:
           type: object
@@ -1506,27 +1516,36 @@ components:
       type: object
       required: [source, target]
       properties:
+        unit:
+          $ref: "#/components/schemas/AlignUnit"
         source:
           type: array
           minItems: 1
           maxItems: 256
           items:
             type: string
-          description: The source's sentences, in order.
+          description: The source's sentences or paragraphs, in order.
         target:
           type: array
           minItems: 1
           maxItems: 256
           items:
             type: string
-          description: The translation's sentences, in order.
+          description: The translation's sentences or paragraphs, in order.
+    AlignUnit:
+      type: string
+      enum: [sentences, paragraphs]
+      default: sentences
+      description: |
+        What `source` and `target` hold. `paragraphs` are read by their openings and weighed by
+        their whole lengths, and an item with no counterpart is cheaper; see `POST /align`.
     Alignment:
       type: object
       required: [pairs]
       properties:
         pairs:
           type: array
-          description: Every sentence of both sides in exactly one pair, in the order of both texts.
+          description: Every item of both sides in exactly one pair, in the order of both texts.
           items:
             $ref: "#/components/schemas/AlignedPair"
     AlignedPair:
@@ -1535,14 +1554,14 @@ components:
       properties:
         source:
           type: array
-          description: Consecutive indexes into `source`; empty when the target sentences have no counterpart.
+          description: Consecutive indexes into `source`; empty when the target items have no counterpart.
           maxItems: 4
           items:
             type: integer
             minimum: 0
         target:
           type: array
-          description: Consecutive indexes into `target`; empty when the source sentences have no counterpart.
+          description: Consecutive indexes into `target`; empty when the source items have no counterpart.
           maxItems: 4
           items:
             type: integer

@@ -3,11 +3,12 @@
 // DOM; `checkLinks` applies the verdicts to the rendered output.
 //
 // - "missing": the target occurs nowhere in the source. The link is disabled.
-// - "mismatch": the target occurs in the source but not in the source block that the output block
-//   was matched to, or the blocks could not be matched at all. The link is marked, not disabled.
+// - "mismatch": the target occurs in the source but not in the source blocks that the output block
+//   was matched to, or the block has no counterpart, or the blocks could not be matched at all. The
+//   link is marked, not disabled.
 
 import { type Block, type Inline, parseLines } from "./markdown.ts";
-import { type Alignment, blockAt } from "./paragraphs.ts";
+import { type Alignment, counterpart } from "./paragraphs.ts";
 
 export type LinkProblem = "missing" | "mismatch";
 
@@ -16,7 +17,7 @@ export interface LinkReference {
   text: string;
   /** Every target of the parsed source links, per top-level block start line. */
   byLine: Map<number, Set<string>>;
-  /** Block alignment of source and output, or null when the paragraph check failed. */
+  /** Block alignment of source and output, or null while the blocks are not matched. */
   alignment: Alignment | null;
 }
 
@@ -80,20 +81,17 @@ export function linkProblem(ref: LinkReference, href: string, outputLine: number
   if (!ref.text.includes(href)) {
     return "missing";
   }
-  const a = ref.alignment;
-  if (!a) {
+  const match = ref.alignment && counterpart(ref.alignment, "output", outputLine);
+  if (!match) {
     return "mismatch";
   }
-  const k = blockAt(a.output, outputLine);
-  const sourceBlock = new Set<string>();
+  const { from, to } = match.other;
   for (const [line, hrefs] of ref.byLine) {
-    if (blockAt(a.source, line) === k) {
-      for (const h of hrefs) {
-        sourceBlock.add(h);
-      }
+    if (line >= from && line < to && hrefs.has(href)) {
+      return null;
     }
   }
-  return sourceBlock.has(href) ? null : "mismatch";
+  return "mismatch";
 }
 
 export const LINK_NOTE: Record<LinkProblem, string> = {

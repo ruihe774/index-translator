@@ -16,6 +16,7 @@ import {
 } from "./access";
 import type {
   Alignment,
+  AlignUnit,
   ErrorCode,
   ErrorDetails,
   ErrorEvent,
@@ -1077,22 +1078,27 @@ export async function startApp(
     return texts;
   }
 
-  function parseAlignRequest(body: Record<string, unknown>): { source: string[]; target: string[] } {
+  function parseAlignRequest(body: Record<string, unknown>): { unit: AlignUnit; source: string[]; target: string[] } {
+    const unit = body.unit ?? "sentences";
+    if (unit !== "sentences" && unit !== "paragraphs") {
+      throw invalid("unit must be sentences or paragraphs", "unit");
+    }
     const sides = (["source", "target"] as const).map((field) => {
-      const sentences = optionalStringArray(body, field);
-      if (!sentences || sentences.length === 0 || sentences.length > MAX_ALIGN_SENTENCES) {
+      const items = optionalStringArray(body, field);
+      if (!items || items.length === 0 || items.length > MAX_ALIGN_SENTENCES) {
         throw invalid(`${field} must be an array of 1 to ${MAX_ALIGN_SENTENCES} strings`, field);
       }
-      return sentences;
+      return items;
     });
     const [source, target] = sides as [string[], string[]];
-    if ([...source, ...target].reduce((n, t) => n + t.length, 0) > MAX_ALIGN_CHARS) {
+    // Only paragraphs' openings are read, so their length is bounded by the body limit alone.
+    if (unit === "sentences" && [...source, ...target].reduce((n, t) => n + t.length, 0) > MAX_ALIGN_CHARS) {
       throw invalid(`source and target must hold at most ${MAX_ALIGN_CHARS} UTF-16 code units in all`, "source");
     }
     if (segmenter.aligner.state === "unavailable") {
-      throw new ApiError(503, "align_unavailable", segmenter.aligner.error ?? "sentence alignment is not available");
+      throw new ApiError(503, "align_unavailable", segmenter.aligner.error ?? "alignment is not available");
     }
-    return { source, target };
+    return { unit, source, target };
   }
 
   /**
@@ -1292,12 +1298,12 @@ export async function startApp(
             if (req.method !== "POST") {
               return methodNotAllowed("POST");
             }
-            const { source, target } = parseAlignRequest(await parseBody(req));
+            const { unit, source, target } = parseAlignRequest(await parseBody(req));
             // The first request loads the model.
             server.timeout(req, 0);
             return json<Alignment>(
               await inSegmentQueue(req.signal, async () => ({
-                pairs: await segmenter.align(source, target, req.signal),
+                pairs: await segmenter.align(unit, source, target, req.signal),
               })),
             );
           }

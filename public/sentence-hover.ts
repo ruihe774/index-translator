@@ -6,17 +6,18 @@
 //
 // While the source's blocks and the translation's are matched (`pairing.blocks`), the sentence's
 // counterpart in the other view is marked too, with the rest of its group: the sentences `POST /align`
-// pairs it with (`sentence-align.ts`), asked for the hovered block only once the sentence model has
-// answered for every group of both blocks, as the pairs are of its sentences.
+// pairs it with (`sentence-align.ts`), asked for the hovered block (with the blocks it was matched with,
+// when the translation merged or split it) only once the sentence model has answered for every group of
+// both sides, as the pairs are of its sentences.
 //
 // A view's groups (`sentence-spans.ts`) are collected at the first move after the view last changed;
 // any change to a view drops the mark, as its ranges may point at removed nodes.
 
-import type { Alignment } from "./paragraphs.ts";
-import { blockAt } from "./paragraphs.ts";
+import { type Alignment, counterpart, type LineRange } from "./paragraphs.ts";
 import type { SentenceBoundaries } from "./segment.ts";
 import { pairOf, type SentenceAligner } from "./sentence-align.ts";
 import { locate, type Run, sentenceSpans, spansAt } from "./sentence-spans.ts";
+import type { Side } from "./state.ts";
 import { collectGroups, type TextGroup } from "./text-groups.ts";
 
 const NAME = "sentence";
@@ -29,7 +30,7 @@ export interface HoverPane {
   /** The rendered text. */
   view: HTMLElement;
   /** Which text it shows, as `Alignment` names it. */
-  side: "source" | "output";
+  side: Side;
 }
 
 export interface Pairing {
@@ -170,16 +171,14 @@ export function initSentenceHover(
   };
 
   /**
-   * The sentences of block `k` of a pane as the sentence model cuts them, or null while it has not answered
+   * The sentences of the lines `from` to `to` of a pane as the sentence model cuts them, or null while it has not answered
    * for each of its groups (or cannot, without a language).
    */
-  const blockSentences = (state: PaneState, starts: number[], k: number): Sentence[] | null => {
+  const blockSentences = (state: PaneState, { from, to }: LineRange): Sentence[] | null => {
     if (!state.pane.view.lang) {
       return null;
     }
     state.collected ??= collect(state.pane.view);
-    const from = starts[k]!;
-    const to = starts[k + 1] ?? Infinity;
     const sentences: Sentence[] = [];
     for (const { group, line } of state.collected.ordered) {
       if (line < from || line >= to || !WORDS.test(group.text)) {
@@ -208,9 +207,12 @@ export function initSentenceHover(
       return none;
     }
     const { side } = state.pane;
-    const k = blockAt(blocks[side], line);
-    const own = blockSentences(state, blocks[side], k);
-    const theirs = blockSentences(other, blocks[side === "source" ? "output" : "source"], k);
+    const match = counterpart(blocks, side, line);
+    if (!match) {
+      return none;
+    }
+    const own = blockSentences(state, match.own);
+    const theirs = blockSentences(other, match.other);
     if (!own || !theirs || own.length === 0 || theirs.length === 0) {
       return none;
     }
@@ -233,7 +235,7 @@ export function initSentenceHover(
       sentences: [...pair.source.map((i) => source[i]!), ...pair.target.map((i) => target[i]!)].filter(
         (s) => s.group !== hovered.group || s.span !== hovered.span,
       ),
-      key: `${k}:${JSON.stringify(pair)}`,
+      key: `${match.own.from}:${JSON.stringify(pair)}`,
     };
   };
 

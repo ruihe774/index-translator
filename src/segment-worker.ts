@@ -7,8 +7,8 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { alignSentences } from "./align";
-import type { AlignedPair, SegmentedText } from "./api";
+import { alignSentences, lengthOf, openings } from "./align";
+import type { AlignedPair, AlignUnit, SegmentedText } from "./api";
 import { type Dense, DIMENSIONS, embed, readDense, WordPieceTokenizer } from "./labse";
 import { loadRuntime, type Runtime, type Session } from "./onnxruntime-ffi";
 import { findBoundaries, type TokenizerJson, XlmrTokenizer } from "./sat";
@@ -29,7 +29,7 @@ export type SegmentWorkerRequest =
   | { type: "unload"; req: number; model: SegmentModel }
   // `abort` holds one Int32 that the server thread makes non-zero when nobody wants the answer any more.
   | { type: "segment"; req: number; texts: string[]; minProbability: number; abort: SharedArrayBuffer }
-  | { type: "align"; req: number; source: string[]; target: string[]; abort: SharedArrayBuffer };
+  | { type: "align"; req: number; unit: AlignUnit; source: string[]; target: string[]; abort: SharedArrayBuffer };
 
 export type SegmentWorkerReply =
   | { type: "ok"; req: number; version?: string }
@@ -103,10 +103,12 @@ function handle(msg: SegmentWorkerRequest): SegmentWorkerReply {
       }
       const { session, tokenizer, dense } = labse;
       const abort = new Int32Array(msg.abort);
+      // A paragraph is read by its opening and weighed by its whole length.
+      const read = msg.unit === "paragraphs" ? openings(msg.source, msg.target) : msg;
       const embeddings = embed(
         tokenizer,
         dense,
-        [...msg.source, ...msg.target],
+        [...read.source, ...read.target],
         // BERT's segment ids: every token is of the first segment.
         (ids, mask, rows, width) => session.run([ids, mask, new BigInt64Array(ids.length)], rows, width, DIMENSIONS),
         () => Atomics.load(abort, 0) !== 0,
@@ -114,10 +116,10 @@ function handle(msg: SegmentWorkerRequest): SegmentWorkerReply {
       if (!embeddings) {
         return { type: "aborted", req: msg.req };
       }
-      const lengths = (texts: string[]) => texts.map((t) => Array.from(t.trim()).length);
       const pairs = alignSentences(
-        { embeddings: embeddings.slice(0, msg.source.length), lengths: lengths(msg.source) },
-        { embeddings: embeddings.slice(msg.source.length), lengths: lengths(msg.target) },
+        { embeddings: embeddings.slice(0, msg.source.length), lengths: msg.source.map(lengthOf) },
+        { embeddings: embeddings.slice(msg.source.length), lengths: msg.target.map(lengthOf) },
+        msg.unit,
       );
       return { type: "alignment", req: msg.req, pairs };
     }

@@ -1,8 +1,9 @@
 // Click-to-sync scrolling between the source and the translation. A pane maps a click to a line of
 // its text and a line to its position on screen; the paragraph alignment (`paragraphs.ts`) maps a
-// block of one text to the same block of the other. Used only while the paragraph check passes.
+// block of one text to its counterpart in the other. Used only while the blocks are matched.
 
-import { blockAt } from "./paragraphs.ts";
+import { type Alignment, counterpart, type LineRange } from "./paragraphs.ts";
+import type { Side } from "./state.ts";
 
 export interface Pane {
   /** The element that scrolls. */
@@ -119,16 +120,11 @@ export function clearLinked(view: HTMLElement) {
 }
 
 /**
- * Marks the elements of `view` that show block `k`, so the block under the pointer in the other
- * pane has its counterpart shaded here. `starts` are the first lines of the view's blocks.
+ * Marks the elements of `view` that show the lines of `range`, so the block under the pointer in the
+ * other pane has its counterpart shaded here.
  */
-export function markLinked(view: HTMLElement, starts: number[], k: number) {
+export function markLinked(view: HTMLElement, { from, to }: LineRange) {
   clearLinked(view);
-  const from = starts[k];
-  if (from === undefined) {
-    return;
-  }
-  const to = starts[k + 1] ?? Infinity;
   for (const child of view.children) {
     if (!(child instanceof HTMLElement) || child.dataset.line === undefined) {
       continue;
@@ -140,28 +136,28 @@ export function markLinked(view: HTMLElement, starts: number[], k: number) {
   }
 }
 
-/** The block of the hovered element of a rendered view, or null if the pointer is not over one. */
-export function hoveredBlock(e: Event, view: HTMLElement, starts: number[]): number | null {
+/** The line of the hovered element of a rendered view, or null if the pointer is not over one. */
+export function hoveredLine(e: Event, view: HTMLElement): number | null {
   const hit = e.target instanceof Element ? e.target.closest<HTMLElement>("[data-line]") : null;
-  return hit && view.contains(hit) ? blockAt(starts, Number(hit.dataset.line)) : null;
+  return hit && view.contains(hit) ? Number(hit.dataset.line) : null;
 }
 
 /**
- * Scrolls `to` so that the block clicked in `from` starts at the same height in both panes.
- * `fromStarts` and `toStarts` are the first lines of the blocks of each pane's text.
+ * Scrolls `to` so that the block clicked in `from`, the pane of `side`, starts at the same height as its
+ * counterpart in `to`. Nothing moves for a block with no counterpart.
  */
-export function syncFrom(e: MouseEvent, from: Pane, fromStarts: number[], to: Pane, toStarts: number[]): boolean {
+export function syncFrom(e: MouseEvent, from: Pane, to: Pane, a: Alignment, side: Side): boolean {
   const selection = getSelection();
   if (selection && !selection.isCollapsed && from.scroller.contains(selection.anchorNode)) {
     return false;
   }
   const line = from.lineAt(e);
-  if (line === null) {
+  const match = line === null ? null : counterpart(a, side, line);
+  if (!match) {
     return false;
   }
-  const k = blockAt(fromStarts, line);
-  const fromTop = from.lineTop(fromStarts[k]!);
-  const toTop = to.lineTop(toStarts[k]!);
+  const fromTop = from.lineTop(match.own.from);
+  const toTop = to.lineTop(match.other.from);
   if (fromTop === null || toTop === null) {
     return false;
   }

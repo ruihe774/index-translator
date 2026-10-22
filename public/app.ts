@@ -31,7 +31,17 @@ import {
   type Vram,
 } from "./messages.ts";
 import { initOpenUi } from "./open-ui.ts";
-import { alignBlocks, type Alignment } from "./paragraphs.ts";
+import {
+  alignBlocks,
+  alignFromPairs,
+  type Alignment,
+  blockTexts,
+  counterpart,
+  detailedMismatchMessage,
+  mismatchMessage,
+  paragraphMismatch,
+  unitOf,
+} from "./paragraphs.ts";
 import { registerServiceWorker } from "./pwa.ts";
 import { createRender } from "./render.ts";
 import { buildImageRequest, buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.ts";
@@ -39,12 +49,12 @@ import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
 import { focusableWhenScrolling } from "./scroll-focus.ts";
 import { SentenceBoundaries } from "./segment.ts";
 import { CHAT_MODEL, type Choice, detectSource, DOCUMENT_MODEL, type Selection, selectModel } from "./select-model.ts";
-import { SentenceAligner } from "./sentence-align.ts";
+import { MAX_SENTENCES, postAlign, SentenceAligner } from "./sentence-align.ts";
 import { initSentenceHover } from "./sentence-hover.ts";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
 import { bindRender, setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
-import { clearLinked, hoveredBlock, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
+import { clearLinked, hoveredLine, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
 import { webpageLink } from "./webpage-link.ts";
 
 const HEALTH_LOADING_POLL_MS = 2000;
@@ -472,25 +482,69 @@ function sourcePane(): Pane {
 function onSourceClick(e: MouseEvent) {
   const a = syncActive();
   if (a) {
-    syncFrom(e, sourcePane(), a.source, viewPane(outputEl, outputArea), a.output);
+    syncFrom(e, sourcePane(), viewPane(outputEl, outputArea), a, "source");
   }
 }
 
 function onOutputClick(e: MouseEvent) {
   const a = syncActive();
   if (a) {
-    syncFrom(e, viewPane(outputEl, outputArea), a.output, sourcePane(), a.source);
+    syncFrom(e, viewPane(outputEl, outputArea), sourcePane(), a, "output");
   }
 }
 
-/** Hovering a block of one rendered pane shades the block it maps to in the other rendered pane. */
-function onHover(e: MouseEvent, fromView: HTMLElement, toView: HTMLElement, side: "source" | "output") {
+/** Hovering a block of one rendered pane shades the blocks it maps to in the other rendered pane. */
+function onHover(e: MouseEvent, fromView: HTMLElement, toView: HTMLElement, side: Side) {
   const a = syncActive();
-  const k = a ? hoveredBlock(e, fromView, a[side]) : null;
-  if (!a || k === null) {
-    clearLinked(toView);
+  const line = a ? hoveredLine(e, fromView) : null;
+  const match = a && line !== null ? counterpart(a, side, line) : null;
+  if (match) {
+    markLinked(toView, match.other);
   } else {
-    markLinked(toView, a[side === "source" ? "output" : "source"], k);
+    clearLinked(toView);
+  }
+}
+
+/**
+ * Asked when a finished translation does not have as many blocks as its source: which blocks match
+ * which (`POST /align`). The answer, for that source and translation, turns on what matched blocks
+ * allow (sync, the hovered block's counterpart, the link check by block) and replaces the paragraph
+ * note with the places the translation went wrong. Without an answer the note stays as it was.
+ */
+let blockMatch = new AbortController();
+
+async function matchBlocks(source: string, translation: string, note: HTMLLIElement | undefined) {
+  const unit = unitOf(source);
+  const sourceBlocks = blockTexts(source, unit);
+  const outputBlocks = blockTexts(translation, unit);
+  if (
+    !aligner.available ||
+    [sourceBlocks, outputBlocks].some((blocks) => blocks.length === 0 || blocks.length > MAX_SENTENCES)
+  ) {
+    return;
+  }
+  const { signal } = blockMatch;
+  let alignment: Alignment | null;
+  try {
+    alignment = alignFromPairs(source, translation, await postAlign(sourceBlocks, outputBlocks, signal, "paragraphs"));
+  } catch {
+    return;
+  }
+  if (!alignment || signal.aborted) {
+    return;
+  }
+  synced = { source, translation, alignment };
+  refreshSync();
+  const mismatch = paragraphMismatch(source, translation);
+  if (note && mismatch) {
+    note.textContent = detailedMismatchMessage(mismatch, alignment);
+  }
+  if (linkCheck?.translation === translation) {
+    linkCheck = { translation, ref: linkReference(source, alignment) };
+    // Checked links are changed in place (a missing one loses its target), so the view is rebuilt first.
+    if (outputEl.querySelector("[data-link-problem], [data-link-paired]")) {
+      showOutput();
+    }
   }
 }
 
@@ -546,6 +600,8 @@ new MutationObserver(() => {
 function clearResult(markdown: boolean) {
   synced = null;
   linkCheck = null;
+  blockMatch.abort();
+  blockMatch = new AbortController();
   boundaries.abort();
   aligner.abort();
   views.output = { available: markdown, view: "preview" };
@@ -556,10 +612,11 @@ function clearResult(markdown: boolean) {
   placeholderEl.hidden = true;
 }
 
-function addNote(text: string) {
+function addNote(text: string): HTMLLIElement {
   const li = document.createElement("li");
   li.textContent = text;
   notesEl.append(li);
+  return li;
 }
 
 /** Output already on screen when a translation ends early is kept, but it must not look finished. */
@@ -737,12 +794,14 @@ async function translate() {
       sourceLang: sel.sourceLang,
       targetLang: toSelect.value,
     });
-    for (const n of notes) {
-      addNote(n);
-    }
-    const alignment = !image && done.finish_reason === "stop" ? alignBlocks(text, translation) : null;
+    const mismatch = image ? null : paragraphMismatch(text, translation);
+    const mismatchNote = notes.map(addNote).find((li) => mismatch && li.textContent === mismatchMessage(mismatch));
+    const matched = !image && done.finish_reason === "stop";
+    const alignment = matched ? alignBlocks(text, translation) : null;
     if (alignment) {
       synced = { source: text, translation, alignment };
+    } else if (matched) {
+      void matchBlocks(text, translation, mismatchNote);
     }
     metaEl.show(metaLine(model, done));
     finished = true;

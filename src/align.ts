@@ -10,9 +10,17 @@
 // times its size (the number of sentences in it), where `neighbours` is the mean cosine of each group
 // with the sentences just before and after the other (a pair that matches its neighbours as well is
 // less sure), and lengths are in characters, the source's scaled by the texts' ratio. An empty side
-// costs 1. The path with the least total distance wins.
+// costs 1 per sentence. The path with the least total distance wins.
+//
+// The same search matches the paragraphs of a document and its translation, each read by its opening
+// (`openings`) and weighed by its whole length. Length is then what tells a merged paragraph (its
+// opening is the first one's, its length both) from a dropped one, and an empty side costs less, 0.7:
+// at 1 a paragraph the translation left out is joined to a neighbour, as a sentence is, and the
+// neighbour is often the wrong one. Measured on 12 machine translations (en to zh, ja, es, de, fr, ko,
+// and zh to en) with paragraphs dropped, merged, split and repeated: 94% of the cases matched exactly
+// with 0.7, 61% with 1, and no clean translation flagged; 0.5 flagged half of them.
 
-import type { AlignedPair } from "./api";
+import type { AlignedPair, AlignUnit } from "./api";
 
 /** The paper's settings. */
 const MAX_GROUP = 4;
@@ -22,8 +30,12 @@ const NEIGHBOURS = 0.6;
 const PER_SENTENCE = 0.06;
 /** Weight of the length distance (`w`). */
 const LENGTH = 0.33;
-/** Distance of a sentence matched with nothing. */
-const UNMATCHED = 1;
+/** Distance of an item matched with nothing, by unit. */
+const UNMATCHED: Record<AlignUnit, number> = { sentences: 1, paragraphs: 0.7 };
+/** Characters of a source paragraph's opening; the target's is scaled by the texts' length ratio. */
+export const OPENING = 80;
+/** Bounds of a target opening: a ratio far from 1 should not leave it a word or the whole paragraph. */
+const OPENING_RANGE = [OPENING / 4, OPENING * 4] as const;
 
 /** The groups a step may take: [source sentences, target sentences]. */
 const GROUPS: [number, number][] = [
@@ -45,6 +57,34 @@ export interface Sentences {
 }
 
 const range = (from: number, count: number) => Array.from({ length: count }, (_, k) => from + k);
+
+/** Length in characters (code points), as the search weighs it. */
+export const lengthOf = (text: string) => Array.from(text.trim()).length;
+
+/**
+ * The first `n` characters of `text`, cut back to white space when that falls inside a word and there is
+ * white space in the second half (so text without spaces, such as Chinese, is cut where it is).
+ */
+function opening(text: string, n: number): string {
+  const chars = Array.from(text.trim());
+  if (chars.length <= n) {
+    return chars.join("");
+  }
+  const cut = chars.slice(0, n);
+  if (/\s/u.test(chars[n]!)) {
+    return cut.join("");
+  }
+  const space = cut.findLastIndex((c) => /\s/u.test(c));
+  return (space > n / 2 ? cut.slice(0, space) : cut).join("");
+}
+
+/** What is embedded of each paragraph: the source's first `OPENING` characters, the target's as many as say as much. */
+export function openings(source: string[], target: string[]): { source: string[]; target: string[] } {
+  const total = (texts: string[]) => texts.reduce((n, t) => n + lengthOf(t), 0);
+  const ratio = total(target) / (total(source) || 1) || 1;
+  const n = Math.round(Math.min(Math.max(OPENING * ratio, OPENING_RANGE[0]), OPENING_RANGE[1]));
+  return { source: source.map((t) => opening(t, OPENING)), target: target.map((t) => opening(t, n)) };
+}
 
 /** The sum of `count` vectors from `from`, normalized to length 1. */
 function groupVector(vectors: Float32Array[], from: number, count: number): Float32Array {
@@ -80,8 +120,9 @@ function lengthDistance(a: number, b: number): number {
   return longer === 0 ? 0 : 1 - Math.log2(1 + Math.min(a, b) / longer);
 }
 
-/** The best path through both texts, in order; every sentence of each is in exactly one pair. */
-export function alignSentences(source: Sentences, target: Sentences): AlignedPair[] {
+/** The best path through both texts, in order; every item of each is in exactly one pair. */
+export function alignSentences(source: Sentences, target: Sentences, unit: AlignUnit = "sentences"): AlignedPair[] {
+  const unmatched = UNMATCHED[unit];
   const n = source.embeddings.length;
   const m = target.embeddings.length;
   const sourceChars = source.lengths.reduce((a, b) => a + b, 0);
@@ -115,7 +156,7 @@ export function alignSentences(source: Sentences, target: Sentences): AlignedPai
   /** Distance of source sentences [i, i + a) with target sentences [j, j + b). */
   const distance = (i: number, a: number, j: number, b: number): number => {
     if (a === 0 || b === 0) {
-      return UNMATCHED * (a + b);
+      return unmatched * (a + b);
     }
     const similarity = cos(a, i, b, j);
     const around: number[] = [];

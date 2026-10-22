@@ -33,6 +33,7 @@ export type SegmentRequest = Schemas["SegmentRequest"];
 export type Segmentation = Schemas["Segmentation"];
 export type SegmentedText = Schemas["SegmentedText"];
 export type AlignRequest = Schemas["AlignRequest"];
+export type AlignUnit = Schemas["AlignUnit"];
 export type Alignment = Schemas["Alignment"];
 export type AlignedPair = Schemas["AlignedPair"];
 export type WebpageRequest = Schemas["WebpageRequest"];

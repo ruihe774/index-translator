@@ -398,9 +398,10 @@ test.describe("PDF", () => {
     await app.translate.click();
     await expect(app.output).toContainText("北方的河流");
     const posts = api.filter((r) => r.method !== "GET");
-    // Once it is finished the sentence model is asked where the sentences of both texts end.
+    // Once it is finished the sentence model is asked where the sentences of both texts end, and (the
+    // translation has fewer paragraphs than the page) the aligner which paragraphs match.
     expect(posts[0]!.path).toBe("/api/v1/translate");
-    expect(posts.slice(1).every((r) => r.path === "/api/v1/segment")).toBe(true);
+    expect(posts.slice(1).every((r) => r.path === "/api/v1/segment" || r.path === "/api/v1/align")).toBe(true);
     expect(posts[0]!.body).toContain("Rivers of the North");
     for (const post of posts) {
       expect(post.body).not.toContain("sample.pdf");

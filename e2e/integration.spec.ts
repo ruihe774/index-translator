@@ -471,20 +471,81 @@ test("matching lines in plain text: the raw textarea and the output sync both wa
   expect(await app.page.locator("#output-area").evaluate((el) => el.scrollTop)).toBeGreaterThan(0);
 });
 
-test("paragraphs that do not match: no sync", async ({ app }) => {
+/** 31 source blocks (a heading and 30 paragraphs) and a translation that left out blocks 21 to 25. */
+const dropped = {
+  source: "# Doc\n\n" + paragraphs(30, (i) => `Paragraph ${i} ${"word ".repeat(i % 3 ? 8 : 40)}`),
+  translation:
+    "# 文档\n\n" +
+    paragraphs(30, (i) => `第${i}段 ${"字".repeat(i % 2 ? 10 : 90)}`)
+      .split("\n\n")
+      .filter((_, i) => i < 20 || i >= 25)
+      .join("\n\n"),
+  pairs: [
+    ...Array.from({ length: 21 }, (_, i) => ({ source: [i], target: [i], similarity: 0.9 })),
+    ...Array.from({ length: 5 }, (_, i) => ({ source: [21 + i], target: [], similarity: 0 })),
+    ...Array.from({ length: 5 }, (_, i) => ({ source: [26 + i], target: [21 + i], similarity: 0.9 })),
+  ],
+};
+
+test("paragraphs that do not match: POST /align matches them, the note names the places, matched ones sync", async ({
+  app,
+}) => {
   await app.page.setViewportSize({ width: 1280, height: 800 });
-  const source = "# Doc\n\n" + paragraphs(30, (i) => `Paragraph ${i}`);
-  const translation = "# 文档\n\n" + paragraphs(25, (i) => `第${i}段`);
   await stubTranslate(
     app,
     200,
     sse([
-      ["delta", { text: translation }],
+      ["delta", { text: dropped.translation }],
       ["done", done],
     ]),
   );
-  await run(app, source);
+  const asked: any[] = [];
+  await app.page.route("**/api/v1/align", async (route) => {
+    asked.push(route.request().postDataJSON());
+    await route.fulfill({ json: { pairs: dropped.pairs } });
+  });
+  await run(app, dropped.source);
   await expect(app.meta).toContainText("generated");
+  await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
+  await expect(app.notes.first()).toHaveText(
+    "The source has 31 paragraphs and the translation has 26. Paragraphs 22–26 of the source seem to be missing from the translation. Check it against the source.",
+  );
+  expect(asked).toHaveLength(1);
+  expect(asked[0].unit).toBe("paragraphs");
+  expect([asked[0].source.length, asked[0].target.length]).toStrictEqual([31, 26]);
+  expect(asked[0].source[1]).toMatch(/^Paragraph 0 word/);
+
+  // Output block 23 (the 23rd <p>) is source block 28 (the 28th <p>), past the gap.
+  await app.output.locator("p").nth(22).click();
+  const out = await offsetIn(app, "#output > p:nth-of-type(23)", "#output-area");
+  const src = await offsetIn(app, "#source-view > p:nth-of-type(28)", "#source-area");
+  expect(Math.abs(out - src)).toBeLessThan(2);
+
+  // A source block with no counterpart moves nothing.
+  const before = await app.page.locator("#output-area").evaluate((el) => el.scrollTop);
+  await app.page.locator("#source-view p").nth(22).click();
+  expect(await app.page.locator("#output-area").evaluate((el) => el.scrollTop)).toBe(before);
+});
+
+test("paragraphs that do not match and POST /align fails: no sync, and the plain note", async ({ app }) => {
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  await stubTranslate(
+    app,
+    200,
+    sse([
+      ["delta", { text: dropped.translation }],
+      ["done", done],
+    ]),
+  );
+  let asked = 0;
+  await app.page.route("**/api/v1/align", (route) => {
+    asked++;
+    return route.fulfill({ status: 503, json: { error: { code: "align_unavailable", message: "not installed" } } });
+  });
+  await run(app, dropped.source);
+  await expect(app.meta).toContainText("generated");
+  await expect.poll(() => asked).toBe(1);
+  await expect(app.notes.first()).toContainText("Parts may have been dropped");
   await expect(app.page.locator("#output-area")).not.toHaveClass(/synced/);
   await app.output.locator("p").nth(20).click();
   expect(await app.page.locator("#source-area").evaluate((el) => el.scrollTop)).toBe(0);

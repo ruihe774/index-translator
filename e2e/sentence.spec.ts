@@ -248,6 +248,7 @@ test("with matched blocks, the sentence's counterpart in the other view is marke
   // Only the hovered block was asked about, with its sentences as the sentence model cuts them.
   expect((await mock.state()).align.requests).toStrictEqual([
     {
+      unit: "sentences",
       source: ["First sentence here.", "Second sentence there."],
       target: ["Première phrase ici.", "Seconde phrase là."],
     },
@@ -276,9 +277,39 @@ test("a sentence translated by two is marked with both, and both with it", async
   await settlesTo(app.page, "#output", "Trois", ["Three.", "Trois."]);
 });
 
-test("without matched blocks nothing is asked, and only the sentence is marked", async ({ app, mock }) => {
-  // Three blocks for two: the paragraph check fails.
-  await mock.set({ chunks: ["# Titre\n\n", "Une phrase.\n\n", "En trop.\n"] });
+// Three blocks for two: the paragraph check fails.
+const EXTRA = { chunks: ["# Titre\n\n", "Une phrase.\n\n", "En trop.\n"] };
+
+test("blocks that do not match are matched by paragraph; one with no counterpart marks only its sentence", async ({
+  app,
+  mock,
+}) => {
+  // The mock pairs block i with block i and leaves the extra one alone.
+  await mock.set(EXTRA);
+  await app.open();
+  await app.from.selectOption("en");
+  await app.to.selectOption("fr");
+  await app.text.fill("# Title\n\nOne sentence.\n");
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  // Two source blocks are too few for the paragraph note, not for matching.
+  await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
+
+  await settlesTo(app.page, "#output", "phrase", ["Une phrase.", "One sentence."]);
+  await hover(app.page, "#output", "trop");
+  await expect.poll(() => marked(app.page)).toStrictEqual(["En trop."]);
+  const { requests } = (await mock.state()).align;
+  expect(requests[0]).toStrictEqual({
+    unit: "paragraphs",
+    source: ["# Title", "One sentence."],
+    target: ["# Titre", "Une phrase.", "En trop."],
+  });
+  // Then only the hovered block's sentences: none for the block with no counterpart.
+  expect(requests.slice(1)).toStrictEqual([{ unit: "sentences", source: ["One sentence."], target: ["Une phrase."] }]);
+});
+
+test("without an aligner nothing is matched, and only the sentence is marked", async ({ app, mock }) => {
+  await mock.set({ ...EXTRA, align: NO_ALIGNER });
   await app.open();
   await app.from.selectOption("en");
   await app.to.selectOption("fr");
@@ -291,5 +322,6 @@ test("without matched blocks nothing is asked, and only the sentence is marked",
   await app.page.waitForTimeout(300);
   await hover(app.page, "#output", "Une");
   expect(await marked(app.page)).toStrictEqual(["Une phrase."]);
+  await expect(app.page.locator("#output-area")).not.toHaveClass(/synced/);
   expect((await mock.state()).align.requests).toStrictEqual([]);
 });
