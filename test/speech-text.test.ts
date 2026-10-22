@@ -105,6 +105,20 @@ describe("pieces", () => {
     expect(Math.max(...lengths)).toBeLessThanOrEqual(400);
   });
 
+  test("pieces aim at the language's length: Arabic stays within 270, long English centres near 200", () => {
+    const sentence = (n: number, w: string) => `${Array.from({ length: n }, () => w).join(" ")}.`;
+    const arText = Array.from({ length: 60 }, (_, i) => sentence(4 + ((i * 5) % 17), "كلمة")).join(" ");
+    const ar = texts(arText, false, "ar");
+    expect(ar.length).toBeGreaterThan(5);
+    expect(Math.max(...ar.map((p) => p.length))).toBeLessThanOrEqual(270);
+    const enText = Array.from({ length: 200 }, (_, i) => sentence(3 + ((i * 7) % 20), "Word")).join(" ");
+    const en = texts(enText, false, "en").map((p) => p.length);
+    const mean = en.reduce((a, b) => a + b, 0) / en.length;
+    expect(en.length).toBeGreaterThan(10);
+    expect(mean).toBeGreaterThan(150);
+    expect(mean).toBeLessThan(250);
+  });
+
   test("a cut falls at a sentence end rather than at a clause, and at a clause rather than in a sentence", () => {
     // A capital after the full stop, or Intl.Segmenter sees no sentence boundary.
     const filler = (n: number) => `Word${" word".repeat(n - 1)}`;

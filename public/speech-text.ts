@@ -12,10 +12,11 @@
 import { type Block, type Inline, parseLines } from "./markdown.ts";
 
 /** The languages IndexTTS-2.5 speaks; the same list as SPEECH_LANGUAGES in src/speech.ts. */
-export const SPEECH_LANGS = ["zh", "en", "ja", "es", "ar"];
+export const SPEECH_LANGS = ["zh", "en", "ja", "es", "ar"] as const;
+type SpeechLang = (typeof SPEECH_LANGS)[number];
 
 export function canSpeak(lang: string | undefined): lang is string {
-  return lang !== undefined && SPEECH_LANGS.includes(lang);
+  return lang !== undefined && (SPEECH_LANGS as readonly string[]).includes(lang);
 }
 
 export interface Segment {
@@ -33,9 +34,20 @@ const PAUSE_HEADING = 500;
 /** Chinese and Japanese: no spaces between words, full-width punctuation, far fewer characters per second. */
 const isCjk = (lang: string) => lang === "zh" || lang === "ja";
 
-/** A piece is about `soft` characters long and never beyond `hard` (UTF-16 units). */
+/**
+ * A piece is about `soft` characters long and never beyond `hard` (UTF-16 units). From IndexTTS's measured speed
+ * (zh 5.3, ja 6.0, en 18.7, es 16.4, ar 11.0 characters per second): every language aims at about 11 s a piece.
+ */
+const LIMITS: Record<SpeechLang, { soft: number; hard: number }> = {
+  zh: { soft: 60, hard: 150 },
+  ja: { soft: 70, hard: 150 },
+  en: { soft: 200, hard: 400 },
+  es: { soft: 180, hard: 400 },
+  ar: { soft: 120, hard: 270 },
+};
+
 function limits(lang: string): { soft: number; hard: number } {
-  return isCjk(lang) ? { soft: 60, hard: 150 } : { soft: 180, hard: 400 };
+  return LIMITS[lang as SpeechLang] ?? LIMITS.en;
 }
 
 // ---- Japanese numbers ------------------------------------------------------------------------
