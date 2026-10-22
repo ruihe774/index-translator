@@ -51,6 +51,11 @@ export interface OpenUi {
   setBusy(busy: boolean): void;
   /** The box no longer holds the page that is marked in the strip. */
   deselect(): void;
+  /**
+   * Clear emptied the box: the line about what was opened goes too, unless a PDF is open (it stays
+   * open until Close, and its pages are still listed).
+   */
+  clearNote(): void;
 }
 
 /** The button's title when a library is missing, by what can still be opened. */
@@ -348,6 +353,11 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     },
     deselect() {
       d.pages.selected = null;
+    },
+    clearNote() {
+      if (pdf === null) {
+        say("");
+      }
     },
   };
 }

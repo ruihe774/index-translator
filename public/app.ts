@@ -961,6 +961,7 @@ function clearAll() {
   }
   loadSource("");
   openUi.deselect();
+  openUi.clearNote();
   textInput.focus();
 }
 

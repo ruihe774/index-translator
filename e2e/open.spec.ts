@@ -217,6 +217,10 @@ test.describe("text and Markdown", () => {
     await expect(app.page.locator("#pdf-pages")).toBeHidden();
     expect((await mock.state()).requests).toHaveLength(0);
     expect(api.filter((r) => r.method !== "GET")).toStrictEqual([]);
+    // Clear empties the box, so the line about what was opened goes with it.
+    await app.page.getByRole("button", { name: "Clear", exact: true }).click();
+    await expect(app.text).toHaveValue("");
+    await expect(note(app.page)).toBeHidden();
   });
 
   test("a file dropped anywhere on the page is opened like a picked one", async ({ app }) => {
