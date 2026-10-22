@@ -15,7 +15,8 @@
 //             beside them. Linux only (x86-64 or aarch64). The toolkit is found through CUDA_PATH, CUDA_HOME,
 //             /usr/local/cuda-13 or /usr/local/cuda. Needs nvcc, not glslc or the Vulkan headers.
 //   --cuda-arch=LIST  the GPU architectures to compile for, CMake's CMAKE_CUDA_ARCHITECTURES (`native` for this
-//             machine's GPU, which is much faster to build); by default llama.cpp's own list (Turing to Blackwell)
+//             machine's GPU, which is much faster to build); by default 75-virtual;86-virtual: PTX for Turing and
+//             Ampere that the driver compiles for the GPU on the first run (DEFAULT_CUDA_ARCH in build_tools.ts)
 //
 // Needs git, cmake (3.14 or later), a C and a C++ compiler, glslc and the Vulkan headers; ninja is
 // used when it is installed. On Debian and Ubuntu:

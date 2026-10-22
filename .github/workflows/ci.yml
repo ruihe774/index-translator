@@ -245,7 +245,7 @@ jobs:
             repo: sbsa
             keyring_sha256: 6ea7d2737648936820e85677177957a0f6521b840d98eb0bbae0a4f003fa7249
     runs-on: ${{ matrix.runner }}
-    # Every CUDA kernel is compiled for seven GPU architectures, twice (llama.cpp and audio.cpp); the caches make it rare.
+    # Every CUDA kernel is compiled for two GPU architectures, twice (llama.cpp and audio.cpp); the caches make it rare.
     timeout-minutes: 240
     env:
       # The toolkit's packages in NVIDIA's apt repository are named by this; it is also in the cache keys.

@@ -6,7 +6,7 @@
 //   --cuda    the CUDA 13 variant for NVIDIA GPUs instead of the Vulkan one, into ./vendor/audio.cpp-cuda:
 //             CUDA and the CPU, no Vulkan, with the toolkit's runtime libraries (cudart, cuBLAS) beside the
 //             library. Run it with SPEECH_BACKEND=cuda. Linux only; see scripts/build_llama.ts for the toolkit
-//             and --cuda-arch (here audio.cpp's own default list, the same architectures).
+//             and --cuda-arch (the default list is the same).
 //
 //   --native  build the CPU code for this machine's processor; the library may then die with
 //             SIGILL on another one. By default it needs AVX2, like llama.cpp's "haswell" variant.

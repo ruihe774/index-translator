@@ -187,8 +187,10 @@ LLAMA_DIR=vendor/llama.cpp-cuda AUDIO_DIR=vendor/audio.cpp-cuda SPEECH_BACKEND=c
 bun scripts/build_appimage.ts --cuda   # dist/Index_Translator-<arch>-cuda.AppImage
 ```
 
-The first two take a while: every kernel is compiled for Turing to Blackwell. `--cuda-arch=native` builds for the GPU
-in this machine only (several times faster, not for sharing).
+By default the kernels are compiled as PTX for Turing and Ampere (`75-virtual;86-virtual`), which the NVIDIA driver
+compiles for your GPU on the first run (about 20 s on a Blackwell GPU, kept in the driver's cache afterwards); on
+Ada and Blackwell they run about 5% slower than a native build. `--cuda-arch=LIST` names the architectures instead
+(`native` builds for the GPU in this machine only: fastest to build and to run, not for sharing).
 
 > [!NOTE]
 > Reading aloud is optional. Skipping it saves 14.2 GiB of downloads and about 5.7 GiB of VRAM.

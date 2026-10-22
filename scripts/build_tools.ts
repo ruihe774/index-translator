@@ -94,7 +94,16 @@ export interface Cuda {
   libs: string;
 }
 
-/** The option that names the GPU architectures of a CUDA build (`--cuda-arch=native`); the engine's own list when absent. */
+/**
+ * The GPU architectures of a CUDA build without `--cuda-arch=`: PTX for Turing (the floor of CUDA 13) and for
+ * Ampere, which the driver compiles on the first run (cached after that) for newer GPUs. Measured on a Blackwell
+ * GB10: the first run takes about 20 s longer, then prompt processing is 5% and generation 5% slower than a native
+ * build (38% and 11% from Turing's PTX alone). llama.cpp's own list (seven architectures) takes four times as long
+ * to build and makes the library three times as large.
+ */
+export const DEFAULT_CUDA_ARCH = "75-virtual;86-virtual";
+
+/** The option that names the GPU architectures of a CUDA build (`--cuda-arch=native`); `DEFAULT_CUDA_ARCH` when absent. */
 export const CUDA_ARCH_OPTION = "--cuda-arch=";
 
 /** The value of `--cuda-arch=` among `flags`, if given. */
@@ -135,12 +144,12 @@ export async function findCuda(): Promise<Cuda> {
   throw new Error(`the CUDA 13 toolkit was not found; ${CUDA_HINT}`);
 }
 
-/** The CMake options that make a build use `cuda` and nothing else of CUDA's defaults, for the architectures `arch` (the project's own list when undefined). */
+/** The CMake options that make a build use `cuda` and nothing else of CUDA's defaults, for the architectures `arch` (`DEFAULT_CUDA_ARCH` when undefined). */
 export function cudaCMakeOptions(cuda: Cuda, arch: string | undefined): string[] {
   return [
     `-DCMAKE_CUDA_COMPILER=${cuda.nvcc}`,
     `-DCUDAToolkit_ROOT=${cuda.root}`,
-    ...(arch ? [`-DCMAKE_CUDA_ARCHITECTURES=${arch}`] : []),
+    `-DCMAKE_CUDA_ARCHITECTURES=${arch ?? DEFAULT_CUDA_ARCH}`,
   ];
 }
 
