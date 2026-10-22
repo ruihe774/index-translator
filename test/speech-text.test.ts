@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { canSpeak, kanjiNumber, speechSegments } from "../public/speech-text";
+import { canSpeak, kanjiNumber, speechSegments, speechTexts } from "../public/speech-text";
 
 const texts = (text: string, markdown: boolean, lang = "en") => speechSegments(text, markdown, lang).map((s) => s.text);
 
@@ -304,6 +304,75 @@ test("kanjiNumber", () => {
   for (const [digits, kanji] of cases) {
     expect([digits, kanjiNumber(digits)]).toStrictEqual([digits, kanji]);
   }
+});
+
+describe("sentence boundaries from a model", () => {
+  const LOREM = "lorem ipsum dolor sit amet ".repeat(7); // 189 characters
+  const withModel = (text: string, offsets: number[], probabilities: number[], lang = "en") =>
+    speechSegments(text, false, lang, () => ({ offsets, probabilities })).map((s) => s.text);
+
+  test("a full stop before a lowercase letter is cut where the model says so", () => {
+    const text = `${LOREM}done. then ${LOREM}`.trim();
+    const at = LOREM.length + "done.".length;
+    // Intl.Segmenter sees no sentence end there, and one long piece beats cutting at a word end.
+    expect(texts(text, false)).toHaveLength(1);
+    expect(withModel(text, [at], [0.9])).toStrictEqual([`${LOREM}done.`.trim(), `then ${LOREM}`.trim()]);
+    // An offset after the space is the same cut.
+    expect(withModel(text, [at + 1], [0.9])).toStrictEqual([`${LOREM}done.`.trim(), `then ${LOREM}`.trim()]);
+  });
+
+  test("the model replaces Intl.Segmenter: a sentence end it does not report is no cut", () => {
+    const text = `${LOREM}done. Then ${LOREM}`.trim();
+    expect(texts(text, false)).toHaveLength(2);
+    expect(withModel(text, [], [])).toHaveLength(1);
+  });
+
+  test("an abbreviation is not cut when the model gives it a low probability", () => {
+    const head = "lorem ipsum dolor sit amet ".repeat(3);
+    const text = `${head}Dr. Smith ${"lorem ipsum dolor sit amet ".repeat(8)}`.trim();
+    const at = head.length + "Dr.".length;
+    expect(withModel(text, [at], [0.9])).toHaveLength(2);
+    expect(withModel(text, [at], [0.001])).toHaveLength(1);
+  });
+
+  test("an offset inside a word is ignored", () => {
+    const text = `${LOREM}${LOREM}`.trim();
+    const inside = LOREM.length + 3; // in the middle of "lorem"
+    expect(withModel(text, [inside], [0.99])).toHaveLength(1);
+    // A surrogate pair stays whole in Chinese and Japanese too.
+    const pair = "😀".repeat(60);
+    expect(withModel(pair, [61], [0.99], "zh").every((p) => p.length % 2 === 0)).toBe(true);
+  });
+
+  test("clause punctuation keeps its floor where the model reports nothing", () => {
+    const text = `${LOREM}and, ${LOREM}`.trim();
+    const middle = withModel(text, [], []);
+    expect(middle).toHaveLength(2);
+    expect(middle[0]!.endsWith("and,")).toBe(true);
+  });
+
+  test("Chinese and Japanese are cut wherever the model says", () => {
+    const text = "我".repeat(100);
+    expect(withModel(text, [50], [0.9], "zh")).toStrictEqual(["我".repeat(50), "我".repeat(50)]);
+  });
+
+  test("a text the model has no answer for is cut as without it", () => {
+    const text = `${LOREM}done. Then ${LOREM}`.trim();
+    expect(speechSegments(text, false, "en", () => void 0)).toStrictEqual(speechSegments(text, false, "en"));
+  });
+
+  test("speechTexts lists the strings that are cut, with their blocks, and leaves out the short ones", () => {
+    const long = `${LOREM}done. Then ${LOREM}`.trim();
+    const md = `# A title\n\nShort one.\n\n${long}\n\n- ${long}\n\n\`\`\`\ncode\n\`\`\``;
+    const asked: string[] = [];
+    speechSegments(md, true, "en", (t) => void asked.push(t));
+    const listed = speechTexts(md, true, "en");
+    expect(listed.map((t) => t.text)).toStrictEqual(asked.filter((t) => t.length > 300));
+    expect(listed.map((t) => t.line)).toStrictEqual([4, 6]);
+    expect(speechTexts("Hello there.", false, "en")).toStrictEqual([]);
+    expect(speechTexts("   \n  ", false, "en")).toStrictEqual([]);
+    expect(speechTexts("我".repeat(100), false, "zh")).toStrictEqual([{ line: 0, text: "我".repeat(100) }]);
+  });
 });
 
 test("canSpeak", () => {

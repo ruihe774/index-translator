@@ -40,7 +40,7 @@ Usage:
 
 fetch downloads everything unless --model names what to get: index-translate-9b,
 index-nailong-9b, index-tts-2.5 (reading aloud, with the voices), bs-roformer (takes the voice out
-of music and noise in an uploaded sample), sat-3l-sm (sentence segmentation, not used yet). It needs curl, and continues an interrupted download
+of music and noise in an uploaded sample), sat-3l-sm (finds sentences for reading aloud). It needs curl, and continues an interrupted download
 when run again.
 
 Settings are flags or environment variables (--port 8080 or PORT=8080). The common ones:

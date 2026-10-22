@@ -5,7 +5,7 @@ import { expect, test as base } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import { CoverageReport } from "monocart-coverage-reports";
 
-import type { FinishReason, SpeechStatus, Voice } from "../src/api";
+import type { FinishReason, SegmentStatus, SpeechStatus, Voice } from "../src/api";
 import { COVERAGE, mappedModule, REPORT } from "./coverage";
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
@@ -39,6 +39,8 @@ export interface MockKnobs {
     delayMs?: number;
     failWith?: string;
   };
+  /** The mock sentence model of `POST /segment`: `state: "unavailable"` is an install without it. */
+  segment?: { state?: SegmentStatus; delayMs?: number; failWith?: string };
 }
 
 export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs">> {
@@ -50,6 +52,8 @@ export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs"
   speech: { requests: { text: string; lang: string; voice: string; speed: number }[] };
   /** `requests` are the addresses asked of the mock browser, in order. */
   webpage: { requests: string[]; aborted: number };
+  /** `requests` are the texts asked of the mock sentence model, one list per request. */
+  segment: { requests: string[][]; aborted: number };
 }
 
 export interface Mock {

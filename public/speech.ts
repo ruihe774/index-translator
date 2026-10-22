@@ -44,6 +44,8 @@ export class SpeechPlayer {
   private queued: { index: number; source: AudioBufferSourceNode; end: number } | null = null;
   private paused = false;
   private active = false;
+  /** Started by `startWhenPlanned` and the plan has not answered: there are no pieces yet. */
+  private planning = false;
   private updateTimer: ReturnType<typeof setTimeout> | null = null;
   state: PlayerState = "idle";
 
@@ -75,6 +77,46 @@ export class SpeechPlayer {
     if (from < 0 || from >= segments.length) {
       return;
     }
+    this.unlock();
+    this.segments = segments;
+    this.settings = settings;
+    this.active = true;
+    this.buffer.open(segments, settings);
+    void this.play(from, 0);
+  }
+
+  /**
+   * Like `start`, for a plan that is not ready yet (the pieces wait for what a request to the server
+   * says): the audio is unlocked now, in the click, and the player shows "loading" until `plan` has
+   * answered with the pieces and where to begin. A stop, or a new start, before that drops the plan.
+   * A change of voice or speed meanwhile is part of the plan's start.
+   */
+  startWhenPlanned(plan: Promise<{ segments: Segment[]; from: number }>, settings: SpeechSettings): void {
+    this.stop();
+    this.unlock();
+    this.segments = [];
+    this.settings = settings;
+    this.active = true;
+    this.planning = true;
+    const { run } = this;
+    this.refresh();
+    void plan.then(({ segments, from }) => {
+      if (run !== this.run) {
+        return;
+      }
+      this.planning = false;
+      if (from < 0 || from >= segments.length) {
+        this.stop();
+        return;
+      }
+      this.segments = segments;
+      this.buffer.open(segments, this.settings);
+      void this.play(from, 0);
+    });
+  }
+
+  /** Creates the audio context and starts it: only a click (or key) handler is allowed to. */
+  private unlock(): void {
     if (!this.ctx) {
       this.ctx = new AudioContext();
       // iOS Safari interrupts the context when the page goes to the background (another app, the
@@ -86,11 +128,6 @@ export class SpeechPlayer {
       );
     }
     void this.ctx.resume();
-    this.segments = segments;
-    this.settings = settings;
-    this.active = true;
-    this.buffer.open(segments, settings);
-    void this.play(from, 0);
   }
 
   pause(): void {
@@ -136,6 +173,7 @@ export class SpeechPlayer {
     }
     this.active = false;
     this.paused = false;
+    this.planning = false;
     this.silence();
     this.buffer.close();
     this.hooks.onSegment(null);
@@ -207,7 +245,8 @@ export class SpeechPlayer {
   /** A new voice or speed; while reading, the current piece starts again with it. */
   update(settings: Partial<SpeechSettings>): void {
     this.settings = { ...this.settings, ...settings };
-    if (!this.active) {
+    // The plan being waited for starts with them.
+    if (!this.active || this.planning) {
       return;
     }
     this.silence();

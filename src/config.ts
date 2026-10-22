@@ -44,7 +44,7 @@ export interface Config {
   llamaDir: string;
   /** Layers to run on the GPU; -1 means all of them. */
   gpuLayers: number;
-  /** CPU threads for the engine; 0 uses half the logical CPUs. */
+  /** CPU threads for the engine; 0 uses the performance cores (at most 8, at most the CPUs this process may use). */
   threads: number;
   ctxSize: number;
   maxInputTokens: number;
@@ -74,6 +74,16 @@ export interface Config {
   speechBackend: string;
   /** Seconds without a speech request after which the speech model leaves the GPU; 0 keeps it. */
   speechIdleUnload: number;
+  /** Sentence segmentation (`POST /segment`); false never loads ONNX Runtime. */
+  segment: boolean;
+  /** Directory with the ONNX Runtime library, as scripts/fetch_onnxruntime.ts leaves it. */
+  onnxruntimeDir: string;
+  /** Directory holding SaT's `model.onnx` and `tokenizer.json`. */
+  segmentModelDir: string;
+  /** CPU threads for segmentation; 0 uses the performance cores, like `threads`. */
+  segmentThreads: number;
+  /** Seconds without a segmentation request after which its model is freed; 0 keeps it. */
+  segmentIdleUnload: number;
 }
 
 /** Every setting, by its environment variable; the command-line flag is the lowercase name with dashes (`--port`). */
@@ -99,6 +109,11 @@ export const SETTING_NAMES = [
   "VOICES_DIR",
   "SPEECH_BACKEND",
   "SPEECH_IDLE_UNLOAD",
+  "SEGMENT",
+  "ONNXRUNTIME_DIR",
+  "SEGMENT_MODEL_DIR",
+  "SEGMENT_THREADS",
+  "SEGMENT_IDLE_UNLOAD",
   "DEV_RELOAD",
   "OPEN_BROWSER",
 ] as const;
@@ -184,6 +199,11 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     voicesDir: resolve(env.VOICES_DIR || join(root, "voices")),
     speechBackend: env.SPEECH_BACKEND || "vulkan",
     speechIdleUnload: int(env, "SPEECH_IDLE_UNLOAD", 300),
+    segment: env.SEGMENT !== "0",
+    onnxruntimeDir: resolve(env.ONNXRUNTIME_DIR || join(root, "vendor", "onnxruntime")),
+    segmentModelDir: resolve(env.SEGMENT_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "sat-3l-sm")),
+    segmentThreads: int(env, "SEGMENT_THREADS", 0),
+    segmentIdleUnload: int(env, "SEGMENT_IDLE_UNLOAD", 300),
   };
 }
 
@@ -202,7 +222,7 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   MAX_INPUT_TOKENS: "largest accepted prompt, in tokens (default 28000)",
   MAX_QUEUE: "requests allowed to wait (default 8)",
   GPU_LAYERS: "`all` (default), a layer count, or 0 to run on the processor",
-  LLAMA_THREADS: "CPU threads for decoding (default half the logical CPUs)",
+  LLAMA_THREADS: "CPU threads for decoding (default the performance cores: P-cores or big cores, at most 8)",
   LLAMA_DIR: "directory with libllama and its backends (default vendor/llama.cpp)",
   PUBLIC_DIR: "directory with the web app (default public/)",
   SPEECH: "0 turns reading aloud off (default on)",
@@ -212,6 +232,11 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   VOICES_DIR: "directory with the voice recordings, one .wav each (default voices/)",
   SPEECH_BACKEND: "speech backend: vulkan (default) or cpu",
   SPEECH_IDLE_UNLOAD: "seconds without speech before the model is freed; 0 never (default 300)",
+  SEGMENT: "0 turns sentence segmentation for reading aloud off (default on)",
+  ONNXRUNTIME_DIR: "directory with the ONNX Runtime library (default vendor/onnxruntime)",
+  SEGMENT_MODEL_DIR: "directory with the sentence segmentation model (default MODELS_DIR/sat-3l-sm)",
+  SEGMENT_THREADS: "CPU threads for sentence segmentation (default the performance cores, at most 8)",
+  SEGMENT_IDLE_UNLOAD: "seconds without segmentation before its model is freed; 0 never (default 300)",
   DEV_RELOAD: "1 reloads open pages when public/ changes (development)",
   OPEN_BROWSER: "0 does not open the web app at startup (default on)",
 };

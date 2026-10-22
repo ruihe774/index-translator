@@ -100,7 +100,7 @@ about to download and asks for `yes` first (the same text as here, in short).
 
 ### SaT 3L-SM (`sat-3l-sm`)
 
-- Sentence segmentation model, for upcoming use and not used yet: `segment-any-text/sat-3l-sm` of
+- Sentence segmentation model (where reading aloud cuts a text into utterances): `segment-any-text/sat-3l-sm` of
   [wtpsplit](https://github.com/segment-any-text/wtpsplit), as an 8-bit ONNX export by jiangzhuo9357
   (`jiangzhuo9357/sat-3l-sm-onnx`, `model.onnx`), with `tokenizer.json`, which is the tokenizer of
   `FacebookAI/xlm-roberta-base`, unmodified. Both files are downloaded into `models/sat-3l-sm/`.

@@ -88,6 +88,7 @@ describe("the spec against the server", () => {
         "GET /translations/{id}/events",
         "DELETE /translations/{id}",
         "GET /voices",
+        "POST /segment",
         "POST /speech",
         "POST /tokenize",
         "POST /translate",

@@ -77,7 +77,7 @@ const SEPARATION_SHA256 = "9a55a8cad369d00f6e0fb208bb0cd87e30e25430772b8491e20a4
 
 /**
  * SaT 3L-SM (segment-any-text/sat-3l-sm, MIT) as an 8-bit ONNX export with the XLM-RoBERTa tokenizer
- * (about 250 MB), for the sentence segmentation to come; not used by the server yet. The files are
+ * (about 250 MB), which `POST /segment` runs (src/segment.ts) to find sentences for reading aloud. The files are
  * called alike in every such repository, so they go into a directory of their own in MODELS_DIR.
  */
 const SEGMENTATION = "sat-3l-sm";

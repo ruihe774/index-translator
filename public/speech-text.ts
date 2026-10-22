@@ -8,7 +8,12 @@
 //
 // Each piece carries the `data-line` of the top-level element it comes from, so the page can show
 // which block is being read.
+//
+// Where a text is cut follows the probability of a cut after each character. Sentence ends come from
+// `Intl.Segmenter`, or from the server's sentence model (SaT, `POST /segment`) when the caller has its
+// answer for the exact strings `speechTexts` lists; fetching it is segment.ts's business, not this file's.
 
+import type { SegmentedText } from "../src/api.ts";
 import { type Block, type Inline, parseLines } from "./markdown.ts";
 
 /** The languages IndexTTS-2.5 speaks; the same list as SPEECH_LANGUAGES in src/speech.ts. */
@@ -156,11 +161,42 @@ const P_CLAUSE = 0.01;
 const P_WORD = 1e-6;
 
 /**
+ * What a sentence model says about a text: offset p (UTF-16 units) means a sentence may end between
+ * `text.slice(0, p)` and `text.slice(p)`, with this probability. Positions not listed are unlikely.
+ */
+export type Boundaries = SegmentedText;
+/** What `speechSegments` looks the model's answer up by: the text being cut. */
+export type BoundaryLookup = (text: string) => Boundaries | undefined;
+
+/** The model's probability of a cut after each unit (`p[k]`: between unit k and k + 1); 0 where it reports none. */
+function modelProbabilities(text: string, lang: string, boundaries: Boundaries): Float64Array {
+  const p = new Float64Array(text.length);
+  boundaries.offsets.forEach((offset, i) => {
+    // The ends of the text are no cuts.
+    if (!Number.isInteger(offset) || offset < 1 || offset >= text.length) {
+      return;
+    }
+    // An offset after the whitespace that ends a sentence is the cut before that whitespace.
+    let k = offset - 1;
+    while (k > 0 && /\s/.test(text[k]!)) {
+      k--;
+    }
+    // Inside a word a cut is impossible, whatever the model says (Chinese and Japanese have no words to split).
+    if (isCjk(lang) || /\s/.test(text[k + 1]!)) {
+      p[k] = Math.max(p[k]!, boundaries.probabilities[i] ?? 0);
+    }
+  });
+  return p;
+}
+
+/**
  * The log of the probability of a cut after each UTF-16 unit (minus infinity: never): high at the end of a
  * sentence, low after clause punctuation, tiny at any other word end. Never inside a word where spaces
- * separate words, nor between the halves of a surrogate pair.
+ * separate words, nor between the halves of a surrogate pair. With `boundaries` the sentence ends are the
+ * model's (its probability where it reports one) instead of `Intl.Segmenter`'s, and clause punctuation
+ * stays at least as likely as `P_CLAUSE`.
  */
-function cutLogProbabilities(text: string, lang: string): Float64Array {
+function cutLogProbabilities(text: string, lang: string, boundaries?: Boundaries): Float64Array {
   const p = new Float64Array(text.length);
   for (let k = 0; k < text.length - 1; k++) {
     if (/[\uD800-\uDBFF]/.test(text[k]!) && /[\uDC00-\uDFFF]/.test(text[k + 1]!)) {
@@ -172,8 +208,18 @@ function cutLogProbabilities(text: string, lang: string): Float64Array {
       p[k] = P_WORD;
     }
   }
-  for (const end of sentenceEnds(text, lang)) {
-    p[end - 1] = P_SENTENCE;
+  if (boundaries) {
+    const model = modelProbabilities(text, lang, boundaries);
+    for (let k = 0; k < p.length; k++) {
+      // Only where a cut is possible at all: not in a surrogate pair.
+      if (p[k]! > 0 && model[k]! > p[k]!) {
+        p[k] = model[k]!;
+      }
+    }
+  } else {
+    for (const end of sentenceEnds(text, lang)) {
+      p[end - 1] = P_SENTENCE;
+    }
   }
   return p.map(Math.log);
 }
@@ -185,13 +231,19 @@ function cutLogProbabilities(text: string, lang: string): Float64Array {
  * prior is centred on the length that divides the text into the nearest whole number of `soft` pieces,
  * so the pieces come out alike. Undefined when no cut within `hard` exists.
  */
-function bestCuts(text: string, lang: string, soft: number, hard: number): number[] | undefined {
+function bestCuts(
+  text: string,
+  lang: string,
+  soft: number,
+  hard: number,
+  boundaries?: Boundaries,
+): number[] | undefined {
   const n = text.length;
   const count = Math.max(1, Math.round(n / soft));
   const each = n / count;
   const min = Math.ceil(each / 3);
   const logPrior = Float64Array.from({ length: hard + 1 }, (_, len) => -8 * ((len - each) / each) ** 2);
-  const logCut = cutLogProbabilities(text, lang);
+  const logCut = cutLogProbabilities(text, lang, boundaries);
   const score = new Float64Array(n + 1).fill(-Infinity);
   const from = new Int32Array(n + 1);
   score[0] = 0;
@@ -253,9 +305,9 @@ function clauses(text: string, hard: number): string[] {
   return out;
 }
 
-function pieces(text: string, lang: string): string[] {
+function pieces(text: string, lang: string, boundaries?: Boundaries): string[] {
   const { soft, hard } = limits(lang);
-  const cuts = bestCuts(text, lang, soft, hard);
+  const cuts = bestCuts(text, lang, soft, hard, boundaries);
   let parts: string[];
   if (cuts) {
     parts = [];
@@ -358,24 +410,42 @@ function blockUtterances(b: Block, lang: string): Utterance[] {
   }
 }
 
-/**
- * The pieces to speak, in reading order. `markdown` says whether the text is shown rendered (the
- * source looked like Markdown); otherwise every line is read as it is.
- */
-export function speechSegments(text: string, markdown: boolean, lang: string): Segment[] {
+/** Every utterance of the text, cleaned: the strings that are cut into pieces. */
+function cutTexts(text: string, markdown: boolean, lang: string): { line: number; pause: number; text: string }[] {
   const lines = text.split("\n");
   const blocks: { line: number; utterances: Utterance[] }[] = markdown
     ? parseLines(lines).map(({ block, line }) => ({ line, utterances: blockUtterances(block, lang) }))
     : lines.map((l, line) => ({ line, utterances: [{ text: l, pause: PAUSE_BLOCK }] }));
+  return blocks.flatMap(({ line, utterances }) =>
+    utterances.map((u) => ({ line, pause: u.pause, text: clean(u.text, lang) })),
+  );
+}
 
+/**
+ * The texts `speechSegments` cuts that a sentence model can help with, each with the first line of its
+ * block, in reading order: exactly the strings `boundaries` is looked up by. A text too short to be cut
+ * into several pieces is not among them (a cut never pays off), nor one with nothing to say.
+ */
+export function speechTexts(text: string, markdown: boolean, lang: string): { line: number; text: string }[] {
+  const { soft } = limits(lang);
+  return cutTexts(text, markdown, lang)
+    .filter((u) => SPOKEN.test(u.text) && Math.round(u.text.length / soft) >= 2)
+    .map((u) => ({ line: u.line, text: u.text }));
+}
+
+/**
+ * The pieces to speak, in reading order. `markdown` says whether the text is shown rendered (the
+ * source looked like Markdown); otherwise every line is read as it is. `boundaries` gives, for a text
+ * of `speechTexts`, the sentence model's answer when there is one: it is then cut by that, not by
+ * `Intl.Segmenter`.
+ */
+export function speechSegments(text: string, markdown: boolean, lang: string, boundaries?: BoundaryLookup): Segment[] {
   const out: Segment[] = [];
-  for (const { line, utterances } of blocks) {
-    for (const u of utterances) {
-      const parts = pieces(clean(u.text, lang), lang);
-      parts.forEach(
-        (part, k) => void out.push({ text: part, line, pause: k === parts.length - 1 ? u.pause : PAUSE_SENTENCE }),
-      );
-    }
+  for (const { line, pause, text: cleaned } of cutTexts(text, markdown, lang)) {
+    const parts = pieces(cleaned, lang, boundaries?.(cleaned));
+    parts.forEach(
+      (part, k) => void out.push({ text: part, line, pause: k === parts.length - 1 ? pause : PAUSE_SENTENCE }),
+    );
   }
   return out;
 }

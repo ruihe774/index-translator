@@ -9,7 +9,7 @@
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts && bun scripts/build_soxr.ts, and
 // bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries and QOA codec), bun scripts/fetch_minicelt.ts (the Opus encoder), bun scripts/fetch_turndown.ts (web pages as Markdown) and
-// bun scripts/fetch_onnxruntime.ts (onnxruntime.dll, for the sentence segmentation to come; not used yet). The Bun that is packed is
+// bun scripts/fetch_onnxruntime.ts (onnxruntime.dll, for sentence segmentation). The Bun that is packed is
 // the one running this script. Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
@@ -60,7 +60,7 @@ await requireWebLibs(join(root, "public", "vendor"));
 // Likewise the Opus encoder of the speech stream, and the Markdown converter of fetched web pages.
 await requireMinicelt(join(root, "vendor"));
 await requireTurndown(join(root, "vendor"));
-// And ONNX Runtime (not used by the server yet; installed so that the sentence segmentation to come finds it).
+// And ONNX Runtime, without which there is no sentence segmentation.
 await requireOnnxruntime(join(root, "vendor"));
 
 /** Copies an engine's directory as it is: the DLLs and licenses, not the headers or import libraries. */

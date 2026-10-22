@@ -289,6 +289,7 @@ async function pollHealth() {
     const health = (await res.json()) as Health;
     ({ text, loading, vram, problem } = healthMessage(health));
     webpageAvailable = health.webpage?.status === "available";
+    speech.setSegment(health.segment);
   } catch {
     text = "The server cannot be reached.";
     problem = true;

@@ -33,7 +33,22 @@ describe("loadConfig defaults", () => {
       voicesDir: join(root, "voices"),
       speechBackend: "vulkan",
       speechIdleUnload: 300,
+      segment: true,
+      onnxruntimeDir: join(root, "vendor", "onnxruntime"),
+      segmentModelDir: join(root, "models", "sat-3l-sm"),
+      segmentThreads: 0,
+      segmentIdleUnload: 300,
     });
+  });
+
+  test("segmentation settings", () => {
+    expect(loadConfig({ SEGMENT: "0" }).segment).toBe(false);
+    expect(loadConfig({ MODELS_DIR: "/m" }).segmentModelDir).toBe(resolve("/m/sat-3l-sm"));
+    expect(loadConfig({ MODELS_DIR: "/m", SEGMENT_MODEL_DIR: "/s" }).segmentModelDir).toBe(resolve("/s"));
+    expect(loadConfig({ ONNXRUNTIME_DIR: "/o" }).onnxruntimeDir).toBe(resolve("/o"));
+    expect(loadConfig({ SEGMENT_THREADS: "4" }).segmentThreads).toBe(4);
+    expect(() => loadConfig({ SEGMENT_THREADS: "-1" })).toThrow("SEGMENT_THREADS");
+    expect(loadConfig({ SEGMENT_IDLE_UNLOAD: "0" }).segmentIdleUnload).toBe(0);
   });
 
   test("speech settings", () => {

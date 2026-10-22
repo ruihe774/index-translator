@@ -87,6 +87,41 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/segment": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Where sentences are likely to end
+         * @description For each text in `texts`, the positions after which a sentence may end, each with the
+         *     model's probability that one does. The model reads subwords, so a position is always the
+         *     end of one (in a language written with spaces, usually the end of a word or of a
+         *     punctuation mark); positions whose probability is below 0.001 are left out. The texts are
+         *     read as they are given: the server does not trim, normalize or join them, and one text
+         *     never sees another, so a client sends each block (paragraph, list item) as its own text.
+         *     Text in any language is accepted; the model was trained on 85.
+         *
+         *     Positions count UTF-16 code units from the start of the text, as JavaScript strings do: a
+         *     position `p` means `text.slice(0, p)` could be a sentence and `text.slice(p)` the rest.
+         *
+         *     A request holds at most `max_chars` UTF-16 code units in all (see `segment` in
+         *     `GET /health`); a longer document is sent in several requests. Requests run one at a time
+         *     on their own thread, beside translations and speech, and have their own queue of the same
+         *     size as those (`429`). Closing the connection drops a waiting request; a running one stops
+         *     within one batch of the model (a few hundredths of a second).
+         */
+        post: operations["segment"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/translate": {
         parameters: {
             query?: never;
@@ -627,6 +662,17 @@ export interface components {
                 /** @description Why speech is `unavailable`, or why the model could not be loaded last time. */
                 error?: string;
             };
+            /** @description The sentence segmentation model (`POST /segment`). It does not affect `status` or the HTTP status of this endpoint. */
+            segment?: {
+                status: components["schemas"]["SegmentStatus"];
+                /** @description Why segmentation is `unavailable`, or why the model could not be loaded last time. */
+                error?: string;
+                /**
+                 * @description Most UTF-16 code units one `POST /segment` may hold in all its texts.
+                 * @example 20000
+                 */
+                max_chars: number;
+            };
             /**
              * @description `POST /webpage`. `available` when domains are allowed and the Markdown converter is
              *     installed; whether a browser is there shows only when a page is fetched.
@@ -661,6 +707,35 @@ export interface components {
          * @enum {string}
          */
         SpeechStatus: "unavailable" | "stopped" | "starting" | "ready" | "error";
+        /**
+         * @description `unavailable`: turned off, or ONNX Runtime or the model is not installed. `stopped`:
+         *     installed, the model is not loaded; a `POST /segment` loads it (`starting`, then `ready`)
+         *     and it is unloaded again when idle. `error`: the last load failed; the next request tries
+         *     again.
+         * @enum {string}
+         */
+        SegmentStatus: "unavailable" | "stopped" | "starting" | "ready" | "error";
+        SegmentRequest: {
+            /**
+             * @description The texts to read, each on its own (a blank one gets no positions). At most `max_chars`
+             *     UTF-16 code units in all, see `segment` in `GET /health`.
+             */
+            texts: string[];
+        };
+        Segmentation: {
+            /** @description One entry per requested text, in the same order. */
+            texts: components["schemas"]["SegmentedText"][];
+        };
+        /**
+         * @description Two arrays of the same length: `offsets[i]` is a position where a sentence may end and
+         *     `probabilities[i]` the model's probability that it does. Offsets are in UTF-16 code units,
+         *     ascending, from 1 to the text's length; positions below a probability of 0.001 are absent.
+         */
+        SegmentedText: {
+            offsets: number[];
+            /** @description Rounded to three significant digits. */
+            probabilities: number[];
+        };
         SpeechRequest: {
             /** @description The text to speak, at most 1,000 characters. Must contain a non-blank character. */
             text: string;
@@ -757,7 +832,7 @@ export interface components {
                  *     (see `ErrorEvent`): a client that closed its connection never sees a response.
                  * @enum {string}
                  */
-                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
+                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "segment_error" | "segment_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
                 /** @description For people, not for programs; its wording can change. Go by `code`. */
                 message: string;
                 details?: components["schemas"]["ErrorDetails"];
@@ -856,7 +931,10 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description Too many translations, or too many speech requests, are already waiting (`queue_full`). */
+        /**
+         * @description Too many translations, speech requests or segmentation requests are already waiting
+         *     (`queue_full`); each has its own queue.
+         */
         QueueFull: {
             headers: {
                 /** @description Suggested delay in seconds. */
@@ -954,6 +1032,10 @@ export type Health = components['schemas']['Health'];
 export type WebpageRequest = components['schemas']['WebpageRequest'];
 export type Webpage = components['schemas']['Webpage'];
 export type SpeechStatus = components['schemas']['SpeechStatus'];
+export type SegmentStatus = components['schemas']['SegmentStatus'];
+export type SegmentRequest = components['schemas']['SegmentRequest'];
+export type Segmentation = components['schemas']['Segmentation'];
+export type SegmentedText = components['schemas']['SegmentedText'];
 export type SpeechRequest = components['schemas']['SpeechRequest'];
 export type Voice = components['schemas']['Voice'];
 export type VoiceList = components['schemas']['VoiceList'];
@@ -1112,6 +1194,112 @@ export interface operations {
                 };
             };
             /** @description Reading aloud is not available (`speech_unavailable`). */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    segment: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "texts": [
+                 *         "The library reopened last month. It seats 214 visitors, and volunteers meet on Thursdays.",
+                 *         "月球是地球唯一的天然衛星。它的直徑約為地球的四分之一。"
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["SegmentRequest"];
+            };
+        };
+        responses: {
+            /** @description One entry per text, in the same order. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "texts": [
+                     *         {
+                     *           "offsets": [
+                     *             32,
+                     *             38,
+                     *             88
+                     *           ],
+                     *           "probabilities": [
+                     *             0.982,
+                     *             0.004,
+                     *             0.991
+                     *           ]
+                     *         },
+                     *         {
+                     *           "offsets": [
+                     *             13,
+                     *             27
+                     *           ],
+                     *           "probabilities": [
+                     *             0.973,
+                     *             0.988
+                     *           ]
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Segmentation"];
+                };
+            };
+            /**
+             * @description `texts` is missing, not an array of strings, empty, has more than 256 entries, or holds more
+             *     than `max_chars` UTF-16 code units in all (`invalid_request`, `details.field` `texts`).
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description The request body exceeds 4 MiB (`body_too_large`). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["QueueFull"];
+            500: components["responses"]["InternalError"];
+            /** @description The segmentation model failed to load or to run (`segment_error`). A failed load is attempted again by the next request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description Sentence segmentation is not available (`segment_unavailable`): it is turned off, or ONNX
+             *     Runtime or the model is not installed. The message says which.
+             */
             503: {
                 headers: {
                     [name: string]: unknown;

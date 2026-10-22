@@ -28,6 +28,10 @@ export type SpeechRequest = Schemas["SpeechRequest"];
 export type SpeechLanguage = SpeechRequest["lang"];
 export type Voice = Schemas["Voice"];
 export type VoiceList = Schemas["VoiceList"];
+export type SegmentStatus = Schemas["SegmentStatus"];
+export type SegmentRequest = Schemas["SegmentRequest"];
+export type Segmentation = Schemas["Segmentation"];
+export type SegmentedText = Schemas["SegmentedText"];
 export type WebpageRequest = Schemas["WebpageRequest"];
 export type Webpage = Schemas["Webpage"];
 

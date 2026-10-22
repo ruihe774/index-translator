@@ -8,7 +8,7 @@
 
 import { join, resolve } from "node:path";
 
-import type { ErrorBody, ErrorResponse, TranslateEvents } from "../../src/api";
+import type { ErrorBody, ErrorResponse, SegmentedText, TranslateEvents } from "../../src/api";
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
 import {
@@ -20,6 +20,7 @@ import {
   type Launcher,
   type Running,
 } from "../../src/llama";
+import { SegmentError, type SegmentLauncher, type SegmentState } from "../../src/segment";
 import {
   SeparationError,
   SpeechError,
@@ -380,6 +381,74 @@ export const webpageFetcher: WebpageFetcher = {
   },
 };
 
+export const mockSegment = {
+  /** What `state` reports; "unavailable" makes requests fail as when nothing is installed. */
+  state: "stopped" as SegmentState,
+  delayMs: 0,
+  /** Makes a request fail as when the model cannot run. */
+  failWith: undefined as string | undefined,
+  /** Every request's texts. */
+  requests: [] as string[][],
+  aborted: 0,
+};
+
+export function resetMockSegment(): void {
+  mockSegment.state = "stopped";
+  mockSegment.delayMs = 0;
+  mockSegment.failWith = undefined;
+  mockSegment.requests.length = 0;
+  mockSegment.aborted = 0;
+}
+
+/** Sentence punctuation with what may close it, then a space or the end; and clause punctuation. */
+const MOCK_SENTENCE_END = /[.!?。！？…]["'”’)）」』】]*(?=\s|$)/gu;
+const MOCK_CLAUSE_END = /[,;:，、；：]/gu;
+
+/**
+ * What the mock model answers for one text: 0.95 after sentence punctuation, 0.01 after clause
+ * punctuation, as SaT roughly does on punctuated text.
+ */
+export function mockBoundaries(text: string): SegmentedText {
+  const found = new Map<number, number>();
+  for (const m of text.matchAll(MOCK_CLAUSE_END)) {
+    found.set(m.index + m[0].length, 0.01);
+  }
+  for (const m of text.matchAll(MOCK_SENTENCE_END)) {
+    found.set(m.index + m[0].length, 0.95);
+  }
+  const offsets = [...found.keys()].sort((a, b) => a - b);
+  return { offsets, probabilities: offsets.map((o) => found.get(o)!) };
+}
+
+/** Stands in for SaT: punctuation decides, see `mockBoundaries`. */
+export const segmentLauncher: SegmentLauncher = () => ({
+  get state() {
+    return mockSegment.state;
+  },
+  get error() {
+    return mockSegment.state === "unavailable" ? "the segmentation model is not installed" : undefined;
+  },
+  async segment(texts, signal) {
+    mockSegment.requests.push(texts);
+    if (mockSegment.delayMs) {
+      await Promise.race([
+        Bun.sleep(mockSegment.delayMs),
+        new Promise((wake) => void signal.addEventListener("abort", wake)),
+      ]);
+    }
+    if (signal.aborted) {
+      mockSegment.aborted++;
+      signal.throwIfAborted();
+    }
+    if (mockSegment.failWith) {
+      throw new SegmentError(mockSegment.failWith);
+    }
+    mockSegment.state = "ready";
+    return texts.map(mockBoundaries);
+  },
+  async stop() {},
+});
+
 export function config(overrides: Partial<Config> = {}): Config {
   return {
     host: "127.0.0.1",
@@ -406,6 +475,11 @@ export function config(overrides: Partial<Config> = {}): Config {
     voicesDir: "/nonexistent/voices",
     speechBackend: "cpu",
     speechIdleUnload: 0,
+    segment: true,
+    onnxruntimeDir: "/nonexistent/onnxruntime",
+    segmentModelDir: "/nonexistent/sat-3l-sm",
+    segmentThreads: 0,
+    segmentIdleUnload: 0,
     ...overrides,
   };
 }

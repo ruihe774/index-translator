@@ -1,7 +1,7 @@
 // Fetch ONNX Runtime into vendor/onnxruntime/: Microsoft's official release build (CPU execution
-// provider only), the library the server will run the sentence segmentation model (SaT, see
-// fetch_models.ts) with, through its C API with bun:ffi. Not used by the server yet; for now only
-// packaging requires it. One archive per platform, downloaded by version and checksum; of it only the
+// provider only), the library the server runs the sentence segmentation model (SaT, see
+// fetch_models.ts) with, through its C API with bun:ffi (src/onnxruntime-ffi.ts); without it
+// `POST /segment` is unavailable. One archive per platform, downloaded by version and checksum; of it only the
 // shared library, the licenses and the C API header are kept (the header is for rechecking the slot
 // numbers when the version changes; the packages leave it out). Nothing is built or run.
 // Usage: bun scripts/fetch_onnxruntime.ts
@@ -12,8 +12,9 @@
 // - The C API is one struct of function pointers (`OrtApi`), reached with
 //   `OrtGetApiBase()->GetApi(ORT_API_VERSION)`. It is append-only: a slot's index never changes
 //   between versions, and a library answers a request for any version up to its own, so a binding
-//   written for an older ORT_API_VERSION keeps working. Still, the bindings (when they exist) count
-//   slots by hand, so after a bump recheck each index against `include/onnxruntime_c_api.h` here.
+//   written for an older ORT_API_VERSION keeps working. Still, the bindings (`SLOT` in
+//   src/onnxruntime-ffi.ts) count slots by hand, so after a bump recheck each index against
+//   `include/onnxruntime_c_api.h` here, and `ORT_API_VERSION` there.
 // - Execution providers other than the CPU's are not used: `libonnxruntime_providers_shared` (which the
 //   library loads only for them) is not kept. The Windows archive's .lib and .pdb files are not
 //   kept either (the .pdb is 400 MB).

@@ -14,7 +14,7 @@
 // Markdown, the panes' elements) comes in through `SpeechUiDeps`. What the controls look like
 // follows `state` (state.ts), so `refresh` is what `render()` runs after it writes the rest.
 
-import type { VoiceList } from "../src/api.ts";
+import type { Health, VoiceList } from "../src/api.ts";
 import { API, ApiFailure, failureMessage } from "./api.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
@@ -24,8 +24,9 @@ import { parseLines } from "./markdown.ts";
 import { OPUS_TYPE, opusDecodable } from "./opus.ts";
 import { giveUpQoa, QOA_TYPE, qoaDecoder, QoaError } from "./qoa.ts";
 import { ReadGutter } from "./read-gutter.ts";
+import { SentenceBoundaries } from "./segment.ts";
 import type { SpeechAudio } from "./speech-audio.ts";
-import { canSpeak, type Segment, speechSegments } from "./speech-text.ts";
+import { type BoundaryLookup, canSpeak, type Segment, speechSegments, speechTexts } from "./speech-text.ts";
 import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
 import { setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
@@ -38,6 +39,11 @@ const SIDE_NAME: Record<Side, string> = { source: "source text", output: "transl
 const VOICES_RECHECK_MS = 3000;
 /** A gutter button is named after this many characters of its block. */
 const LABEL_CHARS = 48;
+/**
+ * How long a reading waits for the server's sentence boundaries of the block it starts with (the first
+ * request also loads the model); after that it is cut by `Intl.Segmenter` alone.
+ */
+export const SEGMENT_WAIT_MS = 1500;
 
 /** What a side's text is read as: its pieces, and each block that has any with its lines. */
 interface Reading {
@@ -47,8 +53,8 @@ interface Reading {
   blocks: { line: number; end: number; index: number; label: string }[];
 }
 
-function readingOf(text: string, markdown: boolean, lang: string): Reading {
-  const segments = speechSegments(text, markdown, lang);
+function readingOf(text: string, markdown: boolean, lang: string, boundaries?: BoundaryLookup): Reading {
+  const segments = speechSegments(text, markdown, lang, boundaries);
   const lines = text.split("\n");
   // Where each block of the text starts, also the blocks that are not read (code): a block ends
   // where the next one starts. Plain text is read line by line.
@@ -110,6 +116,8 @@ export interface SpeechUi {
   loadVoices(): Promise<void>;
   /** On focus or visibility: look again only when reading aloud is not working, and not in a burst. */
   recheck(): void;
+  /** What `/health` says about the sentence model (`segment`); its boundaries are used only unless it is unavailable. */
+  setSegment(segment: Health["segment"]): void;
 }
 
 /** One request for a piece; Opus and QOA are asked for with `Accept`, WAV is what a request without it gets. */
@@ -169,6 +177,10 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   /** The side whose Read aloud is pressed and whose gutter is shown. */
   let open: Side | null = null;
   const readings: Partial<Record<Side, Reading>> = {};
+  /** The sentence boundaries the server has told; the gutter and the labels go by `readings`, cut without them. */
+  const boundaries = new SentenceBoundaries();
+  /** What the player was started with: its pieces are the ones whose indexes `jumpTo` takes. */
+  let playing: Reading | null = null;
   const gutters: Record<Side, ReadGutter> = {
     source: new ReadGutter(panes.source.area, `Read the ${SIDE_NAME.source} aloud from`, (l) => pick("source", l)),
     output: new ReadGutter(panes.output.area, `Read the ${SIDE_NAME.output} aloud from`, (l) => pick("output", l)),
@@ -356,17 +368,20 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     showGutter();
     refresh();
     gutters[side].focus();
+    // The person is choosing where to start: meanwhile the server tells where the sentences end.
+    const { text, lang } = deps.target(side);
+    boundaries.request(speechTexts(text, deps.isMarkdown(side), lang!).map((t) => t.text));
   }
 
   /** A gutter button: reads from that block, or jumps there when the side is being read. */
   function pick(side: Side, line: number) {
     const r = reading(side);
-    const index = r?.blocks.find((b) => b.line === line)?.index;
-    if (!r || index === undefined) {
+    if (!r?.blocks.some((b) => b.line === line)) {
       return;
     }
     if (state.speaking?.side === side && player.state !== "idle") {
-      if (player.jumpTo(index)) {
+      const index = playing?.blocks.find((b) => b.line === line)?.index;
+      if (index !== undefined && player.jumpTo(index)) {
         sayWhere();
         refresh();
       }
@@ -384,15 +399,27 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     player.stop();
     setState({ speaking: { side, line } });
     showSpeaking();
-    player.start(
-      r.segments,
-      {
-        lang: deps.target(side).lang!,
-        voice: voiceSettings.voice,
-        speed: Number(voiceSettings.speed),
-      },
-      index,
-    );
+    const { text, lang } = deps.target(side);
+    const markdown = deps.isMarkdown(side);
+    const settings = { lang: lang!, voice: voiceSettings.voice, speed: Number(voiceSettings.speed) };
+
+    // The block being started is asked for first, the others follow. What the server has said by the
+    // time the block's own answer is in (or has been waited for) cuts the pieces; the rest, `Intl.Segmenter`.
+    const texts = speechTexts(text, markdown, lang!);
+    const own = texts.filter((t) => t.line === line).map((t) => t.text);
+    boundaries.request(own, true);
+    boundaries.request(texts.map((t) => t.text));
+    const plan = () => {
+      playing = boundaries.available ? readingOf(text, markdown, lang!, boundaries.get) : r;
+      return { segments: playing.segments, from: playing.blocks.find((b) => b.line === line)?.index ?? -1 };
+    };
+    if (boundaries.allSettled(own)) {
+      const { segments, from } = plan();
+      player.start(segments, settings, from);
+    } else {
+      // Not through an await before `start`: the audio must be unlocked inside the click.
+      player.startWhenPlanned(boundaries.ready(own, SEGMENT_WAIT_MS).then(plan), settings);
+    }
   }
 
   /** Says which block is read after a jump, since the shaded block may be out of view. */
@@ -412,6 +439,10 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   }
 
   function stop(side?: Side) {
+    // Only what the stopped side asked for; typing in the source must not drop the translation's.
+    if (SIDES.some((s) => (side === undefined || s === side) && (open === s || state.speaking?.side === s))) {
+      boundaries.abort();
+    }
     if (state.speaking && (side === undefined || state.speaking.side === side)) {
       player.stop();
     }
@@ -516,5 +547,5 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   voiceSettings.addEventListener("sample", (e) => void addSampleVoice((e as CustomEvent<SampleDetail>).detail));
   voiceSettings.speed = stored("speed");
 
-  return { refresh, showSpeaking, stop, loadVoices, recheck };
+  return { refresh, showSpeaking, stop, loadVoices, recheck, setSegment: (s) => void boundaries.configure(s) };
 }

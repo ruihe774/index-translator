@@ -7,8 +7,9 @@
 //   GET    /mock           current knobs and the generations requested so far
 //   POST   /mock           set knobs: { chunks?, delayMs?, finish?, failWith?, failLaunch?, ready?,
 //                          speech?: { state?, delayMs?, audioSeconds?, failWith? },
-//                          webpage?: { problem?, title?, markdown?, redirectTo?, delayMs?, failWith? } };
-//                          `speech` and `webpage` in the answer hold what the mock engines were asked
+//                          webpage?: { problem?, title?, markdown?, redirectTo?, delayMs?, failWith? },
+//                          segment?: { state?, delayMs?, failWith? } };
+//                          `speech`, `webpage` and `segment` in the answer hold what the mock engines were asked
 //   DELETE /mock           reset knobs and forget recorded requests
 //   POST   /mock/restart   unload the engine so the next request loads its model again
 // Tests call it through e2e/fixtures.ts.
@@ -22,11 +23,14 @@ import {
   DOCUMENT,
   launcher,
   mock,
+  mockSegment,
   mockSpeech,
   mockWebpage,
   resetMock,
+  resetMockSegment,
   resetMockSpeech,
   resetMockWebpage,
+  segmentLauncher,
   speechLauncher,
   waitReady,
   webpageFetcher,
@@ -49,6 +53,7 @@ const app = await startApp(
   launcher,
   speechLauncher,
   webpageFetcher,
+  segmentLauncher,
 );
 await waitReady(app);
 
@@ -80,10 +85,14 @@ const control = Bun.serve({
       if (patch.webpage) {
         Object.assign(mockWebpage, patch.webpage);
       }
+      if (patch.segment) {
+        Object.assign(mockSegment, patch.segment);
+      }
     } else if (req.method === "DELETE") {
       resetMock();
       resetMockSpeech();
       resetMockWebpage();
+      resetMockSegment();
       mock.requests.length = 0;
       mock.aborted = 0;
       mock.launches.length = 0;
@@ -93,7 +102,14 @@ const control = Bun.serve({
       ...rest,
       ...(image && { image: { bytes: image.length, png: image[0] === 0x89 && image[1] === 0x50 } }),
     }));
-    return Response.json({ ...mock, requests, models: { CHAT, DOCUMENT }, speech: mockSpeech, webpage: mockWebpage });
+    return Response.json({
+      ...mock,
+      requests,
+      models: { CHAT, DOCUMENT },
+      speech: mockSpeech,
+      webpage: mockWebpage,
+      segment: mockSegment,
+    });
   },
 });
 

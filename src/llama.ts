@@ -6,6 +6,7 @@ import { join } from "node:path";
 
 import type { FinishReason, Usage } from "./api";
 import type { Config } from "./config";
+import { inferenceThreads } from "./cpu";
 import type { GpuMemory } from "./llama-ffi";
 import type { WorkerReply, WorkerRequest } from "./llama-worker";
 import type { ModelSpec } from "./models";
@@ -161,8 +162,7 @@ class NativeWorker {
         mmproj,
         gpuLayers: cfg.gpuLayers,
         ctxSize: cfg.ctxSize,
-        // Physical cores, roughly: hyperthreads do not help llama.cpp.
-        threads: cfg.threads || Math.max(1, Math.floor(navigator.hardwareConcurrency / 2)),
+        threads: inferenceThreads(cfg.threads),
       },
     });
 

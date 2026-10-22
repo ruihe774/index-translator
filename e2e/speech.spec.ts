@@ -107,6 +107,62 @@ test("Read aloud shows a button per block and starts nothing; the button starts 
   expect((await blocks.first().boundingBox())!.x).toBeLessThan(indented);
 });
 
+// A paragraph of about 390 characters (cut into two pieces only where a sentence end is likely) whose first
+// sentence ends in a full stop before a lowercase letter, which Intl.Segmenter does not take for an end.
+const LOREM = "lorem ipsum dolor sit amet ".repeat(7);
+const LONG = `${LOREM}done. then ${LOREM}`.trim();
+
+test("reading aloud asks the server where the sentences end, and cuts there", async ({ app, mock }) => {
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(LONG);
+  await app.previewSource();
+  await app.page.locator("#listen-source").click();
+  // Asked for as soon as the reading is offered.
+  await expect.poll(async () => (await mock.state()).segment.requests.flat()).toStrictEqual([LONG]);
+  await app.gutter("source").first().click();
+  await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+  const { speech, segment } = await mock.state();
+  expect(segment.requests).toStrictEqual([[LONG]]);
+  expect(speech.requests.map((r) => r.text)).toStrictEqual([`${LOREM}done.`.trim(), `then ${LOREM}`.trim()]);
+});
+
+for (const [name, segment, asked] of [
+  ["fails", { failWith: "the model crashed" }, 1],
+  ["is not installed", { state: "unavailable" as const }, 0],
+] as const) {
+  test(`reading aloud goes on with Intl.Segmenter when the sentence model ${name}`, async ({ app, mock }) => {
+    await mock.set({ segment });
+    await app.open();
+    await app.from.selectOption("en");
+    await app.text.fill(LONG);
+    await app.previewSource();
+    await app.readAloud("source");
+    await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
+    // One piece: only the server's model would cut before "then". A missing model is not even asked.
+    const state = await mock.state();
+    expect(state.speech.requests.map((r) => r.text)).toStrictEqual([LONG]);
+    expect(state.segment.requests).toHaveLength(asked);
+    await expect(app.meta).toHaveText("");
+  });
+}
+
+test("a slow sentence model is waited for only a moment; Stop drops its request", async ({ app, mock }) => {
+  await mock.set({ segment: { delayMs: 10_000 } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(LONG);
+  await app.previewSource();
+  const listen = app.page.locator("#listen-source");
+  await app.readAloud("source");
+  // Not at once, but well before the model answers.
+  await expect(app.page.locator("#pause-source")).toBeVisible();
+  await expect.poll(async () => (await mock.state()).speech.requests.length, { timeout: 5000 }).toBe(1);
+  expect((await mock.state()).speech.requests[0]!.text).toBe(LONG);
+  await listen.click();
+  await expect.poll(async () => (await mock.state()).segment.aborted).toBeGreaterThan(0);
+});
+
 test("a distant block is read from its button, by keyboard alone, and another button jumps", async ({ app, mock }) => {
   await mock.set({ speech: { delayMs: 300, audioSeconds: 3 } });
   await app.open();

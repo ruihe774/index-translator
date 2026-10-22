@@ -7,7 +7,7 @@
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
 // since the engines are packed as built, bun scripts/build_soxr.ts, and bun scripts/fetch_web_libs.ts (the web app's PDF
 // and Word libraries and the QOA codec of the speech stream, packed with public/), bun scripts/fetch_minicelt.ts (the Opus encoder), bun scripts/fetch_turndown.ts (web pages as Markdown) and
-// bun scripts/fetch_onnxruntime.ts (ONNX Runtime, for the sentence segmentation to come; not used yet). The Bun that is packed is the one running this script.
+// bun scripts/fetch_onnxruntime.ts (ONNX Runtime, for sentence segmentation). The Bun that is packed is the one running this script.
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
 // for `fetch`. Layout and start script: packaging/appimage/.
@@ -85,7 +85,7 @@ await requireWebLibs(join(root, "public", "vendor"));
 // Likewise the Opus encoder of the speech stream, and the Markdown converter of fetched web pages.
 await requireMinicelt(join(root, "vendor"));
 await requireTurndown(join(root, "vendor"));
-// And ONNX Runtime (not used by the server yet; packed so that the sentence segmentation to come finds it).
+// And ONNX Runtime, without which there is no sentence segmentation.
 await requireOnnxruntime(join(root, "vendor"));
 
 /** The file at `path` as pinned, downloaded unless a copy with the right checksum is already there. */

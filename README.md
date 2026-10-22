@@ -140,7 +140,8 @@ Before the first start, build the engines and get the models once (about 18.1 Gi
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
-bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, a sentence segmentation model (not used yet), example voices
+bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, a sentence segmentation model, example voices
+bun scripts/fetch_onnxruntime.ts  # ONNX Runtime, which runs the sentence segmentation model (29 MB), into vendor/
 bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and compress speech in the browser (13 MB), into public/vendor/
 bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into Markdown (27 KB), into vendor/
 ```
@@ -380,7 +381,9 @@ again after five minutes without listening. Speech is generated sentence by sent
 times faster than it is spoken, so long texts start right away. While you listen, the sentences
 that follow are generated in the background (up to a minute and a half ahead), and what you have
 heard is kept, so **Previous** and **Next** usually start at once (a far ▶ waits for its first
-sentence).
+sentence). Where a text is cut into sentences is decided by the sentence segmentation model when
+it is installed (it copes with abbreviations and with sentences the punctuation does not mark), and by
+the browser's own rules otherwise; reading never waits for it more than a moment.
 
 Known limits: numbers written in digits are read correctly in Chinese, English, Spanish and
 Japanese, but not reliably in Arabic, and unusual formats (for example `$1,200`) may be read
@@ -425,13 +428,16 @@ closed); flags work as above.
 | `HOST` | `127.0.0.1` | Address to listen on. The app has no login, so keep it on `127.0.0.1` unless you put it behind a proxy. |
 | `DEFAULT_MODEL` | `index-translate-9b` | Model loaded at startup |
 | `GPU_LAYERS` | `all` | Layers to run on the GPU; `0` runs on the CPU |
-| `LLAMA_THREADS` | half the CPU threads | CPU threads for the engine; matters when running on the CPU |
+| `LLAMA_THREADS` | the fast cores, at most 8 | CPU threads for the engine; matters when running on the CPU. The default is the number of performance cores (Intel P-cores, Arm big cores; where that is not known, half the CPU threads), at most 8 and at most the CPUs the app may use |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
 | `ALLOWED_WEBPAGE_DOMAINS` | none (off) | Sites whose pages the app may fetch for translation, comma separated: `example.com`, `*.example.com` (its subdomains) or `*` (any site) |
 | `MODELS_DIR` | `models/`; AppImage: `~/.local/share/index-translator/models`; Windows installer: `models\` in the install folder | Folder with the models; `fetch` downloads into it |
 | `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices`; Windows installer: `voices\` in the install folder | Folder with the voice recordings (`.wav`) |
 | `SPEECH_IDLE_UNLOAD` | `300` | Seconds without listening after which the speech model leaves the GPU; `0` keeps it loaded |
+| `SEGMENT` | on | `0` turns the sentence segmentation model off; reading aloud then finds sentences by the browser's rules |
+| `SEGMENT_THREADS` | the fast cores, at most 8 | CPU threads for the sentence segmentation model, chosen like `LLAMA_THREADS` |
+| `SEGMENT_IDLE_UNLOAD` | `300` | Seconds without reading aloud after which the sentence segmentation model is freed (about 0.4 GiB of memory); `0` keeps it loaded |
 
 Only one translation runs at a time. Other requests wait in line.
 

@@ -22,6 +22,7 @@ import type {
   Health,
   Language,
   ModelList,
+  Segmentation,
   TokenizeResponse,
   TranslateEvents,
   TranslateResponse,
@@ -47,6 +48,14 @@ import {
 import { QOA_TYPE, qoaLoader, qoaResponse } from "./qoa-stream";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 import { soxrResampler } from "./resample";
+import {
+  MAX_SEGMENT_CHARS,
+  MAX_SEGMENT_TEXTS,
+  nativeSegmenter,
+  type Segmenter,
+  SegmentError,
+  type SegmentLauncher,
+} from "./segment";
 import {
   isSpeechLanguage,
   MAX_SAMPLE_BYTES,
@@ -155,6 +164,9 @@ function errorResponse(e: unknown): Response {
   }
   if (e instanceof SpeechError) {
     return json<ErrorResponse>({ error: { code: "speech_error", message: e.message } }, 502);
+  }
+  if (e instanceof SegmentError) {
+    return json<ErrorResponse>({ error: { code: "segment_error", message: e.message } }, 502);
   }
   if (e instanceof WebpageError) {
     return json<ErrorResponse>({ error: { code: "webpage_error", message: e.message } }, 502);
@@ -489,6 +501,7 @@ export interface App {
   server: Server<undefined>;
   engine: Engine;
   speech: Speech;
+  segmenter: Segmenter;
   stop(): Promise<void>;
 }
 
@@ -498,6 +511,7 @@ export async function startApp(
   launch: Launcher = launchNative,
   launchSpeech: SpeechLauncher = nativeSpeech,
   fetchPage: WebpageFetcher = webViewFetcher(),
+  launchSegmenter: SegmentLauncher = nativeSegmenter,
 ): Promise<App> {
   const access = compileAccess(cfg);
   const engine = new Engine(cfg, launch);
@@ -505,6 +519,9 @@ export async function startApp(
   const speech = launchSpeech(cfg);
   // Speech has its own line: it runs on its own thread and does not hold the translation engine.
   const speechQueue = new SlotQueue(cfg.maxQueue);
+  const segmenter = launchSegmenter(cfg);
+  // So has segmentation, on a thread of its own as well.
+  const segmentQueue = new SlotQueue(cfg.maxQueue);
   const defaultModel = findModel(cfg.defaultModel)!;
 
   function enterQueue(onPosition?: (position: number) => void, line = queue): Ticket {
@@ -512,10 +529,11 @@ export async function startApp(
       return line.enter(onPosition);
     } catch (e) {
       if (e instanceof QueueFullError) {
+        const what = line === queue ? "translations" : line === speechQueue ? "speech requests" : "segmentations";
         throw new ApiError(
           429,
           "queue_full",
-          `too many ${line === queue ? "translations" : "speech requests"} are waiting; try again later`,
+          `too many ${what} are waiting; try again later`,
           {
             max_queue: cfg.maxQueue,
           },
@@ -1041,6 +1059,38 @@ export async function startApp(
     }
   }
 
+  function parseSegmentRequest(body: Record<string, unknown>): string[] {
+    const texts = optionalStringArray(body, "texts");
+    if (!texts || texts.length === 0 || texts.length > MAX_SEGMENT_TEXTS) {
+      throw invalid(`texts must be an array of 1 to ${MAX_SEGMENT_TEXTS} strings`, "texts");
+    }
+    if (texts.reduce((n, t) => n + t.length, 0) > MAX_SEGMENT_CHARS) {
+      throw invalid(`texts must hold at most ${MAX_SEGMENT_CHARS} UTF-16 code units in all`, "texts");
+    }
+    if (segmenter.state === "unavailable") {
+      throw new ApiError(503, "segment_unavailable", segmenter.error ?? "sentence segmentation is not available");
+    }
+    return texts;
+  }
+
+  /** Waits in the segmentation line; leaving it, or the segmenter stopping, follows the client. */
+  async function segment(texts: string[], signal: AbortSignal): Promise<Segmentation> {
+    const ticket = enterQueue(undefined, segmentQueue);
+    const onAbort = () => ticket.leave();
+    signal.addEventListener("abort", onAbort);
+    try {
+      if (!(await ticket.ready) || signal.aborted) {
+        throw cancelled();
+      }
+      return { texts: await segmenter.segment(texts, signal) };
+    } catch (e) {
+      throw signal.aborted ? cancelled() : e;
+    } finally {
+      signal.removeEventListener("abort", onAbort);
+      ticket.leave();
+    }
+  }
+
   /** Why `POST /webpage` cannot be used, or undefined when it can be tried. */
   async function webpageProblem(): Promise<string | undefined> {
     if (access.webpages.length === 0) {
@@ -1134,6 +1184,7 @@ export async function startApp(
                 ...(memory && { gpu_memory: { total_bytes: memory.total, free_bytes: memory.free } }),
                 queue: { running: queue.running, waiting: queue.depth, max_waiting: cfg.maxQueue },
                 speech: { status: speech.state, error: speech.error },
+                segment: { status: segmenter.state, error: segmenter.error, max_chars: MAX_SEGMENT_CHARS },
                 webpage: webpageStatus ? { status: "unavailable", error: webpageStatus } : { status: "available" },
               },
               engine.state === "ready" ? 200 : 503,
@@ -1196,6 +1247,15 @@ export async function startApp(
             server.timeout(req, 0);
             return await speak(input, req);
           }
+          case "/segment": {
+            if (req.method !== "POST") {
+              return methodNotAllowed("POST");
+            }
+            const texts = parseSegmentRequest(await parseBody(req));
+            // The first request loads the model.
+            server.timeout(req, 0);
+            return json<Segmentation>(await segment(texts, req.signal));
+          }
           case "/webpage": {
             if (req.method !== "POST") {
               return methodNotAllowed("POST");
@@ -1257,10 +1317,12 @@ export async function startApp(
     server,
     engine,
     speech,
+    segmenter,
     async stop() {
       devReload?.close();
       await server.stop(true);
       await speech.stop();
+      await segmenter.stop();
       await engine.unload();
     },
   };
