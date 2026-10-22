@@ -18,6 +18,7 @@ names them and says where the full texts are. The AppImage carries this file in
 | [libsoxr](https://sourceforge.net/projects/soxr/) (the SoX Resampler Library, `libsoxr.so.0`; `soxr.dll` in the Windows installer), version and commit pinned in `scripts/build_soxr.ts`, built unchanged | Resampling for audio.cpp (the voice samples) and for the Opus encoder (the speech) | LGPL-2.1 or later, Copyright (c) 2007-18 robs; the PFFFT code in it is under a BSD-like license (Copyright (c) 2013 Julien Pommier, and 2004 University Corporation for Atmospheric Research for the FFTPACK parts), stated in its source file; it is a separate shared library that can be replaced by another build of the same version, and its source is the repository at the pinned commit (the same files as the release tarball `soxr-0.1.3-Source.tar.xz`) | `vendor/soxr/LICENCE` and `vendor/soxr/COPYING.LGPL` |
 | minicelt (the `miniopus` branch of this app's repository, a Rust port of the CELT encoder of [libopus](https://opus-codec.org) built for WebAssembly, pinned by commit in `scripts/fetch_minicelt.ts`) | Encoding the speech stream as Opus; libsoxr also resamples the audio it takes | BSD-3-Clause, as a derivative of libopus (Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon), with the royalty-free patent licenses named in the text | `vendor/minicelt/COPYING` |
 | [turndown](https://github.com/mixmark-io/turndown) (its browser build, `dist/turndown.js` of the npm package), pinned in `scripts/fetch_turndown.ts` | Runs inside a web page the server opens: the page's HTML as Markdown | MIT, Copyright (c) 2017 Dom Christie | `vendor/turndown/LICENSE` |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.31.0 (Microsoft's official release build, CPU only: `libonnxruntime.so.1.31.0`; `onnxruntime.dll` in the Windows installer), pinned in `scripts/fetch_onnxruntime.ts`, used unchanged | For upcoming sentence segmentation (the SaT model below); not used yet | MIT, Copyright (c) Microsoft Corporation; the release's own `ThirdPartyNotices.txt`, shipped alongside the library, lists the licenses of the components compiled into it | `vendor/onnxruntime/LICENSE` and `vendor/onnxruntime/ThirdPartyNotices.txt` |
 | [Bun](https://bun.sh) (`usr/bin/bun` in the AppImage) | JavaScript runtime and HTTP server | MIT for Bun itself; the executable also contains statically linked components under their own licenses, among them JavaScriptCore (LGPL-2.0 or later) | <https://bun.com/docs/project/licensing> |
 
 | [pdf-inspector](https://github.com/firecrawl/pdf-inspector), its WebAssembly build (`@firecrawl/pdf-inspector-wasm`), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: the text of a PDF page as Markdown | MIT, Copyright (c) 2026 Firecrawl; the binary embeds CMaps derived from Adobe's CMap resources (BSD 3-Clause, Copyright 1990-2009 Adobe Systems Incorporated) | `public/vendor/pdf-inspector/LICENSE` |
@@ -97,8 +98,19 @@ about to download and asks for `yes` first (the same text as here, in short).
 - <https://huggingface.co/audio-cpp/audio.cpp-gguf/tree/main/BS-RoFormer-ep368-GGUF>,
   <https://github.com/0xShug0/audio.cpp/blob/main/docs/model_licenses.md>
 
+### SaT 3L-SM (`sat-3l-sm`)
+
+- Sentence segmentation model, for upcoming use and not used yet: `segment-any-text/sat-3l-sm` of
+  [wtpsplit](https://github.com/segment-any-text/wtpsplit), as an 8-bit ONNX export by jiangzhuo9357
+  (`jiangzhuo9357/sat-3l-sm-onnx`, `model.onnx`), with `tokenizer.json`, which is the tokenizer of
+  `FacebookAI/xlm-roberta-base`, unmodified. Both files are downloaded into `models/sat-3l-sm/`.
+- License: MIT (the weights; wtpsplit's code, Copyright (c) 2024 Benjamin Minixhofer, Markus Frohmann,
+  Igor Sterner; the repository carries wtpsplit's `LICENSE`; and xlm-roberta-base, whose tokenizer it is).
+- <https://huggingface.co/jiangzhuo9357/sat-3l-sm-onnx>, <https://huggingface.co/segment-any-text/sat-3l-sm>,
+  <https://huggingface.co/FacebookAI/xlm-roberta-base>
+
 ## Keeping this file true
 
 Changing a pin in `scripts/build_llama.ts`, `scripts/build_audiocpp.ts`, `scripts/build_soxr.ts`, `scripts/build_appimage.ts`,
-`scripts/fetch_web_libs.ts` or `scripts/fetch_models.ts`, or adding a model, a library or a download, means checking its license and
+`scripts/fetch_web_libs.ts`, `scripts/fetch_onnxruntime.ts` or `scripts/fetch_models.ts`, or adding a model, a library or a download, means checking its license and
 updating this file and `NOTICES` in `scripts/fetch_models.ts`.

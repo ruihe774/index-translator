@@ -80,13 +80,16 @@ is the shortcut's target. The launcher's commands run in the install directory, 
 `bun.exe` there first, so the user needs no Bun on the `PATH`.
 
 - Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`) and `build_soxr.ts`, the web app's PDF
-  libraries fetched (`fetch_web_libs.ts`, packed with `public\`) and the launcher's MSVC
+  libraries fetched (`fetch_web_libs.ts`, packed with `public\`), `fetch_onnxruntime.ts` (Microsoft's
+  `onnxruntime.dll`, for the sentence segmentation to come; packed, not used yet) and the launcher's MSVC
   tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads
   and installs Inno Setup 6.7.3 for the current user (pinned checksum) when `ISCC.exe` is not found.
 - Per-user install by default (`%LOCALAPPDATA%\Programs\Index Translator`, no administrator rights),
   so `models\` and `voices\` beside the program stay writable; the "Download models" link fills them.
   The uninstaller removes only what the installer put there, so models and voices stay.
-- The Visual C++ runtime (the x64 Redistributable the engines import) is not packed. The installer
+- The Visual C++ runtime (the x64 Redistributable the engines import; `onnxruntime.dll` imports
+  `VCRUNTIME140`, `VCRUNTIME140_1`, `MSVCP140` and `MSVCP140_1`, which that same Redistributable provides, so
+  nothing more is installed for it; not tested without the Redistributable) is not packed. The installer
   includes `packaging/windows/CodeDependencies.iss` (a copy of DomGries/InnoDependencyInstaller) and
   calls `Dependency_AddVC14`: when the runtime is missing or older than the version the script names,
   the installer downloads Microsoft's redistributable (checksum pinned in that file) and runs it,

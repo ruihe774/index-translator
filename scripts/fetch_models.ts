@@ -1,12 +1,14 @@
 // Download the pinned models and verify their checksums: the two Index-Translate GGUF models with
 // the chat model's image encoder (its mmproj GGUF), and
 // the IndexTTS-2.5 GGUF for reading aloud and the BS-RoFormer GGUF that separates an uploaded voice
-// sample from music and noise into MODELS_DIR (./models), and the example voices into VOICES_DIR
-// (./voices). About 17.9 GiB in all. In the AppImage this is its `fetch` subcommand.
+// sample from music and noise into MODELS_DIR (./models), the SaT sentence segmentation model (ONNX
+// with its tokenizer, for later; the server does not use it yet) into MODELS_DIR/sat-3l-sm, and the
+// example voices into VOICES_DIR (./voices). About 18.1 GiB in all. In the AppImage this is its `fetch` subcommand.
 // Usage: bun scripts/fetch_models.ts [--model index-translate-9b ...] [--models-dir DIR] [--voices-dir DIR]
 //
 //   --model  one of index-translate-9b, index-nailong-9b, index-tts-2.5 (the speech model and the
-//            voices), bs-roformer (the voice separation model); repeatable; all of them when not given
+//            voices), bs-roformer (the voice separation model), sat-3l-sm (sentence segmentation);
+//            repeatable; all of them when not given
 //
 // The directories are the server's settings (src/config.ts), given the same way: as environment
 // variables or as flags. Files are downloaded with curl, so an interrupted download continues
@@ -73,6 +75,21 @@ const SEPARATION_URL = resolveUrl(
 );
 const SEPARATION_SHA256 = "9a55a8cad369d00f6e0fb208bb0cd87e30e25430772b8491e20a4eace6423ad2";
 
+/**
+ * SaT 3L-SM (segment-any-text/sat-3l-sm, MIT) as an 8-bit ONNX export with the XLM-RoBERTa tokenizer
+ * (about 250 MB), for the sentence segmentation to come; not used by the server yet. The files are
+ * called alike in every such repository, so they go into a directory of their own in MODELS_DIR.
+ */
+const SEGMENTATION = "sat-3l-sm";
+export const SEGMENTATION_DIR = "sat-3l-sm";
+const SEGMENTATION_REPO = "jiangzhuo9357/sat-3l-sm-onnx";
+const SEGMENTATION_REVISION = "7698b9e41fef7a1e24638b9aaff2108ce1020657";
+const SEGMENTATION_FILES: Record<string, string> = {
+  "model.onnx": "1132546a16fa1aa9da218602049c6e7aeba0ec5b76409131446f40ebda2be99f",
+  // FacebookAI/xlm-roberta-base's tokenizer, unmodified.
+  "tokenizer.json": "a898ea75433890f6610f4e470b8ebeb0c21dce5c8dd61f892eb09eb5919d2e2c",
+};
+
 // IndexTTS has no built-in voices: a voice is a short reference recording that it imitates. These
 // are the speaker prompts of the official demo.
 const VOICES_URL = "/spaces/IndexTeam/IndexTTS-2-Demo/resolve/b01840e8e4fd9753743a6d0466cd73ae1d634a68/examples";
@@ -121,9 +138,14 @@ export const NOTICES: Record<string, string> = {
     "  License: Apache-2.0 per audio.cpp's model license list (checkpoint source undocumented there)",
     "  https://github.com/0xShug0/audio.cpp/blob/main/docs/model_licenses.md",
   ].join("\n"),
+  [SEGMENTATION]: [
+    "SaT 3L-SM (segment-any-text), 8-bit ONNX export by jiangzhuo9357, with the tokenizer of xlm-roberta-base",
+    "  License: MIT (the weights, wtpsplit's code, and the XLM-RoBERTa tokenizer)",
+    "  https://huggingface.co/jiangzhuo9357/sat-3l-sm-onnx",
+  ].join("\n"),
 };
 
-export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH, SEPARATION];
+export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH, SEPARATION, SEGMENTATION];
 
 /** An error whose message is all the user needs: it is printed without a stack trace. */
 export class FetchError extends Error {}
@@ -178,6 +200,14 @@ export function plan(
         sha256: SEPARATION_SHA256,
         dest: join(dirs.separationModel, SEPARATION_FILE),
       });
+    } else if (id === SEGMENTATION) {
+      for (const [name, sha256] of Object.entries(SEGMENTATION_FILES)) {
+        files.push({
+          url: resolveUrl(SEGMENTATION_REPO, SEGMENTATION_REVISION, name),
+          sha256,
+          dest: join(dirs.models, SEGMENTATION_DIR, name),
+        });
+      }
     } else {
       files.push({ url: SPEECH_URL, sha256: SPEECH_SHA256, dest: join(dirs.speechModel, SPEECH_FILE) });
       for (const [name, sha256] of Object.entries(VOICES)) {

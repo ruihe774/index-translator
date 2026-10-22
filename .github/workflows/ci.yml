@@ -203,6 +203,10 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
+      # Packed, for the sentence segmentation to come; nothing runs it yet.
+      - name: Fetch ONNX Runtime
+        run: bun scripts/fetch_onnxruntime.ts
+
       - name: Build the AppImage
         run: bun scripts/build_appimage.ts
 
@@ -436,6 +440,10 @@ jobs:
 
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
+
+      # Packed, for the sentence segmentation to come; nothing runs it yet.
+      - name: Fetch ONNX Runtime
+        run: bun scripts/fetch_onnxruntime.ts
 
       - name: Build the installer
         run: bun scripts/build_installer.ts

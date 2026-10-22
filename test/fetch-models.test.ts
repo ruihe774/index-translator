@@ -147,6 +147,19 @@ describe("plan", () => {
     expect(MODEL_IDS).toContain("bs-roformer");
   });
 
+  test("the segmentation model is two files pinned to one revision, in a directory of its own", () => {
+    const files = plan(["sat-3l-sm"], dirs);
+    expect(files.map((f) => f.dest)).toStrictEqual([
+      join("/m", "sat-3l-sm", "model.onnx"),
+      join("/m", "sat-3l-sm", "tokenizer.json"),
+    ]);
+    for (const f of files) {
+      expect(f.url).toContain("/jiangzhuo9357/sat-3l-sm-onnx/resolve/7698b9e41fef7a1e24638b9aaff2108ce1020657/");
+      expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
+    }
+    expect(MODEL_IDS).toContain("sat-3l-sm");
+  });
+
   test("the speech model comes with the example voices, which never replace a file of the user's", () => {
     const files = plan(["index-tts-2.5"], dirs);
     expect(files[0]!.dest).toBe(join("/s", "index-tts2_5-q8_0.gguf"));

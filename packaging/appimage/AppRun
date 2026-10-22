@@ -34,13 +34,13 @@ Index Translator: a local text translator that runs on your GPU.
 
 Usage:
   $self [--setting value ...]   start the translator and open it in the browser
-  $self fetch [--model id ...]  download the models and the example voices (about 17.9 GiB)
+  $self fetch [--model id ...]  download the models and the example voices (about 18.1 GiB)
   $self notices                 print the third-party notices (licenses of what is bundled)
   $self --version
 
 fetch downloads everything unless --model names what to get: index-translate-9b,
 index-nailong-9b, index-tts-2.5 (reading aloud, with the voices), bs-roformer (takes the voice out
-of music and noise in an uploaded sample). It needs curl, and continues an interrupted download
+of music and noise in an uploaded sample), sat-3l-sm (sentence segmentation, not used yet). It needs curl, and continues an interrupted download
 when run again.
 
 Settings are flags or environment variables (--port 8080 or PORT=8080). The common ones:
@@ -59,7 +59,7 @@ esac
 cat >&2 <<EOF
 Index Translator bundles third-party software: llama.cpp and ggml (MIT, with stb_image, miniaudio
 and xxHash), audio.cpp (Apache-2.0,
-with cJSON, SentencePiece and Abseil), libsoxr (LGPL-2.1 or later), minicelt (BSD-3-Clause, from libopus), turndown (MIT), Bun (MIT, with JavaScriptCore under the LGPL and other
+with cJSON, SentencePiece and Abseil), libsoxr (LGPL-2.1 or later), minicelt (BSD-3-Clause, from libopus), turndown (MIT), ONNX Runtime (MIT, with the notices of its own components in ThirdPartyNotices.txt), Bun (MIT, with JavaScriptCore under the LGPL and other
 components) and, in the browser, pdf-inspector (MIT) and pdf.js (Apache-2.0, with fonts and
 decoders under their own licenses) for PDF files, undoc (MIT) for Word files and the QOA codec (public domain) for speech. Models are not bundled; \`fetch\` shows their licenses before it downloads them.
 Full notices: $self notices

@@ -1,12 +1,13 @@
 // Pack the app into one file that runs on other Linux machines: dist/Index_Translator-<arch>.AppImage (x86_64 or aarch64, as the machine),
 // with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and
-// the prebuilt shim, libaudiocpp) and libsoxr. The models and the voices are not packed; the AppImage's `fetch`
+// the prebuilt shim, libaudiocpp), libsoxr and ONNX Runtime. The models and the voices are not packed; the AppImage's `fetch`
 // subcommand (scripts/fetch_models.ts) downloads them into the user's data directory.
 // Usage: bun scripts/build_appimage.ts
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
 // since the engines are packed as built, bun scripts/build_soxr.ts, and bun scripts/fetch_web_libs.ts (the web app's PDF
-// and Word libraries and the QOA codec of the speech stream, packed with public/), bun scripts/fetch_minicelt.ts (the Opus encoder) and bun scripts/fetch_turndown.ts (web pages as Markdown). The Bun that is packed is the one running this script.
+// and Word libraries and the QOA codec of the speech stream, packed with public/), bun scripts/fetch_minicelt.ts (the Opus encoder), bun scripts/fetch_turndown.ts (web pages as Markdown) and
+// bun scripts/fetch_onnxruntime.ts (ONNX Runtime, for the sentence segmentation to come; not used yet). The Bun that is packed is the one running this script.
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
 // for `fetch`. Layout and start script: packaging/appimage/.
@@ -21,6 +22,7 @@ import { libraryPath as audioLibrary, soxrLibraryPath } from "../src/audiocpp-ff
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { download, output, run } from "./build_tools";
 import { requireMinicelt } from "./fetch_minicelt";
+import { requireOnnxruntime } from "./fetch_onnxruntime";
 import { requireTurndown } from "./fetch_turndown";
 import { requireWebLibs } from "./fetch_web_libs";
 
@@ -83,6 +85,8 @@ await requireWebLibs(join(root, "public", "vendor"));
 // Likewise the Opus encoder of the speech stream, and the Markdown converter of fetched web pages.
 await requireMinicelt(join(root, "vendor"));
 await requireTurndown(join(root, "vendor"));
+// And ONNX Runtime (not used by the server yet; packed so that the sentence segmentation to come finds it).
+await requireOnnxruntime(join(root, "vendor"));
 
 /** The file at `path` as pinned, downloaded unless a copy with the right checksum is already there. */
 async function tool(pin: { url: string; sha256: string }, path: string): Promise<void> {
@@ -126,6 +130,7 @@ await Bun.write(join(app, "package.json"), `${JSON.stringify({ name: "index-tran
 await copyEngine(llama, join(app, "vendor", "llama.cpp"));
 await copyEngine(audio, join(app, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(app, "vendor", "soxr"));
+await copyEngine(join(root, "vendor", "onnxruntime"), join(app, "vendor", "onnxruntime"));
 await cp(join(root, "vendor", "minicelt"), join(app, "vendor", "minicelt"), { recursive: true });
 await cp(join(root, "vendor", "turndown"), join(app, "vendor", "turndown"), { recursive: true });
 
@@ -135,6 +140,7 @@ const version = [
   `llama.cpp ${(await Bun.file(join(llama, "VERSION")).text()).trim()}`,
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
+  `onnxruntime ${(await Bun.file(join(root, "vendor", "onnxruntime", "VERSION")).text()).split(" ")[0]}`,
   `bun ${Bun.version}`,
 ];
 await Bun.write(join(app, "VERSION"), `${version.join("\n")}\n`);

@@ -171,9 +171,10 @@ const stampOf = (lib: Library | FileLibrary) =>
 
 /**
  * The regular files of a gzipped tar archive (ustar, as npm packs it), by their path below the
- * archive's one top-level directory. Anything but files and directories is refused.
+ * archive's one top-level directory. Anything but files and directories is refused, links too unless
+ * `skipLinks` (then they are left out).
  */
-export function untar(tgz: Uint8Array): Map<string, Uint8Array> {
+export function untar(tgz: Uint8Array, skipLinks = false): Map<string, Uint8Array> {
   const tar = Bun.gunzipSync(tgz as Uint8Array<ArrayBuffer>);
   const text = new TextDecoder();
   const field = (at: number, length: number) => text.decode(tar.subarray(at, at + length)).split("\0")[0]!;
@@ -196,7 +197,7 @@ export function untar(tgz: Uint8Array): Map<string, Uint8Array> {
         throw new Error(`refusing path ${path}`);
       }
       files.set(inside, tar.subarray(at + 512, at + 512 + size));
-    } else if (type !== "5") {
+    } else if (type !== "5" && !(skipLinks && (type === "1" || type === "2"))) {
       throw new Error(`unexpected entry type "${type}" for ${path}`);
     }
     at += 512 + Math.ceil(size / 512) * 512;
