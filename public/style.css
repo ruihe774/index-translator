@@ -16,6 +16,7 @@
 @import url("css/panes.css") layer(components);
 @import url("css/pdf-pages.css") layer(components);
 @import url("css/sync-scroll.css") layer(components);
+@import url("css/sentence.css") layer(components);
 @import url("css/switches.css") layer(components);
 @import url("css/output.css") layer(components);
 @import url("css/markdown.css") layer(components);

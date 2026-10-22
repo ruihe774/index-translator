@@ -398,10 +398,14 @@ test.describe("PDF", () => {
     await app.translate.click();
     await expect(app.output).toContainText("北方的河流");
     const posts = api.filter((r) => r.method !== "GET");
-    expect(posts.map((r) => r.path)).toStrictEqual(["/api/v1/translate"]);
+    // Once it is finished the sentence model is asked where the sentences of both texts end.
+    expect(posts[0]!.path).toBe("/api/v1/translate");
+    expect(posts.slice(1).every((r) => r.path === "/api/v1/segment")).toBe(true);
     expect(posts[0]!.body).toContain("Rivers of the North");
-    expect(posts[0]!.body).not.toContain("sample.pdf");
-    expect(posts[0]!.body).not.toContain("Mountains");
+    for (const post of posts) {
+      expect(post.body).not.toContain("sample.pdf");
+      expect(post.body).not.toContain("Mountains");
+    }
   });
 
   test("a page whose text the library could not read reliably is put in the box with a warning", async ({ app }) => {

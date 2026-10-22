@@ -14,7 +14,7 @@
 // Markdown, the panes' elements) comes in through `SpeechUiDeps`. What the controls look like
 // follows `state` (state.ts), so `refresh` is what `render()` runs after it writes the rest.
 
-import type { Health, VoiceList } from "../src/api.ts";
+import type { VoiceList } from "../src/api.ts";
 import { API, ApiFailure, failureMessage } from "./api.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
@@ -24,7 +24,7 @@ import { parseLines } from "./markdown.ts";
 import { OPUS_TYPE, opusDecodable } from "./opus.ts";
 import { giveUpQoa, QOA_TYPE, qoaDecoder, QoaError } from "./qoa.ts";
 import { ReadGutter } from "./read-gutter.ts";
-import { SentenceBoundaries } from "./segment.ts";
+import type { SentenceBoundaries } from "./segment.ts";
 import type { SpeechAudio } from "./speech-audio.ts";
 import { type BoundaryLookup, canSpeak, type Segment, speechSegments, speechTexts } from "./speech-text.ts";
 import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
@@ -103,6 +103,8 @@ export interface SpeechUiDeps {
   isMarkdown(side: Side): boolean;
   /** Whether the side's text is in its view (`panes[side].view`), not in the source's text box. */
   shown(side: Side): boolean;
+  /** The sentence boundaries the server has told, shared with the rest of the page. */
+  boundaries: SentenceBoundaries;
 }
 
 export interface SpeechUi {
@@ -116,8 +118,8 @@ export interface SpeechUi {
   loadVoices(): Promise<void>;
   /** On focus or visibility: look again only when reading aloud is not working, and not in a burst. */
   recheck(): void;
-  /** What `/health` says about the sentence model (`segment`); its boundaries are used only unless it is unavailable. */
-  setSegment(segment: Health["segment"]): void;
+  /** Asks the server for the sentence boundaries of both sides' texts, to be there when a reading starts. */
+  prefetch(): void;
 }
 
 /** One request for a piece; Opus and QOA are asked for with `Accept`, WAV is what a request without it gets. */
@@ -177,8 +179,8 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   /** The side whose Read aloud is pressed and whose gutter is shown. */
   let open: Side | null = null;
   const readings: Partial<Record<Side, Reading>> = {};
-  /** The sentence boundaries the server has told; the gutter and the labels go by `readings`, cut without them. */
-  const boundaries = new SentenceBoundaries();
+  /** The gutter and the labels go by `readings`, cut without the boundaries. */
+  const { boundaries } = deps;
   /** What the player was started with: its pieces are the ones whose indexes `jumpTo` takes. */
   let playing: Reading | null = null;
   const gutters: Record<Side, ReadGutter> = {
@@ -368,9 +370,6 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     showGutter();
     refresh();
     gutters[side].focus();
-    // The person is choosing where to start: meanwhile the server tells where the sentences end.
-    const { text, lang } = deps.target(side);
-    boundaries.request(speechTexts(text, deps.isMarkdown(side), lang!).map((t) => t.text));
   }
 
   /** A gutter button: reads from that block, or jumps there when the side is being read. */
@@ -439,10 +438,6 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   }
 
   function stop(side?: Side) {
-    // Only what the stopped side asked for; typing in the source must not drop the translation's.
-    if (SIDES.some((s) => (side === undefined || s === side) && (open === s || state.speaking?.side === s))) {
-      boundaries.abort();
-    }
     if (state.speaking && (side === undefined || state.speaking.side === side)) {
       player.stop();
     }
@@ -547,5 +542,15 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   voiceSettings.addEventListener("sample", (e) => void addSampleVoice((e as CustomEvent<SampleDetail>).detail));
   voiceSettings.speed = stored("speed");
 
-  return { refresh, showSpeaking, stop, loadVoices, recheck, setSegment: (s) => void boundaries.configure(s) };
+  /** Asks for the sentence boundaries of what both sides read, after what is already waiting. */
+  function prefetch() {
+    for (const side of SIDES) {
+      const { text, lang } = deps.target(side);
+      if (canSpeak(lang)) {
+        boundaries.request(speechTexts(text, deps.isMarkdown(side), lang).map((t) => t.text));
+      }
+    }
+  }
+
+  return { refresh, showSpeaking, stop, loadVoices, recheck, prefetch };
 }

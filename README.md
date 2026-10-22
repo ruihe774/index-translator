@@ -402,6 +402,13 @@ it shows a warning. When you see one:
 When the counts match, you can click a paragraph on either side to scroll the other side to the
 same paragraph. This stops once you edit your text.
 
+Resting the pointer on a text that is shown formatted (the source in **Preview**, or the translation)
+also marks the sentence under it: a pale tint, in another colour than the paragraph's, and an underline.
+Where a sentence ends is decided by the sentence segmentation model when it is installed, and by the
+browser's own rules otherwise. Nothing is marked while a translation is running, in code blocks, or in the
+text box you type in. It needs a recent browser (for example Chrome 128, Firefox 140 or Safari 26.2);
+older ones simply show no mark.
+
 The model you use also matters. In testing, Index-NativeLong-9B translated a 30-paragraph English
 document to Chinese completely, but Chinese-to-English translation of a full-length document was
 not reliable, so check those results carefully.

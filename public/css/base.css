@@ -9,6 +9,9 @@
   --border: light-dark(#767c8c, #8b92a3);
   --divider: light-dark(#d3d8e3, #2c303b);
   --accent: light-dark(#1a56db, #8ab4f8);
+  /* The sentence under the pointer, over the accent shade of its paragraph: another hue, and in light mode a
+     tint paler than that shade, so that text and links on both keep their contrast (see sentence.css). */
+  --sentence-mark: light-dark(rgb(255 217 248 / 0.7), rgb(232 121 249 / 0.1));
   --on-accent: light-dark(#ffffff, #0a1a33);
   --focus: light-dark(#1a56db, #8ab4f8);
   --error: light-dark(#b3261e, #ff8a80);

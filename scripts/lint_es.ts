@@ -30,6 +30,10 @@ const config: Linter.Config[] = [
   esX.configs[`flat/restrict-to-es${ES_EDITION}`],
   esX.configs[`flat/restrict-to-es${ES_EDITION}-intl-api`],
   {
+    // Marking the sentence under the pointer (`sentence-hover.ts`) is a nicety, not a feature the page needs:
+    // it is switched on only where both exist (`supported()` there), and nothing else depends on it. Both
+    // became Baseline in 2025 and are not yet widely available. Take them out when they are.
+    settings: { polyfills: ["Highlight", "document.caretPositionFromPoint"] },
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     rules: {
       // Bun turns `using` into helpers imported from "bun:wrap", and drops `with { type: "json" }`.

@@ -1,0 +1,11 @@
+/* The sentence under the pointer (sentence-hover.ts), drawn over the shade of its paragraph in another
+   colour. A highlight takes no padding or outline, so the underline says it without colour (a styled
+   underline is only partly supported by the browsers in .browserslistrc, a plain one is not).
+   The colour keeps text and links readable on it and on the paragraph shade under it: in light mode a pale
+   pink that lifts the background (the accent shade is darker, which alone leaves a link at 4.26:1; the pink
+   over it gives 4.67:1), in dark mode a faint magenta (a link 5.4:1 over the shade). Amber looked grey
+   over the blue shade. */
+::highlight(sentence) {
+  background-color: var(--sentence-mark);
+  text-decoration: underline;
+}

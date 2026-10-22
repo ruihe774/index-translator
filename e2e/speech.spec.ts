@@ -112,17 +112,25 @@ test("Read aloud shows a button per block and starts nothing; the button starts 
 const LOREM = "lorem ipsum dolor sit amet ".repeat(7);
 const LONG = `${LOREM}done. then ${LOREM}`.trim();
 
-test("reading aloud asks the server where the sentences end, and cuts there", async ({ app, mock }) => {
+test("the server is asked where the sentences end once a translation is finished, and reading cuts there", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ chunks: [LONG] });
   await app.open();
   await app.from.selectOption("en");
   await app.text.fill(LONG);
+  // Nothing is asked while the text is only typed.
+  await app.page.waitForTimeout(300);
+  expect((await mock.state()).segment.requests).toStrictEqual([]);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  await expect.poll(async () => (await mock.state()).segment.requests).toStrictEqual([[LONG]]);
   await app.previewSource();
-  await app.page.locator("#listen-source").click();
-  // Asked for as soon as the reading is offered.
-  await expect.poll(async () => (await mock.state()).segment.requests.flat()).toStrictEqual([LONG]);
-  await app.gutter("source").first().click();
+  await app.readAloud("source");
   await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   const { speech, segment } = await mock.state();
+  // The answer is kept: the reading asked for nothing more.
   expect(segment.requests).toStrictEqual([[LONG]]);
   expect(speech.requests.map((r) => r.text)).toStrictEqual([`${LOREM}done.`.trim(), `then ${LOREM}`.trim()]);
 });
@@ -132,10 +140,12 @@ for (const [name, segment, asked] of [
   ["is not installed", { state: "unavailable" as const }, 0],
 ] as const) {
   test(`reading aloud goes on with Intl.Segmenter when the sentence model ${name}`, async ({ app, mock }) => {
-    await mock.set({ segment });
+    await mock.set({ segment, chunks: [LONG] });
     await app.open();
     await app.from.selectOption("en");
     await app.text.fill(LONG);
+    await app.translate.click();
+    await expect(app.meta).toContainText("generated");
     await app.previewSource();
     await app.readAloud("source");
     await expect(app.page.locator("#listen-source")).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
@@ -143,15 +153,19 @@ for (const [name, segment, asked] of [
     const state = await mock.state();
     expect(state.speech.requests.map((r) => r.text)).toStrictEqual([LONG]);
     expect(state.segment.requests).toHaveLength(asked);
-    await expect(app.meta).toHaveText("");
+    // The failure is not shown: the line still says what the translation did.
+    await expect(app.meta).toContainText("generated");
+    await expect(app.meta).not.toContainText(/model|sentence|segment/i);
   });
 }
 
-test("a slow sentence model is waited for only a moment; Stop drops its request", async ({ app, mock }) => {
-  await mock.set({ segment: { delayMs: 10_000 } });
+test("a slow sentence model is waited for only a moment; Clear drops its request", async ({ app, mock }) => {
+  await mock.set({ segment: { delayMs: 10_000 }, chunks: [LONG] });
   await app.open();
   await app.from.selectOption("en");
   await app.text.fill(LONG);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
   await app.previewSource();
   const listen = app.page.locator("#listen-source");
   await app.readAloud("source");
@@ -159,7 +173,11 @@ test("a slow sentence model is waited for only a moment; Stop drops its request"
   await expect(app.page.locator("#pause-source")).toBeVisible();
   await expect.poll(async () => (await mock.state()).speech.requests.length, { timeout: 5000 }).toBe(1);
   expect((await mock.state()).speech.requests[0]!.text).toBe(LONG);
+  // Stopping the reading leaves the request: the answer would serve the next one.
   await listen.click();
+  await app.page.waitForTimeout(300);
+  expect((await mock.state()).segment.aborted).toBe(0);
+  await app.page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect.poll(async () => (await mock.state()).segment.aborted).toBeGreaterThan(0);
 });
 

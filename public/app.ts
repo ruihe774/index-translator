@@ -37,7 +37,9 @@ import { createRender } from "./render.ts";
 import { buildImageRequest, buildRequest, glossaryMessage, hasOptions as formHasOptions } from "./request.ts";
 import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
 import { focusableWhenScrolling } from "./scroll-focus.ts";
+import { SentenceBoundaries } from "./segment.ts";
 import { CHAT_MODEL, type Choice, detectSource, DOCUMENT_MODEL, type Selection, selectModel } from "./select-model.ts";
+import { initSentenceHover } from "./sentence-hover.ts";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
 import { bindRender, setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
@@ -289,7 +291,7 @@ async function pollHealth() {
     const health = (await res.json()) as Health;
     ({ text, loading, vram, problem } = healthMessage(health));
     webpageAvailable = health.webpage?.status === "available";
-    speech.setSegment(health.segment);
+    boundaries.configure(health.segment);
   } catch {
     text = "The server cannot be reached.";
     problem = true;
@@ -490,6 +492,30 @@ function onHover(e: MouseEvent, fromView: HTMLElement, toView: HTMLElement, side
   }
 }
 
+/**
+ * The sentence boundaries the server tells (`POST /segment`, SaT), for marking the sentence under the
+ * pointer and for cutting what is read aloud. A new translation or Clear drops what is still waiting.
+ */
+const boundaries = new SentenceBoundaries();
+
+const sentenceHover = initSentenceHover(
+  [
+    { scroller: sourceArea, view: sourceView },
+    { scroller: outputArea, view: outputEl },
+  ],
+  () => !state.running,
+  boundaries,
+);
+
+/**
+ * Asks for the sentence boundaries of what both sides show, once a translation is finished (or a kept one
+ * is put back): they are there when the pointer rests on a sentence or a reading starts.
+ */
+function prefetchSentences() {
+  sentenceHover.prefetch();
+  speech.prefetch();
+}
+
 sourceArea.addEventListener("mouseover", (e) => onHover(e, sourceView, outputEl, "source"));
 outputArea.addEventListener("mouseover", (e) => onHover(e, outputEl, sourceView, "output"));
 sourceArea.addEventListener("mouseleave", () => clearLinked(outputEl));
@@ -515,6 +541,7 @@ new MutationObserver(() => {
 function clearResult(markdown: boolean) {
   synced = null;
   linkCheck = null;
+  boundaries.abort();
   views.output = { available: markdown, view: "preview" };
   setState({ translation: "" });
   showOutput();
@@ -614,6 +641,8 @@ async function translate() {
   metaEl.show(`Translating with ${modelLabel(model)}…`);
 
   let stopped = false;
+  /** Whether the translation came to its end, and so has sentences worth asking the server about. */
+  let finished = false;
   let translationId: string | null = null;
   stopBtn.onclick = () => {
     stopped = true;
@@ -710,6 +739,7 @@ async function translate() {
       synced = { source: text, translation, alignment };
     }
     metaEl.show(metaLine(model, done));
+    finished = true;
     if (markdown) {
       linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
     }
@@ -735,6 +765,10 @@ async function translate() {
     output?.finish();
     // After the last render, which rebuilds the open tail and would drop the marks.
     applyLinkCheck();
+    if (finished) {
+      // With the views as they stay: the sentences asked about are those of their final text.
+      prefetchSentences();
+    }
     stopBtn.onclick = null;
     // Taken before the state changes: Stop is hidden then, and a hidden button loses focus.
     const hadFocus = document.activeElement === stopBtn || document.activeElement === document.body;
@@ -969,6 +1003,7 @@ function restoreEntry(entry: HistoryEntry) {
   refreshSelection();
   refreshSync();
   metaEl.show(`Restored from the history (${modelLabel(entry.model)}).`);
+  prefetchSentences();
   textInput.closest("section")?.scrollIntoView({ block: "start" });
 }
 
@@ -982,6 +1017,7 @@ function advancedOpen() {
 // the page. This file tells it what each side holds and how it is shown.
 
 const speech: SpeechUi = initSpeechUi({
+  boundaries,
   controls: {
     source: $<SpeechControls>("speech-source"),
     output: $<SpeechControls>("speech-output"),
