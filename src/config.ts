@@ -70,7 +70,7 @@ export interface Config {
   separationModelDir: string;
   /** Reference recordings (`*.wav`), one per voice. */
   voicesDir: string;
-  /** audio.cpp backend for speech: `vulkan` or `cpu`. */
+  /** audio.cpp backend for speech: `vulkan`, `cuda` (the build of `build_audiocpp.ts --cuda`, which the AppImage with CUDA sets) or `cpu`. */
   speechBackend: string;
   /** Seconds without a speech request after which the speech model leaves the GPU; 0 keeps it. */
   speechIdleUnload: number;
@@ -238,7 +238,7 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   SPEECH_MODEL_DIR: "directory with the speech model (default MODELS_DIR/IndexTTS2.5-GGUF)",
   SEPARATION_MODEL_DIR: "directory with the voice separation model (default MODELS_DIR/BS-RoFormer-ep368-GGUF)",
   VOICES_DIR: "directory with the voice recordings, one .wav each (default voices/)",
-  SPEECH_BACKEND: "speech backend: vulkan (default) or cpu",
+  SPEECH_BACKEND: "speech backend: vulkan (default), cuda (for an engine built with --cuda) or cpu",
   SPEECH_IDLE_UNLOAD: "seconds without speech before the model is freed; 0 never (default 300)",
   SEGMENT: "0 turns sentence segmentation for reading aloud off (default on)",
   ONNXRUNTIME_DIR: "directory with the ONNX Runtime library (default vendor/onnxruntime)",

@@ -68,6 +68,10 @@ export function preflight(
     return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}. ${runtime}${log}`;
   }
   if (cfg.gpuLayers !== 0 && found.gpus.length === 0) {
+    // The NVIDIA variant (scripts/build_llama.ts --cuda) has CUDA and no Vulkan.
+    if (existsSync(join(cfg.llamaDir, "libggml-cuda.so"))) {
+      return `No GPU with a CUDA driver was found. This build needs an NVIDIA GPU and its driver for CUDA 13 (version 580 or newer); "nvidia-smi" lists what is installed. ${CPU_HINT}`;
+    }
     return found.vulkanLoader
       ? `No GPU with a Vulkan driver was found. Install the Vulkan driver for your graphics card (${windows ? "the current driver from AMD, Intel or NVIDIA includes it" : DRIVERS}); "vulkaninfo --summary" lists what Vulkan sees. ${CPU_HINT}`
       : windows

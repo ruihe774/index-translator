@@ -15,6 +15,16 @@ export MODELS_DIR="${MODELS_DIR:-$data/models}"
 export VOICES_DIR="${VOICES_DIR:-$data/voices}"
 export INDEX_TRANSLATOR_APPIMAGE="$self"
 
+# The NVIDIA variant has CUDA as its one GPU backend (scripts/build_appimage.ts --cuda), the other Vulkan.
+if [ -e "$app/vendor/llama.cpp/libggml-cuda.so" ]; then
+  export SPEECH_BACKEND="${SPEECH_BACKEND:-cuda}"
+  gpu_needed="An NVIDIA GPU with a driver for CUDA 13 (version 580 or newer) is needed."
+  cuda_notice=", NVIDIA's CUDA runtime libraries (cudart and cuBLAS, under the CUDA Toolkit EULA)"
+else
+  gpu_needed="A GPU with a Vulkan driver is needed."
+  cuda_notice=""
+fi
+
 case "${1:-}" in
   fetch)
     shift
@@ -50,7 +60,7 @@ Settings are flags or environment variables (--port 8080 or PORT=8080). The comm
   --gpu-layers all       0 runs on the processor, without a GPU
   --speech 0             turn reading aloud off
   --open-browser 0       do not open the browser
-A GPU with a Vulkan driver is needed. The README lists every setting.
+$gpu_needed The README lists every setting.
 EOF
     exit 0
     ;;
@@ -59,7 +69,7 @@ esac
 cat >&2 <<EOF
 Index Translator bundles third-party software: llama.cpp and ggml (MIT, with stb_image, miniaudio
 and xxHash), audio.cpp (Apache-2.0,
-with cJSON, SentencePiece and Abseil), libsoxr (LGPL-2.1 or later), minicelt (BSD-3-Clause, from libopus), turndown (MIT), ONNX Runtime (MIT, with the notices of its own components in ThirdPartyNotices.txt), Bun (MIT, with JavaScriptCore under the LGPL and other
+with cJSON, SentencePiece and Abseil), libsoxr (LGPL-2.1 or later)$cuda_notice, minicelt (BSD-3-Clause, from libopus), turndown (MIT), ONNX Runtime (MIT, with the notices of its own components in ThirdPartyNotices.txt), Bun (MIT, with JavaScriptCore under the LGPL and other
 components) and, in the browser, pdf-inspector (MIT) and pdf.js (Apache-2.0, with fonts and
 decoders under their own licenses) for PDF files, undoc (MIT) for Word files and the QOA codec (public domain) for speech. Models are not bundled; \`fetch\` shows their licenses before it downloads them.
 Full notices: $self notices

@@ -44,6 +44,17 @@ describe("preflight", () => {
     expect(problem).toContain("GPU_LAYERS=0");
   });
 
+  test("an engine built for CUDA names the NVIDIA driver, not Vulkan", async () => {
+    const cuda = join(dir, "llama-cuda");
+    await Bun.write(join(cuda, "libggml-cuda.so"), "");
+    const noLoader = { ...NO_GPU, vulkanLoader: false };
+    const problem = preflight(config({ modelsDir: withModel, llamaDir: cuda }), () => noLoader, {}, "linux");
+    expect(problem).toContain("No GPU with a CUDA driver was found");
+    expect(problem).toContain("580");
+    expect(problem).toContain("GPU_LAYERS=0");
+    expect(problem).not.toContain("Vulkan");
+  });
+
   test("a system without the Vulkan loader is told to install that", () => {
     const problem = preflight(
       config({ modelsDir: withModel }),

@@ -1,7 +1,7 @@
 // Build the translation engine: libllama and libmtmd (image input) from the pinned llama.cpp source,
 // with the Vulkan and CPU backends as loadable libraries and nothing else of llama.cpp (no tools,
 // server or examples), and the C shim (src/llama-shim.c) as libllama-shim, into ./vendor/llama.cpp.
-// Usage: bun scripts/build_llama.ts [--native] [--keep] [--shim]
+// Usage: bun scripts/build_llama.ts [--native] [--keep] [--shim] [--cuda [--cuda-arch=LIST]]
 //
 //   --native  build the CPU backend for this machine's processor; the library may then die with
 //             SIGILL on another one. By default one CPU backend is built for a baseline: AVX2 and
@@ -10,6 +10,12 @@
 //   --keep    keep the source and the build tree in vendor/.build/llama.cpp, and reuse them
 //   --shim    only compile src/llama-shim.c again, against the headers and libraries already in
 //             vendor/llama.cpp (after editing the shim)
+//   --cuda    the CUDA 13 variant for NVIDIA GPUs instead of the Vulkan one, into ./vendor/llama.cpp-cuda:
+//             the CUDA and CPU backends and no Vulkan, with the toolkit's runtime libraries (cudart, cuBLAS)
+//             beside them. Linux only (x86-64 or aarch64). The toolkit is found through CUDA_PATH, CUDA_HOME,
+//             /usr/local/cuda-13 or /usr/local/cuda. Needs nvcc, not glslc or the Vulkan headers.
+//   --cuda-arch=LIST  the GPU architectures to compile for, CMake's CMAKE_CUDA_ARCHITECTURES (`native` for this
+//             machine's GPU, which is much faster to build); by default llama.cpp's own list (Turing to Blackwell)
 //
 // Needs git, cmake (3.14 or later), a C and a C++ compiler, glslc and the Vulkan headers; ninja is
 // used when it is installed. On Debian and Ubuntu:
@@ -23,7 +29,20 @@ import { cp, mkdir, readdir, rm, rmdir, unlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { devices, libraryPath, shimPath } from "../src/llama-ffi";
-import { checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
+import {
+  bundleCuda,
+  checkout,
+  COMPILERS,
+  CUDA_ARCH_OPTION,
+  cudaArch,
+  cudaCMakeOptions,
+  findCuda,
+  msvc,
+  requireTools,
+  run,
+  TOOLS_HINT,
+  windows,
+} from "./build_tools";
 
 const TAG = "v0.7.0";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
@@ -64,19 +83,26 @@ const CPU_ISA_NAME = process.arch === "x64" ? "AVX2" : process.arch === "arm64" 
 /** The import libraries the shim is linked against on Windows; they stay beside the DLLs so `--shim` works. */
 const IMPORT_LIBS = ["llama", "mtmd", "ggml", "ggml-base"];
 
-const OPTIONS = ["--native", "--keep", "--shim"];
+const OPTIONS = ["--native", "--keep", "--shim", "--cuda"];
 const flags = new Set(Bun.argv.slice(2));
 for (const flag of flags) {
-  if (!OPTIONS.includes(flag)) {
+  if (!OPTIONS.includes(flag) && !flag.startsWith(CUDA_ARCH_OPTION)) {
     throw new Error(`unknown option ${flag}; see the head of this file`);
   }
 }
 const native = flags.has("--native");
 const keep = flags.has("--keep");
+const cuda = flags.has("--cuda");
+const arch = cudaArch(flags);
+if (arch && !cuda) {
+  throw new Error(`${CUDA_ARCH_OPTION} goes with --cuda`);
+}
 
 const root = resolve(import.meta.dir, "..");
-const dest = join(root, "vendor", "llama.cpp");
-const work = join(root, "vendor", ".build", "llama.cpp");
+// One GPU backend per directory: Vulkan in vendor/llama.cpp, CUDA in vendor/llama.cpp-cuda.
+const directory = cuda ? "llama.cpp-cuda" : "llama.cpp";
+const dest = join(root, "vendor", directory);
+const work = join(root, "vendor", ".build", directory);
 const source = join(work, "src");
 const build = join(work, "build");
 /** The new copy is put together here, so a failed build leaves the installed one alone. */
@@ -144,14 +170,16 @@ function report(dir: string, what: string): void {
     throw new Error(`no CPU backend could be loaded from ${dir}`);
   }
   if (!found.some((d) => d.type === "gpu" || d.type === "igpu")) {
-    console.log("no GPU with a Vulkan driver on this machine; the engine would need GPU_LAYERS=0 here");
+    console.log(
+      `no GPU with ${cuda ? "an NVIDIA driver" : "a Vulkan driver"} on this machine; the engine would need GPU_LAYERS=0 here`,
+    );
   }
   console.log(`ok ${dir} (${what})`);
 }
 
 if (flags.has("--shim")) {
-  if (flags.size > 1) {
-    throw new Error("--shim is used alone");
+  if (flags.size > (cuda ? 2 : 1)) {
+    throw new Error("--shim is used alone, or with --cuda");
   }
   requireTools(windows ? [] : ["cc"], TOOLS_HINT);
   await buildShim(dest);
@@ -160,7 +188,8 @@ if (flags.has("--shim")) {
   process.exit(0);
 }
 
-requireTools(["git", "cmake", ...COMPILERS, "glslc"], TOOLS_HINT);
+requireTools(["git", "cmake", ...COMPILERS, ...(cuda ? [] : ["glslc"])], TOOLS_HINT);
+const cudaToolkit = cuda ? await findCuda() : undefined;
 const visualStudio = windows ? await msvc() : undefined;
 
 if (!keep) {
@@ -185,7 +214,16 @@ try {
     ...(windows ? [] : ["-DCMAKE_INSTALL_RPATH=$ORIGIN", "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON"]),
     // Backends are libraries the shim loads from that directory (ggml_backend_load_all_from_path).
     "-DGGML_BACKEND_DL=ON",
-    "-DGGML_VULKAN=ON",
+    // Exactly one GPU backend, whichever the variant: a kept tree must not carry the other one over.
+    `-DGGML_VULKAN=${cudaToolkit ? "OFF" : "ON"}`,
+    `-DGGML_CUDA=${cudaToolkit ? "ON" : "OFF"}`,
+    ...(cudaToolkit
+      ? [
+          ...cudaCMakeOptions(cudaToolkit, arch),
+          // No NCCL (multi-GPU communication): one more library to ship, for a single-GPU engine.
+          "-DGGML_CUDA_NCCL=OFF",
+        ]
+      : []),
     `-DGGML_NATIVE=${native ? "ON" : "OFF"}`,
     "-DGGML_CPU_ALL_VARIANTS=OFF",
     ...(native
@@ -235,12 +273,18 @@ try {
     await cp(join(source, header), join(stage, "include", header.slice(header.lastIndexOf("/") + 1)));
   }
   await buildShim(stage);
+  if (cudaToolkit) {
+    await bundleCuda(cudaToolkit, stage, ["libggml-cuda.so"]);
+  }
 } catch (e) {
   console.error(`the build failed; if a tool or a header is missing, ${TOOLS_HINT}`);
   throw e;
 }
 await cp(join(source, "LICENSE"), join(stage, "LICENSE"));
 await Bun.write(join(stage, "VERSION"), `${TAG}\n`);
+if (cudaToolkit) {
+  await Bun.write(join(stage, "CUDA_VERSION"), `${cudaToolkit.version}\n`);
+}
 
 // Built before the existing copy is replaced.
 await rm(dest, { recursive: true, force: true });
@@ -255,4 +299,7 @@ const seconds = Math.round((performance.now() - started) / 1000);
 if (!(await Bun.file(libraryPath(dest)).exists())) {
   throw new Error(`the build left no ${libraryPath(dest)}`);
 }
-report(dest, `${TAG}, ${native ? "this machine's CPU" : CPU_ISA_NAME}, built in ${seconds} s`);
+report(
+  dest,
+  `${TAG}${cudaToolkit ? `, CUDA ${cudaToolkit.version}` : ""}, ${native ? "this machine's CPU" : CPU_ISA_NAME}, built in ${seconds} s`,
+);

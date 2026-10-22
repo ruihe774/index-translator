@@ -1,7 +1,12 @@
 // Build the speech engine: audio.cpp's C API (libaudiocpp) from the pinned source, with the Vulkan
 // backend and only the model families the server uses (IndexTTS-2 for speech, RoFormer for
 // separating a voice from music and noise in a recording), into ./vendor/audio.cpp.
-// Usage: bun scripts/build_audiocpp.ts [--native] [--keep]
+// Usage: bun scripts/build_audiocpp.ts [--native] [--keep] [--cuda [--cuda-arch=LIST]]
+//
+//   --cuda    the CUDA 13 variant for NVIDIA GPUs instead of the Vulkan one, into ./vendor/audio.cpp-cuda:
+//             CUDA and the CPU, no Vulkan, with the toolkit's runtime libraries (cudart, cuBLAS) beside the
+//             library. Run it with SPEECH_BACKEND=cuda. Linux only; see scripts/build_llama.ts for the toolkit
+//             and --cuda-arch (here audio.cpp's own default list, the same architectures).
 //
 //   --native  build the CPU code for this machine's processor; the library may then die with
 //             SIGILL on another one. By default it needs AVX2, like llama.cpp's "haswell" variant.
@@ -20,12 +25,25 @@
 // libraries cannot be loaded into the process that has libllama.
 
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 
 import { $ } from "bun";
 
 import { libraryPath, libraryVersion } from "../src/audiocpp-ffi";
-import { checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
+import {
+  bundleCuda,
+  checkout,
+  COMPILERS,
+  CUDA_ARCH_OPTION,
+  cudaArch,
+  cudaCMakeOptions,
+  findCuda,
+  msvc,
+  requireTools,
+  run,
+  TOOLS_HINT,
+  windows,
+} from "./build_tools";
 
 const TAG = "v0.9.2";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
@@ -44,20 +62,28 @@ const PATCH = join(import.meta.dir, "patches", "audiocpp-abort.patch");
 
 const flags = new Set(Bun.argv.slice(2));
 for (const flag of flags) {
-  if (flag !== "--native" && flag !== "--keep") {
+  if (flag !== "--native" && flag !== "--keep" && flag !== "--cuda" && !flag.startsWith(CUDA_ARCH_OPTION)) {
     throw new Error(`unknown option ${flag}; see the head of this file`);
   }
 }
 const native = flags.has("--native");
 const keep = flags.has("--keep");
+const cuda = flags.has("--cuda");
+const arch = cudaArch(flags);
+if (arch && !cuda) {
+  throw new Error(`${CUDA_ARCH_OPTION} goes with --cuda`);
+}
 
 const root = resolve(import.meta.dir, "..");
-const dest = join(root, "vendor", "audio.cpp");
-const work = join(root, "vendor", ".build", "audio.cpp");
+// One GPU backend per directory: Vulkan in vendor/audio.cpp, CUDA in vendor/audio.cpp-cuda.
+const directory = cuda ? "audio.cpp-cuda" : "audio.cpp";
+const dest = join(root, "vendor", directory);
+const work = join(root, "vendor", ".build", directory);
 const source = join(work, "src");
 const build = join(work, "build");
 
-requireTools(["git", "cmake", ...COMPILERS, "glslc"], TOOLS_HINT);
+requireTools(["git", "cmake", ...COMPILERS, ...(cuda ? [] : ["glslc"])], TOOLS_HINT);
+const cudaToolkit = cuda ? await findCuda() : undefined;
 const visualStudio = windows ? await msvc() : undefined;
 
 if (!keep) {
@@ -85,7 +111,17 @@ try {
     // The BS-RoFormer GGUF embeds only a legacy model spec; the library then needs the current one
     // from its own catalog, which this compiles in (no model_specs/ directory at run time).
     "-DAUDIOCPP_DEPLOYMENT_BUILD=ON",
-    "-DENGINE_ENABLE_VULKAN=ON",
+    // Exactly one GPU backend, whichever the variant: a kept tree must not carry the other one over.
+    `-DENGINE_ENABLE_VULKAN=${cudaToolkit ? "OFF" : "ON"}`,
+    `-DENGINE_ENABLE_CUDA=${cudaToolkit ? "ON" : "OFF"}`,
+    ...(cudaToolkit
+      ? [
+          ...cudaCMakeOptions(cudaToolkit, arch),
+          // The CUDA libraries are found beside libaudiocpp.so, wherever that is.
+          "-DCMAKE_INSTALL_RPATH=$ORIGIN",
+          "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON",
+        ]
+      : []),
     `-DENGINE_ENABLE_NATIVE_CPU=${native ? "ON" : "OFF"}`,
     // Static ggml inside the library; the "all variants" mode would build shared ggml libraries.
     "-DENGINE_ENABLE_CPU_ALL_VARIANTS=OFF",
@@ -136,6 +172,10 @@ await cp(join(source, "include", "audiocpp.h"), join(dest, "include", "audiocpp.
 await cp(join(source, "LICENSE"), join(dest, "LICENSE"));
 await cp(join(source, "external", "ggml", "LICENSE"), join(dest, "LICENSE.ggml"));
 await Bun.write(join(dest, "VERSION"), `${TAG}\n`);
+if (cudaToolkit) {
+  await bundleCuda(cudaToolkit, dest, [basename(libraryPath(dest))]);
+  await Bun.write(join(dest, "CUDA_VERSION"), `${cudaToolkit.version}\n`);
+}
 if (!keep) {
   await rm(work, { recursive: true, force: true });
   // Gone too, unless another build keeps its tree there.
@@ -146,5 +186,5 @@ if (!keep) {
 const version = libraryVersion(dest);
 const seconds = Math.round((performance.now() - started) / 1000);
 console.log(
-  `ok ${dest} (${TAG}, C API ${version.abi}, ${native ? "this machine's CPU" : process.arch === "x64" ? "AVX2" : process.arch}, built in ${seconds} s)`,
+  `ok ${dest} (${TAG}${cudaToolkit ? `, CUDA ${cudaToolkit.version}` : ""}, C API ${version.abi}, ${native ? "this machine's CPU" : process.arch === "x64" ? "AVX2" : process.arch}, built in ${seconds} s)`,
 );

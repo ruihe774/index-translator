@@ -95,6 +95,11 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
 - It runs on x86-64 or aarch64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later). Besides
   the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
   an x86-64 processor with AVX2.
+- **NVIDIA GPUs:** `Index_Translator-x86_64-cuda.AppImage` and `Index_Translator-aarch64-cuda.AppImage` (the
+  same download, next to the others) run on CUDA 13 instead of Vulkan: use them with a driver of version 580 or
+  newer (`nvidia-smi` shows it); no Vulkan driver is needed, and they work the same otherwise. They are larger,
+  as they carry NVIDIA's CUDA runtime libraries. The other AppImages use Vulkan, which NVIDIA's driver also
+  provides.
 
 ### Windows installer
 
@@ -170,6 +175,20 @@ development with C++" workload, and the [Vulkan SDK](https://vulkan.lunarg.com/s
 `bun scripts/build_appimage.ts` packs what you have built and fetched (the models excepted) into an AppImage of your own, and on
 Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Setup if it is not
 installed), both in `dist/`.
+
+**CUDA instead of Vulkan (Linux, NVIDIA).** An engine has one GPU backend, never both. For CUDA 13, install the toolkit
+(`nvcc`, cudart and cuBLAS headers and libraries; `CUDA_PATH` names it if it is not in `/usr/local/cuda-13`; `glslc` and
+the Vulkan headers are not needed) and build the engines into their own directories, next to the Vulkan ones:
+
+```bash
+bun scripts/build_llama.ts --cuda      # vendor/llama.cpp-cuda
+bun scripts/build_audiocpp.ts --cuda   # vendor/audio.cpp-cuda
+LLAMA_DIR=vendor/llama.cpp-cuda AUDIO_DIR=vendor/audio.cpp-cuda SPEECH_BACKEND=cuda bun src/server.ts
+bun scripts/build_appimage.ts --cuda   # dist/Index_Translator-<arch>-cuda.AppImage
+```
+
+The first two take a while: every kernel is compiled for Turing to Blackwell. `--cuda-arch=native` builds for the GPU
+in this machine only (several times faster, not for sharing).
 
 > [!NOTE]
 > Reading aloud is optional. Skipping it saves 14.2 GiB of downloads and about 5.7 GiB of VRAM.

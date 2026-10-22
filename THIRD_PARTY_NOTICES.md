@@ -8,7 +8,7 @@ names them and says where the full texts are. The AppImage carries this file in
 
 | Component | Used for | License | Full text |
 |---|---|---|---|
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) (libllama, libmtmd, the Vulkan and CPU backends), pinned in `scripts/build_llama.ts` | Running the translation models | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) (libllama, libmtmd, the CPU backend and one GPU backend: Vulkan, or CUDA in the `*-cuda` build), pinned in `scripts/build_llama.ts` | Running the translation models | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | [ggml](https://github.com/ggml-org/ggml), part of llama.cpp | Tensor library under llama.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | libmtmd (`libmtmd.so`), part of llama.cpp (`tools/mtmd`) | Image input: the image encoder of Index-Translate-9B | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | stb_image, miniaudio and hash functions (SHA-1, SHA-256, xxHash), in llama.cpp's source tree (`vendor/`) | Compiled into `libmtmd.so`; stb_image decodes the image | Each under its own license: public domain or MIT (stb_image, Sean Barrett), public domain or MIT-0 (miniaudio, David Reid), public domain (SHA-1, SHA-256), BSD 2-Clause (xxHash, Copyright (c) 2012-2021 Yann Collet); the texts are in llama.cpp's repository at the pinned commit | `vendor/stb/stb_image.h`, `vendor/miniaudio/miniaudio.h`, `vendor/hash/*/` there |
@@ -19,6 +19,7 @@ names them and says where the full texts are. The AppImage carries this file in
 | minicelt (the `miniopus` branch of this app's repository, a Rust port of the CELT encoder of [libopus](https://opus-codec.org) built for WebAssembly, pinned by commit in `scripts/fetch_minicelt.ts`) | Encoding the speech stream as Opus; libsoxr also resamples the audio it takes | BSD-3-Clause, as a derivative of libopus (Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon), with the royalty-free patent licenses named in the text | `vendor/minicelt/COPYING` |
 | [turndown](https://github.com/mixmark-io/turndown) (its browser build, `dist/turndown.js` of the npm package), pinned in `scripts/fetch_turndown.ts` | Runs inside a web page the server opens: the page's HTML as Markdown | MIT, Copyright (c) 2017 Dom Christie | `vendor/turndown/LICENSE` |
 | [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.31.0 (Microsoft's official release build, CPU only: `libonnxruntime.so.1.31.0`; `onnxruntime.dll` in the Windows installer), pinned in `scripts/fetch_onnxruntime.ts`, used unchanged | Sentence segmentation and alignment (the SaT and LaBSE models below) | MIT, Copyright (c) Microsoft Corporation; the release's own `ThirdPartyNotices.txt`, shipped alongside the library, lists the licenses of the components compiled into it | `vendor/onnxruntime/LICENSE` and `vendor/onnxruntime/ThirdPartyNotices.txt` |
+| NVIDIA CUDA runtime libraries (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13` of the CUDA 13 Toolkit), redistributed unchanged beside the engines in the AppImages with CUDA (`*-cuda.AppImage`) only, which have CUDA instead of Vulkan | The GPU backend of llama.cpp and audio.cpp in those AppImages | NVIDIA CUDA Toolkit End User License Agreement, which allows redistributing these libraries with an application (its Attachment A); the NVIDIA driver (`libcuda.so.1`) is not included | `vendor/llama.cpp-cuda/LICENSE.cuda` and `vendor/audio.cpp-cuda/LICENSE.cuda` |
 | [Bun](https://bun.sh) (`usr/bin/bun` in the AppImage) | JavaScript runtime and HTTP server | MIT for Bun itself; the executable also contains statically linked components under their own licenses, among them JavaScriptCore (LGPL-2.0 or later) | <https://bun.com/docs/project/licensing> |
 
 | [pdf-inspector](https://github.com/firecrawl/pdf-inspector), its WebAssembly build (`@firecrawl/pdf-inspector-wasm`), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: the text of a PDF page as Markdown | MIT, Copyright (c) 2026 Firecrawl; the binary embeds CMaps derived from Adobe's CMap resources (BSD 3-Clause, Copyright 1990-2009 Adobe Systems Incorporated) | `public/vendor/pdf-inspector/LICENSE` |
@@ -36,7 +37,7 @@ The AppImage is packed with [appimagetool](https://github.com/AppImage/appimaget
 AppImage file; their notices are in those projects' repositories.
 
 Not included in the AppImage and taken from the system: the C and C++ runtime libraries, `libgomp`,
-the Vulkan loader and the GPU driver, `curl` (used by `fetch`), and the browser that opens web pages
+the Vulkan loader (CUDA AppImages: the NVIDIA driver) and the GPU driver, `curl` (used by `fetch`), and the browser that opens web pages
 for translation (Chrome, Chromium, Edge or Brave; the system WebKit on macOS).
 
 The web app (`public/`) loads no fonts or scripts from the network. Its only third-party code is the

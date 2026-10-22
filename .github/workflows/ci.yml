@@ -228,6 +228,133 @@ jobs:
           path: dist/Index_Translator-${{ matrix.arch }}.AppImage
           if-no-files-found: error
 
+  # The NVIDIA variant of the AppImage: engines built with CUDA 13 and without Vulkan (the other one has
+  # Vulkan and no CUDA), with the CUDA runtime libraries packed. No GPU or driver is needed to build it.
+  appimage-cuda:
+    name: AppImage with CUDA (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+            repo: x86_64
+            keyring_sha256: d2a6b11c096396d868758b86dab1823b25e14d70333f1dfa74da5ddaf6a06dba
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+            repo: sbsa
+            keyring_sha256: 6ea7d2737648936820e85677177957a0f6521b840d98eb0bbae0a4f003fa7249
+    runs-on: ${{ matrix.runner }}
+    # Every CUDA kernel is compiled for seven GPU architectures, twice (llama.cpp and audio.cpp); the caches make it rare.
+    timeout-minutes: 240
+    env:
+      # The toolkit's packages in NVIDIA's apt repository are named by this; it is also in the cache keys.
+      CUDA_PACKAGE_VERSION: "13-1"
+      CUDA_PATH: /usr/local/cuda-13.1
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install the build tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends build-essential git cmake ninja-build
+
+      # Only the compiler and the libraries the engines link: not the whole toolkit (several GB), no driver.
+      # cuda-driver-dev has the stub libcuda.so to link against; the real one is the user's driver.
+      - name: Install the CUDA toolkit
+        run: |
+          keyring=cuda-keyring_1.1-1_all.deb
+          curl -fsSLO "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/${{ matrix.repo }}/$keyring"
+          echo "${{ matrix.keyring_sha256 }}  $keyring" | sha256sum -c -
+          sudo dpkg -i "$keyring"
+          sudo apt-get update
+          v=$CUDA_PACKAGE_VERSION
+          sudo apt-get install -y --no-install-recommends \
+            cuda-nvcc-$v cuda-cudart-dev-$v libcublas-dev-$v cuda-driver-dev-$v
+          "$CUDA_PATH/bin/nvcc" --version
+
+      - name: Cache the translation engine
+        id: llama
+        uses: actions/cache@v6
+        with:
+          path: vendor/llama.cpp-cuda
+          key: llama-cuda-${{ env.CUDA_PACKAGE_VERSION }}-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+
+      - name: Build the translation engine (llama.cpp, CUDA)
+        if: ${{ steps.llama.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_llama.ts --cuda
+
+      - name: Cache the speech engine
+        id: audio
+        uses: actions/cache@v6
+        with:
+          path: vendor/audio.cpp-cuda
+          key: audio-cuda-${{ env.CUDA_PACKAGE_VERSION }}-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+
+      - name: Build the speech engine (audio.cpp, CUDA)
+        if: ${{ steps.audio.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_audiocpp.ts --cuda
+
+      - name: Cache libsoxr
+        id: soxr
+        uses: actions/cache@v6
+        with:
+          path: vendor/soxr
+          key: soxr-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libsoxr
+        if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_soxr.ts
+
+      # The CUDA runtime comes from the directory beside the library, and the driver is missing here: that is all that may be.
+      - name: Check that libsoxr and libaudiocpp open
+        run: bun -e "import { libraryVersion } from './src/audiocpp-ffi'; console.log(libraryVersion('vendor/audio.cpp-cuda'))"
+
+      - name: Fetch the web app's libraries
+        run: bun scripts/fetch_web_libs.ts
+
+      - name: Fetch the Opus encoder
+        run: bun scripts/fetch_minicelt.ts
+
+      - name: Fetch the web page converter
+        run: bun scripts/fetch_turndown.ts
+
+      - name: Fetch ONNX Runtime
+        run: bun scripts/fetch_onnxruntime.ts
+
+      - name: Build the AppImage
+        run: bun scripts/build_appimage.ts --cuda
+
+      # Like the other AppImage's check: no GPU or driver here, so the packed program must say so and stop,
+      # and the packed engine, CUDA backend unloadable, must still run on the CPU.
+      - name: Check that the AppImage starts and stops with a reason
+        run: |
+          appimage=dist/Index_Translator-${{ matrix.arch }}-cuda.AppImage
+          export XDG_DATA_HOME="$RUNNER_TEMP/data"
+          expect() { # <words the output must contain> <command...>
+            local want=$1 out code=0
+            shift
+            out=$("$@" 2>&1) || code=$?
+            printf '%s\n(exit code %s)\n\n' "$out" "$code"
+            [ "$code" -eq 1 ] && grep -qF -- "$want" <<<"$out"
+          }
+          expect "No GPU with a CUDA driver was found" \
+            "$appimage" --appimage-extract-and-run --open-browser 0
+          expect "Download the models with:" \
+            "$appimage" --appimage-extract-and-run --open-browser 0 --gpu-layers 0
+          expect 'unknown model "nope"' \
+            "$appimage" --appimage-extract-and-run fetch --model nope
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: Index_Translator-${{ matrix.arch }}-cuda.AppImage
+          path: dist/Index_Translator-${{ matrix.arch }}-cuda.AppImage
+          if-no-files-found: error
+
   # The same checks as `test`, on Windows: paths, native library names, line endings. Both engines
   # are mocked, so there is no GPU or model. The browser tests are not run here.
   test-windows:

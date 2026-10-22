@@ -2,7 +2,12 @@
 // with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and
 // the prebuilt shim, libaudiocpp), libsoxr and ONNX Runtime. The models and the voices are not packed; the AppImage's `fetch`
 // subcommand (scripts/fetch_models.ts) downloads them into the user's data directory.
-// Usage: bun scripts/build_appimage.ts
+// Usage: bun scripts/build_appimage.ts [--cuda]
+//
+//   --cuda  the NVIDIA variant, dist/Index_Translator-<arch>-cuda.AppImage: the engines of
+//           `build_llama.ts --cuda` and `build_audiocpp.ts --cuda` (vendor/llama.cpp-cuda, vendor/audio.cpp-cuda: CUDA
+//           and no Vulkan, with the CUDA runtime libraries), started with SPEECH_BACKEND=cuda. It needs an NVIDIA
+//           driver for CUDA 13 (580 or newer), not Vulkan. Without the flag the engines are the Vulkan ones, with no CUDA.
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
 // since the engines are packed as built, bun scripts/build_soxr.ts, and bun scripts/fetch_web_libs.ts (the web app's PDF
@@ -45,7 +50,14 @@ if (process.platform !== "linux" || !arch) {
 }
 const ARCH = arch.name;
 
-const NAME = `Index_Translator-${ARCH}.AppImage`;
+const flags = Bun.argv.slice(2);
+const cuda = flags.includes("--cuda");
+const unknown = flags.find((flag) => flag !== "--cuda");
+if (unknown) {
+  throw new Error(`unknown option ${unknown}; see the head of this file`);
+}
+
+const NAME = `Index_Translator-${ARCH}${cuda ? "-cuda" : ""}.AppImage`;
 
 const APPIMAGETOOL = {
   url: `https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${ARCH}.AppImage`,
@@ -56,14 +68,12 @@ const RUNTIME = {
   url: `https://github.com/AppImage/type2-runtime/releases/download/20251108/runtime-${ARCH}`,
   sha256: arch.runtime,
 };
-if (Bun.argv.length > 2) {
-  throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
-}
 
 const root = resolve(import.meta.dir, "..");
 const packaging = join(root, "packaging", "appimage");
-const llama = join(root, "vendor", "llama.cpp");
-const audio = join(root, "vendor", "audio.cpp");
+// Each variant has the one GPU backend: Vulkan in vendor/llama.cpp and vendor/audio.cpp, CUDA in the -cuda directories.
+const llama = join(root, "vendor", cuda ? "llama.cpp-cuda" : "llama.cpp");
+const audio = join(root, "vendor", cuda ? "audio.cpp-cuda" : "audio.cpp");
 const soxr = join(root, "vendor", "soxr");
 const work = join(root, "vendor", ".build", "appimage");
 const appDir = join(work, "AppDir");
@@ -71,14 +81,24 @@ const app = join(appDir, "usr", "share", "index-translator");
 const out = join(root, "dist", NAME);
 
 for (const [file, script] of [
-  [llamaLibrary(llama), "build_llama.ts"],
-  [shimPath(llama), "build_llama.ts"],
-  [audioLibrary(audio), "build_audiocpp.ts"],
+  [llamaLibrary(llama), `build_llama.ts${cuda ? " --cuda" : ""}`],
+  [shimPath(llama), `build_llama.ts${cuda ? " --cuda" : ""}`],
+  [audioLibrary(audio), `build_audiocpp.ts${cuda ? " --cuda" : ""}`],
   [soxrLibraryPath(soxr), "build_soxr.ts"],
 ] as const) {
   if (!(await Bun.file(file).exists())) {
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
   }
+}
+// Whatever the directories were built with, the AppImage has exactly the one GPU backend it is named for.
+// (llama.cpp's backends are libraries of their own; audio.cpp's are inside libaudiocpp.so, where only the bundled CUDA runtime shows.)
+const llamaCuda = await Bun.file(join(llama, "libggml-cuda.so")).exists();
+const llamaVulkan = await Bun.file(join(llama, "libggml-vulkan.so")).exists();
+const audioCuda = await Bun.file(join(audio, "libcudart.so.13")).exists();
+if (llamaCuda !== cuda || llamaVulkan === cuda || audioCuda !== cuda) {
+  throw new Error(
+    `${llama} and ${audio} are not both ${cuda ? "CUDA" : "Vulkan"} builds; build them ${cuda ? "with" : "without"} --cuda`,
+  );
 }
 // The web app's libraries are packed with public/; an AppImage without them could not open PDF or Word files, and would send speech as WAV.
 await requireWebLibs(join(root, "public", "vendor"));
@@ -139,6 +159,7 @@ const version = [
   `index-translator ${commit}`,
   `llama.cpp ${(await Bun.file(join(llama, "VERSION")).text()).trim()}`,
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
+  ...(cuda ? [`CUDA ${(await Bun.file(join(llama, "CUDA_VERSION")).text()).trim()}`] : []),
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `onnxruntime ${(await Bun.file(join(root, "vendor", "onnxruntime", "VERSION")).text()).split(" ")[0]}`,
   `bun ${Bun.version}`,
