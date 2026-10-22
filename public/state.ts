@@ -17,6 +17,8 @@ export interface State {
   languagesReady: boolean;
   /** The source text as in the text box. */
   source: string;
+  /** What the user typed in the output panel (only possible while there is no translation). */
+  target: string;
   /** An image stands in place of the text box and is what Translate sends. */
   image: boolean;
   /** Why nothing can be read aloud at all (not installed, no voices); empty when it can. */
@@ -32,6 +34,7 @@ export const state: State = {
   translation: "",
   languagesReady: false,
   source: "",
+  target: "",
   image: false,
   speechProblem: "Checking whether reading aloud is available…",
   speaking: null,
@@ -50,4 +53,9 @@ export function bindRender(render: () => void) {
 export function setState(patch: Partial<State>) {
   Object.assign(state, patch);
   renderer?.();
+}
+
+/** Both panels hold typed text and there is no translation: Translate becomes Match. */
+export function canMatch(): boolean {
+  return !state.image && state.translation.length === 0 && state.source.trim() !== "" && state.target.trim() !== "";
 }

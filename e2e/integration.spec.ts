@@ -374,7 +374,8 @@ test("Clear empties both sides and returns the source to the plain textarea", as
   await expect(app.text).toBeFocused();
   await expect(app.page.locator("#source-area")).toBeHidden();
   await expect(app.page.locator("#source-switch button[aria-disabled='false']")).toHaveCount(0);
-  await expect(app.page.locator("#output-switch button[aria-disabled='false']")).toHaveCount(0);
+  // Without a translation the output switch stays usable: Raw is the box to type a translation in.
+  await expect(app.page.locator("#output-switch button[aria-disabled='true']")).toHaveCount(0);
   await expect(app.output).toBeEmpty();
   await expect(app.page.locator("#placeholder")).toBeVisible();
   await expect(app.meta).toHaveText("");

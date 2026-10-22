@@ -6,7 +6,7 @@
 // costs nothing.
 
 import type { ViewSwitch } from "./elements/view-switch.ts";
-import { state } from "./state.ts";
+import { canMatch, state } from "./state.ts";
 
 export interface RenderTargets {
   translate: HTMLElement;
@@ -36,11 +36,16 @@ export function createRender(t: RenderTargets): () => void {
     const running = state.running !== null;
     const hasText = state.source.length > 0;
     const hasOutput = state.translation.length > 0;
+    const matching = canMatch();
     setAttr(t.translate, "aria-disabled", String(running || !state.languagesReady));
-    setAttr(t.clear, "aria-disabled", String(!hasText && !state.image && !hasOutput));
+    if (t.translate.textContent !== (matching ? "Match" : "Translate")) {
+      t.translate.textContent = matching ? "Match" : "Translate";
+    }
+    setAttr(t.clear, "aria-disabled", String(!hasText && !state.image && !hasOutput && state.target.length === 0));
     setAttr(t.copy, "aria-disabled", String(!hasOutput || running));
     t.sourceSwitch.disabled = !hasText;
-    t.outputSwitch.disabled = !hasOutput;
+    // With no translation the switch chooses whether the output panel is a box to type in (Raw).
+    t.outputSwitch.disabled = false;
     setHidden(t.stop, !running);
     setHidden(t.clear, running);
     t.after();

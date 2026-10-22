@@ -53,7 +53,7 @@ import { CHAT_MODEL, type Choice, detectSource, DOCUMENT_MODEL, type Selection, 
 import { MAX_SENTENCES, postAlign, SentenceAligner } from "./sentence-align.ts";
 import { initSentenceHover } from "./sentence-hover.ts";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
-import { bindRender, setState, type Side, state } from "./state.ts";
+import { bindRender, canMatch, setState, type Side, state } from "./state.ts";
 import { store, stored } from "./storage.ts";
 import { clearLinked, hoveredLine, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
 import { webpageLink } from "./webpage-link.ts";
@@ -75,6 +75,8 @@ const form = $<HTMLFormElement>("form");
 const fromSelect = $<HTMLSelectElement>("from");
 const toSelect = $<HTMLSelectElement>("to");
 const textInput = $<HTMLTextAreaElement>("text");
+/** The output panel while it holds no translation and is Raw: a box to type a translation to match. */
+const targetInput = $<HTMLTextAreaElement>("target");
 const countEl = $("count");
 /** Says what happens to the source box (a page being fetched) to screen readers; `#count` shows it. */
 const sourceStatus = $("source-status");
@@ -207,6 +209,7 @@ function setLang(el: HTMLElement, lang: string | undefined) {
 function refreshSelection() {
   const s = currentSelection();
   setLang(textInput, sourceLangOf());
+  setLang(targetInput, toSelect.value);
   if (sourceImage) {
     const { width, height } = imageCanvas;
     setText(countEl, `${sourceImage.name}, ${number.format(width)} × ${number.format(height)} pixels`);
@@ -407,6 +410,14 @@ function showSource() {
   speech.showSpeaking();
 }
 
+/** The output is a box to type in while there is nothing to show in it and the view is Raw. */
+function showTarget() {
+  const editable = state.translation.length === 0 && state.running === null && views.output.view === "raw";
+  if (targetInput.hidden === editable) {
+    targetInput.hidden = !editable;
+  }
+}
+
 /** Rebuilds the output in the chosen view; text still streaming is appended to the new view. */
 function showOutput() {
   showSwitch(outputSwitch, "output");
@@ -600,15 +611,16 @@ new MutationObserver(() => {
 }).observe(outputEl, { childList: true, subtree: true, characterData: true });
 
 /** Markdown is rendered when the source looks written in it; the copied text stays the raw output. */
-function clearResult(markdown: boolean) {
+function clearResult(markdown: boolean, keepView = false) {
   synced = null;
   linkCheck = null;
   blockMatch.abort();
   blockMatch = new AbortController();
   boundaries.abort();
   aligner.abort();
-  views.output = { available: markdown, view: "preview" };
-  setState({ translation: "" });
+  views.output = { available: markdown, view: keepView ? views.output.view : "preview" };
+  targetInput.value = "";
+  setState({ translation: "", target: "" });
   showOutput();
   metaEl.show("");
   notesEl.replaceChildren();
@@ -649,6 +661,17 @@ async function translate() {
     return;
   }
   showFieldError(textError, textInput, null);
+
+  // Both panels hold typed text: the translation may be there already.
+  if (canMatch()) {
+    const answer = await askMatch();
+    if (answer === "match") {
+      matchTyped(text, targetInput.value);
+    }
+    if (answer !== "translate") {
+      return;
+    }
+  }
 
   // Nothing but a web address: the page itself may be what is meant.
   const link = image || !webpageAvailable ? null : webpageLink(text);
@@ -850,6 +873,53 @@ async function translate() {
   }
 }
 
+// ---- matching a typed translation ------------------------------------------------------------
+//
+// With text in both panels (the output panel is typed in while Raw and empty) Translate becomes Match.
+// Matching skips the translation: the typed text stands as the translation, and what follows a finished
+// translation follows it: the paragraph check and matching, the link check, the sentence boundaries.
+
+function askMatch(): Promise<string> {
+  return ask({
+    title: "Match the two texts?",
+    message:
+      "Both panels hold text. The typed translation can be matched with the source as it is, or cleared and translated again.",
+    target: "",
+    choices: [
+      { value: "translate", label: "Clear output and translate" },
+      { value: "match", label: "Match" },
+    ],
+  });
+}
+
+function matchTyped(text: string, translation: string) {
+  speech.stop();
+  const markdown = looksLikeMarkdown(text);
+  // The view stays as it was typed in (Raw), so Clear leaves a box to type in again.
+  clearResult(markdown, true);
+  views.source = { available: markdown, view: markdown ? "preview" : "raw" };
+  showSource();
+  outputEl.lang = toSelect.value;
+  setState({ translation });
+  showOutput();
+  placeholderEl.hidden = true;
+  const mismatch = paragraphMismatch(text, translation);
+  const mismatchNote = mismatch ? addNote(mismatchMessage(mismatch)) : undefined;
+  const alignment = alignBlocks(text, translation);
+  if (alignment) {
+    synced = { source: text, translation, alignment };
+  } else {
+    void matchBlocks(text, translation, mismatchNote);
+  }
+  if (markdown) {
+    linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
+    applyLinkCheck();
+  }
+  metaEl.show("Matched with the translation you typed.");
+  refreshSync();
+  prefetchSentences();
+}
+
 // ---- a web page as the source ----------------------------------------------------------------
 //
 // An address alone in the box is offered as a page to fetch. The server opens it (POST /webpage)
@@ -940,7 +1010,7 @@ function loadSource(text: string, preview = false) {
   showFieldError(textError, textInput, null);
   views.source = { available: preview && looksLikeMarkdown(text), view: preview && text ? "preview" : "raw" };
   showSource();
-  clearResult(false);
+  clearResult(false, true);
   placeholderEl.hidden = false;
   refreshSync();
   refreshSelection();
@@ -1122,6 +1192,7 @@ textInput.addEventListener("input", () => {
   refreshSync();
   refreshSoon();
 });
+targetInput.addEventListener("input", () => setState({ target: targetInput.value }));
 textInput.addEventListener("click", onSourceClick);
 sourceArea.addEventListener("click", onSourceClick);
 outputArea.addEventListener("click", onOutputClick);
@@ -1173,6 +1244,7 @@ bindRender(
     sourceSwitch,
     outputSwitch,
     after: () => {
+      showTarget();
       speech.refresh();
       historyUi.setBusy(state.running !== null);
       openUi.setBusy(state.running !== null);

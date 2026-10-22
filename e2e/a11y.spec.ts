@@ -508,6 +508,31 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
+for (const scheme of ["light", "dark"] as const) {
+  test(`the typed translation box and the Match dialog pass axe in ${scheme} mode`, async ({ app }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await app.open();
+    await expect(app.engine).toContainText("Engine ready");
+    await SWITCH(app.page, "Translation view", "Raw").click();
+    const target = app.page.getByRole("textbox", { name: /Translation, to match/ });
+    await expect(target).toBeVisible();
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    await app.text.fill("One.\n\nTwo.");
+    await target.fill("Un.\n\nDeux.");
+    await app.page.getByRole("button", { name: "Match", exact: true }).click();
+    const dialog = app.page.getByRole("dialog", { name: "Match the two texts?" });
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button")).toHaveText(["Cancel", "Clear output and translate", "Match"]);
+    await expect(dialog.getByRole("button").first()).toBeFocused();
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+    await app.page.keyboard.press("Escape");
+    await expect(app.page.getByRole("button", { name: "Match", exact: true })).toBeFocused();
+  });
+}
+
 test("the fetch-a-page dialog is keyboard operable: Cancel first, focus stays in, Esc returns it to Translate", async ({
   app,
 }) => {
@@ -741,16 +766,15 @@ test("the Raw/Preview switches: disabled without text, pressed state, keyboard, 
   await app.open();
   const raw = SWITCH(app.page, "Source view", "Raw");
   const preview = SWITCH(app.page, "Source view", "Preview");
-  for (const b of [
-    raw,
-    preview,
-    SWITCH(app.page, "Translation view", "Raw"),
-    SWITCH(app.page, "Translation view", "Preview"),
-  ]) {
+  for (const b of [raw, preview]) {
     await expect(b).toHaveAttribute("aria-disabled", "true");
     const box = (await b.boundingBox())!;
     expect(box.height).toBeGreaterThanOrEqual(44);
     expect(box.width).toBeGreaterThanOrEqual(44);
+  }
+  // The translation switch is enabled from the start: Raw is the box to type a translation in.
+  for (const name of ["Raw", "Preview"]) {
+    await expect(SWITCH(app.page, "Translation view", name)).toHaveAttribute("aria-disabled", "false");
   }
   // Pressing a disabled switch changes nothing.
   await preview.click({ force: true });

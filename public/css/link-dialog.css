@@ -30,6 +30,10 @@
     overflow-wrap: anywhere;
     background: var(--surface-sunken);
     border-radius: var(--radius-min);
+
+    &:empty {
+      display: none;
+    }
   }
 
   .link-dialog-buttons {
