@@ -33,7 +33,7 @@ const PAUSE_HEADING = 500;
 /** Chinese and Japanese: no spaces between words, full-width punctuation, far fewer characters per second. */
 const isCjk = (lang: string) => lang === "zh" || lang === "ja";
 
-/** A piece is filled up to `soft` characters with whole sentences; a single sentence may reach `hard`. */
+/** A piece is about `soft` characters long and never beyond `hard` (UTF-16 units). */
 function limits(lang: string): { soft: number; hard: number } {
   return isCjk(lang) ? { soft: 60, hard: 150 } : { soft: 180, hard: 400 };
 }
@@ -124,15 +124,91 @@ function closed(text: string, lang: string): string {
 
 // ---- splitting into pieces -------------------------------------------------------------------
 
-function sentences(text: string, lang: string): string[] {
-  if (typeof Intl.Segmenter === "function") {
-    return Array.from(new Intl.Segmenter(lang, { granularity: "sentence" }).segment(text), (s) => s.segment);
-  }
-  return text.match(/[^.!?。！？]+[.!?。！？]*\s*/g) ?? [text];
+/** Where each sentence of the text ends (before its trailing whitespace); the end of the text is not one. */
+function sentenceEnds(text: string, lang: string): number[] {
+  const parts =
+    typeof Intl.Segmenter === "function"
+      ? Array.from(new Intl.Segmenter(lang, { granularity: "sentence" }).segment(text), (s) => ({
+          index: s.index,
+          segment: s.segment,
+        }))
+      : Array.from(text.matchAll(/[^.!?。！？]+[.!?。！？]*\s*/g), (m) => ({ index: m.index, segment: m[0] }));
+  return parts
+    .map(({ index, segment }) => index + segment.trimEnd().length)
+    .filter((end) => end > 0 && end < text.length);
 }
 
-/** Cuts an overlong sentence at clause punctuation, then at spaces, then anywhere. */
-function clauses(sentence: string, hard: number): string[] {
+const CLAUSE_END = /[,;:،؛，、；：）)」』】]/;
+const P_SENTENCE = 0.9;
+const P_CLAUSE = 0.01;
+const P_WORD = 1e-6;
+
+/**
+ * The log of the probability of a cut after each UTF-16 unit (minus infinity: never): high at the end of a
+ * sentence, low after clause punctuation, tiny at any other word end. Never inside a word where spaces
+ * separate words, nor between the halves of a surrogate pair.
+ */
+function cutLogProbabilities(text: string, lang: string): Float64Array {
+  const p = new Float64Array(text.length);
+  for (let k = 0; k < text.length - 1; k++) {
+    if (/[\uD800-\uDBFF]/.test(text[k]!) && /[\uDC00-\uDFFF]/.test(text[k + 1]!)) {
+      continue;
+    }
+    if (CLAUSE_END.test(text[k]!)) {
+      p[k] = P_CLAUSE;
+    } else if (isCjk(lang) || /\s/.test(text[k + 1]!)) {
+      p[k] = P_WORD;
+    }
+  }
+  for (const end of sentenceEnds(text, lang)) {
+    p[end - 1] = P_SENTENCE;
+  }
+  return p.map(Math.log);
+}
+
+/**
+ * The cuts (the index each piece ends at) of the best segmentation into pieces of at most `hard` units,
+ * as wtpsplit's `constrained_segmentation` (Viterbi) finds it: it maximises the sum, over the pieces, of
+ * the log of a Gaussian prior on the length plus the log of the probability of the cut that ends it. The
+ * prior is centred on the length that divides the text into the nearest whole number of `soft` pieces,
+ * so the pieces come out alike. Undefined when no cut within `hard` exists.
+ */
+function bestCuts(text: string, lang: string, soft: number, hard: number): number[] | undefined {
+  const n = text.length;
+  const count = Math.max(1, Math.round(n / soft));
+  const each = n / count;
+  const min = Math.ceil(each / 3);
+  const logPrior = Float64Array.from({ length: hard + 1 }, (_, len) => -8 * ((len - each) / each) ** 2);
+  const logCut = cutLogProbabilities(text, lang);
+  const score = new Float64Array(n + 1).fill(-Infinity);
+  const from = new Int32Array(n + 1);
+  score[0] = 0;
+  for (let pos = min; pos <= n; pos++) {
+    // The end of the text is no cut.
+    const cut = pos < n ? logCut[pos - 1]! : 0;
+    if (cut === -Infinity) {
+      continue;
+    }
+    for (let start = Math.max(0, pos - hard); start <= pos - min; start++) {
+      const s = score[start]! + logPrior[pos - start]! + cut;
+      if (s > score[pos]!) {
+        score[pos] = s;
+        from[pos] = start;
+      }
+    }
+  }
+  if (score[n] === -Infinity) {
+    return undefined;
+  }
+  const cuts: number[] = [];
+  for (let pos = from[n]!; pos > 0; pos = from[pos]!) {
+    cuts.unshift(pos);
+  }
+  return cuts;
+}
+
+/** Fallback when `bestCuts` finds none: cuts at clause punctuation, then at spaces, then anywhere. */
+function clauses(text: string, hard: number): string[] {
   const out: string[] = [];
   let cur = "";
   const push = (part: string) => {
@@ -142,7 +218,7 @@ function clauses(sentence: string, hard: number): string[] {
     }
     cur += part;
   };
-  for (const clause of sentence.split(/(?<=[,;:，；：、])/)) {
+  for (const clause of text.split(/(?<=[,;:，；：、])/)) {
     if (clause.length <= hard) {
       push(clause);
       continue;
@@ -151,7 +227,7 @@ function clauses(sentence: string, hard: number): string[] {
       if (word.length <= hard) {
         push(word);
       } else {
-        // By code points: the server's limit counts them, and a slice by UTF-16 units can cut a pair.
+        // By code points: a slice by UTF-16 units can cut a pair.
         const chars = Array.from(word);
         for (let i = 0; i < chars.length; i += hard) {
           push(chars.slice(i, i + hard).join(""));
@@ -167,19 +243,23 @@ function clauses(sentence: string, hard: number): string[] {
 
 function pieces(text: string, lang: string): string[] {
   const { soft, hard } = limits(lang);
-  const out: string[] = [];
-  let cur = "";
-  for (const sentence of sentences(text, lang).flatMap((s) => (s.length > hard ? clauses(s, hard) : [s]))) {
-    if (cur && cur.length + sentence.length > soft) {
-      out.push(cur);
-      cur = "";
+  const cuts = bestCuts(text, lang, soft, hard);
+  let parts: string[];
+  if (cuts) {
+    parts = [];
+    let start = 0;
+    for (let end of [...cuts, text.length]) {
+      // Trailing whitespace stays with the piece on its left.
+      while (end < text.length && /\s/.test(text[end]!)) {
+        end++;
+      }
+      parts.push(text.slice(start, end));
+      start = end;
     }
-    cur += sentence;
+  } else {
+    parts = clauses(text, hard);
   }
-  if (cur) {
-    out.push(cur);
-  }
-  return out.map((p) => p.trim()).filter((p) => SPOKEN.test(p));
+  return parts.map((p) => p.trim()).filter((p) => SPOKEN.test(p));
 }
 
 // ---- Markdown --------------------------------------------------------------------------------

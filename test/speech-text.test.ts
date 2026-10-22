@@ -78,11 +78,50 @@ describe("pieces", () => {
   test("a long paragraph is cut at sentence ends, short sentences stay together", () => {
     const sentence = "This sentence is here to fill the paragraph with ordinary words. ";
     const parts = texts(sentence.repeat(6), false);
-    expect(parts).toHaveLength(3);
+    expect(parts).toHaveLength(2);
     for (const p of parts) {
-      expect(p).toBe(sentence.repeat(2).trim());
+      expect(p).toBe(sentence.repeat(3).trim());
     }
     expect(texts("Yes. No. Maybe.", false)).toStrictEqual(["Yes. No. Maybe."]);
+  });
+
+  test("a text up to one and a half times the soft length stays one piece", () => {
+    const sentence = "This sentence is here to fill the paragraph with ordinary words. ";
+    expect(texts(sentence.repeat(4), false)).toHaveLength(1);
+    expect(texts("今天天气很好，我们一起去公园散步吧。".repeat(4), false, "zh")).toHaveLength(1);
+  });
+
+  test("the pieces of a long block are of similar length", () => {
+    const words = ["the", "quiet", "river", "carried", "small", "boats", "past", "old", "stone", "houses"];
+    const sentence = (i: number, n: number) =>
+      Array.from({ length: n }, (_, k) => words[(i + k * 3) % words.length]).join(" ") + ".";
+    // Sentences of 3 to 30 words.
+    const text = Array.from({ length: 150 }, (_, i) => sentence(i, 3 + ((i * 7) % 28))).join(" ");
+    const lengths = texts(text, false).map((p) => p.length);
+    const mean = lengths.reduce((a, b) => a + b, 0) / lengths.length;
+    const sd = Math.sqrt(lengths.reduce((a, b) => a + (b - mean) ** 2, 0) / lengths.length);
+    expect(lengths.length).toBeGreaterThan(20);
+    expect(sd / mean).toBeLessThan(0.35);
+    expect(Math.max(...lengths)).toBeLessThanOrEqual(400);
+  });
+
+  test("a cut falls at a sentence end rather than at a clause, and at a clause rather than in a sentence", () => {
+    // A capital after the full stop, or Intl.Segmenter sees no sentence boundary.
+    const filler = (n: number) => `Word${" word".repeat(n - 1)}`;
+    // The sentence end lies a little off the middle, the comma further off, as does any word end.
+    const sentences = texts(`${filler(40)}. ${filler(10)}, ${filler(30)}.`, false);
+    expect(sentences).toHaveLength(2);
+    expect(sentences[0]!.endsWith(".")).toBe(true);
+    const clauses = texts(`${filler(70)}, ${filler(35)}`, false);
+    expect(clauses).toHaveLength(2);
+    expect(clauses[0]!.endsWith(",")).toBe(true);
+  });
+
+  test("English is never cut inside a word", () => {
+    const text = Array.from({ length: 400 }, (_, i) => `token${i}`).join(" ");
+    const parts = texts(text, false);
+    expect(parts.length).toBeGreaterThan(5);
+    expect(parts.join(" ")).toBe(text);
   });
 
   test("a sentence beyond the limit is cut at commas, then at spaces", () => {
@@ -98,17 +137,28 @@ describe("pieces", () => {
     expect(unbroken.join(" ")).toBe("word ".repeat(200).trim());
   });
 
-  test("Chinese is cut into shorter pieces than English", () => {
+  test("Chinese is cut into shorter pieces than English, at sentence ends", () => {
     const parts = texts("今天天气很好，我们一起去公园散步吧。".repeat(8), false, "zh");
     expect(parts.length).toBeGreaterThan(1);
     for (const p of parts) {
-      expect(p.length).toBeLessThanOrEqual(60);
+      expect(p.length).toBeLessThanOrEqual(150);
+      expect(p.endsWith("。")).toBe(true);
     }
+  });
+
+  test("Japanese text without punctuation is cut between characters within the limit", () => {
+    const text = "今日はとても良い天気なので散歩に行きます".repeat(30);
+    const parts = texts(text, false, "ja");
+    expect(parts.length).toBeGreaterThan(3);
+    for (const p of parts) {
+      expect(p.length).toBeLessThanOrEqual(150);
+    }
+    expect(parts.join("")).toBe(text);
   });
 
   test("the silence is longest after a heading and shortest inside a paragraph", () => {
     const sentence = "This sentence is here to fill the paragraph with ordinary words and a few more of them. ";
-    const pauses = speechSegments(`# Title\n\n${sentence.repeat(3)}`, true, "en").map((s) => s.pause);
+    const pauses = speechSegments(`# Title\n\n${sentence.repeat(6)}`, true, "en").map((s) => s.pause);
     expect(pauses[0]).toBeGreaterThan(pauses.at(-1)!);
     expect(pauses.at(-1)).toBeGreaterThan(pauses[1]!);
   });
@@ -140,10 +190,12 @@ describe("cutting by code points", () => {
     }
   });
 
-  test("the limit counts code points, so astral characters fill a piece as full as BMP ones", () => {
+  test("astral characters are cut between characters, within the limit", () => {
     const parts = texts("𠮷".repeat(1000), false, "zh");
-    expect(parts.map((p) => Array.from(p).length)).toStrictEqual([150, 150, 150, 150, 150, 150, 100]);
+    expect(parts.length).toBeGreaterThan(1);
     expect(parts.some((p) => LONE.test(p))).toBe(false);
+    expect(parts.every((p) => p.length <= 150)).toBe(true);
+    expect(parts.join("")).toBe("𠮷".repeat(1000));
   });
 });
 
