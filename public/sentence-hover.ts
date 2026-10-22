@@ -328,8 +328,17 @@ export function initSentenceHover(
       frame = 0;
       clear();
     });
-    // The text moves under a still pointer; the next move marks again.
-    scroller.addEventListener("scroll", clear, { passive: true });
+    // The text moves under a still pointer, also when the other pane is the one that scrolls (click-to-sync):
+    // mark again under it, whichever pane it is in, without waiting for a move.
+    scroller.addEventListener(
+      "scroll",
+      () => {
+        for (const s of states) {
+          s.refresh();
+        }
+      },
+      { passive: true },
+    );
   }
   return {
     prefetch() {
