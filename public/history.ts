@@ -1,6 +1,7 @@
 // Translation history: finished translations kept in this browser's local storage only. Nothing
 // here is sent to the server, and the server has no endpoint for it.
 
+import type { BlockGroup } from "./paragraphs.ts";
 import { store, stored } from "./storage.ts";
 
 export const HISTORY_KEY = "history";
@@ -18,6 +19,25 @@ export interface HistoryEntry {
   model: string;
   source: string;
   translation: string;
+  /**
+   * How the translation's blocks match the source's, kept so that click-to-sync and sentence matching
+   * work again when the entry is restored: `"same"` for block i ↔ i (recomputed from the texts), else the
+   * groups `POST /align` found. Absent when the blocks were not matched. Checked against the texts on restore.
+   */
+  blocks?: "same" | BlockGroup[];
+}
+
+const isNumbers = (v: unknown) => Array.isArray(v) && v.every((n) => Number.isInteger(n));
+
+function isBlocks(v: unknown): v is NonNullable<HistoryEntry["blocks"]> {
+  return (
+    v === "same" ||
+    (Array.isArray(v) &&
+      v.every((g: unknown) => {
+        const group = g as Record<string, unknown> | null;
+        return typeof group === "object" && group !== null && isNumbers(group.source) && isNumbers(group.output);
+      }))
+  );
 }
 
 function isEntry(v: unknown): v is HistoryEntry {
@@ -32,7 +52,8 @@ function isEntry(v: unknown): v is HistoryEntry {
     typeof e.to === "string" &&
     typeof e.model === "string" &&
     typeof e.source === "string" &&
-    typeof e.translation === "string"
+    typeof e.translation === "string" &&
+    (e.blocks === undefined || isBlocks(e.blocks))
   );
 }
 
@@ -54,6 +75,11 @@ export function withEntry(list: HistoryEntry[], entry: HistoryEntry): HistoryEnt
   const same = (e: HistoryEntry) =>
     e.source === entry.source && e.from === entry.from && e.to === entry.to && e.model === entry.model;
   return [entry, ...list.filter((e) => !same(e))].slice(0, MAX_ENTRIES);
+}
+
+/** The list with the blocks of entry `id` set, for a matching that arrived after the entry was kept. */
+export function withBlocks(list: HistoryEntry[], id: string, blocks: BlockGroup[]): HistoryEntry[] {
+  return list.map((e) => (e.id === id ? { ...e, blocks } : e));
 }
 
 export function loadHistory(): HistoryEntry[] {

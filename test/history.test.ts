@@ -7,6 +7,7 @@ import {
   MAX_ENTRIES,
   parseHistory,
   saveHistory,
+  withBlocks,
   withEntry,
 } from "../public/history";
 
@@ -33,6 +34,27 @@ describe("parseHistory", () => {
   test("keeps entries and drops anything that is not one", () => {
     const raw = JSON.stringify([entry(1), { id: "x" }, null, entry(2)]);
     expect(parseHistory(raw).map((e) => e.id)).toStrictEqual(["id1", "id2"]);
+  });
+});
+
+describe("blocks", () => {
+  const groups = [{ source: [0], output: [0, 1] }];
+
+  test("are kept with the entry, or dropped with it when damaged", () => {
+    const raw = JSON.stringify([
+      entry(1, { blocks: "same" }),
+      entry(2, { blocks: groups }),
+      entry(3, { blocks: "other" as never }),
+      entry(4, { blocks: [{ source: ["a"], output: [] }] as never }),
+      entry(5),
+    ]);
+    expect(parseHistory(raw).map((e) => e.id)).toStrictEqual(["id1", "id2", "id5"]);
+  });
+
+  test("withBlocks sets them on one entry only", () => {
+    const list = withBlocks([entry(1), entry(2)], "id2", groups);
+    expect(list[0]!.blocks).toBeUndefined();
+    expect(list[1]!.blocks).toStrictEqual(groups);
   });
 });
 

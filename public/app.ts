@@ -13,7 +13,7 @@ import type { ViewSwitch } from "./elements/view-switch.ts";
 import type { VoiceSettings } from "./elements/voice-settings.ts";
 import { type ApiErrorBody, describeWebpageError } from "./errors.ts";
 import { initHistoryUi } from "./history-ui.ts";
-import { type HistoryEntry, loadHistory, newId, saveHistory, withEntry } from "./history.ts";
+import { type HistoryEntry, loadHistory, newId, saveHistory, withBlocks, withEntry } from "./history.ts";
 import { ask, confirmLink } from "./link-dialog.ts";
 import { type LinkReference, linkReference } from "./links.ts";
 import { checkLinks, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
@@ -515,7 +515,7 @@ function onHover(e: MouseEvent, fromView: HTMLElement, toView: HTMLElement, side
  */
 let blockMatch = new AbortController();
 
-async function matchBlocks(source: string, translation: string, note: HTMLLIElement | undefined) {
+async function matchBlocks(source: string, translation: string, note: HTMLLIElement | undefined, entryId: string) {
   const unit = unitOf(source);
   const sourceBlocks = blockTexts(source, unit);
   const outputBlocks = blockTexts(translation, unit);
@@ -538,6 +538,8 @@ async function matchBlocks(source: string, translation: string, note: HTMLLIElem
   }
   synced = { source, translation, alignment };
   refreshSync();
+  // The entry was kept when the translation finished, before this answer came.
+  setHistory(withBlocks(history, entryId, alignment.groups));
   const mismatch = paragraphMismatch(source, translation);
   if (note && mismatch) {
     note.textContent = detailedMismatchMessage(mismatch, alignment);
@@ -801,10 +803,11 @@ async function translate() {
     const mismatchNote = notes.map(addNote).find((li) => mismatch && li.textContent === mismatchMessage(mismatch));
     const matched = !image && done.finish_reason === "stop";
     const alignment = matched ? alignBlocks(text, translation) : null;
+    const entryId = newId();
     if (alignment) {
       synced = { source: text, translation, alignment };
     } else if (matched) {
-      void matchBlocks(text, translation, mismatchNote);
+      void matchBlocks(text, translation, mismatchNote, entryId);
     }
     metaEl.show(metaLine(model, done));
     finished = true;
@@ -814,13 +817,14 @@ async function translate() {
     // An image's translation is not kept: the history holds texts, and the picture stays out of local storage.
     if (!image && translation.trim()) {
       addToHistory({
-        id: newId(),
+        id: entryId,
         at: Date.now(),
         from: fromSelect.value,
         to: toSelect.value,
         model: sel.model,
         source: text,
         translation,
+        ...(alignment && { blocks: "same" as const }),
       });
     }
   } catch (e) {
@@ -1044,6 +1048,21 @@ function addToHistory(entry: HistoryEntry) {
   setHistory(withEntry(history, entry));
 }
 
+/** The block matching kept with an entry, if it still fits both texts (damaged storage is ignored). */
+function restoredAlignment(entry: HistoryEntry): Alignment | null {
+  const { blocks } = entry;
+  if (blocks === "same") {
+    return alignBlocks(entry.source, entry.translation);
+  }
+  return blocks
+    ? alignFromPairs(
+        entry.source,
+        entry.translation,
+        blocks.map((g) => ({ source: g.source, target: g.output })),
+      )
+    : null;
+}
+
 /** Puts a kept translation back on the page as if it had just finished. */
 function restoreEntry(entry: HistoryEntry) {
   if (state.running) {
@@ -1070,6 +1089,10 @@ function restoreEntry(entry: HistoryEntry) {
   showOutput();
   placeholderEl.hidden = true;
   refreshSelection();
+  const alignment = restoredAlignment(entry);
+  if (alignment) {
+    synced = { source: entry.source, translation: entry.translation, alignment };
+  }
   refreshSync();
   metaEl.show(`Restored from the history (${modelLabel(entry.model)}).`);
   prefetchSentences();
