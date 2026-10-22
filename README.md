@@ -394,8 +394,9 @@ oddly in any language.
 
 Language models can occasionally drop or repeat paragraphs, and this is not reported as an error.
 After each translation, the app compares the number of paragraphs with the source. If they differ,
-it shows a warning. When the sentence alignment model is installed, it then finds which paragraphs
-of the translation go with which of the source, and the warning names the places where they part:
+it shows a warning. When the sentence alignment model is installed and the source has at least 8
+paragraphs and no table or code block, it then finds which paragraphs of the translation go with
+which of the source, and the warning names the places where they part:
 a paragraph that seems to be missing, one with no counterpart in the source (added or repeated),
 two merged into one or one split in two. It reads only the start of each paragraph and its length,
 so it finds dropped, merged and repeated paragraphs, but a translation that put paragraphs in another

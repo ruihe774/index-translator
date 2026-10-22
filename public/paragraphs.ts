@@ -96,6 +96,24 @@ export function alignBlocks(source: string, output: string): Alignment | null {
   return { unit, source: s, output: o, groups: s.map((_, i) => ({ source: [i], output: [i] })) };
 }
 
+/**
+ * Fewest source blocks `POST /align` is asked to match. Measured on slices of 12 clean machine
+ * translations with one block dropped, merged, split or repeated: 8 blocks matched 98% exactly with no
+ * wrong one-to-one pair; 6 blocks 93%, 4 blocks 85%, with some wrong pairs, which would name the wrong place.
+ */
+export const MIN_MATCHED_BLOCKS = 8;
+
+/** A table row or a code fence: copied rather than translated, it misleads the length the matching weighs. */
+const COPIED = /^\s*(?:\||```|~~~)/m;
+
+/**
+ * Whether the blocks of `blocks` (the source's) are worth asking `POST /align` about: enough of them, and
+ * none a table or a code block, where a wrong match was measured to be likely.
+ */
+export function matchable(blocks: string[]): boolean {
+  return blocks.length >= MIN_MATCHED_BLOCKS && !blocks.some((b) => COPIED.test(b));
+}
+
 /** The text of each block, as `blockStarts` finds them, trimmed. */
 export function blockTexts(text: string, unit: Unit): string[] {
   const lines = text.split("\n");

@@ -650,26 +650,26 @@ for (const scheme of ["light", "dark"] as const) {
     mock,
   }) => {
     await app.page.emulateMedia({ colorScheme: scheme });
-    // Four paragraphs; the translation merged the second and third.
+    // Eight paragraphs; the translation merged the second and third.
     await mock.set({
-      chunks: ["Un.\n\n", "Deux. Trois.\n\n", "Quatre.\n"],
+      chunks: ["Un.\n\n", "Deux. Trois.\n\n", "Quatre.\n\n", "Cinq.\n\n", "Six.\n\n", "Sept.\n\n", "Huit.\n"],
       align: {
         pairs: [
           { source: [0], target: [0], similarity: 0.9 },
           { source: [1, 2], target: [1], similarity: 0.9 },
-          { source: [3], target: [2], similarity: 0.9 },
+          ...[3, 4, 5, 6, 7].map((k) => ({ source: [k], target: [k - 1], similarity: 0.9 })),
         ],
       },
     });
     await app.open();
     await app.from.selectOption("en");
     await app.to.selectOption("fr");
-    await app.text.fill("# One\n\nTwo.\n\nThree.\n\nFour.\n");
+    await app.text.fill("# One\n\nTwo.\n\nThree.\n\nFour.\n\nFive.\n\nSix.\n\nSeven.\n\nEight.\n");
     await app.translate.click();
     await expect(app.meta).toContainText("generated");
     await expect(app.page.locator("#notes")).toHaveAttribute("aria-live", "polite");
     await expect(app.notes.first()).toHaveText(
-      "The source has 4 paragraphs and the translation has 3. Paragraphs 2–3 of the source seem merged into paragraph 2 of the translation. Check it against the source.",
+      "The source has 8 paragraphs and the translation has 7. Paragraphs 2–3 of the source seem merged into paragraph 2 of the translation. Check it against the source.",
     );
     await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
     await settle(app.page);

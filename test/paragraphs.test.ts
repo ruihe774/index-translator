@@ -9,7 +9,9 @@ import {
   countBlocks,
   counterpart,
   detailedMismatchMessage,
+  matchable,
   MAX_LISTED,
+  MIN_MATCHED_BLOCKS,
   mismatchDetails,
   mismatchMessage,
   paragraphMismatch,
@@ -137,6 +139,23 @@ describe("alignBlocks", () => {
     expect(alignBlocks("A\n\nB\n\nC", "甲\n\n乙")).toBeNull();
     expect(alignBlocks("A\n\nB", "甲")).toBeNull();
     expect(alignBlocks("", "")).toBeNull();
+  });
+});
+
+describe("matchable", () => {
+  const prose = (n: number) => Array.from({ length: n }, (_, i) => `Paragraph ${i}.`);
+
+  test(`at least ${MIN_MATCHED_BLOCKS} blocks`, () => {
+    expect(matchable(prose(MIN_MATCHED_BLOCKS))).toBe(true);
+    expect(matchable(prose(MIN_MATCHED_BLOCKS - 1))).toBe(false);
+  });
+
+  test("no table and no code block", () => {
+    expect(matchable([...prose(8), "| a | b |\n| --- | --- |"])).toBe(false);
+    expect(matchable([...prose(8), "```sh\nls"])).toBe(false);
+    expect(matchable([...prose(8), "~~~\nx\n~~~"])).toBe(false);
+    // A pipe or backticks inside a line are text.
+    expect(matchable([...prose(8), "Use `a | b` here.", "- a list\n- of items", "# A heading"])).toBe(true);
   });
 });
 

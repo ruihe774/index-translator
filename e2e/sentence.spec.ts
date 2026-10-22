@@ -277,8 +277,11 @@ test("a sentence translated by two is marked with both, and both with it", async
   await settlesTo(app.page, "#output", "Trois", ["Three.", "Trois."]);
 });
 
-// Three blocks for two: the paragraph check fails.
-const EXTRA = { chunks: ["# Titre\n\n", "Une phrase.\n\n", "En trop.\n"] };
+// Eight source blocks (enough to be matched by paragraph) and a translation with one more at the end.
+const COUNT = ["Two", "Three", "Four", "Five", "Six", "Seven"];
+const COMPTE = ["Deux", "Trois", "Quatre", "Cinq", "Six", "Sept"];
+const EIGHT = ["# Title", "One sentence.", ...COUNT.map((w) => `${w}.`)];
+const EXTRA = { chunks: ["# Titre\n\n", "Une phrase.\n\n", ...COMPTE.map((w) => `${w}.\n\n`), "En trop.\n"] };
 
 test("blocks that do not match are matched by paragraph; one with no counterpart marks only its sentence", async ({
   app,
@@ -289,10 +292,10 @@ test("blocks that do not match are matched by paragraph; one with no counterpart
   await app.open();
   await app.from.selectOption("en");
   await app.to.selectOption("fr");
-  await app.text.fill("# Title\n\nOne sentence.\n");
+  await app.text.fill(EIGHT.join("\n\n"));
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
-  // Two source blocks are too few for the paragraph note, not for matching.
+  await expect(app.notes.first()).toContainText("Paragraph 9 of the translation has no counterpart in the source");
   await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
 
   await settlesTo(app.page, "#output", "phrase", ["Une phrase.", "One sentence."]);
@@ -301,11 +304,29 @@ test("blocks that do not match are matched by paragraph; one with no counterpart
   const { requests } = (await mock.state()).align;
   expect(requests[0]).toStrictEqual({
     unit: "paragraphs",
-    source: ["# Title", "One sentence."],
-    target: ["# Titre", "Une phrase.", "En trop."],
+    source: EIGHT,
+    target: ["# Titre", "Une phrase.", ...COMPTE.map((w) => `${w}.`), "En trop."],
   });
   // Then only the hovered block's sentences: none for the block with no counterpart.
   expect(requests.slice(1)).toStrictEqual([{ unit: "sentences", source: ["One sentence."], target: ["Une phrase."] }]);
+});
+
+test("too few blocks to match by paragraph: nothing is asked, and only the sentence is marked", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ chunks: ["# Titre\n\n", "Une phrase.\n\n", "En trop.\n"] });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.to.selectOption("fr");
+  await app.text.fill("# Title\n\nOne sentence.\n");
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+
+  await hover(app.page, "#output", "phrase");
+  await expect.poll(() => marked(app.page)).toStrictEqual(["Une phrase."]);
+  await expect(app.page.locator("#output-area")).not.toHaveClass(/synced/);
+  expect((await mock.state()).align.requests).toStrictEqual([]);
 });
 
 test("without an aligner nothing is matched, and only the sentence is marked", async ({ app, mock }) => {
@@ -313,9 +334,10 @@ test("without an aligner nothing is matched, and only the sentence is marked", a
   await app.open();
   await app.from.selectOption("en");
   await app.to.selectOption("fr");
-  await app.text.fill("# Title\n\nOne sentence.\n");
+  await app.text.fill(EIGHT.join("\n\n"));
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
+  await expect(app.notes.first()).toContainText("Parts may have been dropped");
 
   await hover(app.page, "#output", "phrase");
   await expect.poll(() => marked(app.page)).toStrictEqual(["Une phrase."]);

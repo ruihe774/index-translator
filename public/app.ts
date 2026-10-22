@@ -38,6 +38,7 @@ import {
   blockTexts,
   counterpart,
   detailedMismatchMessage,
+  matchable,
   mismatchMessage,
   paragraphMismatch,
   unitOf,
@@ -509,7 +510,8 @@ function onHover(e: MouseEvent, fromView: HTMLElement, toView: HTMLElement, side
  * Asked when a finished translation does not have as many blocks as its source: which blocks match
  * which (`POST /align`). The answer, for that source and translation, turns on what matched blocks
  * allow (sync, the hovered block's counterpart, the link check by block) and replaces the paragraph
- * note with the places the translation went wrong. Without an answer the note stays as it was.
+ * note with the places the translation went wrong. Without an answer the note stays as it was. Only
+ * asked where the matching was measured to be reliable (`matchable`): a wrong place is worse than none.
  */
 let blockMatch = new AbortController();
 
@@ -519,6 +521,7 @@ async function matchBlocks(source: string, translation: string, note: HTMLLIElem
   const outputBlocks = blockTexts(translation, unit);
   if (
     !aligner.available ||
+    !matchable(sourceBlocks) ||
     [sourceBlocks, outputBlocks].some((blocks) => blocks.length === 0 || blocks.length > MAX_SENTENCES)
   ) {
     return;
