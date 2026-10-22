@@ -425,7 +425,8 @@ closed); flags work as above.
 | `HOST` | `127.0.0.1` | Address to listen on. The app has no login, so keep it on `127.0.0.1` unless you put it behind a proxy. |
 | `DEFAULT_MODEL` | `index-translate-9b` | Model loaded at startup |
 | `GPU_LAYERS` | `all` | Layers to run on the GPU; `0` runs on the CPU |
-| `LLAMA_THREADS` | half the CPU threads | CPU threads for the engine; matters when running on the CPU |
+| `LLAMA_THREADS` | the fast cores, at most 8 | CPU threads for the engine; matters when running on the CPU. The default is the number of performance cores (Intel P-cores, Arm big cores; where that is not known, half the CPU threads), at most 8 and at most the CPUs the process may use |
+| `EMBED_THREADS` | the fast cores, at most 8 | CPU threads for the model that matches a translation's blocks to the source's; the same default as `LLAMA_THREADS`. Both run on the CPU at once when `GPU_LAYERS` is `0`: set both so that they share the cores |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
 | `ALLOWED_WEBPAGE_DOMAINS` | none (off) | Sites whose pages the app may fetch for translation, comma separated: `example.com`, `*.example.com` (its subdomains) or `*` (any site) |

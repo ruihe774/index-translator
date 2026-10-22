@@ -44,7 +44,7 @@ export interface Config {
   llamaDir: string;
   /** Layers to run on the GPU; -1 means all of them. */
   gpuLayers: number;
-  /** CPU threads for the engine; 0 uses half the logical CPUs. */
+  /** CPU threads for the engine; 0 uses the performance cores (at most 8, at most the CPUs this process may use). */
   threads: number;
   /** CPU threads for the embedding model; 0 uses the performance cores (at most 8, at most the CPUs this process may use). */
   embedThreads: number;
@@ -206,7 +206,8 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   MAX_INPUT_TOKENS: "largest accepted prompt, in tokens (default 28000)",
   MAX_QUEUE: "requests allowed to wait (default 8)",
   GPU_LAYERS: "`all` (default), a layer count, or 0 to run on the processor",
-  LLAMA_THREADS: "CPU threads for decoding (default half the logical CPUs)",
+  LLAMA_THREADS:
+    "CPU threads for decoding (default the performance cores: P-cores or big cores, at most 8; the same detection as EMBED_THREADS)",
   EMBED_THREADS: "CPU threads for the embedding model (default the performance cores: P-cores or big cores, at most 8)",
   LLAMA_DIR: "directory with libllama and its backends (default vendor/llama.cpp)",
   PUBLIC_DIR: "directory with the web app (default public/)",
