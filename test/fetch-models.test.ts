@@ -160,6 +160,25 @@ describe("plan", () => {
     expect(MODEL_IDS).toContain("sat-3l-sm");
   });
 
+  test("the alignment model is the ONNX export, its vocabulary and the pooling layer, in a directory of its own", () => {
+    const files = plan(["labse"], dirs);
+    expect(files.map((f) => f.dest)).toStrictEqual([
+      join("/m", "labse", "model.onnx"),
+      join("/m", "labse", "vocab.txt"),
+      join("/m", "labse", "dense.safetensors"),
+    ]);
+    expect(files[0]!.url).toEndWith(
+      "/Xenova/LaBSE/resolve/147002d501fc76ecd313c631999ea796520fea74/onnx/model_quantized.onnx",
+    );
+    expect(files[2]!.url).toEndWith(
+      "/sentence-transformers/LaBSE/resolve/836121a0533e5664b21c7aacc5d22951f2b8b25b/2_Dense/model.safetensors",
+    );
+    for (const f of files) {
+      expect(f.sha256).toMatch(/^[0-9a-f]{64}$/);
+    }
+    expect(MODEL_IDS).toContain("labse");
+  });
+
   test("the speech model comes with the example voices, which never replace a file of the user's", () => {
     const files = plan(["index-tts-2.5"], dirs);
     expect(files[0]!.dest).toBe(join("/s", "index-tts2_5-q8_0.gguf"));

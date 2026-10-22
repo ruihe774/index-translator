@@ -26,7 +26,7 @@ enum { MARGIN = 24, CLIENT_W = 400, ROW_H = 28, LINK_H = 62, GAP = 10, BTN_W = 1
 
 static const struct { int id; const WCHAR *title, *note; } links[] = {
   {ID_START, L"Start translator", L"Run the server and open it in the browser"},
-  {ID_FETCH, L"Download models", L"Fetch the translation and speech models (about 18.1 GiB)"},
+  {ID_FETCH, L"Download models", L"Fetch the translation and speech models (about 18.5 GiB)"},
   {ID_NOTICES, L"Third-party notices", L"Licenses of the bundled software"},
   {ID_HELP, L"Server settings", L"List every flag and environment variable"},
 };

@@ -1,4 +1,4 @@
-// ONNX Runtime's C API through bun:ffi: just what the segmentation worker needs to run one model on
+// ONNX Runtime's C API through bun:ffi: just what the segmentation worker needs to run its models on
 // the CPU. Every call blocks its thread, so this module is only used from src/segment-worker.ts.
 //
 // The library exports one function, `OrtGetApiBase`; everything else is a function pointer in the
@@ -66,16 +66,27 @@ const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
 const out = () => new BigUint64Array(1);
 const pointerIn = (slot: BigUint64Array) => Number(slot[0]) as Pointer;
 
+/** An input tensor: int64 or float32, by its array's type. */
+export type Input = BigInt64Array | Float32Array;
+
 export interface Session {
-  /** Logits of `ids` (int64) and `mask` (float32), both `rows × width`: one float per token, `rows × width` of them. */
-  run(ids: BigInt64Array, mask: Float32Array, rows: number, width: number): Float32Array;
+  /**
+   * The output for `inputs`, each `rows × width` and in the order `open` named them: `perToken` floats
+   * for every one of the `rows × width` positions.
+   */
+  run(inputs: Input[], rows: number, width: number, perToken: number): Float32Array;
   close(): void;
+}
+
+/** The names of a model's inputs, in the order `run` is given them, and of the one output it reads. */
+export interface Signature {
+  inputs: string[];
+  output: string;
 }
 
 export interface Runtime {
   readonly version: string;
-  /** A session for a model with inputs `input_ids` and `attention_mask` and one output, `logits`. */
-  open(modelPath: string, threads: number): Session;
+  open(modelPath: string, threads: number, signature: Signature): Session;
   close(): void;
 }
 
@@ -173,17 +184,11 @@ export function loadRuntime(dir: string): Runtime {
   const env = pointerIn(slot);
   check(f.CreateCpuMemoryInfo(ARENA_ALLOCATOR, MEM_TYPE_DEFAULT, ptr(slot)), "CreateCpuMemoryInfo");
   const memory = pointerIn(slot);
-  // The names `Run` reads, and the tables of pointers to them. One object holds both, and `run` uses
-  // it, so the strings live as long as the pointers to them (a table alone would let them be collected).
-  const names = (() => {
-    const strings = [cstr("input_ids"), cstr("attention_mask"), cstr("logits")];
-    const table = (of: Uint8Array[]) => BigUint64Array.from(of.map((s) => BigInt(ptr(s))));
-    return { strings, inputs: table(strings.slice(0, 2)), outputs: table(strings.slice(2)) };
-  })();
 
   /** An OrtValue over `data`, which must outlive it. */
-  function tensor(data: BigInt64Array | Float32Array, type: number, dims: BigInt64Array): Pointer {
+  function tensor(data: Input, dims: BigInt64Array): Pointer {
     const value = out();
+    const type = data instanceof BigInt64Array ? INT64 : FLOAT;
     check(
       f.CreateTensorWithDataAsOrtValue(memory, ptr(data), data.byteLength, ptr(dims), dims.length, type, ptr(value)),
       "CreateTensorWithDataAsOrtValue",
@@ -193,7 +198,14 @@ export function loadRuntime(dir: string): Runtime {
 
   return {
     version,
-    open(modelPath, threads) {
+    open(modelPath, threads, signature) {
+      // The names `Run` reads, and the tables of pointers to them. One object holds both, and `run` uses
+      // it, so the strings live as long as the pointers to them (a table alone would let them be collected).
+      const names = (() => {
+        const strings = [...signature.inputs, signature.output].map(cstr);
+        const table = (of: Uint8Array[]) => BigUint64Array.from(of.map((s) => BigInt(ptr(s))));
+        return { strings, inputs: table(strings.slice(0, -1)), outputs: table(strings.slice(-1)) };
+      })();
       check(f.CreateSessionOptions(ptr(slot)), "CreateSessionOptions");
       const options = pointerIn(slot);
       let session: Pointer;
@@ -209,12 +221,15 @@ export function loadRuntime(dir: string): Runtime {
         f.ReleaseSessionOptions(options);
       }
       return {
-        run(ids, mask, rows, width) {
-          if (ids.length !== rows * width || mask.length !== rows * width) {
-            throw new OrtError(`inputs of ${ids.length} and ${mask.length} values are not ${rows} × ${width}`);
+        run(data, rows, width, perToken) {
+          if (data.length !== names.inputs.length || data.some((d) => d.length !== rows * width)) {
+            throw new OrtError(
+              `inputs of ${data.map((d) => d.length).join(", ")} values are not ${names.inputs.length} of ${rows} × ${width}`,
+            );
           }
           const dims = BigInt64Array.of(BigInt(rows), BigInt(width));
-          const inputs = [tensor(ids, INT64, dims), tensor(mask, FLOAT, dims)];
+          const size = rows * width * perToken;
+          const inputs = data.map((d) => tensor(d, dims));
           const outputs = new BigUint64Array(1);
           try {
             check(
@@ -230,9 +245,9 @@ export function loadRuntime(dir: string): Runtime {
               ),
               "Run",
             );
-            const logits = pointerIn(outputs);
+            const output = pointerIn(outputs);
             try {
-              check(f.GetTensorTypeAndShape(logits, ptr(slot)), "GetTensorTypeAndShape");
+              check(f.GetTensorTypeAndShape(output, ptr(slot)), "GetTensorTypeAndShape");
               const info = pointerIn(slot);
               const count = out();
               try {
@@ -241,13 +256,13 @@ export function loadRuntime(dir: string): Runtime {
                 f.ReleaseTensorTypeAndShapeInfo(info);
               }
               // Read exactly what the library holds: a model with another output shape is an error, not a stray read.
-              if (Number(count[0]) !== rows * width) {
-                throw new OrtError(`the model answered ${count[0]} logits for ${rows * width} tokens`);
+              if (Number(count[0]) !== size) {
+                throw new OrtError(`the model answered ${count[0]} values for ${rows * width} tokens × ${perToken}`);
               }
-              check(f.GetTensorMutableData(logits, ptr(slot)), "GetTensorMutableData");
-              return new Float32Array(toArrayBuffer(pointerIn(slot), 0, rows * width * 4).slice(0));
+              check(f.GetTensorMutableData(output, ptr(slot)), "GetTensorMutableData");
+              return new Float32Array(toArrayBuffer(pointerIn(slot), 0, size * 4).slice(0));
             } finally {
-              f.ReleaseValue(logits);
+              f.ReleaseValue(output);
             }
           } finally {
             for (const value of inputs) {

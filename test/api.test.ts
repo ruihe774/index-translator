@@ -53,6 +53,11 @@ describe("metadata endpoints", () => {
         error: "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts",
         max_chars: 20_000,
       },
+      align: {
+        status: "unavailable",
+        error: "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts",
+        max_chars: 20_000,
+      },
       webpage: { status: "unavailable", error: "no domains are allowed; list them in ALLOWED_WEBPAGE_DOMAINS" },
     });
   });

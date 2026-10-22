@@ -57,6 +57,11 @@ info:
     cut a document into utterances for `POST /speech`. Like the speech model it is loaded by the
     first request and unloaded after a while without one.
 
+    **Sentence alignment.** `POST /align` tells which sentences of a translation translate which
+    sentences of its source, with LaBSE sentence embeddings on the same thread and in the same
+    queue as `POST /segment`, loaded and unloaded the same way. The client sends the sentences of
+    one source block and of its translation, cut as it likes (the web app cuts where SaT says).
+
     **Web pages.** `POST /webpage` opens a web page in a headless browser on the server and
     answers its content as Markdown, for a client to translate as a text. It is off unless the
     server lists the domains it may open (`ALLOWED_WEBPAGE_DOMAINS`).
@@ -338,6 +343,88 @@ paths:
         "503":
           description: |
             Sentence segmentation is not available (`segment_unavailable`): it is turned off, or ONNX
+            Runtime or the model is not installed. The message says which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /align:
+    post:
+      tags: [segment]
+      operationId: align
+      summary: Which sentences of a translation translate which of its source
+      description: |
+        Matches the sentences of `source` with those of `target`, its translation, in order: every
+        sentence of each side is in exactly one pair, and the pairs follow both texts. A pair is one
+        source sentence with up to four target sentences, up to four source sentences with one target
+        sentence, two with two, or one sentence of either side with nothing (it has no counterpart).
+        Each sentence is embedded with LaBSE; a group's embedding is the sum of its sentences', and
+        the path is the one of least distance, which weighs the cosine of a pair, its similarity to
+        the sentences around it, the number of sentences and their lengths in characters (the method
+        of AIlign, arXiv:2403.11921, without its anchor points: the texts are meant to be one block
+        and its translation, not whole books).
+
+        At most 256 sentences on each side and `max_chars` UTF-16 code units in all (see `align` in
+        `GET /health`); a sentence longer than the model's 512 tokens is read up to there. It runs
+        on the segmentation thread and in its queue (`429`). Closing the connection drops a waiting
+        request; a running one stops within one batch of the model.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/AlignRequest"
+            example:
+              source:
+                - The library reopened last month.
+                - It seats 214 visitors, and volunteers meet on Thursdays.
+              target:
+                - 图书馆上个月重新开放，可容纳214名访客。
+                - 志愿者每周四聚会。
+      responses:
+        "200":
+          description: The pairs, in the order of both texts.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Alignment"
+              example:
+                pairs:
+                  - source: [0, 1]
+                    target: [0, 1]
+                    similarity: 0.861
+        "400":
+          description: |
+            `source` or `target` is missing, not an array of strings, empty or longer than 256, or the
+            two hold more than `max_chars` UTF-16 code units in all (`invalid_request`,
+            `details.field` names which).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          description: The request body exceeds 4 MiB (`body_too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/QueueFull"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "502":
+          description: The alignment model failed to load or to run (`segment_error`). A failed load is attempted again by the next request.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "503":
+          description: |
+            Sentence alignment is not available (`align_unavailable`): it is turned off, or ONNX
             Runtime or the model is not installed. The message says which.
           content:
             application/json:
@@ -870,8 +957,8 @@ components:
                 max_input_tokens: 28000
     QueueFull:
       description: |
-        Too many translations, speech requests or segmentation requests are already waiting
-        (`queue_full`); each has its own queue.
+        Too many translations, speech requests or segmentation and alignment requests are already
+        waiting (`queue_full`); each of the three has its own queue.
       headers:
         Retry-After:
           schema:
@@ -1350,6 +1437,20 @@ components:
               type: integer
               description: Most UTF-16 code units one `POST /segment` may hold in all its texts.
               examples: [20000]
+        align:
+          type: object
+          description: The sentence alignment model (`POST /align`). It does not affect `status` or the HTTP status of this endpoint.
+          required: [status, max_chars]
+          properties:
+            status:
+              $ref: "#/components/schemas/SegmentStatus"
+            error:
+              type: string
+              description: Why alignment is `unavailable`, or why the model could not be loaded last time.
+            max_chars:
+              type: integer
+              description: Most UTF-16 code units one `POST /align` may hold in all its sentences.
+              examples: [20000]
         webpage:
           type: object
           description: |
@@ -1398,9 +1499,59 @@ components:
       enum: [unavailable, stopped, starting, ready, error]
       description: |
         `unavailable`: turned off, or ONNX Runtime or the model is not installed. `stopped`:
-        installed, the model is not loaded; a `POST /segment` loads it (`starting`, then `ready`)
-        and it is unloaded again when idle. `error`: the last load failed; the next request tries
-        again.
+        installed, the model is not loaded; a `POST /segment` (for alignment, a `POST /align`)
+        loads it (`starting`, then `ready`) and it is unloaded again when idle. `error`: the last
+        load failed; the next request tries again.
+    AlignRequest:
+      type: object
+      required: [source, target]
+      properties:
+        source:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            type: string
+          description: The source's sentences, in order.
+        target:
+          type: array
+          minItems: 1
+          maxItems: 256
+          items:
+            type: string
+          description: The translation's sentences, in order.
+    Alignment:
+      type: object
+      required: [pairs]
+      properties:
+        pairs:
+          type: array
+          description: Every sentence of both sides in exactly one pair, in the order of both texts.
+          items:
+            $ref: "#/components/schemas/AlignedPair"
+    AlignedPair:
+      type: object
+      required: [source, target, similarity]
+      properties:
+        source:
+          type: array
+          description: Consecutive indexes into `source`; empty when the target sentences have no counterpart.
+          maxItems: 4
+          items:
+            type: integer
+            minimum: 0
+        target:
+          type: array
+          description: Consecutive indexes into `target`; empty when the source sentences have no counterpart.
+          maxItems: 4
+          items:
+            type: integer
+            minimum: 0
+        similarity:
+          type: number
+          minimum: -1
+          maximum: 1
+          description: Cosine of the two groups' embeddings, three decimals; 0 when a side is empty.
     SegmentRequest:
       type: object
       required: [texts]
@@ -1618,6 +1769,7 @@ components:
                 - speech_unavailable
                 - segment_error
                 - segment_unavailable
+                - align_unavailable
                 - webpage_error
                 - webpage_unavailable
                 - forbidden_webpage

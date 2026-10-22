@@ -36,8 +36,12 @@ async function hover(page: Page, container: string, word: string) {
   await page.mouse.move(x, y);
 }
 
+// The blocks of most tests here match, which would mark counterparts too (see the tests at the end): those
+// are left out by having no aligner.
+const NO_ALIGNER = { state: "unavailable" } as const;
+
 test("the sentence under the pointer is marked in both views, and only it", async ({ app, mock }) => {
-  await mock.set({ chunks: ["# Titre\n\n", "Première phrase ici. Seconde phrase là.\n"] });
+  await mock.set({ chunks: ["# Titre\n\n", "Première phrase ici. Seconde phrase là.\n"], align: NO_ALIGNER });
   await app.open();
   await app.from.selectOption("en");
   await app.to.selectOption("fr");
@@ -63,7 +67,7 @@ test("the sentence under the pointer is marked in both views, and only it", asyn
 });
 
 test("a hard line break inside a paragraph does not end its sentence", async ({ app, mock }) => {
-  await mock.set({ chunks: ["# Titre\n\n", "Une phrase qui  \ncontinue ici. Puis une autre.\n"] });
+  await mock.set({ chunks: ["# Titre\n\n", "Une phrase qui  \ncontinue ici. Puis une autre.\n"], align: NO_ALIGNER });
   await app.open();
   await app.from.selectOption("en");
   await app.to.selectOption("fr");
@@ -102,7 +106,7 @@ test("the sentence model's answer for a text, asked for once the translation is 
   app,
   mock,
 }) => {
-  await mock.set({ chunks: [ONE_FOR_INTL, "\n"] });
+  await mock.set({ chunks: [ONE_FOR_INTL, "\n"], align: NO_ALIGNER });
   await app.open();
   await app.from.selectOption("en");
   await app.to.selectOption("fr");
@@ -216,4 +220,76 @@ test("a code block is not marked, and nothing is marked while a translation stre
   expect(await marked(app.page)).toStrictEqual([]);
   await hover(app.page, "#output", "après");
   await expect.poll(() => marked(app.page)).toStrictEqual(["Texte après."]);
+});
+
+/** What is marked, sorted, once moving over `word` again and again (answers arrive while the pointer rests) gives it. */
+async function settlesTo(page: Page, container: string, word: string, expected: string[]) {
+  let nudge = 0;
+  await expect
+    .poll(async () => {
+      const { x, y } = await centreOf(page, container, word);
+      await page.mouse.move(x + (nudge++ % 2), y);
+      return (await marked(page)).sort();
+    })
+    .toStrictEqual([...expected].sort());
+}
+
+test("with matched blocks, the sentence's counterpart in the other view is marked too", async ({ app, mock }) => {
+  await mock.set({ chunks: ["# Titre\n\n", "Première phrase ici. Seconde phrase là.\n"] });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.to.selectOption("fr");
+  await app.text.fill(SOURCE);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+
+  await settlesTo(app.page, "#source-view", "Second", ["Second sentence there.", "Seconde phrase là."]);
+  await settlesTo(app.page, "#output", "Première", ["First sentence here.", "Première phrase ici."]);
+  // Only the hovered block was asked about, with its sentences as the sentence model cuts them.
+  expect((await mock.state()).align.requests).toStrictEqual([
+    {
+      source: ["First sentence here.", "Second sentence there."],
+      target: ["Première phrase ici.", "Seconde phrase là."],
+    },
+  ]);
+});
+
+test("a sentence translated by two is marked with both, and both with it", async ({ app, mock }) => {
+  await mock.set({
+    chunks: ["# Titre\n\n", "Une. Deux. Trois.\n"],
+    align: {
+      pairs: [
+        { source: [0], target: [0, 1], similarity: 0.9 },
+        { source: [1], target: [2], similarity: 0.9 },
+      ],
+    },
+  });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.to.selectOption("fr");
+  await app.text.fill("# Title\n\nOne and two. Three.\n");
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+
+  await settlesTo(app.page, "#output", "Deux", ["One and two.", "Une.", "Deux."]);
+  await settlesTo(app.page, "#source-view", "One", ["One and two.", "Une.", "Deux."]);
+  await settlesTo(app.page, "#output", "Trois", ["Three.", "Trois."]);
+});
+
+test("without matched blocks nothing is asked, and only the sentence is marked", async ({ app, mock }) => {
+  // Three blocks for two: the paragraph check fails.
+  await mock.set({ chunks: ["# Titre\n\n", "Une phrase.\n\n", "En trop.\n"] });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.to.selectOption("fr");
+  await app.text.fill("# Title\n\nOne sentence.\n");
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+
+  await hover(app.page, "#output", "phrase");
+  await expect.poll(() => marked(app.page)).toStrictEqual(["Une phrase."]);
+  await app.page.waitForTimeout(300);
+  await hover(app.page, "#output", "Une");
+  expect(await marked(app.page)).toStrictEqual(["Une phrase."]);
+  expect((await mock.state()).align.requests).toStrictEqual([]);
 });

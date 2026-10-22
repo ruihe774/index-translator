@@ -8,8 +8,8 @@
 //   POST   /mock           set knobs: { chunks?, delayMs?, finish?, failWith?, failLaunch?, ready?,
 //                          speech?: { state?, delayMs?, audioSeconds?, failWith? },
 //                          webpage?: { problem?, title?, markdown?, redirectTo?, delayMs?, failWith? },
-//                          segment?: { state?, delayMs?, failWith? } };
-//                          `speech`, `webpage` and `segment` in the answer hold what the mock engines were asked
+//                          segment?: { state?, delayMs?, failWith? }, align?: { state?, pairs? } };
+//                          `speech`, `webpage`, `segment` and `align` in the answer hold what the mock engines were asked
 //   DELETE /mock           reset knobs and forget recorded requests
 //   POST   /mock/restart   unload the engine so the next request loads its model again
 // Tests call it through e2e/fixtures.ts.
@@ -23,6 +23,7 @@ import {
   DOCUMENT,
   launcher,
   mock,
+  mockAlign,
   mockSegment,
   mockSpeech,
   mockWebpage,
@@ -88,6 +89,9 @@ const control = Bun.serve({
       if (patch.segment) {
         Object.assign(mockSegment, patch.segment);
       }
+      if (patch.align) {
+        Object.assign(mockAlign, patch.align);
+      }
     } else if (req.method === "DELETE") {
       resetMock();
       resetMockSpeech();
@@ -109,6 +113,7 @@ const control = Bun.serve({
       speech: mockSpeech,
       webpage: mockWebpage,
       segment: mockSegment,
+      align: mockAlign,
     });
   },
 });

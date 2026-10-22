@@ -122,6 +122,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/align": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Which sentences of a translation translate which of its source
+         * @description Matches the sentences of `source` with those of `target`, its translation, in order: every
+         *     sentence of each side is in exactly one pair, and the pairs follow both texts. A pair is one
+         *     source sentence with up to four target sentences, up to four source sentences with one target
+         *     sentence, two with two, or one sentence of either side with nothing (it has no counterpart).
+         *     Each sentence is embedded with LaBSE; a group's embedding is the sum of its sentences', and
+         *     the path is the one of least distance, which weighs the cosine of a pair, its similarity to
+         *     the sentences around it, the number of sentences and their lengths in characters (the method
+         *     of AIlign, arXiv:2403.11921, without its anchor points: the texts are meant to be one block
+         *     and its translation, not whole books).
+         *
+         *     At most 256 sentences on each side and `max_chars` UTF-16 code units in all (see `align` in
+         *     `GET /health`); a sentence longer than the model's 512 tokens is read up to there. It runs
+         *     on the segmentation thread and in its queue (`429`). Closing the connection drops a waiting
+         *     request; a running one stops within one batch of the model.
+         */
+        post: operations["align"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/translate": {
         parameters: {
             query?: never;
@@ -673,6 +706,17 @@ export interface components {
                  */
                 max_chars: number;
             };
+            /** @description The sentence alignment model (`POST /align`). It does not affect `status` or the HTTP status of this endpoint. */
+            align?: {
+                status: components["schemas"]["SegmentStatus"];
+                /** @description Why alignment is `unavailable`, or why the model could not be loaded last time. */
+                error?: string;
+                /**
+                 * @description Most UTF-16 code units one `POST /align` may hold in all its sentences.
+                 * @example 20000
+                 */
+                max_chars: number;
+            };
             /**
              * @description `POST /webpage`. `available` when domains are allowed and the Markdown converter is
              *     installed; whether a browser is there shows only when a page is fetched.
@@ -709,12 +753,30 @@ export interface components {
         SpeechStatus: "unavailable" | "stopped" | "starting" | "ready" | "error";
         /**
          * @description `unavailable`: turned off, or ONNX Runtime or the model is not installed. `stopped`:
-         *     installed, the model is not loaded; a `POST /segment` loads it (`starting`, then `ready`)
-         *     and it is unloaded again when idle. `error`: the last load failed; the next request tries
-         *     again.
+         *     installed, the model is not loaded; a `POST /segment` (for alignment, a `POST /align`)
+         *     loads it (`starting`, then `ready`) and it is unloaded again when idle. `error`: the last
+         *     load failed; the next request tries again.
          * @enum {string}
          */
         SegmentStatus: "unavailable" | "stopped" | "starting" | "ready" | "error";
+        AlignRequest: {
+            /** @description The source's sentences, in order. */
+            source: string[];
+            /** @description The translation's sentences, in order. */
+            target: string[];
+        };
+        Alignment: {
+            /** @description Every sentence of both sides in exactly one pair, in the order of both texts. */
+            pairs: components["schemas"]["AlignedPair"][];
+        };
+        AlignedPair: {
+            /** @description Consecutive indexes into `source`; empty when the target sentences have no counterpart. */
+            source: number[];
+            /** @description Consecutive indexes into `target`; empty when the source sentences have no counterpart. */
+            target: number[];
+            /** @description Cosine of the two groups' embeddings, three decimals; 0 when a side is empty. */
+            similarity: number;
+        };
         SegmentRequest: {
             /**
              * @description The texts to read, each on its own (a blank one gets no positions). At most `max_chars`
@@ -832,7 +894,7 @@ export interface components {
                  *     (see `ErrorEvent`): a client that closed its connection never sees a response.
                  * @enum {string}
                  */
-                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "segment_error" | "segment_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
+                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "segment_error" | "segment_unavailable" | "align_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
                 /** @description For people, not for programs; its wording can change. Go by `code`. */
                 message: string;
                 details?: components["schemas"]["ErrorDetails"];
@@ -1033,6 +1095,9 @@ export type WebpageRequest = components['schemas']['WebpageRequest'];
 export type Webpage = components['schemas']['Webpage'];
 export type SpeechStatus = components['schemas']['SpeechStatus'];
 export type SegmentStatus = components['schemas']['SegmentStatus'];
+export type AlignRequest = components['schemas']['AlignRequest'];
+export type Alignment = components['schemas']['Alignment'];
+export type AlignedPair = components['schemas']['AlignedPair'];
 export type SegmentRequest = components['schemas']['SegmentRequest'];
 export type Segmentation = components['schemas']['Segmentation'];
 export type SegmentedText = components['schemas']['SegmentedText'];
@@ -1298,6 +1363,106 @@ export interface operations {
             };
             /**
              * @description Sentence segmentation is not available (`segment_unavailable`): it is turned off, or ONNX
+             *     Runtime or the model is not installed. The message says which.
+             */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    align: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                /**
+                 * @example {
+                 *       "source": [
+                 *         "The library reopened last month.",
+                 *         "It seats 214 visitors, and volunteers meet on Thursdays."
+                 *       ],
+                 *       "target": [
+                 *         "图书馆上个月重新开放，可容纳214名访客。",
+                 *         "志愿者每周四聚会。"
+                 *       ]
+                 *     }
+                 */
+                "application/json": components["schemas"]["AlignRequest"];
+            };
+        };
+        responses: {
+            /** @description The pairs, in the order of both texts. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example {
+                     *       "pairs": [
+                     *         {
+                     *           "source": [
+                     *             0,
+                     *             1
+                     *           ],
+                     *           "target": [
+                     *             0,
+                     *             1
+                     *           ],
+                     *           "similarity": 0.861
+                     *         }
+                     *       ]
+                     *     }
+                     */
+                    "application/json": components["schemas"]["Alignment"];
+                };
+            };
+            /**
+             * @description `source` or `target` is missing, not an array of strings, empty or longer than 256, or the
+             *     two hold more than `max_chars` UTF-16 code units in all (`invalid_request`,
+             *     `details.field` names which).
+             */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            /** @description The request body exceeds 4 MiB (`body_too_large`). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["QueueFull"];
+            500: components["responses"]["InternalError"];
+            /** @description The alignment model failed to load or to run (`segment_error`). A failed load is attempted again by the next request. */
+            502: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            /**
+             * @description Sentence alignment is not available (`align_unavailable`): it is turned off, or ONNX
              *     Runtime or the model is not installed. The message says which.
              */
             503: {

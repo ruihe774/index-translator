@@ -5,7 +5,7 @@ import { expect, test as base } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import { CoverageReport } from "monocart-coverage-reports";
 
-import type { FinishReason, SegmentStatus, SpeechStatus, Voice } from "../src/api";
+import type { AlignedPair, FinishReason, SegmentStatus, SpeechStatus, Voice } from "../src/api";
 import { COVERAGE, mappedModule, REPORT } from "./coverage";
 
 const PORT = Number(process.env.E2E_PORT ?? 3100);
@@ -41,6 +41,11 @@ export interface MockKnobs {
   };
   /** The mock sentence model of `POST /segment`: `state: "unavailable"` is an install without it. */
   segment?: { state?: SegmentStatus; delayMs?: number; failWith?: string };
+  /**
+   * The mock aligner of `POST /align`: sentence i with sentence i unless `pairs` says otherwise;
+   * `state: "unavailable"` is an install without it.
+   */
+  align?: { state?: SegmentStatus; pairs?: AlignedPair[] };
 }
 
 export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs">> {
@@ -54,6 +59,8 @@ export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs"
   webpage: { requests: string[]; aborted: number };
   /** `requests` are the texts asked of the mock sentence model, one list per request. */
   segment: { requests: string[][]; aborted: number };
+  /** `requests` are the sentence lists asked of the mock aligner, one pair per request. */
+  align: { requests: { source: string[]; target: string[] }[] };
 }
 
 export interface Mock {

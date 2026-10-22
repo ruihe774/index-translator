@@ -18,7 +18,7 @@ names them and says where the full texts are. The AppImage carries this file in
 | [libsoxr](https://sourceforge.net/projects/soxr/) (the SoX Resampler Library, `libsoxr.so.0`; `soxr.dll` in the Windows installer), version and commit pinned in `scripts/build_soxr.ts`, built unchanged | Resampling for audio.cpp (the voice samples) and for the Opus encoder (the speech) | LGPL-2.1 or later, Copyright (c) 2007-18 robs; the PFFFT code in it is under a BSD-like license (Copyright (c) 2013 Julien Pommier, and 2004 University Corporation for Atmospheric Research for the FFTPACK parts), stated in its source file; it is a separate shared library that can be replaced by another build of the same version, and its source is the repository at the pinned commit (the same files as the release tarball `soxr-0.1.3-Source.tar.xz`) | `vendor/soxr/LICENCE` and `vendor/soxr/COPYING.LGPL` |
 | minicelt (the `miniopus` branch of this app's repository, a Rust port of the CELT encoder of [libopus](https://opus-codec.org) built for WebAssembly, pinned by commit in `scripts/fetch_minicelt.ts`) | Encoding the speech stream as Opus; libsoxr also resamples the audio it takes | BSD-3-Clause, as a derivative of libopus (Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon), with the royalty-free patent licenses named in the text | `vendor/minicelt/COPYING` |
 | [turndown](https://github.com/mixmark-io/turndown) (its browser build, `dist/turndown.js` of the npm package), pinned in `scripts/fetch_turndown.ts` | Runs inside a web page the server opens: the page's HTML as Markdown | MIT, Copyright (c) 2017 Dom Christie | `vendor/turndown/LICENSE` |
-| [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.31.0 (Microsoft's official release build, CPU only: `libonnxruntime.so.1.31.0`; `onnxruntime.dll` in the Windows installer), pinned in `scripts/fetch_onnxruntime.ts`, used unchanged | For upcoming sentence segmentation (the SaT model below); not used yet | MIT, Copyright (c) Microsoft Corporation; the release's own `ThirdPartyNotices.txt`, shipped alongside the library, lists the licenses of the components compiled into it | `vendor/onnxruntime/LICENSE` and `vendor/onnxruntime/ThirdPartyNotices.txt` |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.31.0 (Microsoft's official release build, CPU only: `libonnxruntime.so.1.31.0`; `onnxruntime.dll` in the Windows installer), pinned in `scripts/fetch_onnxruntime.ts`, used unchanged | Sentence segmentation and alignment (the SaT and LaBSE models below) | MIT, Copyright (c) Microsoft Corporation; the release's own `ThirdPartyNotices.txt`, shipped alongside the library, lists the licenses of the components compiled into it | `vendor/onnxruntime/LICENSE` and `vendor/onnxruntime/ThirdPartyNotices.txt` |
 | [Bun](https://bun.sh) (`usr/bin/bun` in the AppImage) | JavaScript runtime and HTTP server | MIT for Bun itself; the executable also contains statically linked components under their own licenses, among them JavaScriptCore (LGPL-2.0 or later) | <https://bun.com/docs/project/licensing> |
 
 | [pdf-inspector](https://github.com/firecrawl/pdf-inspector), its WebAssembly build (`@firecrawl/pdf-inspector-wasm`), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: the text of a PDF page as Markdown | MIT, Copyright (c) 2026 Firecrawl; the binary embeds CMaps derived from Adobe's CMap resources (BSD 3-Clause, Copyright 1990-2009 Adobe Systems Incorporated) | `public/vendor/pdf-inspector/LICENSE` |
@@ -108,6 +108,23 @@ about to download and asks for `yes` first (the same text as here, in short).
   Igor Sterner; the repository carries wtpsplit's `LICENSE`; and xlm-roberta-base, whose tokenizer it is).
 - <https://huggingface.co/jiangzhuo9357/sat-3l-sm-onnx>, <https://huggingface.co/segment-any-text/sat-3l-sm>,
   <https://huggingface.co/FacebookAI/xlm-roberta-base>
+
+### LaBSE (`labse`)
+
+- Sentence embedding model (which sentence of a translation matches which of the source): LaBSE
+  (Language-agnostic BERT Sentence Embedding, Feng et al., Google) as `sentence-transformers/LaBSE`,
+  in Xenova's 8-bit ONNX export (`Xenova/LaBSE`, `onnx/model_quantized.onnx`, saved as `model.onnx`)
+  with its `vocab.txt`, and the pooling layer of `sentence-transformers/LaBSE` (`2_Dense/model.safetensors`,
+  saved as `dense.safetensors`). The files are downloaded into `models/labse/`.
+- License: Apache-2.0 (as stated on the sentence-transformers model card; Xenova's export names it as its base model).
+- <https://huggingface.co/sentence-transformers/LaBSE>, <https://huggingface.co/Xenova/LaBSE>
+
+## Methods from publications
+
+- Sentence alignment (`src/align.ts`) follows the dynamic programming step of AIlign as its paper
+  describes it: Olivier Kraif, "Adaptative Bilingual Aligning Using Multilingual Sentence Embedding",
+  2024, <https://arxiv.org/abs/2403.11921> (CC BY 4.0). It is our own implementation from the paper;
+  no code of AIlign's repository (CC BY-NC) is used.
 
 ## Keeping this file true
 

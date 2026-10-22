@@ -39,6 +39,7 @@ import { resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
 import { focusableWhenScrolling } from "./scroll-focus.ts";
 import { SentenceBoundaries } from "./segment.ts";
 import { CHAT_MODEL, type Choice, detectSource, DOCUMENT_MODEL, type Selection, selectModel } from "./select-model.ts";
+import { SentenceAligner } from "./sentence-align.ts";
 import { initSentenceHover } from "./sentence-hover.ts";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
 import { bindRender, setState, type Side, state } from "./state.ts";
@@ -292,6 +293,7 @@ async function pollHealth() {
     ({ text, loading, vram, problem } = healthMessage(health));
     webpageAvailable = health.webpage?.status === "available";
     boundaries.configure(health.segment);
+    aligner.configure(health.align);
   } catch {
     text = "The server cannot be reached.";
     problem = true;
@@ -497,14 +499,17 @@ function onHover(e: MouseEvent, fromView: HTMLElement, toView: HTMLElement, side
  * pointer and for cutting what is read aloud. A new translation or Clear drops what is still waiting.
  */
 const boundaries = new SentenceBoundaries();
+/** Which sentences of the translation translate which of the source (`POST /align`), asked for the hovered block. */
+const aligner = new SentenceAligner();
 
 const sentenceHover = initSentenceHover(
   [
-    { scroller: sourceArea, view: sourceView },
-    { scroller: outputArea, view: outputEl },
+    { scroller: sourceArea, view: sourceView, side: "source" },
+    { scroller: outputArea, view: outputEl, side: "output" },
   ],
   () => !state.running,
   boundaries,
+  { aligner, blocks: syncActive },
 );
 
 /**
@@ -542,6 +547,7 @@ function clearResult(markdown: boolean) {
   synced = null;
   linkCheck = null;
   boundaries.abort();
+  aligner.abort();
   views.output = { available: markdown, view: "preview" };
   setState({ translation: "" });
   showOutput();

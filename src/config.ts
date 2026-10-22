@@ -82,8 +82,12 @@ export interface Config {
   segmentModelDir: string;
   /** CPU threads for segmentation; 0 uses the performance cores, like `threads`. */
   segmentThreads: number;
-  /** Seconds without a segmentation request after which its model is freed; 0 keeps it. */
+  /** Seconds without a segmentation (or alignment) request after which its model is freed; 0 keeps it. */
   segmentIdleUnload: number;
+  /** Sentence alignment (`POST /align`, LaBSE on the segmentation thread); false never loads its model. */
+  align: boolean;
+  /** Directory holding LaBSE's `model.onnx`, `vocab.txt` and `dense.safetensors`. */
+  alignModelDir: string;
 }
 
 /** Every setting, by its environment variable; the command-line flag is the lowercase name with dashes (`--port`). */
@@ -114,6 +118,8 @@ export const SETTING_NAMES = [
   "SEGMENT_MODEL_DIR",
   "SEGMENT_THREADS",
   "SEGMENT_IDLE_UNLOAD",
+  "ALIGN",
+  "ALIGN_MODEL_DIR",
   "DEV_RELOAD",
   "OPEN_BROWSER",
 ] as const;
@@ -204,6 +210,8 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     segmentModelDir: resolve(env.SEGMENT_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "sat-3l-sm")),
     segmentThreads: int(env, "SEGMENT_THREADS", 0),
     segmentIdleUnload: int(env, "SEGMENT_IDLE_UNLOAD", 300),
+    align: env.ALIGN !== "0",
+    alignModelDir: resolve(env.ALIGN_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "labse")),
   };
 }
 
@@ -235,8 +243,10 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   SEGMENT: "0 turns sentence segmentation for reading aloud off (default on)",
   ONNXRUNTIME_DIR: "directory with the ONNX Runtime library (default vendor/onnxruntime)",
   SEGMENT_MODEL_DIR: "directory with the sentence segmentation model (default MODELS_DIR/sat-3l-sm)",
-  SEGMENT_THREADS: "CPU threads for sentence segmentation (default the performance cores, at most 8)",
-  SEGMENT_IDLE_UNLOAD: "seconds without segmentation before its model is freed; 0 never (default 300)",
+  SEGMENT_THREADS: "CPU threads for sentence segmentation and alignment (default the performance cores, at most 8)",
+  SEGMENT_IDLE_UNLOAD: "seconds without segmentation (or alignment) before its model is freed; 0 never (default 300)",
+  ALIGN: "0 turns matching the sentences of a source and its translation off (default on)",
+  ALIGN_MODEL_DIR: "directory with the sentence alignment model (default MODELS_DIR/labse)",
   DEV_RELOAD: "1 reloads open pages when public/ changes (development)",
   OPEN_BROWSER: "0 does not open the web app at startup (default on)",
 };

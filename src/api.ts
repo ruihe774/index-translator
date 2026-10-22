@@ -32,6 +32,9 @@ export type SegmentStatus = Schemas["SegmentStatus"];
 export type SegmentRequest = Schemas["SegmentRequest"];
 export type Segmentation = Schemas["Segmentation"];
 export type SegmentedText = Schemas["SegmentedText"];
+export type AlignRequest = Schemas["AlignRequest"];
+export type Alignment = Schemas["Alignment"];
+export type AlignedPair = Schemas["AlignedPair"];
 export type WebpageRequest = Schemas["WebpageRequest"];
 export type Webpage = Schemas["Webpage"];
 

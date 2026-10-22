@@ -80,7 +80,7 @@ use the x86-64 name. Then:
 
 ```bash
 chmod +x Index_Translator-x86_64.AppImage
-./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 18.1 GiB
+./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 18.5 GiB
 ./Index_Translator-x86_64.AppImage         # start; the app opens in your browser
 ```
 
@@ -107,7 +107,7 @@ it). It needs 64-bit Windows 10 or 11. Then:
    signed, so Windows SmartScreen may warn you: choose **More info**, then **Run anyway**.
 2. Start **Index Translator** from the Start menu (or let the installer start it). A small window
    with four links opens.
-3. Once, click **Download models**: it fetches the models and example voices (about 18.1 GiB) in a
+3. Once, click **Download models**: it fetches the models and example voices (about 18.5 GiB) in a
    console window, shows each model's license and waits for you to type `yes`. **Do not close the
    console window until it says it is done**: closing it stops the download (running it again
    continues where it stopped).
@@ -134,14 +134,14 @@ bun src/server.ts
 
 Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`.
 
-Before the first start, build the engines and get the models once (about 18.1 GiB):
+Before the first start, build the engines and get the models once (about 18.5 GiB):
 
 ```bash
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
-bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, a sentence segmentation model, example voices
-bun scripts/fetch_onnxruntime.ts  # ONNX Runtime, which runs the sentence segmentation model (29 MB), into vendor/
+bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, the sentence segmentation and alignment models, example voices
+bun scripts/fetch_onnxruntime.ts  # ONNX Runtime, which runs the sentence segmentation and alignment models (29 MB), into vendor/
 bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and compress speech in the browser (13 MB), into public/vendor/
 bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into Markdown (27 KB), into vendor/
 ```
@@ -409,6 +409,13 @@ browser's own rules otherwise. Nothing is marked while a translation is running,
 text box you type in. It needs a recent browser (for example Chrome 128, Firefox 140 or Safari 26.2);
 older ones simply show no mark.
 
+When the paragraph counts match and the source is shown in **Preview**, the sentence's translation in
+the other pane is marked too (or, on the translation's side, the source sentence it translates): one
+sentence may go with up to four on the other side, and all of them are marked together. The sentence
+alignment model finds them, for the paragraph under the pointer, after the sentence segmentation model
+has answered for both sides of that paragraph; until then, or without these models, only the sentence
+itself is marked. A sentence the translation left out is usually marked together with its neighbour's.
+
 The model you use also matters. In testing, Index-NativeLong-9B translated a 30-paragraph English
 document to Chinese completely, but Chinese-to-English translation of a full-length document was
 not reliable, so check those results carefully.
@@ -443,8 +450,9 @@ closed); flags work as above.
 | `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices`; Windows installer: `voices\` in the install folder | Folder with the voice recordings (`.wav`) |
 | `SPEECH_IDLE_UNLOAD` | `300` | Seconds without listening after which the speech model leaves the GPU; `0` keeps it loaded |
 | `SEGMENT` | on | `0` turns the sentence segmentation model off; reading aloud then finds sentences by the browser's rules |
-| `SEGMENT_THREADS` | the fast cores, at most 8 | CPU threads for the sentence segmentation model, chosen like `LLAMA_THREADS` |
-| `SEGMENT_IDLE_UNLOAD` | `300` | Seconds without reading aloud after which the sentence segmentation model is freed (about 0.4 GiB of memory); `0` keeps it loaded |
+| `SEGMENT_THREADS` | the fast cores, at most 8 | CPU threads for the sentence segmentation and alignment models, chosen like `LLAMA_THREADS` |
+| `SEGMENT_IDLE_UNLOAD` | `300` | Seconds without use after which the sentence segmentation model (about 0.4 GiB of memory) or the alignment model (about 0.5 GiB) is freed; `0` keeps them loaded |
+| `ALIGN` | on | `0` turns the sentence alignment model off; only the sentence under the pointer is marked |
 
 Only one translation runs at a time. Other requests wait in line.
 

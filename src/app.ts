@@ -15,6 +15,7 @@ import {
   parseOriginRule,
 } from "./access";
 import type {
+  Alignment,
   ErrorCode,
   ErrorDetails,
   ErrorEvent,
@@ -49,6 +50,8 @@ import { QOA_TYPE, qoaLoader, qoaResponse } from "./qoa-stream";
 import { QueueFullError, SlotQueue, type Ticket } from "./queue";
 import { soxrResampler } from "./resample";
 import {
+  MAX_ALIGN_CHARS,
+  MAX_ALIGN_SENTENCES,
   MAX_SEGMENT_CHARS,
   MAX_SEGMENT_TEXTS,
   nativeSegmenter,
@@ -520,7 +523,7 @@ export async function startApp(
   // Speech has its own line: it runs on its own thread and does not hold the translation engine.
   const speechQueue = new SlotQueue(cfg.maxQueue);
   const segmenter = launchSegmenter(cfg);
-  // So has segmentation, on a thread of its own as well.
+  // So has segmentation (and alignment, on the same thread), on a thread of its own as well.
   const segmentQueue = new SlotQueue(cfg.maxQueue);
   const defaultModel = findModel(cfg.defaultModel)!;
 
@@ -529,7 +532,8 @@ export async function startApp(
       return line.enter(onPosition);
     } catch (e) {
       if (e instanceof QueueFullError) {
-        const what = line === queue ? "translations" : line === speechQueue ? "speech requests" : "segmentations";
+        const what =
+          line === queue ? "translations" : line === speechQueue ? "speech requests" : "segmentations and alignments";
         throw new ApiError(
           429,
           "queue_full",
@@ -1073,8 +1077,29 @@ export async function startApp(
     return texts;
   }
 
-  /** Waits in the segmentation line; leaving it, or the segmenter stopping, follows the client. */
-  async function segment(texts: string[], signal: AbortSignal): Promise<Segmentation> {
+  function parseAlignRequest(body: Record<string, unknown>): { source: string[]; target: string[] } {
+    const sides = (["source", "target"] as const).map((field) => {
+      const sentences = optionalStringArray(body, field);
+      if (!sentences || sentences.length === 0 || sentences.length > MAX_ALIGN_SENTENCES) {
+        throw invalid(`${field} must be an array of 1 to ${MAX_ALIGN_SENTENCES} strings`, field);
+      }
+      return sentences;
+    });
+    const [source, target] = sides as [string[], string[]];
+    if ([...source, ...target].reduce((n, t) => n + t.length, 0) > MAX_ALIGN_CHARS) {
+      throw invalid(`source and target must hold at most ${MAX_ALIGN_CHARS} UTF-16 code units in all`, "source");
+    }
+    if (segmenter.aligner.state === "unavailable") {
+      throw new ApiError(503, "align_unavailable", segmenter.aligner.error ?? "sentence alignment is not available");
+    }
+    return { source, target };
+  }
+
+  /**
+   * Runs `fn` in the segmentation line (alignment shares its thread); leaving it, or the segmenter
+   * stopping, follows the client.
+   */
+  async function inSegmentQueue<T>(signal: AbortSignal, fn: () => Promise<T>): Promise<T> {
     const ticket = enterQueue(undefined, segmentQueue);
     const onAbort = () => ticket.leave();
     signal.addEventListener("abort", onAbort);
@@ -1082,7 +1107,7 @@ export async function startApp(
       if (!(await ticket.ready) || signal.aborted) {
         throw cancelled();
       }
-      return { texts: await segmenter.segment(texts, signal) };
+      return await fn();
     } catch (e) {
       throw signal.aborted ? cancelled() : e;
     } finally {
@@ -1185,6 +1210,11 @@ export async function startApp(
                 queue: { running: queue.running, waiting: queue.depth, max_waiting: cfg.maxQueue },
                 speech: { status: speech.state, error: speech.error },
                 segment: { status: segmenter.state, error: segmenter.error, max_chars: MAX_SEGMENT_CHARS },
+                align: {
+                  status: segmenter.aligner.state,
+                  error: segmenter.aligner.error,
+                  max_chars: MAX_ALIGN_CHARS,
+                },
                 webpage: webpageStatus ? { status: "unavailable", error: webpageStatus } : { status: "available" },
               },
               engine.state === "ready" ? 200 : 503,
@@ -1254,7 +1284,22 @@ export async function startApp(
             const texts = parseSegmentRequest(await parseBody(req));
             // The first request loads the model.
             server.timeout(req, 0);
-            return json<Segmentation>(await segment(texts, req.signal));
+            return json<Segmentation>(
+              await inSegmentQueue(req.signal, async () => ({ texts: await segmenter.segment(texts, req.signal) })),
+            );
+          }
+          case "/align": {
+            if (req.method !== "POST") {
+              return methodNotAllowed("POST");
+            }
+            const { source, target } = parseAlignRequest(await parseBody(req));
+            // The first request loads the model.
+            server.timeout(req, 0);
+            return json<Alignment>(
+              await inSegmentQueue(req.signal, async () => ({
+                pairs: await segmenter.align(source, target, req.signal),
+              })),
+            );
           }
           case "/webpage": {
             if (req.method !== "POST") {

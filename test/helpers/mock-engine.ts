@@ -8,7 +8,7 @@
 
 import { join, resolve } from "node:path";
 
-import type { ErrorBody, ErrorResponse, SegmentedText, TranslateEvents } from "../../src/api";
+import type { AlignedPair, ErrorBody, ErrorResponse, SegmentedText, TranslateEvents } from "../../src/api";
 import type { App } from "../../src/app";
 import type { Config } from "../../src/config";
 import {
@@ -398,6 +398,32 @@ export function resetMockSegment(): void {
   mockSegment.failWith = undefined;
   mockSegment.requests.length = 0;
   mockSegment.aborted = 0;
+  mockAlign.state = "stopped";
+  mockAlign.pairs = undefined;
+  mockAlign.requests.length = 0;
+}
+
+export const mockAlign = {
+  /** What the aligner's `state` reports; "unavailable" makes requests fail as when nothing is installed. */
+  state: "stopped" as SegmentState,
+  /** The answer to give instead of `mockPairs`. */
+  pairs: undefined as AlignedPair[] | undefined,
+  /** Every request's sentences. */
+  requests: [] as { source: string[]; target: string[] }[],
+};
+
+/** What the mock aligner answers: sentence i with sentence i, what is left over of the longer side joined to the last pair. */
+export function mockPairs(sourceCount: number, targetCount: number): AlignedPair[] {
+  const shared = Math.min(sourceCount, targetCount);
+  const pairs = Array.from({ length: shared }, (_, i) => ({ source: [i], target: [i], similarity: 0.8 }));
+  const last = pairs.at(-1)!;
+  for (let i = shared; i < sourceCount; i++) {
+    last.source.push(i);
+  }
+  for (let i = shared; i < targetCount; i++) {
+    last.target.push(i);
+  }
+  return pairs;
 }
 
 /** Sentence punctuation with what may close it, then a space or the end; and clause punctuation. */
@@ -446,6 +472,29 @@ export const segmentLauncher: SegmentLauncher = () => ({
     mockSegment.state = "ready";
     return texts.map(mockBoundaries);
   },
+  aligner: {
+    get state() {
+      return mockAlign.state;
+    },
+    get error() {
+      return mockAlign.state === "unavailable" ? "the alignment model is not installed" : undefined;
+    },
+  },
+  async align(source, target, signal) {
+    mockAlign.requests.push({ source, target });
+    if (mockSegment.delayMs) {
+      await Promise.race([
+        Bun.sleep(mockSegment.delayMs),
+        new Promise((wake) => void signal.addEventListener("abort", wake)),
+      ]);
+    }
+    signal.throwIfAborted();
+    if (mockSegment.failWith) {
+      throw new SegmentError(mockSegment.failWith);
+    }
+    mockAlign.state = "ready";
+    return mockAlign.pairs ?? mockPairs(source.length, target.length);
+  },
   async stop() {},
 });
 
@@ -480,6 +529,8 @@ export function config(overrides: Partial<Config> = {}): Config {
     segmentModelDir: "/nonexistent/sat-3l-sm",
     segmentThreads: 0,
     segmentIdleUnload: 0,
+    align: true,
+    alignModelDir: "/nonexistent/labse",
     ...overrides,
   };
 }

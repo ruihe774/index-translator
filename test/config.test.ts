@@ -38,7 +38,15 @@ describe("loadConfig defaults", () => {
       segmentModelDir: join(root, "models", "sat-3l-sm"),
       segmentThreads: 0,
       segmentIdleUnload: 300,
+      align: true,
+      alignModelDir: join(root, "models", "labse"),
     });
+  });
+
+  test("alignment settings", () => {
+    expect(loadConfig({ ALIGN: "0" }).align).toBe(false);
+    expect(loadConfig({ MODELS_DIR: "/m" }).alignModelDir).toBe(resolve("/m/labse"));
+    expect(loadConfig({}, ["--align-model-dir", "/a"]).alignModelDir).toBe(resolve("/a"));
   });
 
   test("segmentation settings", () => {
