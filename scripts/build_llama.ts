@@ -3,9 +3,10 @@
 // server or examples), and the C shim (src/llama-shim.c) as libllama-shim, into ./vendor/llama.cpp.
 // Usage: bun scripts/build_llama.ts [--native] [--keep] [--shim]
 //
-//   --native  build one CPU backend for this machine's processor; the library may then die with
-//             SIGILL on another one. By default every CPU variant is built (as in llama.cpp's
-//             releases) and the best one the processor supports is picked when the engine starts.
+//   --native  build the CPU backend for this machine's processor; the library may then die with
+//             SIGILL on another one. By default one CPU backend is built for a baseline: AVX2 and
+//             FMA on x86-64 (Haswell, 2013), Armv8.2-A with dot product and fp16 on aarch64. The CPU
+//             is only a fallback, so llama.cpp's every-variant set is not worth its build time.
 //   --keep    keep the source and the build tree in vendor/.build/llama.cpp, and reuse them
 //   --shim    only compile src/llama-shim.c again, against the headers and libraries already in
 //             vendor/llama.cpp (after editing the shim)
@@ -15,7 +16,7 @@
 //   sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
 // On Windows: git, cmake, Visual Studio 2022 (or its Build Tools) with the "Desktop development
 // with C++" workload, and the Vulkan SDK (glslc, the headers and vulkan-1.lib; it sets VULKAN_SDK).
-// The result is llama.dll, mtmd.dll, ggml*.dll, ggml-cpu-*.dll, ggml-vulkan.dll and llama-shim.dll, plus the
+// The result is llama.dll, mtmd.dll, ggml*.dll, ggml-cpu.dll, ggml-vulkan.dll and llama-shim.dll, plus the
 // import libraries the shim is linked against. Building needs no administrator rights.
 
 import { cp, mkdir, readdir, rm, rmdir, unlink } from "node:fs/promises";
@@ -42,11 +43,24 @@ const HEADERS = [
 ];
 
 /**
- * What the code outside the CPU variants is compiled for. Said outright because a compiler's own
- * default can be newer (Ubuntu's x86-64-v3 builds default to AVX2), and every variant, the plain
- * "x64" one included, would then need that.
+ * What the code outside the CPU backend is compiled for. Said outright because a compiler's own
+ * default can be newer (Ubuntu's x86-64-v3 builds default to AVX2), and the libraries that load
+ * before the backend is checked against the processor would then need that.
  */
 const BASELINE = process.arch === "x64" && !windows ? ["-march=x86-64"] : [];
+/**
+ * The CPU backend's instruction sets, named because ggml's defaults depend on the environment
+ * (none of them without GGML_NATIVE_DEFAULT, which a set SOURCE_DATE_EPOCH turns off). On x86-64 a
+ * processor without them fails to load the backend, which preflight reports; on aarch64 nothing
+ * checks, and an older core dies with SIGILL.
+ */
+const CPU_ISA =
+  process.arch === "x64"
+    ? ["SSE42", "AVX", "AVX2", "BMI2", "FMA", "F16C"].map((isa) => `-DGGML_${isa}=ON`)
+    : process.arch === "arm64"
+      ? ["-DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"]
+      : [];
+const CPU_ISA_NAME = process.arch === "x64" ? "AVX2" : process.arch === "arm64" ? "Armv8.2-A" : process.arch;
 /** The import libraries the shim is linked against on Windows; they stay beside the DLLs so `--shim` works. */
 const IMPORT_LIBS = ["llama", "mtmd", "ggml", "ggml-base"];
 
@@ -173,8 +187,10 @@ try {
     "-DGGML_BACKEND_DL=ON",
     "-DGGML_VULKAN=ON",
     `-DGGML_NATIVE=${native ? "ON" : "OFF"}`,
-    `-DGGML_CPU_ALL_VARIANTS=${native ? "OFF" : "ON"}`,
-    ...(native ? [] : BASELINE.flatMap((flag) => [`-DCMAKE_C_FLAGS=${flag}`, `-DCMAKE_CXX_FLAGS=${flag}`])),
+    "-DGGML_CPU_ALL_VARIANTS=OFF",
+    ...(native
+      ? []
+      : [...CPU_ISA, ...BASELINE.flatMap((flag) => [`-DCMAKE_C_FLAGS=${flag}`, `-DCMAKE_CXX_FLAGS=${flag}`])]),
     // Only libllama, libmtmd and ggml: the tools, the server and the tests all need the common library.
     "-DLLAMA_BUILD_COMMON=OFF",
     // libmtmd on its own, for image input. Its video support would start an ffmpeg found in PATH.
@@ -236,8 +252,7 @@ if (!keep) {
 }
 
 const seconds = Math.round((performance.now() - started) / 1000);
-const variants = (await readdir(dest)).filter((name) => /^(lib)?ggml-cpu/.test(name)).length;
 if (!(await Bun.file(libraryPath(dest)).exists())) {
   throw new Error(`the build left no ${libraryPath(dest)}`);
 }
-report(dest, `${TAG}, ${native ? "this machine's CPU" : `${variants} CPU variants`}, built in ${seconds} s`);
+report(dest, `${TAG}, ${native ? "this machine's CPU" : CPU_ISA_NAME}, built in ${seconds} s`);

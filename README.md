@@ -158,7 +158,8 @@ translation models with `bun scripts/fetch_models.ts --model index-translate-9b 
 You need [Bun](https://bun.sh) and `curl`, and to build the engines git, CMake, a C and C++
 compiler, `glslc` and the Vulkan headers. On Debian and Ubuntu:
 `sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers`.
-The translation engine then runs on any x86-64 processor, the speech engine on those with AVX2.
+Both engines then need an x86-64 processor with AVX2 (Haswell, 2013, or newer) or an aarch64 one with
+Armv8.2-A dot product and fp16 (Cortex-A76 and Apple M1 or newer).
 
 On Windows the same three commands work in Command Prompt or PowerShell. Instead of the packages
 above you need Git, CMake (on the `PATH`), Visual Studio 2022 or its Build Tools with the "Desktop

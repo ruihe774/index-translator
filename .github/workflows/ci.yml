@@ -129,12 +129,8 @@ jobs:
         include:
           - arch: x86_64
             runner: ubuntu-24.04
-            gcc: "13"
-          # llama.cpp's Arm CPU variants include SME, which GCC 13 cannot compile. Ubuntu 24.04's
-          # libstdc++ is GCC 14's, so the AppImage needs nothing newer than before.
           - arch: aarch64
             runner: ubuntu-24.04-arm
-            gcc: "14"
     # The AppImage runs on systems whose C and C++ libraries are at least as new as this one's.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
@@ -149,11 +145,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers \
-            gcc-${{ matrix.gcc }} g++-${{ matrix.gcc }}
-          # CMake takes the compilers of the first configure from these.
-          echo "CC=gcc-${{ matrix.gcc }}" >> "$GITHUB_ENV"
-          echo "CXX=g++-${{ matrix.gcc }}" >> "$GITHUB_ENV"
+            build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
 
       # Each engine is built from a pinned commit, so it changes only when its build script does.
       - name: Cache the translation engine

@@ -23,7 +23,7 @@ Run `bun install` before `lint:*` or `e2e` when `node_modules` is missing or sta
 - No `check`, `lint` or `format` script in `package.json` on purpose: each would shadow the builtin.
 
 Setup (Linux and Windows):
-- `bun scripts/build_llama.ts`: libllama, libmtmd, Vulkan, CPU variants, `libllama-shim.so` into `vendor/llama.cpp` (`--shim` only recompiles `src/llama-shim.c`)
+- `bun scripts/build_llama.ts`: libllama, libmtmd, Vulkan, one CPU backend (AVX2 on x86-64, Armv8.2-A+dotprod+fp16 on aarch64, unless `--native`), `libllama-shim.so` into `vendor/llama.cpp` (`--shim` only recompiles `src/llama-shim.c`)
 - `bun scripts/build_audiocpp.ts`: `vendor/audio.cpp/libaudiocpp.so` from the pinned commit plus `scripts/patches/audiocpp-abort.patch` (AVX2 unless `--native`)
 - `bun scripts/build_soxr.ts`: `vendor/soxr/libsoxr.so.0` (`soxr.dll`); required, opened before libaudiocpp (see Invariants)
 - `bun scripts/fetch_models.ts`: models (about 18.5 GiB) and example voices; `--model <id>`, `HF_ENDPOINT`. Includes `sat-3l-sm` (`POST /segment`) and `labse` (`POST /align`)
