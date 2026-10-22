@@ -1,12 +1,14 @@
 // Download the pinned models and verify their checksums: the two Index-Translate GGUF models with
-// the chat model's image encoder (its mmproj GGUF), and
+// the chat model's image encoder (its mmproj GGUF), the bge-m3 GGUF that matches the blocks of a
+// translation to those of its source, and
 // the IndexTTS-2.5 GGUF for reading aloud and the BS-RoFormer GGUF that separates an uploaded voice
 // sample from music and noise into MODELS_DIR (./models), and the example voices into VOICES_DIR
-// (./voices). About 17.9 GiB in all. In the AppImage this is its `fetch` subcommand.
+// (./voices). About 18.5 GiB in all. In the AppImage this is its `fetch` subcommand.
 // Usage: bun scripts/fetch_models.ts [--model index-translate-9b ...] [--models-dir DIR] [--voices-dir DIR]
 //
-//   --model  one of index-translate-9b, index-nailong-9b, index-tts-2.5 (the speech model and the
-//            voices), bs-roformer (the voice separation model); repeatable; all of them when not given
+//   --model  one of index-translate-9b, index-nailong-9b, bge-m3 (the embedding model), index-tts-2.5
+//            (the speech model and the voices), bs-roformer (the voice separation model); repeatable;
+//            all of them when not given
 //
 // The directories are the server's settings (src/config.ts), given the same way: as environment
 // variables or as flags. Files are downloaded with curl, so an interrupted download continues
@@ -22,7 +24,7 @@ import { mkdir, rename, rm } from "node:fs/promises";
 import { dirname, join } from "node:path";
 
 import { loadConfig } from "../src/config";
-import { MODELS } from "../src/models";
+import { EMBED_MODEL_FILE, MODELS } from "../src/models";
 
 export interface Download {
   /** Path on the Hugging Face host, with the pinned revision in it. */
@@ -52,6 +54,15 @@ const TRANSLATION: Record<string, { repo: string; revision: string; sha256: stri
     sha256: "02ec1393bb42eb01332895ec79bee8b2f2439726b973aa167c37b54eac72af95",
   },
 };
+
+/** BAAI's bge-m3 as converted by ggml-org (Q8_0, 0.6 GB); the file name is `EMBED_MODEL_FILE`, in the models directory. */
+const EMBEDDING = "bge-m3";
+const EMBEDDING_URL = resolveUrl(
+  "ggml-org/bge-m3-Q8_0-GGUF",
+  "9eba04c5d75ba5a1595e45de734d36bef4e5cb98",
+  EMBED_MODEL_FILE,
+);
+const EMBEDDING_SHA256 = "aa473d51f451a22f0fcf39ba3330c14bed38a385712b1113440f69df4047a173";
 
 /** IndexTTS-2.5 as converted for audio.cpp (Q8_0, about 3.5 GB). */
 const SPEECH = "index-tts-2.5";
@@ -102,6 +113,11 @@ export const NOTICES: Record<string, string> = {
     "  License: Apache-2.0",
     "  https://huggingface.co/IndexTeam/Index-Nailong-9B-GGUF",
   ].join("\n"),
+  [EMBEDDING]: [
+    "bge-m3 (BAAI), GGUF Q8_0 converted by ggml-org",
+    "  License: MIT (on both the GGUF card and the original's)",
+    "  https://huggingface.co/ggml-org/bge-m3-Q8_0-GGUF, https://huggingface.co/BAAI/bge-m3",
+  ].join("\n"),
   [SPEECH]: [
     "IndexTTS-2.5 (bilibili), GGUF Q8_0 converted by audio.cpp, and the example voices",
     "  License: bilibili Model Use License Agreement (NOT Apache or MIT). Among its terms:",
@@ -123,7 +139,7 @@ export const NOTICES: Record<string, string> = {
   ].join("\n"),
 };
 
-export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH, SEPARATION];
+export const MODEL_IDS = [...Object.keys(TRANSLATION), EMBEDDING, SPEECH, SEPARATION];
 
 /** An error whose message is all the user needs: it is printed without a stack trace. */
 export class FetchError extends Error {}
@@ -172,6 +188,8 @@ export function plan(
           dest: join(dirs.models, mmproj),
         });
       }
+    } else if (id === EMBEDDING) {
+      files.push({ url: EMBEDDING_URL, sha256: EMBEDDING_SHA256, dest: join(dirs.models, EMBED_MODEL_FILE) });
     } else if (id === SEPARATION) {
       files.push({
         url: SEPARATION_URL,

@@ -8,7 +8,7 @@ names them and says where the full texts are. The AppImage carries this file in
 
 | Component | Used for | License | Full text |
 |---|---|---|---|
-| [llama.cpp](https://github.com/ggml-org/llama.cpp) (libllama, libmtmd, the Vulkan and CPU backends), pinned in `scripts/build_llama.ts` | Running the translation models | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
+| [llama.cpp](https://github.com/ggml-org/llama.cpp) (libllama, libmtmd, the Vulkan and CPU backends), pinned in `scripts/build_llama.ts` | Running the translation models and the embedding model | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | [ggml](https://github.com/ggml-org/ggml), part of llama.cpp | Tensor library under llama.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | libmtmd (`libmtmd.so`), part of llama.cpp (`tools/mtmd`) | Image input: the image encoder of Index-Translate-9B | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | stb_image, miniaudio and hash functions (SHA-1, SHA-256, xxHash), in llama.cpp's source tree (`vendor/`) | Compiled into `libmtmd.so`; stb_image decodes the image | Each under its own license: public domain or MIT (stb_image, Sean Barrett), public domain or MIT-0 (miniaudio, David Reid), public domain (SHA-1, SHA-256), BSD 2-Clause (xxHash, Copyright (c) 2012-2021 Yann Collet); the texts are in llama.cpp's repository at the pinned commit | `vendor/stb/stb_image.h`, `vendor/miniaudio/miniaudio.h`, `vendor/hash/*/` there |
@@ -56,6 +56,14 @@ about to download and asks for `yes` first (the same text as here, in short).
   file of the same repository, which lets the model read the text in an image.
 - License: Apache-2.0 (as stated on both model cards).
 - <https://huggingface.co/IndexTeam/Index-Translate-9B-GGUF>, <https://huggingface.co/IndexTeam/Index-Nailong-9B-GGUF>
+
+### bge-m3 (`bge-m3`)
+
+- Authors: BAAI (Beijing Academy of Artificial Intelligence). The file is ggml-org's GGUF conversion
+  (`ggml-org/bge-m3-Q8_0-GGUF`, Q8_0, 0.6 GB) of `BAAI/bge-m3`. It matches the blocks of a
+  translation to those of its source, and runs on the processor beside the translation model.
+- License: MIT (as stated on both the GGUF card and the original model's card).
+- <https://huggingface.co/ggml-org/bge-m3-Q8_0-GGUF>, <https://huggingface.co/BAAI/bge-m3>
 
 ### IndexTTS-2.5 (`index-tts-2.5`)
 

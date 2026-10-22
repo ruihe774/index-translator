@@ -80,7 +80,7 @@ use the x86-64 name. Then:
 
 ```bash
 chmod +x Index_Translator-x86_64.AppImage
-./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 17.9 GiB
+./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 18.5 GiB
 ./Index_Translator-x86_64.AppImage         # start; the app opens in your browser
 ```
 
@@ -88,7 +88,7 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
 
 - `fetch` puts the models into `~/.local/share/index-translator` and needs `curl`. An interrupted
   download continues when you run it again. To leave out reading aloud (3.7 GiB):
-  `fetch --model index-translate-9b --model index-nailong-9b`. Before it downloads, `fetch` shows each
+  `fetch --model index-translate-9b --model index-nailong-9b --model bge-m3`. Before it downloads, `fetch` shows each
   model's license and waits for you to type `yes`; the speech model is under bilibili's own license
   with usage conditions, not Apache or MIT. `notices` prints the licenses of the software in the
   AppImage; they are also in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
@@ -107,7 +107,7 @@ it). It needs 64-bit Windows 10 or 11. Then:
    signed, so Windows SmartScreen may warn you: choose **More info**, then **Run anyway**.
 2. Start **Index Translator** from the Start menu (or let the installer start it). A small window
    with four links opens.
-3. Once, click **Download models**: it fetches the models and example voices (about 17.9 GiB) in a
+3. Once, click **Download models**: it fetches the models and example voices (about 18.5 GiB) in a
    console window, shows each model's license and waits for you to type `yes`. **Do not close the
    console window until it says it is done**: closing it stops the download (running it again
    continues where it stopped).
@@ -134,7 +134,7 @@ bun src/server.ts
 
 Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`.
 
-Before the first start, build the engines and get the models once (about 17.9 GiB):
+Before the first start, build the engines and get the models once (about 18.5 GiB):
 
 ```bash
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes

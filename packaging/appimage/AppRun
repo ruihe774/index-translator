@@ -34,7 +34,7 @@ Index Translator: a local text translator that runs on your GPU.
 
 Usage:
   $self [--setting value ...]   start the translator and open it in the browser
-  $self fetch [--model id ...]  download the models and the example voices (about 17.9 GiB)
+  $self fetch [--model id ...]  download the models and the example voices (about 18.5 GiB)
   $self notices                 print the third-party notices (licenses of what is bundled)
   $self --version
 

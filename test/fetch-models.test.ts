@@ -16,7 +16,7 @@ import {
   parseArgs,
   plan,
 } from "../scripts/fetch_models";
-import { MODELS } from "../src/models";
+import { EMBED_MODEL_FILE, MODELS } from "../src/models";
 
 const curl = Bun.which("curl");
 const sha256 = (bytes: Uint8Array | string) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
@@ -147,6 +147,17 @@ describe("plan", () => {
     expect(MODEL_IDS).toContain("bs-roformer");
   });
 
+  test("the embedding model is one pinned file in the models directory, named as the server expects", () => {
+    const files = plan(["bge-m3"], dirs);
+    expect(files).toHaveLength(1);
+    expect(files[0]!.dest).toBe(join("/m", EMBED_MODEL_FILE));
+    expect(files[0]!.url).toContain("/ggml-org/bge-m3-Q8_0-GGUF/resolve/");
+    expect(files[0]!.url).toEndWith(`/${EMBED_MODEL_FILE}`);
+    expect(files[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
+    expect(files[0]!.keep).toBeUndefined();
+    expect(MODEL_IDS).toContain("bge-m3");
+  });
+
   test("the speech model comes with the example voices, which never replace a file of the user's", () => {
     const files = plan(["index-tts-2.5"], dirs);
     expect(files[0]!.dest).toBe(join("/s", "index-tts2_5-q8_0.gguf"));
@@ -257,6 +268,7 @@ describe("notices", () => {
       expect(doc).toContain(`\`${id}\``);
     }
     expect(NOTICES["index-tts-2.5"]).toContain("bilibili Model Use License");
+    expect(NOTICES["bge-m3"]).toContain("MIT");
   });
 
   test('the notices of what is missing are printed, then only "yes" lets the download go on', async () => {
