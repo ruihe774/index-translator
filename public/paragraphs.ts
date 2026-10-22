@@ -23,16 +23,38 @@ export interface Mismatch {
   output: number;
 }
 
-const BLANK_LINE = /\n[^\S\n]*\r?\n/;
+const BLANK = /^\s*$/;
+const FENCE = /^ {0,3}(`{3,}|~{3,})/;
 
-/** Blank-line separated paragraphs if the source has any blank line, otherwise one per line. */
+/**
+ * Whether each line is part of a fenced code block, its fences included (CommonMark's rule: a closing
+ * fence is a run of the opening's character, at least as long, and nothing else). An unclosed one runs to
+ * the end. A blank line in code separates nothing.
+ */
+function inFences(lines: string[]): boolean[] {
+  let open: string | null = null;
+  return lines.map((line) => {
+    const fence = FENCE.exec(line)?.[1];
+    if (open === null) {
+      open = fence ?? null;
+      return open !== null;
+    }
+    if (fence?.startsWith(open[0]!) && fence.length >= open.length && line.trim() === fence) {
+      open = null;
+    }
+    return true;
+  });
+}
+
+/** Blank-line separated paragraphs if the source has any blank line outside code, otherwise one per line. */
 export function unitOf(source: string): Unit {
-  return BLANK_LINE.test(source.trim()) ? "paragraphs" : "lines";
+  const lines = source.trim().split("\n");
+  const code = inFences(lines);
+  return lines.some((line, i) => BLANK.test(line) && !code[i]) ? "paragraphs" : "lines";
 }
 
 export function countBlocks(text: string, unit: Unit): number {
-  const parts = unit === "paragraphs" ? text.split(/\n[^\S\n]*(?:\r?\n[^\S\n]*)+/) : text.split(/\r?\n/);
-  return parts.filter((p) => p.trim()).length;
+  return blockStarts(text, unit).length;
 }
 
 /** The counts when the translation does not have as many blocks as the source, else null. */
@@ -51,13 +73,21 @@ export function mismatchMessage(m: Mismatch): string {
   return `The source has ${m.source} ${noun} and the translation has ${m.output}. Parts may have been dropped, merged or repeated; check it against the source.`;
 }
 
-const BLANK = /^\s*$/;
-
-/** Index of the first line of each block, counted as `countBlocks` counts them. */
+/**
+ * Index of the first line of each block: each non-blank line (`lines`), or each line after a run of blank
+ * lines (`paragraphs`), where a fenced code block is one block whatever blank lines it holds.
+ */
 export function blockStarts(text: string, unit: Unit): number[] {
+  const lines = text.split("\n");
+  const code = unit === "paragraphs" ? inFences(lines) : [];
   const starts: number[] = [];
   let previousBlank = true;
-  text.split("\n").forEach((line, i) => {
+  lines.forEach((line, i) => {
+    // Inside code (past its opening fence) nothing starts a block or ends one.
+    if (code[i] && code[i - 1]) {
+      previousBlank = false;
+      return;
+    }
     const blank = BLANK.test(line);
     if (!blank && (unit === "lines" || previousBlank)) {
       starts.push(i);
@@ -97,21 +127,16 @@ export function alignBlocks(source: string, output: string): Alignment | null {
 }
 
 /**
- * Fewest source blocks `POST /align` is asked to match. Measured on slices of 12 clean machine
- * translations with one block dropped, merged, split or repeated: 8 blocks matched 98% exactly with no
- * wrong one-to-one pair; 6 blocks 93%, 4 blocks 85%, with some wrong pairs, which would name the wrong place.
+ * Fewest source blocks `POST /align` is asked to match. Measured on slices of machine translations (long
+ * prose; short Markdown documents with tables, code and lists) with one block dropped, merged, split or
+ * repeated: from 8 blocks no slice had a wrong one-to-one pair; at 3 to 6 blocks some did (6 to 11 per
+ * slice size, of a few hundred cases), which would name the wrong place.
  */
 export const MIN_MATCHED_BLOCKS = 8;
 
-/** A table row or a code fence: copied rather than translated, it misleads the length the matching weighs. */
-const COPIED = /^\s*(?:\||```|~~~)/m;
-
-/**
- * Whether the blocks of `blocks` (the source's) are worth asking `POST /align` about: enough of them, and
- * none a table or a code block, where a wrong match was measured to be likely.
- */
+/** Whether the source's blocks are worth asking `POST /align` about: enough of them to be matched reliably. */
 export function matchable(blocks: string[]): boolean {
-  return blocks.length >= MIN_MATCHED_BLOCKS && !blocks.some((b) => COPIED.test(b));
+  return blocks.length >= MIN_MATCHED_BLOCKS;
 }
 
 /** The text of each block, as `blockStarts` finds them, trimmed. */
@@ -190,8 +215,9 @@ function blocksName(unit: Unit, blocks: number[]): string {
 const capital = (s: string) => s[0]!.toUpperCase() + s.slice(1);
 
 /**
- * What the alignment found wrong, place by place: blocks left out, added, merged or split. Neighbouring
- * groups with no counterpart on the same side are told as one place.
+ * What the alignment found wrong, place by place: blocks left out, added, and several matched with one
+ * (merged or split, or a short block left out or added beside them, which the matching often cannot
+ * tell apart). Neighbouring groups with no counterpart on the same side are told as one place.
  */
 export function mismatchDetails(a: Alignment): string[] {
   const places: string[] = [];
@@ -215,12 +241,13 @@ export function mismatchDetails(a: Alignment): string[] {
           : `${capital(blocksName(a.unit, blocks))} of the translation ${many ? "have" : "has"} no counterpart in the source (added or repeated).`,
       );
     } else if (g.output.length === 1) {
+      // A short block left out is often matched this way too, joined to its neighbour: both are said.
       places.push(
-        `${capital(blocksName(a.unit, g.source))} of the source seem merged into ${blocksName(a.unit, g.output)} of the translation.`,
+        `${capital(blocksName(a.unit, g.source))} of the source match only ${blocksName(a.unit, g.output)} of the translation: merged, or one is missing.`,
       );
     } else if (g.source.length === 1) {
       places.push(
-        `${capital(blocksName(a.unit, g.source))} of the source seems split into ${blocksName(a.unit, g.output)} of the translation.`,
+        `${capital(blocksName(a.unit, g.source))} of the source matches ${blocksName(a.unit, g.output)} of the translation: split, or one was added.`,
       );
     } else {
       places.push(

@@ -669,7 +669,7 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(app.meta).toContainText("generated");
     await expect(app.page.locator("#notes")).toHaveAttribute("aria-live", "polite");
     await expect(app.notes.first()).toHaveText(
-      "The source has 8 paragraphs and the translation has 7. Paragraphs 2–3 of the source seem merged into paragraph 2 of the translation. Check it against the source.",
+      "The source has 8 paragraphs and the translation has 7. Paragraphs 2–3 of the source match only paragraph 2 of the translation: merged, or one is missing. Check it against the source.",
     );
     await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
     await settle(app.page);

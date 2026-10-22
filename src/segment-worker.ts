@@ -7,7 +7,7 @@
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
-import { alignSentences, lengthOf, openings } from "./align";
+import { alignSentences, lengthOf, openings, translatedLengths } from "./align";
 import type { AlignedPair, AlignUnit, SegmentedText } from "./api";
 import { type Dense, DIMENSIONS, embed, readDense, WordPieceTokenizer } from "./labse";
 import { loadRuntime, type Runtime, type Session } from "./onnxruntime-ffi";
@@ -116,9 +116,13 @@ function handle(msg: SegmentWorkerRequest): SegmentWorkerReply {
       if (!embeddings) {
         return { type: "aborted", req: msg.req };
       }
+      const lengths =
+        msg.unit === "paragraphs"
+          ? translatedLengths(msg.source, msg.target)
+          : { source: msg.source.map(lengthOf), target: msg.target.map(lengthOf) };
       const pairs = alignSentences(
-        { embeddings: embeddings.slice(0, msg.source.length), lengths: msg.source.map(lengthOf) },
-        { embeddings: embeddings.slice(msg.source.length), lengths: msg.target.map(lengthOf) },
+        { embeddings: embeddings.slice(0, msg.source.length), lengths: lengths.source },
+        { embeddings: embeddings.slice(msg.source.length), lengths: lengths.target },
         msg.unit,
       );
       return { type: "alignment", req: msg.req, pairs };

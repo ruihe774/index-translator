@@ -147,10 +147,13 @@ export interface paths {
          *     units in all (see `align` in `GET /health`), and an item longer than the model's 512 tokens
          *     is read up to there. `paragraphs`: only the opening of each paragraph is embedded (about 80
          *     characters of the source's, and as many of the target's as the texts' length ratio makes of
-         *     that), while its length is the whole paragraph's; that is what tells a merged or split
-         *     paragraph from a dropped one. An item with no counterpart costs less than it does between
-         *     sentences, so a paragraph the translation left out comes out alone (one with nothing)
-         *     rather than joined to a neighbour. `max_chars` does not apply; the body limit does.
+         *     that), while its length is that of everything it translates: the characters of its words,
+         *     without the words the other side has too (names, numbers, code and most of a table are
+         *     copied, not translated); that is what tells a merged or split paragraph from a dropped one.
+         *     An item with no counterpart costs less than it does between sentences, so a paragraph the
+         *     translation left out usually comes out alone (one with nothing) rather than joined to a
+         *     neighbour (a short one still often is), and there is no two-with-two pair. `max_chars` does
+         *     not apply; the body limit does.
          *
          *     At most 256 items on each side. It runs on the segmentation thread and in its queue
          *     (`429`). Closing the connection drops a waiting request; a running one stops within one
@@ -776,7 +779,8 @@ export interface components {
         };
         /**
          * @description What `source` and `target` hold. `paragraphs` are read by their openings and weighed by
-         *     their whole lengths, and an item with no counterpart is cheaper; see `POST /align`.
+         *     the length of what they translate, an item with no counterpart is cheaper, and there is no
+         *     two-with-two pair; see `POST /align`.
          * @default sentences
          * @enum {string}
          */

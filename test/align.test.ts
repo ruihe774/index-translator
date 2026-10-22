@@ -3,7 +3,7 @@
 
 import { describe, expect, test } from "bun:test";
 
-import { alignSentences, OPENING, openings, type Sentences } from "../src/align";
+import { alignSentences, OPENING, openings, type Sentences, translatedLengths } from "../src/align";
 
 const DIMS = 16;
 
@@ -100,6 +100,16 @@ describe("paragraphs", () => {
     expect(shapes("sentences").some(([s]) => s!.length === 2)).toBe(true);
   });
 
+  test("no 2-2 group: a moved boundary between two sentences is one, between two paragraphs is not", () => {
+    // A | B C in the source, A B | C in the translation.
+    const source = { embeddings: [meaning(0), meaning(1, 2), meaning(3)], lengths: [40, 80, 40] };
+    const target = { embeddings: [meaning(0, 1), meaning(2), meaning(3)], lengths: [80, 40, 40] };
+    const shapes = (unit: "sentences" | "paragraphs") =>
+      alignSentences(source, target, unit).map((p) => [p.source.length, p.target.length]);
+    expect(shapes("sentences")).toContainEqual([2, 2]);
+    expect(shapes("paragraphs")).not.toContainEqual([2, 2]);
+  });
+
   test("two merged into one: the opening is the first one's, the length is both", () => {
     const source = paragraphs([0, 1, 2, 3]);
     const target = paragraphs([0, 1, 3], [600, 1200, 600]);
@@ -108,6 +118,23 @@ describe("paragraphs", () => {
       [[1, 2], [1]],
       [[3], [2]],
     ]);
+  });
+});
+
+describe("translatedLengths", () => {
+  test("words found in the other text too are left out: names, numbers, code, a table's copied cells", () => {
+    const got = translatedLengths(
+      ["| Size | Linux |\n| --- | --- |\n| 1.2 GB | AppImage |", "```sh\n./tool --setup\n```", "Run it on Linux."],
+      ["| 大小 | Linux |\n| --- | --- |\n| 1.2 GB | AppImage |", "```sh\n./tool --setup\n```", "在Linux上运行它。"],
+    );
+    expect(got).toStrictEqual({ source: [4, 0, 7], target: [2, 0, 5] });
+  });
+
+  test("punctuation and white space do not count; a word is copied only as written", () => {
+    expect(translatedLengths(["A cat, a dog!"], ["un chat, un chien ; A"])).toStrictEqual({
+      source: [7],
+      target: [13],
+    });
   });
 });
 

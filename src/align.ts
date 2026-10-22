@@ -13,12 +13,18 @@
 // costs 1 per sentence. The path with the least total distance wins.
 //
 // The same search matches the paragraphs of a document and its translation, each read by its opening
-// (`openings`) and weighed by its whole length. Length is then what tells a merged paragraph (its
-// opening is the first one's, its length both) from a dropped one, and an empty side costs less, 0.7:
-// at 1 a paragraph the translation left out is joined to a neighbour, as a sentence is, and the
-// neighbour is often the wrong one. Measured on 12 machine translations (en to zh, ja, es, de, fr, ko,
-// and zh to en) with paragraphs dropped, merged, split and repeated: 94% of the cases matched exactly
-// with 0.7, 61% with 1, and no clean translation flagged; 0.5 flagged half of them.
+// (`openings`) and weighed by the length of what it translates (`translatedLengths`: its words, without
+// those the other text has too). Length is then what tells a merged paragraph (its opening is the first
+// one's, its length both) from a dropped one; an empty side costs less, 0.7: at 1 a paragraph the
+// translation left out is joined to a neighbour, as a sentence is, and the neighbour is often the wrong
+// one; and there is no 2-2 group. Measured with one paragraph dropped, merged, split or repeated, on 12
+// machine translations of long prose (en to zh, ja, es, de, fr, ko, and zh to en) and on 32 of short
+// Markdown documents with headings, tables, code and lists (en to zh, ja, fr, de): 97% and 84% of the
+// cases matched exactly, and 99% and 98% put every group but at most one next to the damage right (a
+// short paragraph left out is often told as merged into its neighbour); no clean translation flagged.
+// Below 0.7 clean Markdown translations were flagged (8 of 32 at 0.6), above it fewer drops were found;
+// whole lengths instead of translated ones made 66% exact on the Markdown documents, as did allowing 2-2
+// (two short neighbours, a heading and its paragraph, came out as one 2-2 group in clean translations).
 
 import type { AlignedPair, AlignUnit } from "./api";
 
@@ -37,8 +43,12 @@ export const OPENING = 80;
 /** Bounds of a target opening: a ratio far from 1 should not leave it a word or the whole paragraph. */
 const OPENING_RANGE = [OPENING / 4, OPENING * 4] as const;
 
-/** The groups a step may take: [source sentences, target sentences]. */
-const GROUPS: [number, number][] = [
+/**
+ * The groups a step may take, [source items, target items], by unit. Paragraphs have no 2-2: a translation
+ * rarely moves the boundary between two paragraphs, and two short ones (a heading and its paragraph) were
+ * taken for one 2-2 group in clean translations, because each resembles its neighbour as much as itself.
+ */
+const SENTENCE_GROUPS: [number, number][] = [
   [0, 1],
   [1, 0],
   [1, 1],
@@ -48,6 +58,10 @@ const GROUPS: [number, number][] = [
   ]).flat(),
   [2, 2],
 ];
+const GROUPS: Record<AlignUnit, [number, number][]> = {
+  sentences: SENTENCE_GROUPS,
+  paragraphs: SENTENCE_GROUPS.filter(([a, b]) => a !== 2 || b !== 2),
+};
 
 export interface Sentences {
   /** Unit vectors, one per sentence. */
@@ -76,6 +90,23 @@ function opening(text: string, n: number): string {
   }
   const space = cut.findLastIndex((c) => /\s/u.test(c));
   return (space > n / 2 ? cut.slice(0, space) : cut).join("");
+}
+
+/** A run of Latin letters and digits, or of letters of other scripts (so "在Linux上" holds "Linux"). */
+const WORD = /[\p{Script=Latin}\p{N}]+|(?:(?!\p{Script=Latin})\p{L})+/gu;
+
+/**
+ * Each paragraph's length as the search weighs it: the characters of its words, without those the other
+ * text has as well. What a translation copies (names, numbers, code, most of a table) is then left out
+ * of both sides, so it does not make the length ratio of prose wrong for the paragraphs that hold it.
+ */
+export function translatedLengths(source: string[], target: string[]): { source: number[]; target: number[] } {
+  const words = (texts: string[]) => texts.map((t) => t.match(WORD) ?? []);
+  const [s, t] = [words(source), words(target)];
+  const [inSource, inTarget] = [new Set(s.flat()), new Set(t.flat())];
+  const length = (list: string[], other: Set<string>) =>
+    list.filter((w) => !other.has(w)).reduce((n, w) => n + Array.from(w).length, 0);
+  return { source: s.map((list) => length(list, inTarget)), target: t.map((list) => length(list, inSource)) };
 }
 
 /** What is embedded of each paragraph: the source's first `OPENING` characters, the target's as many as say as much. */
@@ -123,6 +154,7 @@ function lengthDistance(a: number, b: number): number {
 /** The best path through both texts, in order; every item of each is in exactly one pair. */
 export function alignSentences(source: Sentences, target: Sentences, unit: AlignUnit = "sentences"): AlignedPair[] {
   const unmatched = UNMATCHED[unit];
+  const groups = GROUPS[unit];
   const n = source.embeddings.length;
   const m = target.embeddings.length;
   const sourceChars = source.lengths.reduce((a, b) => a + b, 0);
@@ -188,7 +220,7 @@ export function alignSentences(source: Sentences, target: Sentences, unit: Align
       if (i === 0 && j === 0) {
         continue;
       }
-      GROUPS.forEach(([a, b], g) => {
+      groups.forEach(([a, b], g) => {
         if (a > i || b > j) {
           return;
         }
@@ -203,7 +235,7 @@ export function alignSentences(source: Sentences, target: Sentences, unit: Align
 
   const pairs: AlignedPair[] = [];
   for (let i = n, j = m; i > 0 || j > 0;) {
-    const [a, b] = GROUPS[step[i * width + j]!]!;
+    const [a, b] = groups[step[i * width + j]!]!;
     i -= a;
     j -= b;
     pairs.unshift({

@@ -30,6 +30,11 @@ describe("unitOf", () => {
   test("blank lines around the text do not count", () => {
     expect(unitOf("\n\na\nb\nc\n\n")).toBe("lines");
   });
+
+  test("a blank line inside a code block does not make paragraphs", () => {
+    expect(unitOf("a\nb\n```\nx\n\ny\n```\nc")).toBe("lines");
+    expect(unitOf("a\n\n```\nx\n```")).toBe("paragraphs");
+  });
 });
 
 describe("countBlocks", () => {
@@ -108,6 +113,20 @@ describe("blockStarts", () => {
     expect(blockStarts("A\n\nB\nC", "lines")).toStrictEqual([0, 2, 3]);
   });
 
+  test("paragraphs: a fenced code block is one block, blank lines and all", () => {
+    const text = "Intro.\n\n```sh\na\n\nb\n```\n\nAfter.";
+    expect(blockStarts(text, "paragraphs")).toStrictEqual([0, 2, 8]);
+    expect(blockTexts(text, "paragraphs")[1]).toBe("```sh\na\n\nb\n```");
+    // Tildes, a longer closing fence, and a fence of the other character inside.
+    expect(blockStarts("~~~\n```\n\n~~~~\n\nEnd.", "paragraphs")).toStrictEqual([0, 5]);
+    // A closing fence takes nothing after it; an unclosed fence runs to the end.
+    expect(blockStarts("```\n``` not a close\n\nstill code", "paragraphs")).toStrictEqual([0]);
+  });
+
+  test("lines: each line of code is a line", () => {
+    expect(blockStarts("```\na\nb\n```", "lines")).toStrictEqual([0, 1, 2, 3]);
+  });
+
   test("counts as many blocks as countBlocks", () => {
     for (const text of ["", "A", "A\n\n\nB\n", "\r\nA\r\n \r\nB\r\nb", "# T\n\n- a\n- b\n\n```\nx\n\ny\n```"]) {
       for (const unit of ["paragraphs", "lines"] as const) {
@@ -145,17 +164,10 @@ describe("alignBlocks", () => {
 describe("matchable", () => {
   const prose = (n: number) => Array.from({ length: n }, (_, i) => `Paragraph ${i}.`);
 
-  test(`at least ${MIN_MATCHED_BLOCKS} blocks`, () => {
+  test(`at least ${MIN_MATCHED_BLOCKS} blocks, of any kind`, () => {
     expect(matchable(prose(MIN_MATCHED_BLOCKS))).toBe(true);
     expect(matchable(prose(MIN_MATCHED_BLOCKS - 1))).toBe(false);
-  });
-
-  test("no table and no code block", () => {
-    expect(matchable([...prose(8), "| a | b |\n| --- | --- |"])).toBe(false);
-    expect(matchable([...prose(8), "```sh\nls"])).toBe(false);
-    expect(matchable([...prose(8), "~~~\nx\n~~~"])).toBe(false);
-    // A pipe or backticks inside a line are text.
-    expect(matchable([...prose(8), "Use `a | b` here.", "- a list\n- of items", "# A heading"])).toBe(true);
+    expect(matchable([...prose(MIN_MATCHED_BLOCKS - 2), "| a | b |\n| --- | --- |", "```sh\nls\n```"])).toBe(true);
   });
 });
 
@@ -249,10 +261,10 @@ describe("mismatchDetails", () => {
       "Paragraph 2 of the translation has no counterpart in the source (added or repeated).",
     ]);
     expect(details(3, 2, [pair([0, 1], [0]), pair([2], [1])])).toStrictEqual([
-      "Paragraphs 1–2 of the source seem merged into paragraph 1 of the translation.",
+      "Paragraphs 1–2 of the source match only paragraph 1 of the translation: merged, or one is missing.",
     ]);
     expect(details(1, 3, [pair([0], [0, 1, 2])], "\n")).toStrictEqual([
-      "Line 1 of the source seems split into lines 1–3 of the translation.",
+      "Line 1 of the source matches lines 1–3 of the translation: split, or one was added.",
     ]);
     expect(details(2, 2, [pair([0, 1], [0, 1])])).toStrictEqual([
       "Paragraphs 1–2 of the source and paragraphs 1–2 of the translation only match as a whole.",
