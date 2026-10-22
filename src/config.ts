@@ -46,6 +46,8 @@ export interface Config {
   gpuLayers: number;
   /** CPU threads for the engine; 0 uses half the logical CPUs. */
   threads: number;
+  /** CPU threads for the embedding model; 0 uses the performance cores (at most 8, at most the CPUs this process may use). */
+  embedThreads: number;
   ctxSize: number;
   maxInputTokens: number;
   /** Requests allowed to wait behind the running one. */
@@ -90,6 +92,7 @@ export const SETTING_NAMES = [
   "MAX_QUEUE",
   "GPU_LAYERS",
   "LLAMA_THREADS",
+  "EMBED_THREADS",
   "LLAMA_DIR",
   "PUBLIC_DIR",
   "SPEECH",
@@ -167,6 +170,7 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     llamaDir: resolve(env.LLAMA_DIR || join(root, "vendor", "llama.cpp")),
     gpuLayers: env.GPU_LAYERS === undefined || env.GPU_LAYERS === "all" ? -1 : int(env, "GPU_LAYERS", -1),
     threads: int(env, "LLAMA_THREADS", 0),
+    embedThreads: int(env, "EMBED_THREADS", 0),
     ctxSize,
     maxInputTokens,
     maxQueue: int(env, "MAX_QUEUE", 8),
@@ -203,6 +207,7 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   MAX_QUEUE: "requests allowed to wait (default 8)",
   GPU_LAYERS: "`all` (default), a layer count, or 0 to run on the processor",
   LLAMA_THREADS: "CPU threads for decoding (default half the logical CPUs)",
+  EMBED_THREADS: "CPU threads for the embedding model (default the performance cores: P-cores or big cores, at most 8)",
   LLAMA_DIR: "directory with libllama and its backends (default vendor/llama.cpp)",
   PUBLIC_DIR: "directory with the web app (default public/)",
   SPEECH: "0 turns reading aloud off (default on)",

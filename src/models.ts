@@ -43,6 +43,13 @@ export const MODELS: ModelSpec[] = (Object.keys(SPECS) as ModelId[]).map((id) =>
 
 export const DEFAULT_MODEL_ID: ModelId = "index-translate-9b";
 
+/**
+ * File name, inside the models directory, of the embedding model (bge-m3, Q8_0, from
+ * ggml-org/bge-m3-Q8_0-GGUF) that matches the blocks of a translation to those of its source. Not a
+ * translation model: it runs on the processor beside whichever one is loaded.
+ */
+export const EMBED_MODEL_FILE = "bge-m3-q8_0.gguf";
+
 export function findModel(id: string): ModelSpec | undefined {
   return MODELS.find((m) => m.id === id);
 }

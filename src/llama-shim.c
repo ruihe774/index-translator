@@ -4,8 +4,15 @@
 // struct layouts always match them. After a change here: bun scripts/build_llama.ts --shim. Everything else is called
 // directly from src/llama-ffi.ts.
 
+#include <math.h>
 #include <stdint.h>
 #include <stdio.h>
+
+#if defined(_WIN32)
+#    include <windows.h>
+#else
+#    include <pthread.h>
+#endif
 
 #include "llama.h"
 #include "mtmd.h"
@@ -33,12 +40,30 @@ static void shim_log(enum ggml_log_level level, const char * text, void * user_d
     }
 }
 
-// Once per process. `backend_dir` holds the libggml-* backends (Vulkan, CPU variants).
+#if defined(_WIN32)
+static SRWLOCK init_lock = SRWLOCK_INIT;
+#    define INIT_LOCK()   AcquireSRWLockExclusive(&init_lock)
+#    define INIT_UNLOCK() ReleaseSRWLockExclusive(&init_lock)
+#else
+static pthread_mutex_t init_lock = PTHREAD_MUTEX_INITIALIZER;
+#    define INIT_LOCK()   pthread_mutex_lock(&init_lock)
+#    define INIT_UNLOCK() pthread_mutex_unlock(&init_lock)
+#endif
+static int initialized = 0;
+
+// Once per process, however many threads call it: the engine thread and the embedding thread each
+// open the libraries, and the second to arrive waits for the first and then does nothing.
+// `backend_dir` holds the libggml-* backends (Vulkan, CPU variants).
 SHIM_API void shim_init(const char * backend_dir) {
-    llama_log_set(shim_log, NULL);
-    mtmd_helper_log_set(shim_log, NULL);
-    llama_backend_init();
-    ggml_backend_load_all_from_path(backend_dir);
+    INIT_LOCK();
+    if (!initialized) {
+        llama_log_set(shim_log, NULL);
+        mtmd_helper_log_set(shim_log, NULL);
+        llama_backend_init();
+        ggml_backend_load_all_from_path(backend_dir);
+        initialized = 1;
+    }
+    INIT_UNLOCK();
 }
 
 // The devices the loaded backends found. Returns how many, and writes them to `out` as
@@ -108,6 +133,74 @@ SHIM_API struct llama_context * shim_new_context(struct llama_model * model, uin
         params.n_threads_batch = n_threads;
     }
     return llama_init_from_model(model, params);
+}
+
+// A model that runs on the processor alone: an empty device list keeps it, and the context built for
+// it, off every GPU however many the backends found. For the embedding model, which must not take
+// video memory from the translator.
+SHIM_API struct llama_model * shim_load_model_cpu(const char * path) {
+    static ggml_backend_dev_t no_devices[1] = { NULL };
+    struct llama_model_params params = llama_model_default_params();
+    params.devices = no_devices;
+    params.n_gpu_layers = 0;
+    return llama_model_load_from_file(path, params);
+}
+
+// A context for an embedding model. It takes a text of up to `n_tokens` tokens in one piece (an
+// encoder sees all of it at once, so the physical batch must hold it) and pools it into sequence 0.
+// Nothing is offloaded to a device.
+SHIM_API struct llama_context * shim_new_embedding_context(struct llama_model * model, uint32_t n_tokens, int32_t n_threads) {
+    struct llama_context_params params = llama_context_default_params();
+    params.n_ctx = n_tokens;
+    params.n_batch = n_tokens;
+    params.n_ubatch = n_tokens;
+    params.n_seq_max = 1;
+    params.embeddings = true;
+    params.offload_kqv = false;
+    params.op_offload = false;
+    params.no_perf = true;
+    if (n_threads > 0) {
+        params.n_threads = n_threads;
+        params.n_threads_batch = n_threads;
+    }
+    return llama_init_from_model(model, params);
+}
+
+// Runs `n` tokens through an embedding context and writes the pooled vector, scaled to length 1, to
+// `out` (`n_embd` floats). Returns 0, a llama_decode status, or -1 when the model does not pool.
+SHIM_API int32_t shim_embed(struct llama_context * ctx, llama_token * tokens, int32_t n, float * out, int32_t n_embd) {
+    llama_memory_t memory = llama_get_memory(ctx);
+    if (memory != NULL) {
+        llama_memory_clear(memory, true);
+    }
+    // Every token is an output, which pooling needs; llama_batch_get_one marks only the last.
+    struct llama_batch batch = llama_batch_init(n, 0, 1);
+    for (int32_t i = 0; i < n; i++) {
+        batch.token[i] = tokens[i];
+        batch.pos[i] = i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i] = 1;
+    }
+    batch.n_tokens = n;
+    int32_t status = llama_decode(ctx, batch);
+    llama_batch_free(batch);
+    if (status != 0) {
+        return status;
+    }
+    const float * pooled = llama_get_embeddings_seq(ctx, 0);
+    if (pooled == NULL) {
+        return -1;
+    }
+    double sum = 0;
+    for (int32_t i = 0; i < n_embd; i++) {
+        sum += (double) pooled[i] * pooled[i];
+    }
+    float scale = sum > 0 ? (float) (1.0 / sqrt(sum)) : 1.0f;
+    for (int32_t i = 0; i < n_embd; i++) {
+        out[i] = pooled[i] * scale;
+    }
+    return 0;
 }
 
 // Appends `n` tokens to the sequence; logits are computed for the last one.

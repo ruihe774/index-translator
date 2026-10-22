@@ -18,6 +18,7 @@ describe("loadConfig defaults", () => {
       llamaDir: join(root, "vendor", "llama.cpp"),
       gpuLayers: -1,
       threads: 0,
+      embedThreads: 0,
       ctxSize: 65_536,
       maxInputTokens: 28_000,
       maxQueue: 8,
@@ -162,6 +163,12 @@ describe("loadConfig rejections", () => {
   test("LLAMA_THREADS must be a non-negative integer; 0 leaves the choice to the engine", () => {
     expect(loadConfig({ LLAMA_THREADS: "0" }).threads).toBe(0);
     expect(() => loadConfig({ LLAMA_THREADS: "many" })).toThrow("LLAMA_THREADS must be an integer");
+  });
+
+  test("EMBED_THREADS is a non-negative integer; 0 picks the performance cores", () => {
+    expect(loadConfig({ EMBED_THREADS: "0" }).embedThreads).toBe(0);
+    expect(loadConfig({ EMBED_THREADS: "6" }).embedThreads).toBe(6);
+    expect(() => loadConfig({ EMBED_THREADS: "all" })).toThrow("EMBED_THREADS must be an integer");
   });
 
   test("MAX_INPUT_TOKENS must leave room for the margin and output", () => {

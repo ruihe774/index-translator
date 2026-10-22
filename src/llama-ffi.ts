@@ -1,6 +1,7 @@
 // libllama through bun:ffi: the synchronous calls the engine worker needs to load a model, build
-// its chat prompt, tokenize, decode and sample. Every call here blocks its thread, so this module
-// is only used from src/llama-worker.ts.
+// its chat prompt, tokenize, decode and sample, and those the embedding worker needs to embed a
+// text. Every call here blocks its thread, so this module is only used from src/llama-worker.ts and
+// src/embed-worker.ts, each of which opens the libraries itself (the shim's init runs once).
 
 import { CString, dlopen, type Pointer, suffix } from "bun:ffi";
 import { existsSync } from "node:fs";
@@ -34,6 +35,8 @@ function bind(dir: string) {
     llama_model_get_vocab: { args: ["ptr"], returns: "ptr" },
     llama_model_chat_template: { args: ["ptr", "ptr"], returns: "ptr" },
     llama_n_ctx: { args: ["ptr"], returns: "u32" },
+    llama_model_n_embd: { args: ["ptr"], returns: "i32" },
+    llama_pooling_type: { args: ["ptr"], returns: "i32" },
     llama_get_memory: { args: ["ptr"], returns: "ptr" },
     llama_memory_clear: { args: ["ptr", "bool"], returns: "void" },
     llama_tokenize: { args: ["ptr", "ptr", "i32", "ptr", "i32", "bool", "bool"], returns: "i32" },
@@ -49,6 +52,9 @@ function bind(dir: string) {
     shim_gpu_memory: { args: ["ptr", "ptr"], returns: "i32" },
     shim_load_model: { args: ["ptr", "i32"], returns: "ptr" },
     shim_new_context: { args: ["ptr", "u32", "u32", "i32"], returns: "ptr" },
+    shim_load_model_cpu: { args: ["ptr"], returns: "ptr" },
+    shim_new_embedding_context: { args: ["ptr", "u32", "i32"], returns: "ptr" },
+    shim_embed: { args: ["ptr", "ptr", "i32", "ptr", "i32"], returns: "i32" },
     shim_decode: { args: ["ptr", "ptr", "i32"], returns: "i32" },
     shim_decode_at: { args: ["ptr", "ptr", "i32", "i32"], returns: "i32" },
     shim_mtmd_load: { args: ["ptr", "ptr", "bool", "i32"], returns: "ptr" },
@@ -178,6 +184,16 @@ export interface ModelOptions {
   threads: number;
   /** The model's image encoder and projector (its mmproj GGUF); loaded when the first image arrives. */
   mmproj?: string;
+}
+
+export interface EmbeddingOptions {
+  /** Directory with libllama, its backends and the shim. */
+  dir: string;
+  path: string;
+  /** Longest text, in tokens, the model is given whole; the rest of a longer one is cut off. */
+  maxTokens: number;
+  /** CPU threads. */
+  threads: number;
 }
 
 /** An image the model cannot take: not a readable image file, or the model has no encoder for one. */
@@ -400,6 +416,94 @@ export class Model {
     if (this.vision) {
       this.lib.mtmd_free(this.vision);
     }
+    this.lib.llama_free(this.ctx);
+    this.lib.llama_model_free(this.model);
+  }
+}
+
+/**
+ * A sentence-embedding model (a BERT or XLM-R encoder with pooling, such as bge-m3) on the processor,
+ * never on a GPU. Not thread-safe; `free()` must be called to release its memory.
+ */
+export class EmbeddingModel {
+  /** Length of a vector. */
+  readonly dim: number;
+
+  private readonly vocab: Handle;
+  private tokens: Int32Array;
+  private freed = false;
+
+  private constructor(
+    private readonly lib: Lib,
+    private readonly model: Handle,
+    private readonly ctx: Handle,
+    /** Tokens one text may take, the two the tokenizer adds included. */
+    readonly maxTokens: number,
+  ) {
+    this.dim = lib.llama_model_n_embd(model);
+    this.vocab = lib.llama_model_get_vocab(model)!;
+    this.tokens = new Int32Array(maxTokens);
+  }
+
+  static load(opts: EmbeddingOptions): EmbeddingModel {
+    const lib = open(opts.dir);
+    const model = lib.shim_load_model_cpu(cstr(opts.path));
+    if (!model) {
+      throw new Error(`llama.cpp could not load ${opts.path}`);
+    }
+    const ctx = lib.shim_new_embedding_context(model, opts.maxTokens, opts.threads);
+    if (!ctx) {
+      lib.llama_model_free(model);
+      throw new Error(`llama.cpp could not create a ${opts.maxTokens}-token embedding context (out of memory?)`);
+    }
+    // 0 is LLAMA_POOLING_TYPE_NONE: a model that gives a vector per token, not per text.
+    if (lib.llama_pooling_type(ctx) === 0) {
+      lib.llama_free(ctx);
+      lib.llama_model_free(model);
+      throw new Error(`${opts.path} is not a sentence-embedding model (it does not pool its output)`);
+    }
+    return new EmbeddingModel(lib, model, ctx, opts.maxTokens);
+  }
+
+  /**
+   * The text as the model reads it: its start and its end marker around the text, cut to the longest
+   * input. Special tokens written out in the text are plain text. Cutting keeps the end marker, as the
+   * Hugging Face tokenizer does when it truncates.
+   */
+  tokenize(text: string): Int32Array {
+    // A token spans well under eight characters, so this much text always yields more tokens than fit.
+    const bytes = new TextEncoder().encode(text.slice(0, this.maxTokens * 8));
+    let n = this.lib.llama_tokenize(this.vocab, bytes, bytes.length, this.tokens, this.tokens.length, true, false);
+    if (n < 0) {
+      // More tokens than fit: the library says how many it needed. Only the start is kept.
+      const all = new Int32Array(-n);
+      n = this.lib.llama_tokenize(this.vocab, bytes, bytes.length, all, all.length, true, false);
+      if (n < 0) {
+        throw new Error("llama_tokenize failed");
+      }
+      this.tokens.set(all.subarray(0, this.maxTokens - 1));
+      this.tokens[this.maxTokens - 1] = all[n - 1]!;
+      return this.tokens.subarray(0, this.maxTokens);
+    }
+    return this.tokens.subarray(0, n);
+  }
+
+  /** The text's vector, scaled to length 1, so the dot product of two is their cosine similarity. */
+  embed(text: string): Float32Array {
+    const tokens = this.tokenize(text);
+    const out = new Float32Array(this.dim);
+    const status = this.lib.shim_embed(this.ctx, tokens, tokens.length, out, this.dim);
+    if (status !== 0) {
+      throw new Error(`embedding failed with status ${status}`);
+    }
+    return out;
+  }
+
+  free(): void {
+    if (this.freed) {
+      return;
+    }
+    this.freed = true;
     this.lib.llama_free(this.ctx);
     this.lib.llama_model_free(this.model);
   }

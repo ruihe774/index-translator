@@ -38,7 +38,7 @@ No npm runtime dependencies; no build step for the web app.
 ## Layout
 
 - `src/`: `server.ts` entry; `app.ts` routes, model selection, SSE; `config.ts`; `static.ts` (`.ts` in `public/` transpiled on request); `queue.ts`; `preflight.ts` + `llama-probe.ts`; `models.ts`; `prompt.ts` (NativeLong templates); `image.ts`
-- Engine pairs, server + worker: `llama.ts` / `llama-worker.ts` (`llama-ffi.ts` bindings, `llama-shim.c` struct calls); `speech.ts` / `speech-worker.ts` (`audiocpp-ffi.ts` bindings to `vendor/audio.cpp/include/audiocpp.h`, no C shim); `opus-stream.ts` (+ `ogg-opus.ts`, `resample.ts`); `qoa-stream.ts`; `accept.ts`; `wav.ts`
+- Engine pairs, server + worker: `llama.ts` / `llama-worker.ts` (`llama-ffi.ts` bindings, `llama-shim.c` struct calls); `embed.ts` / `embed-worker.ts` (bge-m3 on the CPU, same libllama; `cpu.ts` picks its thread count); `speech.ts` / `speech-worker.ts` (`audiocpp-ffi.ts` bindings to `vendor/audio.cpp/include/audiocpp.h`, no C shim); `opus-stream.ts` (+ `ogg-opus.ts`, `resample.ts`); `qoa-stream.ts`; `accept.ts`; `wav.ts`
 - `webpage.ts` (`POST /webpage` through `Bun.WebView`) + `page/extract.ts`, which runs inside the fetched page (own `tsconfig.json` with the DOM; read as text, types stripped, sent after turndown; a script, no imports)
 - `public/`: web app. `state.ts` + `render.ts` hold the state behind the always-shown controls and the one synchronous `render()` (callers move focus right after `setState`); `elements/` light-DOM custom elements enhancing `index.html`; `css/` one file per feature, `style.css` only the layer order and `@import`s
 - `e2e/mock-server.ts`: real app on the `test/helpers/mock-engine.ts` mocks, scriptable via a control port. Fixtures in `test/fixtures/` (`sample.pdf`: `uv run make_sample_pdf.py`; `sample.docx`: `make_sample_docx.py`)
@@ -47,7 +47,7 @@ No npm runtime dependencies; no build step for the web app.
 
 - The backend never picks a model from the text; the client does (`public/select-model.ts`). `LONG_THRESHOLD_LETTERS = 11_000` there is the switch point (the chat model loses paragraphs beyond about 11–16K letters); keep docs in sync.
 - A model swap frees the loaded model and loads the other; repeated requests do not reload.
-- libllama is only called from its worker thread, and every call blocks it. A generation returns to the worker's event loop after each decode, which is when `/tokenize` and cancellations are handled.
+- libllama is only called from its worker thread, and every call blocks it. The one exception is the embedding worker (`embed-worker.ts`), a second thread in the same libllama: started by the first embedding request, never at startup; its model (bge-m3 Q8_0, `EMBED_MODEL_FILE`) is loaded by `shim_load_model_cpu` with an empty device list, so it never touches a GPU or the translator's single model slot, and its context takes at most `EMBED_MAX_TOKENS` (1024) tokens whole (longer texts are cut). `shim_init` runs once per process under a lock, whatever thread opens the libraries first. Threads: `EMBED_THREADS`, else `min(performance cores, navigator.hardwareConcurrency, 8)` (`src/cpu.ts`; Linux only, from `cpu_core/cpus` on Intel hybrids and `cpu_capacity` elsewhere, else half the CPUs): ggml waits for its slowest thread at every operation, so threads on E-cores slow the P-cores down, and `LLAMA_THREADS` has the same problem when a model runs on the CPU. No pinning. A generation returns to the worker's event loop after each decode, which is when `/tokenize` and cancellations are handled.
 - The prompt is written by `chatPrompt` (`src/llama-ffi.ts`), not the Jinja template: ChatML, content trimmed, empty think block, token-identical to the template with `enable_thinking=false`. A non-ChatML template fails to load.
 - **Image input** (`image` on `POST /translate`, chat model only):
   - Every upload is decoded by `Bun.Image` and re-encoded as an uncompressed PNG (`prepareImage`, before the queue); JPEG, PNG, WebP only, 8 MiB, 50 million pixels. It is resized once to the size libmtmd would pick (`engineSize`, Qwen-VL smart resize, cubic), so libmtmd copies it without resampling. PNG in between because `Bun.Image` has no raw output and libmtmd's stb_image has no WebP.
@@ -78,6 +78,7 @@ arguments fail startup. Non-obvious ones:
 
 - `ALLOWED_ORIGINS`: `scheme://host[:port]` or `scheme://*.host[:port]` (subdomains only); no bare `*`, no path (`src/access.ts`). `ALLOWED_HOSTS`: extra `Host` names, needed when `HOST` is `0.0.0.0` or `::`
 - `ALLOWED_WEBPAGE_DOMAINS`: hosts `POST /webpage` may open: `name`, `*.name` (subdomains only) or a bare `*` (allowed here: the server makes the request); any port; empty (the default) turns it off
+- `EMBED_THREADS`: CPU threads for the embedding model; 0 (default) detects the performance cores
 - `GPU_LAYERS`: `all`, a count, or `0` for CPU. `SPEECH=0`: reading aloud unavailable, libaudiocpp never loaded. `SPEECH_IDLE_UNLOAD=0`: never unload. `SPEECH_BACKEND=cpu` is far slower than real time
 - `SPEECH_MODEL_DIR` / `SEPARATION_MODEL_DIR` hold one GGUF each; no separation model means no separation. `VOICES_DIR` holds one `*.wav` per voice
 

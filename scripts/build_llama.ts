@@ -114,6 +114,8 @@ async function buildShim(dir: string): Promise<void> {
     "-lmtmd",
     "-lggml",
     "-lggml-base",
+    "-lm",
+    "-pthread",
     // The shim finds libllama beside itself, and a function the libraries lack fails here, not at startup.
     "-Wl,-rpath,$ORIGIN",
     "-Wl,--no-undefined",
