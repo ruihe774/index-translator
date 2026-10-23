@@ -89,9 +89,9 @@ export interface FileLibrary {
 
 const QOA_COMMIT = "3c85bd84595d56cb13bef779add463246e0908b7";
 const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${QOA_COMMIT}`;
-const UNDOC_COMMIT = "4ee3c5831de4ffaaede507d957f475082f641ea8";
+const UNDOC_COMMIT = "7469dcc40a7109b29e26922e284a77205535ee3b";
 const UNDOC_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${UNDOC_COMMIT}`;
-const PDF_INSPECTOR_COMMIT = "832ad1f7b1fd80514aa12a91693c6e0c0a110fb2";
+const PDF_INSPECTOR_COMMIT = "54f43e19370da8cfa7795a79dc7b0edd9848bf7d";
 const PDF_INSPECTOR_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${PDF_INSPECTOR_COMMIT}`;
 
 /** Libraries kept as files on branches of this project's repository, each pinned by commit. */
@@ -113,7 +113,7 @@ export const FILE_LIBRARIES: FileLibrary[] = [
       {
         to: "pdf_inspector_wasm_bg.wasm",
         url: `${PDF_INSPECTOR_RAW}/pdf_inspector_wasm_bg.wasm`,
-        sha256: "6c51f5cc4dc777eecce727fcbe38b406b1a7d28affa0cb634e2123671ec17efc",
+        sha256: "da7fec9e57f64d9ce5af76411f1d519c97eda9d791166d8aa2e229197362de35",
       },
       {
         to: "LICENSE",
@@ -169,7 +169,7 @@ export const FILE_LIBRARIES: FileLibrary[] = [
       {
         to: "undoc_wasm_bg.wasm",
         url: `${UNDOC_RAW}/undoc_wasm_bg.wasm`,
-        sha256: "1c7a89a52771d8c031d6c75b23f1cb79f7a050f3559103d7245c90afd126ea67",
+        sha256: "fd4a5d228fff13eace560d026cfde126659e613612f590aca719b0fa53f7f3ab",
       },
       {
         to: "LICENSE",
