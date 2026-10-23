@@ -5,7 +5,7 @@
 
 import type { Page } from "@playwright/test";
 
-import { type AppPage, expect, test, THINK } from "./fixtures";
+import { type AppPage, expect, frames, test, THINK } from "./fixtures";
 
 const MARKDOWN = "# A fetched page\n\nIts first paragraph.\n\nIts [second](https://example.com/two) paragraph.";
 
@@ -147,7 +147,7 @@ test("Stop ends a fetch that takes long", async ({ app, mock }) => {
   // Typing does not put the letter count back while the fetch runs.
   await app.text.press("End");
   await app.text.pressSequentially("/");
-  await app.page.waitForTimeout(300);
+  await frames(app.page); // a handler that would put the count back runs within a frame or two
   await expect(count(app.page)).toHaveText("Fetching the page…");
   await app.stop.click();
   await expect(status(app.page)).toHaveText("Stopped.");

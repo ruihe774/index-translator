@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/class-methods-use-this */
-import { afterEach, beforeEach, describe, expect, test } from "bun:test";
+import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 
 import { type PlayerState, SpeechPlayer, type SpeechSettings, UPDATE_SETTLE_MS } from "../public/speech";
 import type { Segment } from "../public/speech-text";
@@ -112,10 +112,10 @@ const SETTINGS: SpeechSettings = { lang: "en", voice: "v1", speed: 1 };
 
 const flush = async () => {
   for (let i = 0; i < 5; i++) {
-    await Bun.sleep(0);
+    // Not Bun.sleep: fake timers (see "update") would hold it back.
+    await new Promise<void>((resolve) => void setImmediate(resolve));
   }
 };
-const sleep = (ms: number) => Bun.sleep(ms);
 
 function setup(auto = false) {
   const synth = makeSynth(auto);
@@ -543,6 +543,14 @@ describe("blockStart, position and canJump", () => {
 });
 
 describe("update (voice or speed)", () => {
+  // The settle time is the player's own timer: it is advanced by hand instead of waited for.
+  beforeEach(() => void jest.useFakeTimers());
+  afterEach(() => void jest.useRealTimers());
+  const pass = async (ms: number) => {
+    jest.advanceTimersByTime(ms);
+    await flush();
+  };
+
   test("changes are debounced: several in a row ask for the piece once, with the last settings", async () => {
     const t = setup();
     t.player.start(SEGMENTS, SETTINGS);
@@ -557,9 +565,9 @@ describe("update (voice or speed)", () => {
     // Audio with the old speed is of no use: its request is stopped at once.
     expect(inFlight.signal.aborted).toBe(true);
     expect(t.player.state).toBe("loading");
-    await sleep(UPDATE_SETTLE_MS / 2);
+    await pass(UPDATE_SETTLE_MS / 2);
     expect(t.requests).toHaveLength(asked);
-    await sleep(UPDATE_SETTLE_MS);
+    await pass(UPDATE_SETTLE_MS);
     const fresh = t.requests.slice(asked).filter((r) => r.text === "a1");
     expect(fresh).toHaveLength(1);
     expect(fresh[0]!.settings).toStrictEqual({ ...SETTINGS, speed: 1.5 });
@@ -573,7 +581,7 @@ describe("update (voice or speed)", () => {
     await flush();
     const asked = t.requests.length;
     t.player.update({ voice: "v2" });
-    await sleep(UPDATE_SETTLE_MS + 100);
+    await pass(UPDATE_SETTLE_MS);
     expect(t.requests[asked]!.text).toBe("a2");
     expect(t.requests[asked]!.settings.voice).toBe("v2");
   });
@@ -581,7 +589,7 @@ describe("update (voice or speed)", () => {
   test("while idle it only remembers the settings for the next start", async () => {
     const t = setup(true);
     t.player.update({ voice: "v9" });
-    await sleep(UPDATE_SETTLE_MS + 50);
+    await pass(UPDATE_SETTLE_MS);
     expect(t.requests).toStrictEqual([]);
     t.player.start(SEGMENTS, { ...SETTINGS, voice: "v1" });
     await flush();
@@ -595,7 +603,7 @@ describe("update (voice or speed)", () => {
     t.player.pause();
     t.player.update({ speed: 1.5 });
     expect(t.player.state).toBe("paused");
-    await sleep(UPDATE_SETTLE_MS + 100);
+    await pass(UPDATE_SETTLE_MS);
     expect(t.player.state).toBe("paused");
     expect(t.requests.some((r) => r.settings.speed === 1.5)).toBe(true);
     expect(t.ctx().calls.at(-1)).toBe("suspend");
@@ -611,7 +619,7 @@ describe("update (voice or speed)", () => {
     const asked = t.requests.length;
     t.player.update({ speed: 2 });
     t.player.stop();
-    await sleep(UPDATE_SETTLE_MS + 100);
+    await pass(UPDATE_SETTLE_MS);
     expect(t.requests).toHaveLength(asked);
   });
 });

@@ -10,6 +10,7 @@ import {
   bodyOf,
   config,
   errorOf,
+  inFlight,
   launcher,
   mockBoundaries,
   mockSegment,
@@ -18,6 +19,7 @@ import {
   root,
   segmentLauncher,
   speechLauncher,
+  until,
   waitReady,
   webpageFetcher,
 } from "./helpers/mock-engine";
@@ -88,7 +90,7 @@ describe("POST /segment", () => {
     mockSegment.delayMs = 150;
     const first = segment({ texts: ["One."] });
     const second = segment({ texts: ["Two."] });
-    await Bun.sleep(30);
+    await inFlight(app, 2);
     const third = await segment({ texts: ["Three."] });
     expect(third.status).toBe(429);
     await expect(errorOf(third)).resolves.toMatchObject({ code: "queue_full", details: { max_queue: 1 } });
@@ -99,7 +101,7 @@ describe("POST /segment", () => {
   test("the segmentation line is not the translation line", async () => {
     mockSegment.delayMs = 100;
     const segmenting = segment({ texts: ["One."] });
-    await Bun.sleep(20);
+    await until(() => mockSegment.requests.length === 1);
     const translation = await postTo(app.server.url.origin, "/api/v1/translate", { text: "x", target_lang: "en" });
     expect(translation.status).toBe(200);
     expect((await segmenting).status).toBe(200);
@@ -109,13 +111,10 @@ describe("POST /segment", () => {
     mockSegment.delayMs = 2000;
     const controller = new AbortController();
     const res = segment({ texts: ["One."] }, { signal: controller.signal });
-    await Bun.sleep(50);
+    await until(() => mockSegment.requests.length === 1);
     controller.abort();
     await expect(res).rejects.toThrow();
-    for (let i = 0; i < 50 && mockSegment.aborted === 0; i++) {
-      await Bun.sleep(10);
-    }
-    expect(mockSegment.aborted).toBe(1);
+    await until(() => mockSegment.aborted === 1);
     // The slot is free again.
     mockSegment.delayMs = 0;
     expect((await segment({ texts: ["Two."] })).status).toBe(200);

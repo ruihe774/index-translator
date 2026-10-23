@@ -25,6 +25,7 @@ import {
   postTo,
   resetMock,
   type SseEvent,
+  until,
   waitReady,
 } from "./helpers/mock-engine";
 
@@ -149,16 +150,6 @@ function fixture(overrides: Partial<Config> = {}) {
 
 const chatBody = { text: "Hi", target_lang: "zh" };
 const docBody = { text: "The fox.", source_lang: "en", target_lang: "zh", model: DOCUMENT };
-
-async function until(check: () => boolean | Promise<boolean>, what = "condition", timeoutMs = 3000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!(await check())) {
-    if (Date.now() > deadline) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await Bun.sleep(5);
-  }
-}
 
 function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
   let timer: ReturnType<typeof setTimeout> | undefined;

@@ -5,7 +5,7 @@
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 
-import { expect, test, THINK } from "./fixtures";
+import { expect, test, THINK, transitionsDone } from "./fixtures";
 
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
@@ -164,7 +164,8 @@ for (const scheme of ["light", "dark"] as const) {
     });
     // The block being read has its button filled like the pressed Read aloud (axe checks no icon contrast).
     await app.page.mouse.move(0, 0);
-    await app.page.waitForTimeout(300);
+    await transitionsDone(gutter);
+    await transitionsDone(listen);
     const colours = (el: Element) => [getComputedStyle(el).backgroundColor, getComputedStyle(el).color];
     expect(await gutter.and(app.page.locator("[aria-current='true']")).evaluate(colours)).toStrictEqual(
       await listen.evaluate(colours),

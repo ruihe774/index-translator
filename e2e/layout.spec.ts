@@ -1,7 +1,7 @@
 // Layout and wording of the page: aligned panes, no shift between views, status text at the bottom,
 // placeholders instead of labels and hints, the Model switch and the engine link.
 
-import { type AppPage, expect, test, THINK } from "./fixtures";
+import { type AppPage, expect, test, THINK, transitionsDone } from "./fixtures";
 
 const MARKDOWN = "# Title\n\nSome **bold** text.\n\n- one\n- two\n";
 
@@ -289,17 +289,17 @@ test("the disabled Translate button does not react to hover", async ({ app, mock
   await app.translate.click();
   await expect(app.translate).toHaveAttribute("aria-disabled", "true");
   await app.page.mouse.move(0, 0);
-  await app.page.waitForTimeout(400); // the colour change is a 0.15 s transition
+  await transitionsDone(app.translate); // the colour change is a 0.15 s transition
   const away = await bg();
   await app.translate.hover();
-  await app.page.waitForTimeout(400);
+  await transitionsDone(app.translate);
   expect(await bg()).toBe(away);
   await expect(app.meta).toContainText("generated");
   await app.page.mouse.move(0, 0);
-  await app.page.waitForTimeout(400);
+  await transitionsDone(app.translate);
   const enabled = await bg();
   await app.translate.hover();
-  await app.page.waitForTimeout(400);
+  await transitionsDone(app.translate);
   expect(await bg()).not.toBe(enabled); // an enabled button still reacts
 });
 

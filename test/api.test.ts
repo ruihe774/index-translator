@@ -16,11 +16,14 @@ import {
   dataOf,
   DOCUMENT,
   errorOf,
+  inFlight,
   launcher,
   mock,
   postTo,
+  queueIs,
   readSse,
   TEMPLATE,
+  until,
   waitReady,
 } from "./helpers/mock-engine";
 
@@ -154,7 +157,7 @@ describe("POST /tokenize", () => {
   test("does not wait for a running translation", async () => {
     mock.delayMs = 300;
     const running = post("/api/v1/translate", { text: "long", target_lang: "en", stream: true });
-    await Bun.sleep(50);
+    await queueIs(base, true, 0);
 
     const started = performance.now();
     const res = await post("/api/v1/tokenize", { text: "Hello", target_lang: "zh" });
@@ -170,9 +173,9 @@ describe("POST /tokenize", () => {
   test("takes no queue slot, so it works when the queue is full and leaves the queue unchanged", async () => {
     mock.delayMs = 100;
     const first = post("/api/v1/translate", { text: "one", target_lang: "en", stream: true });
-    await Bun.sleep(30);
+    await queueIs(base, true, 0);
     const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
-    await Bun.sleep(30);
+    await queueIs(base, true, 1);
 
     const before = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(before.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
@@ -427,9 +430,9 @@ describe("queueing and cancellation", () => {
   test("a second request waits, a third is rejected with 429", async () => {
     mock.delayMs = 60;
     const first = post("/api/v1/translate", { text: "one", target_lang: "en", stream: true });
-    await Bun.sleep(30);
+    await queueIs(base, true, 0);
     const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
-    await Bun.sleep(30);
+    await queueIs(base, true, 1);
 
     const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(health.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
@@ -460,11 +463,8 @@ describe("queueing and cancellation", () => {
     await reader.read();
     ac.abort();
 
-    for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) {
-      await Bun.sleep(20);
-    }
+    await until(() => mock.aborted === abortedBefore + 1);
     mock.delayMs = 0;
-    expect(mock.aborted).toBe(abortedBefore + 1);
 
     const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
     expect(health.queue.running).toBe(false);
@@ -478,9 +478,7 @@ describe("queueing and cancellation", () => {
   }
 
   async function waitForWaiting(count: number): Promise<void> {
-    for (let i = 0; i < 100 && (await queueState()).waiting !== count; i++) {
-      await Bun.sleep(20);
-    }
+    await until(async () => (await queueState()).waiting === count, `${count} waiting`);
   }
 
   // /tokenize never queues (see the tokenize tests), so only translate can be cancelled while waiting.
@@ -491,11 +489,10 @@ describe("queueing and cancellation", () => {
     const log = spyOn(console, "error").mockImplementation(() => {});
     try {
       const first = post("/api/v1/translate", { text: "one", target_lang: "en" });
-      await Bun.sleep(30);
+      await queueIs(base, true, 0);
       const ac = new AbortController();
       const second = post(path, body, { signal: ac.signal });
-      await Bun.sleep(30);
-      expect((await queueState()).waiting).toBe(1);
+      await queueIs(base, true, 1);
 
       ac.abort();
       await expect(second).rejects.toThrow();
@@ -518,20 +515,16 @@ describe("queueing and cancellation", () => {
     mock.delayMs = 200;
     const log = spyOn(console, "error").mockImplementation(() => {});
     const abortedBefore = mock.aborted;
+    const requestsBefore = mock.requests.length;
     try {
       const ac = new AbortController();
       const pending = post("/api/v1/translate", { text: "long", target_lang: "en" }, { signal: ac.signal });
-      await Bun.sleep(100);
+      await until(() => mock.requests.length === requestsBefore + 1);
       ac.abort();
       await expect(pending).rejects.toThrow();
 
-      for (let i = 0; i < 100 && mock.aborted === abortedBefore; i++) {
-        await Bun.sleep(20);
-      }
-      await waitForWaiting(0);
-      await Bun.sleep(50);
-      expect(mock.aborted).toBe(abortedBefore + 1);
-      await expect(queueState()).resolves.toStrictEqual({ running: false, waiting: 0 });
+      await until(() => mock.aborted === abortedBefore + 1);
+      await queueIs(base, false, 0);
       expect(log).not.toHaveBeenCalled();
     } finally {
       log.mockRestore();
@@ -558,22 +551,18 @@ describe("queueing and cancellation", () => {
     try {
       mock.delayMs = 60;
       const first = post("/api/v1/translate", { text: "one", target_lang: "en" });
-      await Bun.sleep(30);
+      await queueIs(base, true, 0);
       const before = live.size;
       const ac = new AbortController();
       // The stream's headers arrive at once, so the queued request is open but never answered.
       await post("/api/v1/translate", { text: "two", target_lang: "en", stream: true }, { signal: ac.signal });
       // Bun starts the response stream when it first writes it, so the interval can appear a moment late.
-      for (let i = 0; i < 100 && live.size !== before + 1; i++) {
-        await Bun.sleep(10);
-      }
+      await until(() => live.size === before + 1);
       expect((await queueState()).waiting).toBe(1);
-      expect(live.size).toBe(before + 1);
 
       ac.abort();
       await waitForWaiting(0);
-      await Bun.sleep(50);
-      expect(live.size).toBe(before);
+      await until(() => live.size === before);
       expect((await first).status).toBe(200);
 
       const next = await post("/api/v1/translate", { text: "next", target_lang: "en", stream: true });
@@ -603,7 +592,7 @@ describe("engine availability", () => {
         headers: { "content-type": "application/json" },
         body: JSON.stringify({ text: "Hi", target_lang: "zh" }),
       });
-      await Bun.sleep(100);
+      await inFlight(loading, 1);
       mock.ready = true;
       const res = await pending;
       expect(res.status).toBe(200);
@@ -619,10 +608,7 @@ describe("engine availability", () => {
     const loading = await startApp(config(), launcher);
     try {
       const { origin } = loading.server.url;
-      for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) {
-        await Bun.sleep(10);
-      }
-      expect(loading.engine.state).toBe("loading");
+      await until(() => loading.engine.state === "loading");
 
       const tokenize = () =>
         fetch(origin + "/api/v1/tokenize", {
@@ -650,10 +636,7 @@ describe("engine availability", () => {
     mock.failLaunch = "model file is corrupt";
     const broken = await startApp(config(), launcher);
     try {
-      for (let i = 0; i < 100 && broken.engine.state !== "error"; i++) {
-        await Bun.sleep(10);
-      }
-      expect(broken.engine.state).toBe("error");
+      await until(() => broken.engine.state === "error");
       const res = await fetch(broken.server.url.origin + "/api/v1/tokenize", {
         method: "POST",
         headers: { "content-type": "application/json" },

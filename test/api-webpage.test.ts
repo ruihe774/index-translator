@@ -14,6 +14,7 @@ import {
   postTo,
   resetMockWebpage,
   speechLauncher,
+  until,
   waitReady,
   webpageFetcher,
 } from "./helpers/mock-engine";
@@ -117,7 +118,7 @@ describe("POST /webpage", () => {
   test("two fetches at a time; the third is told to wait", async () => {
     mockWebpage.delayMs = 300;
     const running = [fetchPage({ url: "https://example.com/1" }), fetchPage({ url: "https://example.com/2" })];
-    await Bun.sleep(50);
+    await until(() => mockWebpage.requests.length === 2);
     const third = await fetchPage({ url: "https://example.com/3" });
     expect(third.status).toBe(429);
     expect((await errorOf(third)).code).toBe("queue_full");
@@ -130,13 +131,10 @@ describe("POST /webpage", () => {
     mockWebpage.delayMs = 5000;
     const controller = new AbortController();
     const res = fetchPage({ url: "https://example.com/" }, app, { signal: controller.signal });
-    await Bun.sleep(50);
+    await until(() => mockWebpage.requests.length === 1);
     controller.abort();
     await expect(res).rejects.toThrow();
-    for (let i = 0; i < 50 && mockWebpage.aborted === 0; i++) {
-      await Bun.sleep(10);
-    }
-    expect(mockWebpage.aborted).toBe(1);
+    await until(() => mockWebpage.aborted === 1);
   });
 
   test("only POST, and only a JSON body", async () => {

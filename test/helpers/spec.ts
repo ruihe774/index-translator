@@ -3,7 +3,7 @@
 
 import { join } from "node:path";
 
-import { root } from "./mock-engine";
+import { root } from "./harness";
 
 const METHODS = ["get", "post", "put", "delete", "patch"] as const;
 

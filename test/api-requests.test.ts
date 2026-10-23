@@ -713,6 +713,7 @@ describe("resumable streams", () => {
       const reader = res.body!.getReader();
       await reader.read();
       await reader.cancel();
+      // The job must finish with nobody reading it (5 chunks of 40 ms); a reader would be one, so nothing but time shows it.
       await Bun.sleep(300);
       const again = await fetch(`${base}/api/v1/translations/${id}/events`, { headers: { "last-event-id": "1" } });
       const events = await readSse(again);

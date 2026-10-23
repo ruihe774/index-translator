@@ -1,7 +1,15 @@
 # Frontend tests (Playwright)
 
 `bun run e2e` starts `e2e/mock-server.ts` (the real app on the fake models from
-`test/helpers/mock-engine.ts`) and runs the specs in Chromium. No GPU or model files are needed.
+`test/helpers/mock-engine.ts`, which re-exports one file per mock) and runs the specs in Chromium. No
+GPU or model files are needed. The ports and server timeouts are in `ports.ts`, shared by the config,
+the mock server and `fixtures.ts`.
+
+Waiting: no `waitForTimeout` where something can be observed. Use `expect.poll` or a web-first
+assertion, the control port (`mock.state()`), `transitionsDone(locator)` for a CSS transition,
+`frames(page)` for a handler that runs on the next frame, or `page.clock` to move the page's timers
+by hand. A fixed wait stays only for what nothing shows (an absent request, real audio time or
+real-time recording), with a comment saying why.
 
 - `translate.spec.ts`: end to end, real server and mock engine; `fixtures.ts` scripts the engine
   through a control port (`/mock`).
