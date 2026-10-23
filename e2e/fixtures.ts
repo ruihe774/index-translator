@@ -7,9 +7,7 @@ import { CoverageReport } from "monocart-coverage-reports";
 
 import type { AlignedPair, AlignUnit, FinishReason, SegmentStatus, SpeechStatus, Voice } from "../src/api";
 import { COVERAGE, mappedModule, REPORT } from "./coverage";
-
-const PORT = Number(process.env.E2E_PORT ?? 3100);
-const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
+import { portsOf } from "./ports";
 
 export interface MockKnobs {
   chunks?: string[];
@@ -74,7 +72,7 @@ export interface Mock {
 /** The think block a model may put before the answer; the server strips it. */
 export const THINK = "<think>\n\n</think>\n\n";
 
-export { CHAT, DOCUMENT } from "../test/helpers/mock-engine";
+export { CHAT, DOCUMENT } from "../test/helpers/harness";
 
 // Under `E2E_COVERAGE` every page measures its JS; globalTeardown merges the workers' data (`e2e/coverage.ts`).
 const coverage = COVERAGE ? new CoverageReport(REPORT) : undefined;
@@ -100,9 +98,9 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
     await coverage.add(await page.coverage.stopJSCoverage());
   },
   // Worker n talks to the n-th server of `e2e/playwright.config.ts` (ports step by 2).
-  baseURL: ({}, use, testInfo) => use(`http://127.0.0.1:${PORT + 2 * testInfo.parallelIndex}`),
+  baseURL: ({}, use, testInfo) => use(`http://127.0.0.1:${portsOf(testInfo.parallelIndex).app}`),
   mock: async ({}, use, testInfo) => {
-    const CONTROL = `http://127.0.0.1:${CONTROL_PORT + 2 * testInfo.parallelIndex}/mock`;
+    const CONTROL = `http://127.0.0.1:${portsOf(testInfo.parallelIndex).control}/mock`;
     const call = <T = void>(method: string, body?: unknown, path = ""): Promise<T> =>
       fetch(CONTROL + path, { method, body: body === undefined ? undefined : JSON.stringify(body) }).then(
         (r) => r.json() as Promise<T>,
@@ -125,6 +123,24 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
 });
 
 export { expect };
+
+/** Settles once the CSS transitions and animations of `locator`'s elements have ended (or were cancelled). */
+export async function transitionsDone(locator: Locator): Promise<void> {
+  await locator.evaluateAll(async (els) => {
+    await Promise.allSettled(els.flatMap((el) => el.getAnimations()).map((a) => a.finished));
+  });
+}
+
+/** Settles after the page has painted `n` frames: what a handler that waits for the next frame has done by then. */
+export async function frames(page: Page, n = 2): Promise<void> {
+  await page.evaluate(async (count) => {
+    for (let i = 0; i < count; i++) {
+      await new Promise<void>((resolve) => {
+        requestAnimationFrame(() => resolve());
+      });
+    }
+  }, n);
+}
 
 export class AppPage {
   readonly from: Locator;

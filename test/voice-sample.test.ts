@@ -1,6 +1,6 @@
 // Microphone recording and WAV encoding for voice samples (public/voice-sample.ts), with fakes.
 
-import { describe, expect, test } from "bun:test";
+import { describe, expect, jest, test } from "bun:test";
 
 import { encodeWav, type MicMediaRecorder, MicRecorder, type MicStream } from "../public/mic-recorder";
 import { readWav } from "../src/wav";
@@ -89,7 +89,6 @@ function rig(limitMs = 60_000): Rig {
 }
 
 const stopped = (s: FakeStream) => s.tracks.every((t) => t.stopped > 0);
-const tick = () => Bun.sleep(0);
 
 describe("MicRecorder", () => {
   test("records, then stop returns the bytes and releases the microphone", async () => {
@@ -211,24 +210,29 @@ describe("MicRecorder", () => {
   });
 
   test("the length limit fires once, and stop cancels it", async () => {
-    const r = rig(10);
-    let limits = 0;
-    const started = r.mic.start(() => void limits++);
-    r.gum[0]!.resolve();
-    await started;
-    await Bun.sleep(40);
-    expect(limits).toBe(1);
-    await r.mic.stop();
+    // The limit is the recorder's own timer: advanced by hand instead of waited for.
+    jest.useFakeTimers();
+    try {
+      const r = rig(10);
+      let limits = 0;
+      const started = r.mic.start(() => void limits++);
+      r.gum[0]!.resolve();
+      await started;
+      jest.advanceTimersByTime(40);
+      expect(limits).toBe(1);
+      await r.mic.stop();
 
-    const r2 = rig(10);
-    let limits2 = 0;
-    const s2 = r2.mic.start(() => void limits2++);
-    r2.gum[0]!.resolve();
-    await s2;
-    await r2.mic.stop();
-    await Bun.sleep(40);
-    expect(limits2).toBe(0);
-    await tick();
+      const r2 = rig(10);
+      let limits2 = 0;
+      const s2 = r2.mic.start(() => void limits2++);
+      r2.gum[0]!.resolve();
+      await s2;
+      await r2.mic.stop();
+      jest.advanceTimersByTime(40);
+      expect(limits2).toBe(0);
+    } finally {
+      jest.useRealTimers();
+    }
   });
 });
 

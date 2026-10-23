@@ -180,9 +180,10 @@ test("reading aloud and the hover share one answer: each text as the page shows 
   await app.text.fill(source);
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
-  // Wait for the requests to finish: no more come.
-  await expect.poll(async () => (await mock.state()).segment.requests.length).toBeGreaterThan(0);
-  await app.page.waitForTimeout(500);
+  // Wait for the requests to finish: the 14 long blocks (below) are the last to be asked about.
+  await expect
+    .poll(async () => (await mock.state()).segment.requests.flat().filter((t) => t.length >= 100).length)
+    .toBe(14);
 
   // What the page shows of the long blocks, once each: reading aloud's strings are the hover's, not copies of them.
   const requested = (await mock.state()).segment.requests.flat();
@@ -202,7 +203,8 @@ test("reading aloud and the hover share one answer: each text as the page shows 
   await app.readAloud("source", 1);
   await app.page.locator("#listen-source").click();
   await app.readAloud("output", 1);
-  await app.page.waitForTimeout(300);
+  // An utterance is asked for only after its sentence ends are known, so this is the end of what reading asks of SaT.
+  await expect.poll(async () => (await mock.state()).speech.requests.length).toBeGreaterThan(1);
   expect((await mock.state()).segment.requests.flat()).toStrictEqual(requested);
 });
 
@@ -215,11 +217,11 @@ test("a code block is not marked, and nothing is marked while a translation stre
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
 
-  await hover(app.page, "#output", "more");
-  await app.page.waitForTimeout(200);
-  expect(await marked(app.page)).toStrictEqual([]);
+  // Mark a sentence first, so that the marking is known to work; then the code block must clear it and mark nothing.
   await hover(app.page, "#output", "après");
   await expect.poll(() => marked(app.page)).toStrictEqual(["Texte après."]);
+  await hover(app.page, "#output", "more");
+  await expect.poll(() => marked(app.page)).toStrictEqual([]);
 });
 
 /** What is marked, sorted, once moving over `word` again and again (answers arrive while the pointer rests) gives it. */
@@ -341,6 +343,7 @@ test("without an aligner nothing is matched, and only the sentence is marked", a
 
   await hover(app.page, "#output", "phrase");
   await expect.poll(() => marked(app.page)).toStrictEqual(["Une phrase."]);
+  // Nothing observable shows a request that is not made: a counterpart would be marked within this time.
   await app.page.waitForTimeout(300);
   await hover(app.page, "#output", "Une");
   expect(await marked(app.page)).toStrictEqual(["Une phrase."]);

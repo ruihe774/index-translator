@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { defineConfig, devices } from "@playwright/test";
 
 import { COVERAGE } from "./coverage";
+import { portsOf, SERVER_START_TIMEOUT_MS, SERVER_STOP_TIMEOUT_MS } from "./ports";
 
 // Paths are relative to this file (e2e/), which is where Playwright resolves them; the repository root is `..`.
 const at = (path: string) => fileURLToPath(new URL(path, import.meta.url));
@@ -11,8 +12,6 @@ const at = (path: string) => fileURLToPath(new URL(path, import.meta.url));
 // One mock server (app port + control port) per worker, so tests keep their private mock state while
 // files run side by side. `E2E_WORKERS=1` gives the old serial run.
 const WORKERS = Number(process.env.E2E_WORKERS ?? Math.min(6, Math.max(1, Math.floor(availableParallelism() / 3))));
-const PORT = Number(process.env.E2E_PORT ?? 3100);
-const CONTROL_PORT = Number(process.env.E2E_CONTROL_PORT ?? PORT + 1);
 
 // Browser: Playwright's own download if present, else $CHROMIUM_PATH (e.g. a preinstalled Chromium).
 const executablePath = process.env.CHROMIUM_PATH || undefined;
@@ -64,12 +63,12 @@ export default defineConfig({
   webServer: Array.from({ length: WORKERS }, (_, i) => ({
     command: server(i),
     cwd: at(".."),
-    url: `http://127.0.0.1:${PORT + 2 * i}/api/v1/health`,
+    url: `http://127.0.0.1:${portsOf(i).app}/api/v1/health`,
     // A server that is reused has no coverage. The bun test run writes its report on SIGTERM, hence the wait.
     reuseExistingServer: !process.env.CI && !COVERAGE,
-    gracefulShutdown: { signal: "SIGTERM", timeout: 15_000 },
-    timeout: 30_000,
-    env: { E2E_PORT: String(PORT + 2 * i), E2E_CONTROL_PORT: String(CONTROL_PORT + 2 * i) },
+    gracefulShutdown: { signal: "SIGTERM", timeout: SERVER_STOP_TIMEOUT_MS },
+    timeout: SERVER_START_TIMEOUT_MS,
+    env: { E2E_PORT: String(portsOf(i).app), E2E_CONTROL_PORT: String(portsOf(i).control) },
     stderr: "pipe" as const,
   })),
 });

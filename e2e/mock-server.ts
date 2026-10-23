@@ -30,18 +30,13 @@ import {
   mockSegment,
   mockSpeech,
   mockWebpage,
-  resetMock,
-  resetMockSegment,
-  resetMockSpeech,
-  resetMockWebpage,
+  resetAllMocks,
   segmentLauncher,
   speechLauncher,
   waitReady,
   webpageFetcher,
 } from "../test/helpers/mock-engine";
-
-const port = Number(process.env.E2E_PORT ?? 3100);
-const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 3101);
+import { CONTROL_PORT as controlPort, PORT as port } from "./ports";
 
 // Empty files stand in for the models, so `/health` does not report them missing.
 const modelsDir = mkdtempSync(join(tmpdir(), "e2e-models-"));
@@ -120,13 +115,7 @@ const control = Bun.serve({
         Object.assign(mockAlign, patch.align);
       }
     } else if (req.method === "DELETE") {
-      resetMock();
-      resetMockSpeech();
-      resetMockWebpage();
-      resetMockSegment();
-      mock.requests.length = 0;
-      mock.aborted = 0;
-      mock.launches.length = 0;
+      resetAllMocks();
     }
     // An image is reported by what a test can check: its size in bytes and whether it is the PNG the engine is given.
     const requests = mock.requests.map(({ image, ...rest }) => ({

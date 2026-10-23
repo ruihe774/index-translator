@@ -8,7 +8,7 @@ import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test
 
 import { type App, startApp } from "../src/app";
 import { MAX_SPEECH_CHARS, MAX_SPEED, MIN_SPEED } from "../src/speech";
-import { CHAT, config, launcher, mock, PNG, postTo, resetMock, waitReady } from "./helpers/mock-engine";
+import { CHAT, config, launcher, mock, PNG, postTo, queueIs, resetMock, until, waitReady } from "./helpers/mock-engine";
 import { OPERATIONS, properties, spec } from "./helpers/spec";
 
 let app: App;
@@ -32,10 +32,7 @@ async function withLoadingApp<T>(fn: (origin: string) => Promise<T>): Promise<T>
   mock.ready = false;
   const loading = await startApp(config(), launcher);
   try {
-    for (let i = 0; i < 100 && loading.engine.state !== "loading"; i++) {
-      await Bun.sleep(10);
-    }
-    expect(loading.engine.state).toBe("loading");
+    await until(() => loading.engine.state === "loading");
     return await fn(loading.server.url.origin);
   } finally {
     mock.ready = true;
@@ -135,7 +132,7 @@ describe("the spec against the server", () => {
         const first = post("/api/v1/translate", { text: "one", target_lang: "en" });
         const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
         try {
-          await Bun.sleep(30);
+          await queueIs(base, true, 1);
           return (await post("/api/v1/translate", { text: "three", target_lang: "en" })).status;
         } finally {
           await Promise.allSettled([first.then((r) => r.text()), second.then((r) => r.text())]);

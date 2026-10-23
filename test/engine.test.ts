@@ -10,7 +10,7 @@ import { join } from "node:path";
 import { Engine, EngineError, type GenerationEvent, type Launcher, launchNative } from "../src/llama";
 import { chatPrompt, chatPromptParts } from "../src/llama-ffi";
 import { MODELS } from "../src/models";
-import { config, type FakeModel, fakeModel, mock, resetMock, TEMPLATE } from "./helpers/mock-engine";
+import { config, type FakeModel, fakeModel, mock, resetMock, TEMPLATE, until } from "./helpers/mock-engine";
 
 // ---- fake launcher -------------------------------------------------------------------------
 
@@ -23,6 +23,8 @@ const fake = {
   /** Generations wait for this before their first chunk. */
   generationGate: undefined as Promise<void> | undefined,
   aborted: 0,
+  /** Generations begun. */
+  started: 0,
 };
 
 const launcher: Launcher = async (model) => {
@@ -33,7 +35,11 @@ const launcher: Launcher = async (model) => {
   if (fake.gate) {
     await fake.gate;
   }
-  const loaded = fakeModel({ gate: () => fake.generationGate, onAbort: () => void fake.aborted++ });
+  const loaded = fakeModel({
+    gate: () => fake.generationGate,
+    onAbort: () => void fake.aborted++,
+    onStart: () => void fake.started++,
+  });
   fake.models.push(loaded);
   return loaded;
 };
@@ -45,16 +51,6 @@ function gate(): { promise: Promise<void>; open(): void } {
 }
 
 // ---- helpers -------------------------------------------------------------------------------
-
-async function until(cond: () => boolean, what: string, timeoutMs = 5000): Promise<void> {
-  const deadline = Date.now() + timeoutMs;
-  while (!cond()) {
-    if (Date.now() > deadline) {
-      throw new Error(`timed out waiting for ${what}`);
-    }
-    await Bun.sleep(5);
-  }
-}
 
 async function errorOf(p: Promise<unknown>): Promise<any> {
   try {
@@ -105,6 +101,7 @@ afterEach(async () => {
   fake.gate = undefined;
   fake.generationGate = undefined;
   fake.aborted = 0;
+  fake.started = 0;
 });
 
 // ---- Engine lifecycle ----------------------------------------------------------------------
@@ -342,7 +339,7 @@ describe("generate", () => {
     fake.generationGate = gate().promise;
     const engine = await readyEngine();
     const generating = errorOf(collect(engine.generate("hi", 16)));
-    await Bun.sleep(10);
+    await until(() => fake.started === 1, "the generation to start");
     fake.models[0]!.kill();
     await expect(generating).resolves.toBeInstanceOf(EngineError);
     await until(() => engine.state === "error", "the loss to be noticed");

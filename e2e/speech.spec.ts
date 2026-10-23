@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import type { Page } from "@playwright/test";
 
-import { expect, test } from "./fixtures";
+import { expect, frames, test } from "./fixtures";
 
 // The server encodes Opus with minicelt, resampled by libsoxr (bun scripts/fetch_minicelt.ts, build_soxr.ts).
 const VENDOR = join(import.meta.dirname, "..", "vendor");
@@ -83,7 +83,7 @@ test("Read aloud shows a button per block and starts nothing; the button starts 
     expect(Math.abs(button.y - block.y)).toBeLessThan(2);
     expect(button.x + button.width).toBeLessThanOrEqual(block.x);
   }
-  await app.page.waitForTimeout(300);
+  await frames(app.page, 5); // a reading that began by itself would have asked for its first utterance by now
   expect((await mock.state()).speech.requests).toStrictEqual([]);
   await expect(app.page.locator("#pause-source")).toBeHidden();
 
@@ -121,7 +121,7 @@ test("the server is asked where the sentences end once a translation is finished
   await app.from.selectOption("en");
   await app.text.fill(LONG);
   // Nothing is asked while the text is only typed.
-  await app.page.waitForTimeout(300);
+  await frames(app.page, 5); // a request for the typed text would have been sent by now
   expect((await mock.state()).segment.requests).toStrictEqual([]);
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
@@ -175,7 +175,8 @@ test("a slow sentence model is waited for only a moment; Clear drops its request
   expect((await mock.state()).speech.requests[0]!.text).toBe(LONG);
   // Stopping the reading leaves the request: the answer would serve the next one.
   await listen.click();
-  await app.page.waitForTimeout(300);
+  await expect(app.page.locator("#pause-source")).toBeHidden();
+  await frames(app.page, 5); // an abort on stopping would have been sent by now
   expect((await mock.state()).segment.aborted).toBe(0);
   await app.page.getByRole("button", { name: "Clear", exact: true }).click();
   await expect.poll(async () => (await mock.state()).segment.aborted).toBeGreaterThan(0);
@@ -307,6 +308,7 @@ test("Pause holds the reading where it is and Resume goes on; Read aloud ends it
 
   // Paused: the audio of the rest is made meanwhile, one piece after the other, but nothing plays on.
   await expect.poll(async () => (await mock.state()).speech.requests.length).toBe(SPOKEN.length);
+  // Nothing observable shows audio that does not play: wait longer than the piece (1 s), as real audio time.
   await app.page.waitForTimeout(1500);
   await expect(listen).toHaveAttribute("data-state", "paused");
   await expect(app.meta).toHaveText("");
@@ -318,6 +320,7 @@ test("Pause holds the reading where it is and Resume goes on; Read aloud ends it
   await expect(listen).toHaveAttribute("data-state", "idle");
   await expect(pause).toBeHidden();
   const asked = (await mock.state()).speech.requests.length;
+  // No event for a request that is not made: the mock takes 200 ms per utterance, so this lets one be asked and answered.
   await app.page.waitForTimeout(600);
   expect((await mock.state()).speech.requests.length).toBe(asked);
 });
@@ -778,6 +781,8 @@ test.describe("reading aloud that becomes available later", () => {
 
   test("regaining focus looks again once, without polling", async ({ app, mock }) => {
     await mock.set({ speech: { state: "unavailable" } });
+    // The page's clock can be moved by hand, so a poll that should not exist is not waited for.
+    await app.page.clock.install();
     let asked = 0;
     app.page.on("request", (r) => {
       if (r.url().endsWith("/api/v1/voices")) {
@@ -793,8 +798,9 @@ test.describe("reading aloud that becomes available later", () => {
     expect(asked).toBe(1);
 
     await mock.set({ speech: { state: "stopped" } });
-    // Nothing asks by itself.
-    await app.page.waitForTimeout(3500);
+    // Nothing asks by itself: the page's timers are run for a minute (no waiting) and nothing is asked.
+    await app.page.clock.fastForward(60_000);
+    await frames(app.page);
     expect(asked).toBe(1);
     await expect(listen).toHaveAttribute("aria-disabled", "true");
 
@@ -808,7 +814,7 @@ test.describe("reading aloud that becomes available later", () => {
     expect(asked).toBe(2);
     // Working now: further focus events ask nothing.
     await app.page.evaluate(() => window.dispatchEvent(new Event("focus")));
-    await app.page.waitForTimeout(300);
+    await frames(app.page, 5); // a request would have been sent by now
     expect(asked).toBe(2);
   });
 
@@ -862,7 +868,8 @@ test.describe("recording a voice sample", () => {
     await record.click();
     await expect(record).toHaveText("Stop recording");
     await expect(status).toContainText("Recording");
-    await app.page.waitForTimeout(1500); // the sample must be at least a second long
+    // The fake microphone records in real time and the sample must be at least a second long: nothing else shows it.
+    await app.page.waitForTimeout(1500);
     await record.click();
     await expect(record).toHaveText("Record");
     await expect(status).toContainText(/Voice "Recording .*" added/);
@@ -891,6 +898,7 @@ test.describe("recording a voice sample", () => {
     await record.click(); // the prompt is still open
     await app.page.evaluate(() => (window as unknown as { __release: () => void }).__release());
     await expect(record).toHaveText("Stop recording");
+    // Real-time recording again, at least a second.
     await app.page.waitForTimeout(1200);
     await record.click();
     await expect(record).toHaveText("Record");

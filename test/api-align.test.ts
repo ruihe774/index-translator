@@ -10,6 +10,7 @@ import {
   bodyOf,
   config,
   errorOf,
+  inFlight,
   launcher,
   mockAlign,
   mockPairs,
@@ -92,7 +93,7 @@ describe("POST /align", () => {
     mockSegment.delayMs = 150;
     const segmenting = postTo(app.server.url.origin, "/api/v1/segment", { texts: ["One."] });
     const aligning = align({ source: ["a"], target: ["b"] });
-    await Bun.sleep(30);
+    await inFlight(app, 2);
     const third = await align({ source: ["c"], target: ["d"] });
     expect(third.status).toBe(429);
     expect([(await segmenting).status, (await aligning).status]).toStrictEqual([200, 200]);

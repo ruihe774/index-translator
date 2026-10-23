@@ -25,12 +25,14 @@ import {
   bodyOf,
   config,
   errorOf,
+  inFlight,
   launcher,
   mockSpeech,
   postTo,
   resetMockSpeech,
   silentWav,
   speechLauncher,
+  until,
   waitReady,
 } from "./helpers/mock-engine";
 
@@ -118,7 +120,7 @@ describe("POST /speech", () => {
     mockSpeech.delayMs = 150;
     const first = speak({ text: "one", lang: "en" });
     const second = speak({ text: "two", lang: "en" });
-    await Bun.sleep(30);
+    await inFlight(app, 2);
     const third = await speak({ text: "three", lang: "en" });
     expect(third.status).toBe(429);
     expect((await errorOf(third)).code).toBe("queue_full");
@@ -130,13 +132,11 @@ describe("POST /speech", () => {
     mockSpeech.delayMs = 200;
     const gone = new AbortController();
     const pending = speak({ text: "never heard", lang: "en" }, { signal: gone.signal }).catch(() => null);
-    await Bun.sleep(30);
+    await until(() => mockSpeech.running === 1);
     gone.abort();
     await pending;
-    for (let i = 0; i < 50 && mockSpeech.aborted === 0; i++) {
-      await Bun.sleep(10);
-    }
-    expect(mockSpeech.aborted).toBe(1);
+    await until(() => mockSpeech.aborted === 1);
+    expect(mockSpeech.running).toBe(0);
   });
 
   test("an abandoned utterance keeps its slot until the engine finishes it", async () => {
@@ -144,13 +144,14 @@ describe("POST /speech", () => {
     mockSpeech.delayMs = 250;
     const gone = new AbortController();
     const abandoned = speak({ text: "abandoned", lang: "en" }, { signal: gone.signal }).catch(() => null);
-    await Bun.sleep(30);
+    await until(() => mockSpeech.running === 1);
     gone.abort();
     await abandoned;
+    await until(() => app.server.pendingRequests === 0);
     expect(mockSpeech.running).toBe(1);
     // One waiting is allowed (MAX_QUEUE is 1); a third is refused while the abandoned one runs.
     const waiting = speak({ text: "waits", lang: "en" });
-    await Bun.sleep(30);
+    await inFlight(app, 1);
     const refused = await speak({ text: "refused", lang: "en" });
     expect(refused.status).toBe(429);
     expect((await waiting).status).toBe(200);
@@ -163,7 +164,7 @@ describe("POST /speech", () => {
     const first = speak({ text: "first", lang: "en" });
     const gone = new AbortController();
     const queued = speak({ text: "queued", lang: "en" }, { signal: gone.signal }).catch(() => null);
-    await Bun.sleep(30);
+    await inFlight(app, 2);
     gone.abort();
     await queued;
     expect((await first).status).toBe(200);
@@ -174,7 +175,7 @@ describe("POST /speech", () => {
   test("does not hold the translation queue", async () => {
     mockSpeech.delayMs = 150;
     const speaking = speak({ text: "one", lang: "en" });
-    await Bun.sleep(30);
+    await until(() => mockSpeech.running === 1);
     const translated = await postTo(base, "/api/v1/translate", { text: "Hi", target_lang: "zh" });
     expect(translated.status).toBe(200);
     expect((await speaking).status).toBe(200);
@@ -266,7 +267,10 @@ describe("NativeSpeech with a fake worker", () => {
     return fake;
   }
   const request: SpeechRequest = { text: "Hi", lang: "en", voice: "a", speed: 1 };
-  const tick = () => Bun.sleep(5);
+  /** Waits until the worker has been sent `n` messages. */
+  const posted = (w: any, n: number) => until(() => w.posted.length >= n);
+  /** For asserting that nothing more happens: there is no event to wait for. */
+  const settle = () => Bun.sleep(5);
 
   async function setup() {
     const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
@@ -287,13 +291,13 @@ describe("NativeSpeech with a fake worker", () => {
         () => null,
         (e) => e,
       );
-      await tick();
+      await posted(worker, 1);
       expect(kinds(worker)).toStrictEqual(["load"]);
       gone.abort();
       await expect(rejected).resolves.toBe(gone.signal.reason);
       expect(released).toBe(1);
       worker.reply(worker.posted[0].req, { type: "ok" });
-      await tick();
+      await settle();
       expect(kinds(worker)).toStrictEqual(["load"]);
       expect(released).toBe(1);
     } finally {
@@ -311,9 +315,9 @@ describe("NativeSpeech with a fake worker", () => {
         () => null,
         (e) => e,
       );
-      await tick();
+      await posted(worker, 1);
       worker.reply(worker.posted[0].req, { type: "ok" });
-      await tick();
+      await posted(worker, 2);
       expect(kinds(worker)).toStrictEqual(["load", "synthesize"]);
       // The flag the worker thread and the library read while no message can reach them.
       expect(worker.posted[1].abort).toBeInstanceOf(SharedArrayBuffer);
@@ -324,8 +328,7 @@ describe("NativeSpeech with a fake worker", () => {
       await expect(rejected).resolves.toBe(gone.signal.reason);
       expect(released).toBe(0);
       worker.reply(worker.posted[1].req, { type: "aborted" });
-      await tick();
-      expect(released).toBe(1);
+      await until(() => released === 1);
       expect(speech.state).toBe("ready");
     } finally {
       await rm(dir, { recursive: true });
@@ -343,14 +346,13 @@ describe("NativeSpeech with a fake worker", () => {
           () => null,
           (e) => e,
         );
-      await tick();
+      await posted(worker, 1);
       worker.reply(worker.posted[0].req, { type: "ok" });
-      await tick();
+      await posted(worker, 2);
       gone.abort();
       await expect(rejected).resolves.toBe(gone.signal.reason);
       worker.reply(worker.posted[1].req, { type: "audio", wav: new ArrayBuffer(4) });
-      await tick();
-      expect(released).toBe(1);
+      await until(() => released === 1);
     } finally {
       await rm(dir, { recursive: true });
     }
@@ -361,11 +363,11 @@ describe("NativeSpeech with a fake worker", () => {
     try {
       const gone = new AbortController();
       speech.synthesize(request, gone.signal, () => {}).catch(() => {});
-      await tick();
+      await posted(worker, 1);
       worker.reply(worker.posted[0].req, { type: "ok" });
-      await tick();
+      await posted(worker, 2);
       const kept = speech.synthesize(request, new AbortController().signal, () => {});
-      await tick();
+      await posted(worker, 3);
       gone.abort();
       expect(new Int32Array(worker.posted[1].abort)[0]).toBe(1);
       expect(new Int32Array(worker.posted[2].abort)[0]).toBe(0);
@@ -496,7 +498,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     try {
       await say(speech);
       expect(speech.state).toBe("ready");
-      await Bun.sleep(120);
+      await until(() => kinds(workers[0]).at(-1) === "unload");
       expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "unload"]);
       expect(speech.state).toBe("stopped");
       await say(speech);
@@ -517,13 +519,13 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       await say(speech);
       workers[0].manual = true;
       const slow = say(speech);
+      // Several times SPEECH_IDLE_UNLOAD (30 ms) with an utterance in flight: no unload happens.
       await Bun.sleep(100);
       expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "synthesize"]);
       workers[0].answer(workers[0].posted[2]);
       await slow;
       workers[0].manual = false;
-      await Bun.sleep(100);
-      expect(kinds(workers[0]).at(-1)).toBe("unload");
+      await until(() => kinds(workers[0]).at(-1) === "unload");
     } finally {
       log.mockRestore();
       await speech.stop();
@@ -544,7 +546,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         () => null,
         (e) => e,
       );
-      await Bun.sleep(5);
+      await until(() => workers[0].posted.length >= 3);
       crash(workers[0]);
       const error = await waiter;
       expect(error).toBeInstanceOf(SpeechError);
@@ -689,15 +691,16 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         await say(speech);
         workers[0].manual = true;
         const upload = speech.addVoice("Mine", wav());
-        await Bun.sleep(5);
+        await until(() => workers[0].posted.length >= 3);
         const waiting = say(speech);
+        // A short wait: the utterance must not be posted, so there is no event to wait for.
         await Bun.sleep(20);
         // Nothing but the separation is with the worker: the utterance does not find the model gone.
         expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "separate"]);
 
         workers[0].answer(workers[0].posted[2]);
         await upload;
-        await Bun.sleep(5);
+        await until(() => workers[0].posted.length >= 4);
         expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "separate", "load"]);
         workers[0].manual = false;
         workers[0].answer(workers[0].posted[3]);
@@ -717,9 +720,9 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         await say(speech);
         workers[0].manual = true;
         const speaking = say(speech);
-        await Bun.sleep(5);
+        await until(() => workers[0].posted.length >= 3);
         const upload = speech.addVoice("Mine", wav());
-        await Bun.sleep(5);
+        await until(() => workers[0].posted.length >= 4);
         expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "synthesize", "separate"]);
         workers[0].answer(workers[0].posted[2]);
         await speaking;
@@ -742,6 +745,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         expect(speech.state).toBe("starting");
         const first = speech.addVoice("One", wav());
         const second = speech.addVoice("Two", wav());
+        // Nothing may be posted while the load is held: a short wait, as there is no event for "not yet".
         await Bun.sleep(10);
         expect(kinds(workers[0])).toStrictEqual(["load"]);
         // The utterance was first, but a separation was asked for before its model finished loading,
