@@ -31,6 +31,23 @@ function setHidden(el: HTMLElement, hidden: boolean) {
   }
 }
 
+/** Whether focus is on one of `within` or inside it. */
+export function hasFocus(...within: Element[]): boolean {
+  return within.some((el) => el.contains(document.activeElement));
+}
+
+/**
+ * Runs `change`, which hides `within`, and then puts focus on `to` if it was in `within` (or nowhere,
+ * on the body, as after a hidden button lost it). The check comes first: a hidden button loses focus.
+ */
+export function restoreFocusAfter(within: Element, to: HTMLElement, change: () => void) {
+  const had = hasFocus(within) || document.activeElement === document.body;
+  change();
+  if (had) {
+    to.focus();
+  }
+}
+
 export function createRender(t: RenderTargets): () => void {
   return function render() {
     const running = state.running !== null;

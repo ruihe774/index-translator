@@ -57,7 +57,9 @@ function stopTracks(stream: MicStream | undefined) {
   for (const t of stream?.getTracks() ?? []) {
     try {
       t.stop();
-    } catch {}
+    } catch {
+      // a track that cannot stop is already gone; the rest must still be released
+    }
   }
 }
 

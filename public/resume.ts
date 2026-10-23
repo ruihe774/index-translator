@@ -1,6 +1,8 @@
 // Keeps a translation stream going across a dropped connection. iOS cuts a page's connections when
 // the user leaves it; the server keeps a resumable translation running for a while and replays its
-// events from any point, so the page reconnects and carries on. No DOM access: unit tested.
+// events from any point, so the page reconnects and carries on. `resumableEvents` takes the page's
+// visibility as options and has no DOM access itself (unit tested); `pageVisible` and `onPageWake`
+// are the real ones, touching the DOM only when called.
 
 import { sseEvents, type TranslateSseEvent } from "./sse.ts";
 
@@ -23,6 +25,26 @@ const RETRY_DELAYS = [0, 500, 1000, 2000, 4000];
 
 /** `x-translation-id` is what makes a stream resumable; without it a failure is final. */
 export const TRANSLATION_ID_HEADER = "x-translation-id";
+
+/** `ResumeOptions.visible` for the page: whether it is on screen. */
+export function pageVisible(): boolean {
+  return document.visibilityState === "visible";
+}
+
+/** `ResumeOptions.wake` for the page: when it becomes visible or comes back from the back-forward cache. */
+export function onPageWake(callback: () => void): () => void {
+  const listener = () => {
+    if (pageVisible()) {
+      callback();
+    }
+  };
+  document.addEventListener("visibilitychange", listener);
+  window.addEventListener("pageshow", listener);
+  return () => {
+    document.removeEventListener("visibilitychange", listener);
+    window.removeEventListener("pageshow", listener);
+  };
+}
 
 function sleep(ms: number, signal: AbortSignal): Promise<void> {
   return new Promise((resolve) => {

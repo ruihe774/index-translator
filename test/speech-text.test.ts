@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { canSpeak, kanjiNumber, speechSegments, speechTexts } from "../public/speech-text";
+import { canSpeak, kanjiNumber, SPEECH_LANGS, speechSegments, speechTexts } from "../public/speech-text";
+import { SPEECH_LANGUAGES } from "../src/speech";
 
 const texts = (text: string, markdown: boolean, lang = "en") => speechSegments(text, markdown, lang).map((s) => s.text);
 
@@ -373,6 +374,10 @@ describe("sentence boundaries from a model", () => {
     expect(speechTexts("   \n  ", false, "en")).toStrictEqual([]);
     expect(speechTexts("我".repeat(100), false, "zh")).toStrictEqual([{ line: 0, text: "我".repeat(100) }]);
   });
+});
+
+test("the page's speech languages are the server's", () => {
+  expect([...SPEECH_LANGS].sort()).toStrictEqual([...SPEECH_LANGUAGES].sort());
 });
 
 test("canSpeak", () => {

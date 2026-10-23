@@ -28,7 +28,6 @@ import type { SpeechAudio } from "./speech-audio.ts";
 import { type BoundaryLookup, canSpeak, type Segment, speechSegments, speechTexts } from "./speech-text.ts";
 import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
 import { setState, type Side, state } from "./state.ts";
-import { store, stored } from "./storage.ts";
 import { audioToWav, uploadVoice } from "./voice-sample.ts";
 
 const SIDES: Side[] = ["source", "output"];
@@ -460,7 +459,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
               ? "Reading aloud needs a voice: upload or record a sample under Model and options."
               : "";
           // The voice being read with is gone: the next piece uses the one now selected.
-          if (voiceSettings.setVoices(body.voices, stored("voice"))) {
+          if (voiceSettings.setVoices(body.voices)) {
             player.update({ voice: voiceSettings.voice });
           }
           settingsPanel.hidden = false;
@@ -501,7 +500,6 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     try {
       const voice = await uploadVoice(API, name, await audioToWav(audio));
       voiceSettings.addVoice(voice);
-      store("voice", voice.id);
       player.update({ voice: voice.id });
       setState({ speechProblem: "" });
       voiceSettings.status = `Voice "${voice.name}" added. It is kept until the server stops.`;
@@ -524,21 +522,18 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     });
   }
   voiceSettings.addEventListener("voicechange", () => {
-    store("voice", voiceSettings.voice);
     player.update({ voice: voiceSettings.voice });
     if (state.speechProblem || state.voicesStale) {
       void recheckNow(false);
     }
   });
   voiceSettings.addEventListener("speedchange", () => {
-    store("speed", voiceSettings.speed);
     player.update({ speed: Number(voiceSettings.speed) });
     if (state.speechProblem || state.voicesStale) {
       void recheckNow(false);
     }
   });
   voiceSettings.addEventListener("sample", (e) => void addSampleVoice((e as CustomEvent<SampleDetail>).detail));
-  voiceSettings.speed = stored("speed");
 
   /** Asks for the sentence boundaries of what both sides read, after what is already waiting. */
   function prefetch() {

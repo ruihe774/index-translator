@@ -13,6 +13,8 @@
 // Buttons are `aria-disabled`, never `disabled`. Read aloud always sends its event, even when
 // blocked: the page answers by saying why, which is how a keyboard or touch user learns the reason.
 
+import { hasFocus } from "../render.ts";
+
 export type ReadingState = "idle" | "loading" | "playing" | "paused";
 
 /** What one side's controls show. */
@@ -150,7 +152,7 @@ export class SpeechControls extends HTMLElement {
 
   show({ open, reading, state, blocked, canPrev, canNext }: SpeechView) {
     // The controls that appear while reading go away when it ends: do not leave focus on one.
-    if (!reading && [this.#pause, this.#prev, this.#next].includes(document.activeElement as HTMLButtonElement)) {
+    if (!reading && hasFocus(this.#pause, this.#prev, this.#next)) {
       this.#listen.focus();
     }
     setAttr(this.#listen, "data-state", state);

@@ -42,7 +42,7 @@ export type RequestResult = { body: Record<string, unknown> } | { glossaryProble
  * selection decided to send.
  */
 export function buildRequest(model: ModelId, sourceLang: string | undefined, v: FormValues): RequestResult {
-  return build({ model, text: v.text, target_lang: v.targetLang, stream: true }, sourceLang, v);
+  return build(model, { model, text: v.text, target_lang: v.targetLang, stream: true }, sourceLang, v, v.genre);
 }
 
 /**
@@ -52,21 +52,24 @@ export function buildRequest(model: ModelId, sourceLang: string | undefined, v: 
 export function buildImageRequest(
   image: string,
   sourceLang: string | undefined,
-  v: Omit<FormValues, "text" | "genre">,
+  v: Pick<FormValues, "targetLang" | "glossary" | "hard" | "soft">,
 ): RequestResult {
   const body = { model: CHAT_MODEL, image, target_lang: v.targetLang, stream: true };
-  return build(body, sourceLang, { ...v, genre: "" });
+  return build(CHAT_MODEL, body, sourceLang, v);
 }
 
+/** The options of `body`; `genre` is left out for a request that has none (an image). */
 function build(
+  model: ModelId,
   body: Record<string, unknown>,
   sourceLang: string | undefined,
-  v: Omit<FormValues, "text">,
+  v: Pick<FormValues, "glossary" | "hard" | "soft">,
+  genre?: string,
 ): RequestResult {
   if (sourceLang) {
     body.source_lang = sourceLang;
   }
-  if (body.model !== CHAT_MODEL) {
+  if (model !== CHAT_MODEL) {
     return { body };
   }
 
@@ -85,8 +88,8 @@ function build(
     body.soft_constraints = lines(v.soft);
   }
   // Genre is sent only with a glossary or constraints; alone the backend ignores it (see hasOptions).
-  if (v.genre.trim() && (hasGlossary || body.hard_constraints || body.soft_constraints)) {
-    body.genre = v.genre.trim();
+  if (genre?.trim() && (hasGlossary || body.hard_constraints || body.soft_constraints)) {
+    body.genre = genre.trim();
   }
   return { body };
 }
