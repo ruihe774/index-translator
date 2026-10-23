@@ -694,6 +694,29 @@ export interface components {
                 /** Format: int64 */
                 free_bytes: number;
             };
+            /**
+             * @description Models that are not installed, by the id `scripts/fetch_models.ts --model` takes, checked on
+             *     each request so a download needs no restart. Does not affect `status`.
+             */
+            missing_models: {
+                /**
+                 * @description Translation models: `index-translate-9b` (also when only its image encoder is missing)
+                 *     and `index-nailong-9b`.
+                 * @example [
+                 *       "index-nailong-9b"
+                 *     ]
+                 */
+                required: string[];
+                /**
+                 * @description Models of features that are turned on but lack their model: `index-tts-2.5` (reading
+                 *     aloud), `bs-roformer` (voice separation, only with speech on), `sat-3l-sm`
+                 *     (`POST /segment`), `labse` (`POST /align`). A feature turned off is not listed.
+                 * @example [
+                 *       "labse"
+                 *     ]
+                 */
+                optional: string[];
+            };
             queue: {
                 /** @description Whether a translation is in progress. */
                 running: boolean;

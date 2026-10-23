@@ -1,5 +1,8 @@
 // HTTP surface: REST + SSE API under /api/v1 and static files for the web app.
 
+import { existsSync } from "node:fs";
+import { join } from "node:path";
+
 import type { Server } from "bun";
 
 import { acceptWeight } from "./accept";
@@ -55,6 +58,7 @@ import {
   MAX_ALIGN_SENTENCES,
   MAX_SEGMENT_CHARS,
   MAX_SEGMENT_TEXTS,
+  missingSegmentModels,
   nativeSegmenter,
   type Segmenter,
   SegmentError,
@@ -70,6 +74,7 @@ import {
   MAX_VOICE_NAME_CHARS,
   MIN_SAMPLE_SECONDS,
   MIN_SPEED,
+  missingSpeechModels,
   nativeSpeech,
   SAMPLE_RATE,
   SeparationError,
@@ -1212,6 +1217,12 @@ export async function startApp(
                 error: engine.error,
                 model: engine.loaded?.id ?? null,
                 limits: limits(),
+                missing_models: {
+                  required: MODELS.filter((m) =>
+                    [m.file, m.mmproj].some((f) => f !== undefined && !existsSync(join(cfg.modelsDir, f))),
+                  ).map((m) => m.id),
+                  optional: [...missingSpeechModels(cfg), ...missingSegmentModels(cfg)],
+                },
                 ...(memory && { gpu_memory: { total_bytes: memory.total, free_bytes: memory.free } }),
                 queue: { running: queue.running, waiting: queue.depth, max_waiting: cfg.maxQueue },
                 speech: { status: speech.state, error: speech.error },

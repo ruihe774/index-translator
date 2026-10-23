@@ -90,6 +90,13 @@ const MODELS: Record<
   },
 };
 
+/** The `fetch_models.ts` ids of the segmentation and alignment models that are turned on and not installed. */
+export function missingSegmentModels(cfg: Config): string[] {
+  return Object.values(MODELS)
+    .filter((m) => m.enabled(cfg) && m.files.some((f) => !existsSync(join(m.dir(cfg), f))))
+    .map((m) => m.fetchId);
+}
+
 /** One model's life on the shared worker: loaded by the first request, freed when idle. */
 class ModelSlot implements ModelStatus {
   loaded = false;

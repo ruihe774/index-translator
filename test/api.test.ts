@@ -45,6 +45,10 @@ describe("metadata endpoints", () => {
       status: "ready",
       model: CHAT,
       limits: { context_tokens: 1000, max_input_tokens: 400 },
+      missing_models: {
+        required: ["index-translate-9b", "index-nailong-9b"],
+        optional: ["index-tts-2.5", "bs-roformer", "sat-3l-sm", "labse"],
+      },
       queue: { running: false, waiting: 0, max_waiting: 1 },
       // The test config points at directories that do not exist.
       speech: { status: "unavailable", error: "the speech engine is not installed; run bun scripts/build_audiocpp.ts" },

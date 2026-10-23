@@ -130,7 +130,10 @@ export interface Vram {
 
 /** The engine status sentence, whether a model load is in progress (which the page keeps polling), and the GPU memory in use. */
 export function healthMessage(
-  h: Pick<Health, "status" | "error" | "model" | "gpu_memory"> & { queue: Pick<Health["queue"], "waiting"> },
+  h: Pick<Health, "status" | "error" | "model" | "gpu_memory"> & {
+    missing_models?: Health["missing_models"];
+    queue: Pick<Health["queue"], "waiting">;
+  },
 ): {
   text: string;
   loading: boolean;
@@ -140,6 +143,15 @@ export function healthMessage(
 } {
   const model = h.model ? modelLabel(h.model) : null;
   if (h.status === "ready") {
+    const absent = h.missing_models ? [...h.missing_models.required, ...h.missing_models.optional] : [];
+    if (absent.length > 0) {
+      return {
+        text: `Models missing: ${absent.join(", ")}. Some features are disabled; run the model download again (bun scripts/fetch_models.ts).`,
+        loading: false,
+        vram: null,
+        problem: true,
+      };
+    }
     let text = `Engine ready${model ? `, ${model} loaded` : ""}.`;
     if (h.queue.waiting > 0) {
       text += ` ${h.queue.waiting} waiting in the queue.`;

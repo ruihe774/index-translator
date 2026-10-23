@@ -14,9 +14,12 @@
 //   POST   /mock/restart   unload the engine so the next request loads its model again
 // Tests call it through e2e/fixtures.ts.
 
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { startApp } from "../src/app";
+import { MODELS } from "../src/models";
 import {
   CHAT,
   config,
@@ -40,10 +43,34 @@ import {
 const port = Number(process.env.E2E_PORT ?? 3100);
 const controlPort = Number(process.env.E2E_CONTROL_PORT ?? 3101);
 
+// Empty files stand in for the models, so `/health` does not report them missing.
+const modelsDir = mkdtempSync(join(tmpdir(), "e2e-models-"));
+for (const m of MODELS) {
+  writeFileSync(join(modelsDir, m.file), "");
+  if (m.mmproj) {
+    writeFileSync(join(modelsDir, m.mmproj), "");
+  }
+}
+const optionalDirs = {
+  speechModelDir: [],
+  separationModelDir: ["separation.gguf"],
+  segmentModelDir: ["model.onnx", "tokenizer.json"],
+  alignModelDir: ["model.onnx", "vocab.txt", "dense.safetensors"],
+};
+for (const [dir, files] of Object.entries(optionalDirs)) {
+  mkdirSync(join(modelsDir, dir));
+  for (const f of files) {
+    writeFileSync(join(modelsDir, dir, f), "");
+  }
+}
+process.on("exit", () => rmSync(modelsDir, { recursive: true, force: true }));
+
 const app = await startApp(
   // No engine is loaded, but speech is encoded as Opus with the libsoxr and minicelt found beside audioDir.
   config({
     port,
+    modelsDir,
+    ...Object.fromEntries(Object.keys(optionalDirs).map((k) => [k, join(modelsDir, k)])),
     ctxSize: 65_536,
     maxInputTokens: 28_000,
     maxQueue: 1,

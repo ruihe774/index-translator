@@ -138,6 +138,22 @@ const defaultWorker: SpeechWorkerFactory = () =>
   // Not referenced: the server decides when the process ends, not an idle speech thread.
   new Worker(new URL("speech-worker.ts", import.meta.url).href, { ref: false });
 
+/** The `fetch_models.ts` ids of the speech and separation models that are not installed; none while speech is off. */
+export function missingSpeechModels(cfg: Config): string[] {
+  if (!cfg.speech) {
+    return [];
+  }
+  const missing: string[] = [];
+  if (!existsSync(cfg.speechModelDir)) {
+    missing.push("index-tts-2.5");
+  }
+  const dir = cfg.separationModelDir;
+  if (!existsSync(dir) || new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().done) {
+    missing.push("bs-roformer");
+  }
+  return missing;
+}
+
 export class NativeSpeech implements Speech {
   /** The thread that owns libaudiocpp, started by the first request. */
   private worker: Worker | null = null;

@@ -129,6 +129,30 @@ describe("healthMessage", () => {
     );
   });
 
+  test("missing models, required or optional, replace the VRAM bar with a warning", () => {
+    const gpu_memory = { total_bytes: 16 * 1024 ** 3, free_bytes: 8 * 1024 ** 3 };
+    const none = healthMessage({
+      status: "ready",
+      model: null,
+      gpu_memory,
+      queue,
+      missing_models: { required: [], optional: [] },
+    });
+    expect(none.problem).toBe(false);
+    expect(none.vram).not.toBeNull();
+    const cases: [{ required: string[]; optional: string[] }, string][] = [
+      [{ required: ["index-nailong-9b"], optional: [] }, "index-nailong-9b"],
+      [{ required: [], optional: ["labse"] }, "labse"],
+    ];
+    for (const [missing_models, id] of cases) {
+      const m = healthMessage({ status: "ready", model: null, gpu_memory, queue, missing_models });
+      expect(m.vram).toBeNull();
+      expect(m.problem).toBe(true);
+      expect(m.text).toContain(id);
+      expect(m.text).toContain("fetch_models");
+    }
+  });
+
   test("loading is the only state that keeps polling", () => {
     expect(healthMessage({ status: "loading", model: null, queue })).toStrictEqual({
       text: "Engine loading a model…",
