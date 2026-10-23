@@ -13,7 +13,7 @@ CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
   wasm-pack build undoc-wasm --release --target web -- --no-default-features --features docx
 ```
 
-with wasm-pack 0.15.0 (its wasm-bindgen and wasm-opt) and rustc 1.99.1. `opt-level=2` instead of the
+with wasm-pack 0.15.0 (its wasm-bindgen; wasm-opt 133, the installed binary, which wasm-pack prefers to its own) and rustc 1.99.1. `opt-level=2` instead of the
 workspace's 3 (5% smaller, same speed), and no `simd128`: measured on a 1.4 MB document, the SIMD build
 was 3–5% slower. rustc's default wasm32 features (sign-ext, nontrapping-fptoint, multivalue,
 reference-types, bulk-memory, mutable-globals) are WebAssembly 2.0 without SIMD, which the runtime must
