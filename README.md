@@ -177,7 +177,7 @@ Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Se
 installed), both in `dist/`.
 
 **CUDA instead of Vulkan (Linux, NVIDIA).** An engine has one GPU backend, never both. For CUDA 13, install the toolkit
-(`nvcc`, cudart and cuBLAS headers and libraries; `CUDA_PATH` names it if it is not in `/usr/local/cuda-13`; `glslc` and
+(`nvcc`, cudart, cuBLAS and cuFFT headers and libraries; `CUDA_PATH` names it if it is not in `/usr/local/cuda-13`; `glslc` and
 the Vulkan headers are not needed) and build the engines into their own directories, next to the Vulkan ones:
 
 ```bash

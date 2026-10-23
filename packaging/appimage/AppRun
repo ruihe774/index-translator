@@ -19,7 +19,7 @@ export INDEX_TRANSLATOR_APPIMAGE="$self"
 if [ -e "$app/vendor/llama.cpp/libggml-cuda.so" ]; then
   export SPEECH_BACKEND="${SPEECH_BACKEND:-cuda}"
   gpu_needed="An NVIDIA GPU with a driver for CUDA 13 (version 580 or newer) is needed."
-  cuda_notice=", NVIDIA's CUDA runtime libraries (cudart and cuBLAS, under the CUDA Toolkit EULA)"
+  cuda_notice=", NVIDIA's CUDA runtime libraries (cudart, cuBLAS and cuFFT, under the CUDA Toolkit EULA)"
 else
   gpu_needed="A GPU with a Vulkan driver is needed."
   cuda_notice=""
