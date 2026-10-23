@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 
-import { OutputCleaner } from "../src/app";
 import { buildPrompt, languageName } from "../src/prompt";
 import { QueueFullError, SlotQueue } from "../src/queue";
+import { OutputCleaner } from "../src/translate";
 import { countLetters, englishEssays, missingParagraphs, repeatedMarkers } from "./fixtures";
 
 describe("buildPrompt", () => {

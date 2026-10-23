@@ -20,7 +20,7 @@ interface FetchEvent extends WorkerEvent {
 
 const sw = self as unknown as WorkerScope;
 /** Bump to drop everything cached by an older worker. */
-const CACHE = "index-translator-v1";
+const CACHE = "index-translator-v2";
 /** Fetched at install, so the first offline-ish open has a page. */
 const SHELL = ["/", "/manifest.webmanifest", "/icons/icon.svg", "/icons/icon-192.png"];
 

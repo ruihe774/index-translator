@@ -30,6 +30,13 @@ export class WebpageUnavailableError extends Error {}
 /** The page went to an address the allowed domains do not cover (403). */
 export class WebpageForbiddenError extends Error {}
 
+/** `MAX_WEBPAGE_FETCHES` pages are being fetched already (429). */
+export class WebpageBusyError extends Error {
+  constructor() {
+    super(`${MAX_WEBPAGE_FETCHES} web pages are being fetched already; try again in a moment`);
+  }
+}
+
 /** How long the page's `load` event is waited for after it is first shown; then it is read as it is. */
 const LOAD_WAIT_MS = 30_000;
 /**
@@ -43,6 +50,25 @@ const TIMEOUT_MS = 60_000;
 const IDLE_CLOSE_MS = 60_000;
 /** Pages fetched at the same time; each is a browser tab. */
 export const MAX_WEBPAGE_FETCHES = 2;
+
+/** `fetcher` that refuses with `WebpageBusyError` while MAX_WEBPAGE_FETCHES fetches are running: the one place the limit lives. */
+export function limitFetches(fetcher: WebpageFetcher): WebpageFetcher {
+  let running = 0;
+  return {
+    problem: () => fetcher.problem(),
+    async fetch(url, allowed, signal) {
+      if (running >= MAX_WEBPAGE_FETCHES) {
+        throw new WebpageBusyError();
+      }
+      running++;
+      try {
+        return await fetcher.fetch(url, allowed, signal);
+      } finally {
+        running--;
+      }
+    },
+  };
+}
 
 export function turndownPath(vendorDir = resolve(import.meta.dir, "..", "vendor")): string {
   return join(vendorDir, "turndown", "turndown.js");
@@ -89,12 +115,10 @@ export function webViewFetcher(turndown = turndownPath(), browser?: string): Web
   const problem = async () => ((await Bun.file(turndown).exists()) ? undefined : NO_TURNDOWN);
 
   async function fetchPage(url: URL, allowed: (url: URL) => boolean, signal: AbortSignal): Promise<Webpage> {
-    if (await problem()) {
-      throw new WebpageUnavailableError(NO_TURNDOWN);
-    }
-    script ??= pageScript(turndown).catch((e: unknown) => {
+    // Whether turndown is there was checked by the caller (`problem`); it may have gone since.
+    script ??= pageScript(turndown).catch(async (e: unknown) => {
       script = undefined;
-      throw e;
+      throw (await problem()) ? new WebpageUnavailableError(NO_TURNDOWN) : e;
     });
     const code = await script;
     signal.throwIfAborted();
@@ -153,6 +177,7 @@ export function webViewFetcher(turndown = turndownPath(), browser?: string): Web
       if (e instanceof WebpageError || e instanceof WebpageForbiddenError || signal.aborted) {
         throw e;
       }
+      console.error("[webpage] unexpected error:", e);
       throw new WebpageError(`the page could not be read: ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       clearTimeout(timer);

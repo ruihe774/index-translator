@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 
-import { OutputCleaner } from "../src/app";
+import { OutputCleaner } from "../src/translate";
 
 const clean = (chunks: string[]) => {
   const c = new OutputCleaner();

@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import type { Probe } from "../src/llama-probe";
 import { MODELS } from "../src/models";
-import { fetchAdvice, fetchCommand, preflight, runProbe, startedFrom } from "../src/preflight";
+import { fetchAdvice, launchMode, preflight, runProbe } from "../src/preflight";
 import { config } from "./helpers/mock-engine";
 
 const GPU: Probe = { gpus: ["Vulkan0: Some GPU"], cpu: true, vulkanLoader: true };
@@ -111,18 +111,16 @@ describe("preflight", () => {
   });
 });
 
-describe("fetchCommand", () => {
+describe("launchMode and fetchAdvice", () => {
   test("the script from a checkout, the subcommand from the AppImage", () => {
-    expect(fetchCommand({})).toBe("bun scripts/fetch_models.ts");
-    expect(fetchCommand({ INDEX_TRANSLATOR_APPIMAGE: "/a/b.AppImage" })).toBe("/a/b.AppImage fetch");
+    expect(fetchAdvice([], {})).toBe("run bun scripts/fetch_models.ts");
+    expect(fetchAdvice([], { INDEX_TRANSLATOR_APPIMAGE: "/a/b.AppImage" })).toBe("run /a/b.AppImage fetch");
   });
-});
 
-describe("startedFrom and fetchAdvice", () => {
   test("the AppImage and the Windows launcher mark their environment; anything else is a checkout", () => {
-    expect(startedFrom({})).toBe("source");
-    expect(startedFrom({ INDEX_TRANSLATOR_APPIMAGE: "/a/b.AppImage" })).toBe("appimage");
-    expect(startedFrom({ INDEX_TRANSLATOR_LAUNCHER: "1" })).toBe("windows_launcher");
+    expect(launchMode({})).toBe("source");
+    expect(launchMode({ INDEX_TRANSLATOR_APPIMAGE: "/a/b.AppImage" })).toBe("appimage");
+    expect(launchMode({ INDEX_TRANSLATOR_LAUNCHER: "1" })).toBe("windows_launcher");
     expect(fetchAdvice(["labse"], {})).toBe("run bun scripts/fetch_models.ts --model labse");
     expect(fetchAdvice(["labse"], { INDEX_TRANSLATOR_LAUNCHER: "1" })).toStartWith("click Download models");
   });

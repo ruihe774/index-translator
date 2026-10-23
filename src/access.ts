@@ -41,6 +41,11 @@ function canonicalName(name: string): string | undefined {
   }
 }
 
+/** Whether a canonical host name (bracketed or not) is an IPv4 or IPv6 address, which has no subdomains. */
+function isIpName(name: string): boolean {
+  return name.includes(":") || name.startsWith("[") || /^[\d.]+$/.test(name);
+}
+
 /** Splits "name", "name:port" or "[v6]:port" (an unbracketed IPv6 address has no port). */
 function splitHostPort(value: string): { name: string; port: string | undefined } | undefined {
   if (value.split(":").length > 2 && !value.startsWith("[")) {
@@ -71,7 +76,7 @@ export function parseHostRule(entry: string): HostRule {
   if (!name) {
     fail(setting, entry, "is not a valid host name");
   }
-  if (wildcard && (name.includes(":") || /^[\d.]+$/.test(name))) {
+  if (wildcard && isIpName(name)) {
     fail(setting, entry, "puts a wildcard on an IP address, which has no subdomains");
   }
   if (split.port !== undefined && Number(split.port) > 65_535) {
@@ -101,7 +106,7 @@ export function parseOriginRule(entry: string): OriginRule {
     fail(setting, entry, "must be scheme, host and port only, without a path");
   }
   const name = url.hostname;
-  if (wildcard && (name.startsWith("[") || /^[\d.]+$/.test(name))) {
+  if (wildcard && isIpName(name)) {
     fail(setting, entry, "puts a wildcard on an IP address, which has no subdomains");
   }
   return { protocol: url.protocol as OriginRule["protocol"], name, wildcard, port: url.port };
@@ -136,7 +141,7 @@ export function parseDomainRule(entry: string): DomainRule {
   if (!name) {
     fail(setting, entry, "is not a valid domain");
   }
-  if (wildcard && (name.includes(":") || /^[\d.]+$/.test(name))) {
+  if (wildcard && isIpName(name)) {
     fail(setting, entry, "puts a wildcard on an IP address, which has no subdomains");
   }
   return { any: false, name, wildcard };

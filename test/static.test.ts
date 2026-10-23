@@ -161,12 +161,8 @@ describe("paths", () => {
     await expect(missing.text()).resolves.toBe("Not Found");
   });
 
-  test("a .js request for a module is answered from its .ts, as pages and workers installed earlier still ask", async () => {
-    const res = await get("/app.js");
-    expect(res.status).toBe(200);
-    expect(res.headers.get("content-type")).toStartWith("text/javascript");
-    await expect(res.text()).resolves.not.toContain(": number");
-    expect((await get("/nothing.js")).status).toBe(404);
+  test("a .js request for a module is not answered from its .ts", async () => {
+    expect((await get("/app.js")).status).toBe(404);
   });
 
   test("a trailing slash on the public directory serves the same files", async () => {
@@ -217,10 +213,10 @@ describe("headers", () => {
     const responses = [
       await get("/index.html"),
       await get("/style.css"),
-      await get("/app.js"),
+      await get("/app.ts"),
       await get("/missing.html"),
       await get("/app.ts"),
-      await get("/app.js", { headers: { "if-none-match": (await get("/app.js")).headers.get("etag")! } }),
+      await get("/app.ts", { headers: { "if-none-match": (await get("/app.ts")).headers.get("etag")! } }),
       await get("/style.css", { method: "POST", body: "x" }),
     ];
     expect(responses.map((r) => r.status)).toStrictEqual([200, 200, 200, 404, 200, 304, 405]);

@@ -2,8 +2,7 @@
 // JavaScript, transpiled on request by Bun's own transpiler; there is no build step and nothing
 // is written to disk. A request for /x.ts is the transpiled module, with a JavaScript media type
 // (the response sets it, so the extension does not decide it). The .ts sources themselves are
-// never served. A request for /x.js is answered from x.ts when no real x.js exists: pages and
-// service workers installed before the modules were named .ts still ask for the .js names.
+// never served.
 
 import { join, normalize, resolve, sep } from "node:path";
 
@@ -169,17 +168,7 @@ export function createStaticServer(publicDir: string) {
       return (await transpiled(path, req)) ?? notFound();
     }
 
-    const file = await plainFile(path, req);
-    if (file) {
-      return file;
-    }
-    if (path.endsWith(".js")) {
-      const res = await transpiled(path.slice(0, -3) + ".ts", req);
-      if (res) {
-        return res;
-      }
-    }
-    return notFound();
+    return (await plainFile(path, req)) ?? notFound();
   }
 
   return async function serveStatic(pathname: string, req: Request): Promise<Response> {
