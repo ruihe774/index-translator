@@ -10,10 +10,10 @@
 // streamed is the encoded file: frames of 5,120 samples, a few at a time, which the page decodes
 // as they arrive.
 
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { acceptWeight } from "./accept";
+import { lazyOptional } from "./opus-stream";
 import type { Pcm } from "./wav";
 
 export const QOA_TYPE = "audio/qoa";
@@ -35,23 +35,14 @@ export function acceptsQoa(accept: string | null): boolean {
 
 /** Loads the codec on first use; undefined while it is not installed or does not run here. */
 export function qoaLoader(publicDir: string): () => Promise<QoaCodec | undefined> {
-  let loading: Promise<QoaCodec | undefined> | undefined;
-  return async () => {
-    const file = join(publicDir, "vendor", "qoa", "src", "qoa.ts");
-    // Not remembered while the file is missing, so installing it needs no restart.
-    if (!loading && !existsSync(file)) {
-      return;
-    }
-    loading ??= (async () => {
-      try {
-        const { Qoa } = (await import(file)) as { Qoa: { create(): Promise<QoaCodec> } };
-        return await Qoa.create();
-      } catch (e) {
-        console.error(`[speech] the QOA codec cannot be loaded, speech is sent as WAV: ${String(e)}`);
-      }
-    })();
-    return loading;
-  };
+  return lazyOptional(
+    () => join(publicDir, "vendor", "qoa", "src", "qoa.ts"),
+    async (file) => {
+      const { Qoa } = (await import(file)) as { Qoa: { create(): Promise<QoaCodec> } };
+      return Qoa.create();
+    },
+    "the QOA codec cannot be loaded, speech is sent as WAV",
+  );
 }
 
 /** 16-bit samples from the engine's floats, rounded as `writeWav` does. */

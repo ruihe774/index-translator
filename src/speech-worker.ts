@@ -7,102 +7,92 @@ import { readFileSync } from "node:fs";
 
 import { AbortedError, SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
 import { normalizeLoudness, readWav, writeWav } from "./wav";
+import { type NoBody, serve } from "./worker-rpc";
 
-export type SpeechWorkerRequest =
-  | { type: "load"; req: number; options: SpeechModelOptions }
-  | { type: "unload"; req: number }
+interface Ok {
+  type: "ok";
+}
+interface Audio {
+  type: "audio";
+  wav: ArrayBuffer;
+}
+/** The utterance was given up because its `abort` was set. */
+interface Aborted {
+  type: "aborted";
+}
+
+export interface SpeechProtocol {
+  load: { request: { options: SpeechModelOptions }; reply: Ok };
+  unload: { request: NoBody; reply: Ok };
   // `abort` holds one Int32: the server thread makes it non-zero when nobody wants the utterance
   // any more, and the library gives up at its next step (or the utterance is not started at all).
-  | {
-      type: "synthesize";
-      req: number;
-      text: string;
-      lang: string;
-      voicePath: string;
-      speed: number;
-      abort: SharedArrayBuffer;
-    }
+  synthesize: {
+    request: { text: string; lang: string; voicePath: string; speed: number; abort: SharedArrayBuffer };
+    reply: Audio | Aborted;
+  };
   // Frees the speech model, loads the separation model, takes the vocals out of the WAV recording,
   // and frees the separation model again. The speech model is not loaded afterwards.
-  | { type: "separate"; req: number; options: SpeechModelOptions; wav: ArrayBuffer };
-
-export type SpeechWorkerReply =
-  | { type: "ok"; req: number }
-  | { type: "audio"; req: number; wav: ArrayBuffer }
-  /** The utterance was given up because its `abort` was set. */
-  | { type: "aborted"; req: number }
-  | { type: "error"; req: number; message: string };
-
-declare var self: Worker;
+  separate: { request: { options: SpeechModelOptions; wav: ArrayBuffer }; reply: Audio };
+}
 
 /** Sampling is seeded so the same sentence sounds the same when it is played again. */
 const SEED = 42;
 
 let model: SpeechModel | undefined;
 
-function handle(msg: SpeechWorkerRequest): SpeechWorkerReply {
-  switch (msg.type) {
-    case "load": {
-      model?.free();
-      model = undefined;
-      model = SpeechModel.load(msg.options);
-      return { type: "ok", req: msg.req };
-    }
-    case "unload": {
-      model?.free();
-      model = undefined;
-      return { type: "ok", req: msg.req };
-    }
-    case "synthesize": {
-      if (!model) {
-        throw new Error("the speech model is not loaded");
-      }
-      const abort = new Int32Array(msg.abort);
-      // Given up while it waited behind another message.
-      if (Atomics.load(abort, 0) !== 0) {
-        return { type: "aborted", req: msg.req };
-      }
-      const voice = readWav(readFileSync(msg.voicePath));
-      try {
-        // The model's duration control: 2 doubles the duration, so it is the inverse of the speed.
-        const pcm = model.synthesize(
-          msg.text,
-          msg.lang,
-          voice,
-          { duration_factor: String(1 / msg.speed), seed: String(SEED) },
-          abort,
-        );
-        return { type: "audio", req: msg.req, wav: writeWav(pcm) };
-      } catch (e) {
-        if (e instanceof AbortedError) {
-          return { type: "aborted", req: msg.req };
-        }
-        throw e;
-      }
-    }
-    case "separate": {
-      // Only one of the two models is on the GPU at a time.
-      model?.free();
-      model = undefined;
-      // The separation model takes 44.1 kHz, mono or stereo, and nothing else: `validateSample` has
-      // checked both, so the upload goes in as it is.
-      const mixture = readWav(new Uint8Array(msg.wav));
-      const separator = VoiceSeparator.load(msg.options);
-      try {
-        return { type: "audio", req: msg.req, wav: writeWav(normalizeLoudness(separator.vocals(mixture))) };
-      } finally {
-        separator.free();
-      }
-    }
-  }
+function unload(): void {
+  model?.free();
+  model = undefined;
 }
 
-self.onmessage = (event: MessageEvent<SpeechWorkerRequest>) => {
-  let reply: SpeechWorkerReply;
-  try {
-    reply = handle(event.data);
-  } catch (e) {
-    reply = { type: "error", req: event.data.req, message: e instanceof Error ? e.message : String(e) };
-  }
-  self.postMessage(reply, reply.type === "audio" ? [reply.wav] : []);
-};
+serve<SpeechProtocol>({
+  load: ({ options }) => {
+    unload();
+    model = SpeechModel.load(options);
+    return { type: "ok" };
+  },
+  unload: () => {
+    unload();
+    return { type: "ok" };
+  },
+  synthesize: (msg) => {
+    if (!model) {
+      throw new Error("the speech model is not loaded");
+    }
+    const abort = new Int32Array(msg.abort);
+    // Given up while it waited behind another message.
+    if (Atomics.load(abort, 0) !== 0) {
+      return { type: "aborted" };
+    }
+    const voice = readWav(readFileSync(msg.voicePath));
+    try {
+      // The model's duration control: 2 doubles the duration, so it is the inverse of the speed.
+      const pcm = model.synthesize(
+        msg.text,
+        msg.lang,
+        voice,
+        { duration_factor: String(1 / msg.speed), seed: String(SEED) },
+        abort,
+      );
+      return { type: "audio", wav: writeWav(pcm) };
+    } catch (e) {
+      if (e instanceof AbortedError) {
+        return { type: "aborted" };
+      }
+      throw e;
+    }
+  },
+  separate: (msg) => {
+    // Only one of the two models is on the GPU at a time.
+    unload();
+    // The separation model takes 44.1 kHz, mono or stereo, and nothing else: `validateSample` has
+    // checked both, so the upload goes in as it is.
+    const mixture = readWav(new Uint8Array(msg.wav));
+    const separator = VoiceSeparator.load(msg.options);
+    try {
+      return { type: "audio", wav: writeWav(normalizeLoudness(separator.vocals(mixture))) };
+    } finally {
+      separator.free();
+    }
+  },
+});

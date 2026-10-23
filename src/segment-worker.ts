@@ -12,6 +12,7 @@ import type { AlignedPair, AlignUnit, SegmentedText } from "./api";
 import { type Dense, DIMENSIONS, embed, readDense, WordPieceTokenizer } from "./labse";
 import { loadRuntime, type Runtime, type Session } from "./onnxruntime-ffi";
 import { findBoundaries, type TokenizerJson, XlmrTokenizer } from "./sat";
+import { serve } from "./worker-rpc";
 
 /** `sat`: `model.onnx` and `tokenizer.json`; `labse`: `model.onnx`, `vocab.txt` and `dense.safetensors`. */
 export type SegmentModel = "sat" | "labse";
@@ -24,22 +25,24 @@ export interface SegmentModelOptions {
   threads: number;
 }
 
-export type SegmentWorkerRequest =
-  | { type: "load"; req: number; model: SegmentModel; options: SegmentModelOptions }
-  | { type: "unload"; req: number; model: SegmentModel }
-  // `abort` holds one Int32 that the server thread makes non-zero when nobody wants the answer any more.
-  | { type: "segment"; req: number; texts: string[]; minProbability: number; abort: SharedArrayBuffer }
-  | { type: "align"; req: number; unit: AlignUnit; source: string[]; target: string[]; abort: SharedArrayBuffer };
+/** The request was given up because its `abort` was set. */
+interface Aborted {
+  type: "aborted";
+}
 
-export type SegmentWorkerReply =
-  | { type: "ok"; req: number; version?: string }
-  | { type: "boundaries"; req: number; texts: SegmentedText[] }
-  | { type: "alignment"; req: number; pairs: AlignedPair[] }
-  /** The request was given up because its `abort` was set. */
-  | { type: "aborted"; req: number }
-  | { type: "error"; req: number; message: string };
-
-declare var self: Worker;
+// `abort` holds one Int32 that the server thread makes non-zero when nobody wants the answer any more.
+export interface SegmentProtocol {
+  load: { request: { model: SegmentModel; options: SegmentModelOptions }; reply: { type: "ok"; version?: string } };
+  unload: { request: { model: SegmentModel }; reply: { type: "ok" } };
+  segment: {
+    request: { texts: string[]; minProbability: number; abort: SharedArrayBuffer };
+    reply: { type: "boundaries"; texts: SegmentedText[] } | Aborted;
+  };
+  align: {
+    request: { unit: AlignUnit; source: string[]; target: string[]; abort: SharedArrayBuffer };
+    reply: { type: "alignment"; pairs: AlignedPair[] } | Aborted;
+  };
+}
 
 /** The runtime stays loaded once opened (closing and reopening a library buys nothing); the models do not. */
 let runtime: Runtime | undefined;
@@ -72,70 +75,58 @@ function load(model: SegmentModel, options: SegmentModelOptions): void {
   }
 }
 
-function handle(msg: SegmentWorkerRequest): SegmentWorkerReply {
-  switch (msg.type) {
-    case "load": {
-      load(msg.model, msg.options);
-      return { type: "ok", req: msg.req, version: runtime!.version };
+serve<SegmentProtocol>({
+  load: (msg) => {
+    load(msg.model, msg.options);
+    return { type: "ok", version: runtime!.version };
+  },
+  unload: (msg) => {
+    unload(msg.model);
+    return { type: "ok" };
+  },
+  segment: (msg) => {
+    if (!sat) {
+      throw new Error("the segmentation model is not loaded");
     }
-    case "unload": {
-      unload(msg.model);
-      return { type: "ok", req: msg.req };
+    const { session, tokenizer } = sat;
+    const abort = new Int32Array(msg.abort);
+    const texts = findBoundaries(
+      tokenizer,
+      msg.texts,
+      (ids, mask, rows, width) => session.run([ids, mask], rows, width, 1),
+      msg.minProbability,
+      () => Atomics.load(abort, 0) !== 0,
+    );
+    return texts ? { type: "boundaries", texts } : { type: "aborted" };
+  },
+  align: (msg) => {
+    if (!labse) {
+      throw new Error("the alignment model is not loaded");
     }
-    case "segment": {
-      if (!sat) {
-        throw new Error("the segmentation model is not loaded");
-      }
-      const { session, tokenizer } = sat;
-      const abort = new Int32Array(msg.abort);
-      const texts = findBoundaries(
-        tokenizer,
-        msg.texts,
-        (ids, mask, rows, width) => session.run([ids, mask], rows, width, 1),
-        msg.minProbability,
-        () => Atomics.load(abort, 0) !== 0,
-      );
-      return texts ? { type: "boundaries", req: msg.req, texts } : { type: "aborted", req: msg.req };
+    const { session, tokenizer, dense } = labse;
+    const abort = new Int32Array(msg.abort);
+    // A paragraph is read by its opening and weighed by its whole length.
+    const read = msg.unit === "paragraphs" ? openings(msg.source, msg.target) : msg;
+    const embeddings = embed(
+      tokenizer,
+      dense,
+      [...read.source, ...read.target],
+      // BERT's segment ids: every token is of the first segment.
+      (ids, mask, rows, width) => session.run([ids, mask, new BigInt64Array(ids.length)], rows, width, DIMENSIONS),
+      () => Atomics.load(abort, 0) !== 0,
+    );
+    if (!embeddings) {
+      return { type: "aborted" };
     }
-    case "align": {
-      if (!labse) {
-        throw new Error("the alignment model is not loaded");
-      }
-      const { session, tokenizer, dense } = labse;
-      const abort = new Int32Array(msg.abort);
-      // A paragraph is read by its opening and weighed by its whole length.
-      const read = msg.unit === "paragraphs" ? openings(msg.source, msg.target) : msg;
-      const embeddings = embed(
-        tokenizer,
-        dense,
-        [...read.source, ...read.target],
-        // BERT's segment ids: every token is of the first segment.
-        (ids, mask, rows, width) => session.run([ids, mask, new BigInt64Array(ids.length)], rows, width, DIMENSIONS),
-        () => Atomics.load(abort, 0) !== 0,
-      );
-      if (!embeddings) {
-        return { type: "aborted", req: msg.req };
-      }
-      const lengths =
-        msg.unit === "paragraphs"
-          ? translatedLengths(msg.source, msg.target)
-          : { source: msg.source.map(lengthOf), target: msg.target.map(lengthOf) };
-      const pairs = alignSentences(
-        { embeddings: embeddings.slice(0, msg.source.length), lengths: lengths.source },
-        { embeddings: embeddings.slice(msg.source.length), lengths: lengths.target },
-        msg.unit,
-      );
-      return { type: "alignment", req: msg.req, pairs };
-    }
-  }
-}
-
-self.onmessage = (event: MessageEvent<SegmentWorkerRequest>) => {
-  let reply: SegmentWorkerReply;
-  try {
-    reply = handle(event.data);
-  } catch (e) {
-    reply = { type: "error", req: event.data.req, message: e instanceof Error ? e.message : String(e) };
-  }
-  self.postMessage(reply);
-};
+    const lengths =
+      msg.unit === "paragraphs"
+        ? translatedLengths(msg.source, msg.target)
+        : { source: msg.source.map(lengthOf), target: msg.target.map(lengthOf) };
+    const pairs = alignSentences(
+      { embeddings: embeddings.slice(0, msg.source.length), lengths: lengths.source },
+      { embeddings: embeddings.slice(msg.source.length), lengths: lengths.target },
+      msg.unit,
+    );
+    return { type: "alignment", pairs };
+  },
+});
