@@ -311,10 +311,6 @@ jobs:
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
         run: bun scripts/build_audiocpp.ts --cuda
 
-      # The CUDA runtime comes from the directory beside the library, and the driver is missing here: that is all that may be.
-      - name: Check that libsoxr and libaudiocpp open
-        run: bun -e "import { libraryVersion } from './src/audiocpp-ffi'; console.log(libraryVersion('vendor/audio.cpp-cuda'))"
-
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 

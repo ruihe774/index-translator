@@ -183,9 +183,17 @@ if (!keep) {
   await rmdir(join(root, "vendor", ".build")).catch(() => {});
 }
 
-// Opens the library with the declarations the server uses, so a function it needs cannot be missing.
-const version = libraryVersion(dest);
+// Opens the library with the declarations the server uses, so a function it needs cannot be missing. A CUDA build
+// cannot open without the NVIDIA driver (CI has none); `bundleCuda` has already checked that nothing else is missing.
+let abi = "not opened, no NVIDIA driver here";
+try {
+  abi = `C API ${libraryVersion(dest).abi}`;
+} catch (e) {
+  if (!cudaToolkit || !String(e).includes("libcuda.so.1")) {
+    throw e;
+  }
+}
 const seconds = Math.round((performance.now() - started) / 1000);
 console.log(
-  `ok ${dest} (${TAG}${cudaToolkit ? `, CUDA ${cudaToolkit.version}` : ""}, C API ${version.abi}, ${native ? "this machine's CPU" : process.arch === "x64" ? "AVX2" : process.arch}, built in ${seconds} s)`,
+  `ok ${dest} (${TAG}${cudaToolkit ? `, CUDA ${cudaToolkit.version}` : ""}, ${abi}, ${native ? "this machine's CPU" : process.arch === "x64" ? "AVX2" : process.arch}, built in ${seconds} s)`,
 );
