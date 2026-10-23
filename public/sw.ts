@@ -1,6 +1,9 @@
-// The service worker: the app's own files come from a cache and are refreshed in the background,
-// so the installed app opens at once and the next open has the newest version. The API is never
-// touched: translations, speech and health always go to the server.
+// The service worker. The server lists every file it serves with its ETag (/asset-manifest.json).
+// The worker fetches that list first, answers a request from the cache only when the cached copy has
+// the listed ETag, and otherwise downloads the file and caches it. Right after the list arrives, every
+// file that is missing or out of date is requested at low priority. So no stale file is ever served;
+// the price is a slower first render, and the app is no use without its server anyway.
+// On loopback (development, or the app on its own machine) the worker does nothing.
 
 /** The part of the service worker scope that is used (the DOM library has no `webworker` types). */
 interface WorkerScope {
@@ -18,63 +21,136 @@ interface FetchEvent extends WorkerEvent {
   respondWith(response: Promise<Response>): void;
 }
 
+/** URL path → ETag, as src/static.ts lists it. */
+type Manifest = Record<string, string>;
+
 const sw = self as unknown as WorkerScope;
 /** Bump to drop everything cached by an older worker. */
-const CACHE = "index-translator-v2";
-/** Fetched at install, so the first offline-ish open has a page. */
-const SHELL = ["/", "/manifest.webmanifest", "/icons/icon.svg", "/icons/icon-192.png"];
+const CACHE = "index-translator-v3";
+const MANIFEST_PATH = "/asset-manifest.json";
 
-/** Everything the server answers under these prefixes is live data or development tooling. */
-function cacheable(req: Request): boolean {
-  if (req.method !== "GET") {
-    return false;
-  }
-  const url = new URL(req.url);
-  if (url.origin !== sw.location.origin) {
-    return false;
-  }
-  return !url.pathname.startsWith("/api/") && !url.pathname.startsWith("/__dev/");
+function onLoopback(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname.endsWith(".localhost") ||
+    hostname === "[::1]" ||
+    /^127(\.\d{1,3}){3}$/.test(hostname)
+  );
 }
 
-async function staleWhileRevalidate(event: FetchEvent): Promise<Response> {
-  const cache = await caches.open(CACHE);
-  const hit = await cache.match(event.request);
-  const refresh = fetch(event.request).then((res) => {
-    // A full, ordinary answer only: never an error page, a partial range, or a response marked no-store.
-    if (res.status === 200 && !res.headers.get("cache-control")?.includes("no-store")) {
-      void cache.put(event.request, res.clone()).catch(() => {});
-    }
-    return res;
-  });
-  if (!hit) {
-    return refresh;
+async function loadManifest(): Promise<Manifest | undefined> {
+  try {
+    const res = await fetch(MANIFEST_PATH, { cache: "no-store" });
+    return res.ok ? ((await res.json()) as Manifest) : undefined;
+  } catch {
+    return undefined;
   }
-  // Kept alive after the cached answer went out; offline it simply fails and the cache stays.
-  event.waitUntil(refresh.catch(() => {}));
-  return hit;
 }
 
-sw.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
+/** Downloads a file past the browser's HTTP cache (a day-old icon must not stand in for a newer one) and keeps it. */
+async function download(path: string, priority: "low" | "auto"): Promise<Response> {
+  const res = await fetch(path, { cache: "no-cache", priority });
+  // A full, ordinary answer only: never an error page or a response marked no-store.
+  if (res.status === 200 && !res.headers.get("cache-control")?.includes("no-store")) {
+    const stored = caches
       .open(CACHE)
-      .then((cache) => cache.addAll(SHELL))
-      .catch(() => {})
-      .then(() => sw.skipWaiting()),
-  );
-});
-
-sw.addEventListener("activate", (event) => {
-  event.waitUntil(
-    caches
-      .keys()
-      .then((names) => Promise.all(names.filter((n) => n !== CACHE).map((n) => caches.delete(n))))
-      .then(() => sw.clients.claim()),
-  );
-});
-
-sw.addEventListener("fetch", (event) => {
-  if (cacheable(event.request)) {
-    event.respondWith(staleWhileRevalidate(event));
+      .then((cache) => cache.put(path, res.clone()))
+      .catch(() => {});
+    // The page's own request does not wait for the copy; the prefetch does, so it outlasts the worker's idle stop.
+    if (priority === "low") {
+      await stored;
+    }
   }
-});
+  return res;
+}
+
+/** The cache's entry for `path`, if it is the version the manifest lists. */
+async function current(cache: Cache, path: string, manifest: Manifest): Promise<Response | undefined> {
+  const hit = await cache.match(path);
+  return hit?.headers.get("etag") === manifest[path] ? hit : undefined;
+}
+
+/** Drops files the server no longer has and requests, at low priority, every one that is missing or out of date. */
+async function prefetch(manifest: Manifest): Promise<void> {
+  const cache = await caches.open(CACHE);
+  const cached = await cache.keys();
+  await Promise.all(cached.filter((req) => !(new URL(req.url).pathname in manifest)).map((req) => cache.delete(req)));
+  await Promise.all(
+    Object.keys(manifest).map(async (path) => {
+      if (!(await current(cache, path, manifest))) {
+        await download(path, "low").catch(() => {});
+      }
+    }),
+  );
+}
+
+interface Sync {
+  manifest: Promise<Manifest | undefined>;
+  /** Settles when the low-priority downloads have. */
+  done: Promise<void>;
+}
+
+function startSync(): Sync {
+  const manifest = loadManifest();
+  const done = manifest.then((m) => (m ? prefetch(m) : undefined)).catch(() => {});
+  return { manifest, done };
+}
+
+if (onLoopback(sw.location.hostname)) {
+  // No fetch handler: every request goes to the server. Anything an earlier version cached is dropped.
+  sw.addEventListener("install", (event) => event.waitUntil(sw.skipWaiting()));
+  sw.addEventListener("activate", (event) => {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((names) => Promise.all(names.map((n) => caches.delete(n))))
+        .then(() => sw.clients.claim()),
+    );
+  });
+} else {
+  // Started with the worker; a page load asks again, so a worker that stays alive does not hold an old list.
+  let sync = startSync();
+
+  sw.addEventListener("install", (event) => event.waitUntil(sw.skipWaiting()));
+
+  sw.addEventListener("activate", (event) => {
+    event.waitUntil(
+      caches
+        .keys()
+        .then((names) => Promise.all(names.filter((n) => n !== CACHE).map((n) => caches.delete(n))))
+        .then(() => sw.clients.claim()),
+    );
+    event.waitUntil(sync.done);
+  });
+
+  sw.addEventListener("fetch", (event) => {
+    const req = event.request;
+    const url = new URL(req.url);
+    if (
+      req.method !== "GET" ||
+      req.headers.has("range") ||
+      url.origin !== sw.location.origin ||
+      url.pathname === MANIFEST_PATH ||
+      url.pathname.startsWith("/api/") ||
+      url.pathname.startsWith("/__dev/")
+    ) {
+      return;
+    }
+    if (req.mode === "navigate") {
+      sync = startSync();
+    }
+    const { manifest, done } = sync;
+    event.waitUntil(done);
+    event.respondWith(
+      manifest.then(async (m) => {
+        const path = url.pathname;
+        // No list, or a file the server does not list: not ours to cache.
+        if (!m?.[path]) {
+          return fetch(req);
+        }
+        const cache = await caches.open(CACHE);
+        return (await current(cache, path, m)) ?? download(path, "auto");
+      }),
+    );
+  });
+}

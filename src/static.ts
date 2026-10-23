@@ -6,6 +6,8 @@
 
 import { join, normalize, resolve, sep } from "node:path";
 
+import type { PublicWatcher } from "./public-watch";
+
 /** The page loads only same-origin scripts and styles, and nothing can frame it. */
 const HTML_CSP = "default-src 'self'; frame-ancestors 'none'";
 
@@ -82,11 +84,64 @@ function stripWhitespace(html: Response): Response {
   return rewriter.transform(html);
 }
 
-export function createStaticServer(publicDir: string) {
+/** Where the service worker (public/sw.ts) learns the ETag of every file served. */
+export const MANIFEST_PATH = "/asset-manifest.json";
+
+/** The validator both the files and the manifest carry, so a client can compare without asking again. */
+function etagOf(info: { mtimeMs: number; size: number }): string {
+  return `W/"${info.mtimeMs}-${info.size}"`;
+}
+
+export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
   // Resolved once so the traversal check below compares like with like, whatever form the caller used.
   const dir = resolve(publicDir);
   // Every served path must start with this. "/" already ends in a separator, so it is not doubled.
   const prefix = dir.endsWith(sep) ? dir : dir + sep;
+
+  /** URL path → ETag of every file under the directory, as `lookup` would answer it. */
+  async function buildManifest(): Promise<Record<string, string>> {
+    const manifest: Record<string, string> = {};
+    const names: string[] = [];
+    try {
+      for await (const name of new Bun.Glob("**/*").scan({ cwd: dir, dot: true })) {
+        names.push(name);
+      }
+    } catch {
+      // No directory, nothing served.
+    }
+    await Promise.all(
+      names.map(async (name) => {
+        const info = await Bun.file(join(dir, name))
+          .stat()
+          .catch(() => {});
+        if (!info?.isFile()) {
+          return;
+        }
+        const etag = etagOf(info);
+        const url = "/" + name.replaceAll("\\", "/");
+        manifest[url] = etag;
+        // A directory's page is also asked for by the directory's own path.
+        if (url.endsWith("/index.html")) {
+          manifest[url.slice(0, -"index.html".length)] = etag;
+        }
+      }),
+    );
+    return manifest;
+  }
+
+  // Built at launch and again, on the next request, after any change under the directory. Without a
+  // watcher nothing says when files change, so every request builds afresh.
+  let manifest = buildManifest();
+  let stale = false;
+  watcher?.subscribe(() => void (stale = true));
+
+  function manifestResponse(): Promise<Response> {
+    if (stale || !watcher?.watching) {
+      stale = false;
+      manifest = buildManifest();
+    }
+    return manifest.then((body) => Response.json(body, { headers: { "cache-control": "no-store" } }));
+  }
   const transpiler = new Bun.Transpiler({ loader: "ts" });
   // Keyed by resolved file path; only .ts files that exist under the directory ever get an entry.
   const cache = new Map<string, Transpiled>();
@@ -100,7 +155,7 @@ export function createStaticServer(publicDir: string) {
       return undefined;
     }
 
-    const etag = `W/"${info.mtimeMs}-${info.size}"`;
+    const etag = etagOf(info);
     const headers = { etag, "cache-control": cacheControl(path.slice(prefix.length)) };
     if (req.headers.get("if-none-match") === etag) {
       return new Response(null, { status: 304, headers });
@@ -132,7 +187,7 @@ export function createStaticServer(publicDir: string) {
         console.error(`[static] cannot transpile ${path}:`, e);
         return new Response("Internal Server Error", { status: 500 });
       }
-      entry = { mtimeMs: info.mtimeMs, size: info.size, etag: `W/"${info.mtimeMs}-${info.size}"`, code };
+      entry = { mtimeMs: info.mtimeMs, size: info.size, etag: etagOf(info), code };
       cache.set(path, entry);
     }
 
@@ -149,6 +204,9 @@ export function createStaticServer(publicDir: string) {
   async function lookup(pathname: string, req: Request): Promise<Response> {
     if (req.method !== "GET" && req.method !== "HEAD") {
       return new Response("Method Not Allowed", { status: 405 });
+    }
+    if (pathname === MANIFEST_PATH) {
+      return manifestResponse();
     }
     let rel: string;
     try {

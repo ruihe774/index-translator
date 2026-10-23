@@ -36,6 +36,7 @@ import {
   speechUnavailable,
 } from "./parse";
 import { LANGUAGES } from "./prompt";
+import { watchPublic } from "./public-watch";
 import { nativeSegmenter, type Segmenter, type SegmentLauncher } from "./segment";
 import {
   MAX_SAMPLE_BYTES,
@@ -359,8 +360,9 @@ export async function startApp(
     return entry.handler({ req, url });
   }
 
-  const serveStatic = createStaticServer(cfg.publicDir);
-  const devReload = cfg.devReload ? createDevReload(cfg.publicDir) : undefined;
+  const publicWatcher = watchPublic(cfg.publicDir);
+  const serveStatic = createStaticServer(cfg.publicDir, publicWatcher);
+  const devReload = cfg.devReload ? createDevReload(publicWatcher) : undefined;
 
   const server = Bun.serve({
     hostname: cfg.host,
@@ -398,6 +400,7 @@ export async function startApp(
     segmenter,
     async stop() {
       devReload?.close();
+      publicWatcher.close();
       await server.stop(true);
       await speech.stop();
       await segmenter.stop();

@@ -5,7 +5,7 @@
 // drops the connection, and the page reloads when the browser reconnects. The page's CSP only allows
 // same-origin scripts, so the client is a script served by the server, not an inline one.
 
-import { watch } from "node:fs";
+import type { PublicWatcher } from "./public-watch";
 
 export const DEV_PREFIX = "/__dev/";
 const EVENTS_PATH = `${DEV_PREFIX}reload`;
@@ -38,7 +38,7 @@ addEventListener("pageshow", (e) => {
 });
 `;
 
-export function createDevReload(publicDir: string) {
+export function createDevReload(watcher: PublicWatcher) {
   const encoder = new TextEncoder();
   const clients = new Set<ReadableStreamDefaultController<Uint8Array>>();
 
@@ -55,7 +55,7 @@ export function createDevReload(publicDir: string) {
   const boot = Date.now();
   let changes = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  const watcher = watch(publicDir, { recursive: true }, () => {
+  watcher.subscribe(() => {
     changes++;
     clearTimeout(timer);
     timer = setTimeout(() => send("event: reload\ndata: \n\n"), DEBOUNCE_MS);
@@ -106,7 +106,6 @@ export function createDevReload(publicDir: string) {
     },
 
     close(): void {
-      watcher.close();
       clearInterval(keepalive);
       clearTimeout(timer);
       for (const c of clients) {
