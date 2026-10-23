@@ -101,6 +101,9 @@ SHIM_API struct llama_model * shim_load_model(const char * path, int32_t n_gpu_l
     return llama_model_load_from_file(path, params);
 }
 
+// Most tokens one multi-token prediction step drafts (below).
+#define SHIM_MTP_MAX_DRAFT 8
+
 // One sequence that may use the whole window. `n_threads` of 0 keeps the library default.
 // `n_rs_seq`: how many of its last tokens a recurrent model can drop again (llama_memory_seq_rm),
 // which costs one more copy of the recurrent state each; 0 without speculative decoding.
@@ -110,6 +113,11 @@ SHIM_API struct llama_context * shim_new_context(struct llama_model * model, uin
     params.n_batch = n_batch;
     params.n_seq_max = 1;
     params.n_rs_seq = n_rs_seq;
+    // Logits are only wanted for the last token of a decode, or for each token of an MTP
+    // verification; libmtmd asks for none on an image. The default (n_batch) reserves
+    // n_batch * n_vocab floats, about 0.4 GiB of GPU memory for a vocabulary of 248K. More than
+    // this many outputs in one batch would abort in llama.cpp (an assertion), not fail.
+    params.n_outputs_max = SHIM_MTP_MAX_DRAFT + 1;
     if (n_threads > 0) {
         params.n_threads = n_threads;
         params.n_threads_batch = n_threads;
@@ -228,9 +236,6 @@ SHIM_API int32_t shim_mtmd_eval_chunk(mtmd_context * ctx, struct llama_context *
 void shim_ext_set_embeddings_nextn(struct llama_context * ctx, bool value, bool masked);
 float * shim_ext_get_embeddings_nextn(struct llama_context * ctx);
 float * shim_ext_get_embeddings_nextn_ith(struct llama_context * ctx, int32_t i);
-
-// Most tokens one step drafts.
-#define SHIM_MTP_MAX_DRAFT 8
 
 struct shim_mtp {
     struct llama_context * tgt;
