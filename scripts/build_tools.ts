@@ -80,9 +80,12 @@ export const COMPILERS = windows ? [] : ["cc", "c++"];
 /** The CUDA runtime libraries a CUDA build needs beside it; the driver's `libcuda.so.1` is the system's. */
 const CUDA_RUNTIME = ["libcudart.so.13", "libcublas.so.13", "libcublasLt.so.13"];
 
+/** cuFFT, which audio.cpp needs and llama.cpp does not. */
+export const CUDA_FFT = "libcufft.so.12";
+
 /** What to install when the CUDA toolkit is missing, for the message. */
 export const CUDA_HINT =
-  "install the CUDA 13 toolkit (on Debian and Ubuntu from NVIDIA's apt repository: cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1 cuda-driver-dev-13-1) and set CUDA_PATH if it is not in /usr/local/cuda-13";
+  "install the CUDA 13 toolkit (on Debian and Ubuntu from NVIDIA's apt repository: cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1 libcufft-dev-13-1 cuda-driver-dev-13-1) and set CUDA_PATH if it is not in /usr/local/cuda-13";
 
 export interface Cuda {
   /** The toolkit's directory (the one with bin/nvcc). */
@@ -154,12 +157,12 @@ export function cudaCMakeOptions(cuda: Cuda, arch: string | undefined): string[]
 }
 
 /**
- * Copies the CUDA runtime libraries (cudart, cuBLAS) into `dir`, where the engine's libraries find them
+ * Copies the CUDA runtime libraries (cudart, cuBLAS, and `extra` such as cuFFT) into `dir`, where the engine's libraries find them
  * through their `$ORIGIN` run path, with the toolkit's license, and checks that nothing but the driver
  * is missing for `libraries`.
  */
-export async function bundleCuda(cuda: Cuda, dir: string, libraries: string[]): Promise<void> {
-  for (const soname of CUDA_RUNTIME) {
+export async function bundleCuda(cuda: Cuda, dir: string, libraries: string[], extra: string[] = []): Promise<void> {
+  for (const soname of [...CUDA_RUNTIME, ...extra]) {
     const real = await realpath(join(cuda.libs, soname));
     await cp(real, join(dir, basename(real)));
     if (basename(real) !== soname) {

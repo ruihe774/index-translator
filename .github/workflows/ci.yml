@@ -275,7 +275,7 @@ jobs:
           sudo apt-get update
           v=$CUDA_PACKAGE_VERSION
           sudo apt-get install -y --no-install-recommends \
-            cuda-nvcc-$v cuda-cudart-dev-$v libcublas-dev-$v cuda-driver-dev-$v cuda-documentation-$v
+            cuda-nvcc-$v cuda-cudart-dev-$v libcublas-dev-$v libcufft-dev-$v cuda-driver-dev-$v cuda-documentation-$v
           "$CUDA_PATH/bin/nvcc" --version
 
       - name: Cache the translation engine

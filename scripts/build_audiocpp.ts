@@ -35,6 +35,7 @@ import {
   checkout,
   COMPILERS,
   CUDA_ARCH_OPTION,
+  CUDA_FFT,
   cudaArch,
   cudaCMakeOptions,
   findCuda,
@@ -173,7 +174,7 @@ await cp(join(source, "LICENSE"), join(dest, "LICENSE"));
 await cp(join(source, "external", "ggml", "LICENSE"), join(dest, "LICENSE.ggml"));
 await Bun.write(join(dest, "VERSION"), `${TAG}\n`);
 if (cudaToolkit) {
-  await bundleCuda(cudaToolkit, dest, [basename(libraryPath(dest))]);
+  await bundleCuda(cudaToolkit, dest, [basename(libraryPath(dest))], [CUDA_FFT]);
   await Bun.write(join(dest, "CUDA_VERSION"), `${cudaToolkit.version}\n`);
 }
 if (!keep) {
