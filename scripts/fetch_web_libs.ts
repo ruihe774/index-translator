@@ -45,6 +45,8 @@ export const LIBRARIES: Library[] = [
     // The legacy build: the other one is written for browsers newer than some in .browserslistrc.
     // cmaps/ and standard_fonts/ are what a PDF may leave out and name instead; wasm/ holds the
     // JPEG 2000, JBIG2 and colour decoders (not the scripting sandbox, which thumbnails never run).
+    // Of the standard fonts only Symbol and ZapfDingbats: pdf.js never substitutes a system font
+    // for those two, while Courier, Times and Helvetica fall back to the system's.
     place: (path) => {
       if (path === "LICENSE") {
         return path;
@@ -53,7 +55,10 @@ export const LIBRARIES: Library[] = [
       if (build) {
         return build[1];
       }
-      if (/^(cmaps|standard_fonts|iccs)\/[^/]+$/.test(path)) {
+      if (/^(cmaps|iccs)\/[^/]+$/.test(path)) {
+        return path;
+      }
+      if (/^standard_fonts\/(FoxitSymbol\.pfb|FoxitDingbats\.pfb|LICENSE_FOXIT)$/.test(path)) {
         return path;
       }
       if (/^wasm\/[^/]+$/.test(path) && !path.startsWith("wasm/quickjs")) {
@@ -67,7 +72,8 @@ export const LIBRARIES: Library[] = [
       "cmaps/LICENSE",
       "cmaps/UniGB-UCS2-H.bcmap",
       "standard_fonts/LICENSE_FOXIT",
-      "standard_fonts/LICENSE_LIBERATION",
+      "standard_fonts/FoxitSymbol.pfb",
+      "standard_fonts/FoxitDingbats.pfb",
       "wasm/openjpeg.wasm",
       "wasm/jbig2.wasm",
       "wasm/qcms_bg.wasm",

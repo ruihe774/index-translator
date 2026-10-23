@@ -15,7 +15,15 @@ describe("the pinned libraries", () => {
     expect(place("cmaps/UniJIS-UCS2-H.bcmap")).toBe("cmaps/UniJIS-UCS2-H.bcmap");
     expect(place("wasm/openjpeg.wasm")).toBe("wasm/openjpeg.wasm");
     expect(place("wasm/LICENSE_OPENJPEG")).toBe("wasm/LICENSE_OPENJPEG");
+    // Only the standard fonts with no system substitute
+    expect(place("standard_fonts/FoxitSymbol.pfb")).toBe("standard_fonts/FoxitSymbol.pfb");
+    expect(place("standard_fonts/FoxitDingbats.pfb")).toBe("standard_fonts/FoxitDingbats.pfb");
+    expect(place("standard_fonts/LICENSE_FOXIT")).toBe("standard_fonts/LICENSE_FOXIT");
     for (const left of [
+      "standard_fonts/FoxitSerif.pfb",
+      "standard_fonts/FoxitFixedBold.pfb",
+      "standard_fonts/LiberationSans-Regular.ttf",
+      "standard_fonts/LICENSE_LIBERATION",
       "build/pdf.min.mjs",
       "legacy/build/pdf.mjs",
       "legacy/build/pdf.mjs.map",
