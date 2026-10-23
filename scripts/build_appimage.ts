@@ -20,16 +20,14 @@
 // Needs nothing installed besides Bun and git: appimagetool and the AppImage runtime are
 // downloaded, by version and checksum, into vendor/.build/appimage and kept there.
 
-import { chmod, cp, mkdir, readdir, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { chmod, cp, mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 
 import { libraryPath as audioLibrary, soxrLibraryPath } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
-import { download, output, run } from "./build_tools";
-import { requireMinicelt } from "./fetch_minicelt";
-import { requireOnnxruntime } from "./fetch_onnxruntime";
-import { requireTurndown } from "./fetch_turndown";
-import { requireWebLibs } from "./fetch_web_libs";
+import { output, run } from "./build_tools";
+import { downloadUnlessMatches } from "./fetch_tools";
+import { copyEngine, requireAllVendored, root, stageApp } from "./stage_app";
 
 /** The checksums of the two downloaded tools, per architecture (`process.arch` names the key). */
 const ARCHES = {
@@ -69,7 +67,6 @@ const RUNTIME = {
   sha256: arch.runtime,
 };
 
-const root = resolve(import.meta.dir, "..");
 const packaging = join(root, "packaging", "appimage");
 // Each variant has the one GPU backend: Vulkan in vendor/llama.cpp and vendor/audio.cpp, CUDA in the -cuda directories.
 const llama = join(root, "vendor", cuda ? "llama.cpp-cuda" : "llama.cpp");
@@ -100,59 +97,17 @@ if (llamaCuda !== cuda || llamaVulkan === cuda || audioCuda !== cuda) {
     `${llama} and ${audio} are not both ${cuda ? "CUDA" : "Vulkan"} builds; build them ${cuda ? "with" : "without"} --cuda`,
   );
 }
-// The web app's libraries are packed with public/; an AppImage without them could not open PDF or Word files, and would send speech as WAV.
-await requireWebLibs(join(root, "public", "vendor"));
-// Likewise the Opus encoder of the speech stream, and the Markdown converter of fetched web pages.
-await requireMinicelt(join(root, "vendor"));
-await requireTurndown(join(root, "vendor"));
-// And ONNX Runtime, without which there is no sentence segmentation.
-await requireOnnxruntime(join(root, "vendor"));
-
-/** The file at `path` as pinned, downloaded unless a copy with the right checksum is already there. */
-async function tool(pin: { url: string; sha256: string }, path: string): Promise<void> {
-  const file = Bun.file(path);
-  if ((await file.exists()) && new Bun.CryptoHasher("sha256").update(await file.bytes()).digest("hex") === pin.sha256) {
-    return;
-  }
-  await Bun.write(path, await download(pin.url, pin.sha256));
-}
-
-/** Copies an engine's directory as it is, links included, without the headers. */
-async function copyEngine(from: string, to: string): Promise<void> {
-  await mkdir(to, { recursive: true });
-  for (const name of await readdir(from)) {
-    if (name !== "include") {
-      await cp(join(from, name), join(to, name), { verbatimSymlinks: true });
-    }
-  }
-}
+await requireAllVendored();
 
 await rm(appDir, { recursive: true, force: true });
 await mkdir(join(appDir, "usr", "bin"), { recursive: true });
 await mkdir(app, { recursive: true });
 
-// The repository's own layout under usr/share/index-translator, so the code finds its files
-// (public/, prompts/, docs/openapi.yaml, vendor/) the way it does in a checkout.
-for (const name of await readdir(join(root, "src"))) {
-  if (name.endsWith(".ts")) {
-    await cp(join(root, "src", name), join(app, "src", name));
-  }
-}
-// What src/webpage.ts runs inside a fetched page.
-await cp(join(root, "src", "page", "extract.ts"), join(app, "src", "page", "extract.ts"));
-await cp(join(root, "public"), join(app, "public"), { recursive: true });
-await cp(join(root, "prompts"), join(app, "prompts"), { recursive: true });
-await cp(join(root, "docs", "openapi.yaml"), join(app, "docs", "openapi.yaml"));
-await cp(join(root, "THIRD_PARTY_NOTICES.md"), join(app, "THIRD_PARTY_NOTICES.md"));
-await cp(join(root, "scripts", "fetch_models.ts"), join(app, "scripts", "fetch_models.ts"));
-await cp(join(root, "packaging", "bunfig.toml"), join(app, "bunfig.toml"));
-await Bun.write(join(app, "package.json"), `${JSON.stringify({ name: "index-translator", type: "module" })}\n`);
+// The repository's own layout under usr/share/index-translator, so the code finds its files the way it does in a checkout.
+await stageApp(app);
 await copyEngine(llama, join(app, "vendor", "llama.cpp"));
 await copyEngine(audio, join(app, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(app, "vendor", "soxr"));
-await copyEngine(join(root, "vendor", "onnxruntime"), join(app, "vendor", "onnxruntime"));
-await cp(join(root, "vendor", "minicelt"), join(app, "vendor", "minicelt"), { recursive: true });
-await cp(join(root, "vendor", "turndown"), join(app, "vendor", "turndown"), { recursive: true });
 
 const commit = (await output(["git", "describe", "--tags", "--always", "--dirty"], root)) || "unknown";
 const version = [
@@ -178,9 +133,9 @@ await cp(join(root, "public", "icons", "icon-512.png"), join(appDir, ".DirIcon")
 await mkdir(work, { recursive: true });
 const appimagetool = join(work, `appimagetool-${ARCH}.AppImage`);
 const runtime = join(work, `runtime-${ARCH}`);
-await tool(APPIMAGETOOL, appimagetool);
+await downloadUnlessMatches(APPIMAGETOOL, appimagetool);
 await chmod(appimagetool, 0o755);
-await tool(RUNTIME, runtime);
+await downloadUnlessMatches(RUNTIME, runtime);
 
 await mkdir(join(root, "dist"), { recursive: true });
 await rm(out, { force: true });

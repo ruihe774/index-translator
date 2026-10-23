@@ -29,8 +29,7 @@
 import { chmod, mkdir, rm, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { download } from "./build_tools";
-import { untar } from "./fetch_web_libs";
+import { download, readStamp, sha256Hex, untar, unzip, writeStamp } from "./fetch_tools";
 
 export const VERSION = "1.31.0";
 
@@ -85,8 +84,6 @@ const ARCHIVES: Record<string, Archive> = {
 };
 
 const DIR = "onnxruntime";
-/** Marks a directory as holding the whole of the pinned library; written last. */
-const STAMP = "VERSION";
 
 function archiveFor(platform: string, arch: string): Archive {
   const archive = ARCHIVES[`${platform}-${arch}`];
@@ -96,7 +93,6 @@ function archiveFor(platform: string, arch: string): Archive {
   return archive;
 }
 
-const sha256Of = (bytes: Uint8Array) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
 const stampOf = (archive: Archive) => `${VERSION} ${archive.sha256}\n`;
 
 /** The shared library inside `dir` (`vendor/onnxruntime`) for the current platform. */
@@ -104,62 +100,10 @@ export function onnxruntimeLibraryPath(dir: string): string {
   return join(dir, archiveFor(process.platform, process.arch).library.name);
 }
 
-/**
- * The files of a zip archive that `want` names, by their path below the archive's one top-level
- * directory. Stored and deflated entries only, no Zip64 (the archive is checked by its SHA-256
- * before, and what is not wanted is never inflated).
- */
-export function unzip(zip: Uint8Array, want: (path: string) => boolean): Map<string, Uint8Array> {
-  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
-  let end = zip.length - 22;
-  while (end >= 0 && view.getUint32(end, true) !== 0x06_05_4b_50) {
-    end--;
-  }
-  if (end < 0) {
-    throw new Error("not a zip archive (no end of central directory)");
-  }
-  const text = new TextDecoder();
-  const files = new Map<string, Uint8Array>();
-  let at = view.getUint32(end + 16, true);
-  for (let i = view.getUint16(end + 10, true); i > 0; i--) {
-    if (view.getUint32(at, true) !== 0x02_01_4b_50) {
-      throw new Error("unreadable zip central directory");
-    }
-    const method = view.getUint16(at + 10, true);
-    const packed = view.getUint32(at + 20, true);
-    const size = view.getUint32(at + 24, true);
-    const nameLength = view.getUint16(at + 28, true);
-    const next = at + 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
-    const local = view.getUint32(at + 42, true);
-    const name = text.decode(zip.subarray(at + 46, at + 46 + nameLength));
-    at = next;
-    if (name.endsWith("/")) {
-      continue;
-    }
-    const path = name.slice(name.indexOf("/") + 1);
-    if (name.includes("\\") || path.split("/").some((part) => part === ".." || part === "") || !want(path)) {
-      continue;
-    }
-    if (packed === 0xff_ff_ff_ff || size === 0xff_ff_ff_ff || view.getUint32(local, true) !== 0x04_03_4b_50) {
-      throw new Error(`unreadable zip entry ${name}`);
-    }
-    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
-    const data = zip.subarray(start, start + packed);
-    const content = method === 0 ? data : method === 8 ? Bun.inflateSync(data as Uint8Array<ArrayBuffer>) : undefined;
-    if (content?.length !== size) {
-      throw new Error(`zip entry ${name}: unsupported compression ${method} or wrong size`);
-    }
-    files.set(path, content);
-  }
-  return files;
-}
-
 export async function isPresent(vendor: string, platform = process.platform, arch = process.arch): Promise<boolean> {
   const archive = archiveFor(platform, arch);
-  const stamp = Bun.file(join(vendor, DIR, STAMP));
   return (
-    (await stamp.exists()) &&
-    (await stamp.text()) === stampOf(archive) &&
+    (await readStamp(join(vendor, DIR))) === stampOf(archive) &&
     (await Bun.file(join(vendor, DIR, archive.library.name)).exists())
   );
 }
@@ -181,7 +125,7 @@ export async function fetchOnnxruntime(vendor: string): Promise<void> {
     throw new Error(`${archive.url} has no ${missing.join(", ")}`);
   }
   const library = files.get(archive.library.from)!;
-  const got = sha256Of(library);
+  const got = sha256Hex(library);
   if (got !== archive.library.sha256) {
     throw new Error(`${archive.library.from} in ${archive.url}: SHA-256 ${got}, not ${archive.library.sha256}`);
   }
@@ -197,7 +141,7 @@ export async function fetchOnnxruntime(vendor: string): Promise<void> {
   if (archive.link) {
     await symlink(archive.library.name, join(dir, archive.link));
   }
-  await Bun.write(join(dir, STAMP), stampOf(archive));
+  await writeStamp(dir, stampOf(archive));
   console.log(`ok ${DIR} ${VERSION} (${wanted.size} files, ${(size / 2 ** 20).toFixed(1)} MiB)`);
 }
 

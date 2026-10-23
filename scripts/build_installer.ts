@@ -13,16 +13,14 @@
 // the one running this script. Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
-import { cp, mkdir, readdir, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { cp, mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
 
 import { libraryPath as audioLibrary, soxrLibraryPath } from "../src/audiocpp-ffi";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
-import { download, output, run } from "./build_tools";
-import { requireMinicelt } from "./fetch_minicelt";
-import { requireOnnxruntime } from "./fetch_onnxruntime";
-import { requireTurndown } from "./fetch_turndown";
-import { requireWebLibs } from "./fetch_web_libs";
+import { output, run } from "./build_tools";
+import { downloadUnlessMatches } from "./fetch_tools";
+import { copyEngine, requireAllVendored, root, stageApp } from "./stage_app";
 
 if (process.platform !== "win32" || process.arch !== "x64") {
   throw new Error("the installer is built on, and for, x86-64 Windows");
@@ -36,7 +34,6 @@ const INNO = {
   sha256: "9c73c3bae7ed48d44112a0f48e66742c00090bdb5bef71d9d3c056c66e97b732",
 };
 
-const root = resolve(import.meta.dir, "..");
 const packaging = join(root, "packaging", "windows");
 const llama = join(root, "vendor", "llama.cpp");
 const audio = join(root, "vendor", "audio.cpp");
@@ -55,23 +52,7 @@ for (const [file, script] of [
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
   }
 }
-// The web app's libraries are packed with public/; an installation without them could not open PDF or Word files, and would send speech as WAV.
-await requireWebLibs(join(root, "public", "vendor"));
-// Likewise the Opus encoder of the speech stream, and the Markdown converter of fetched web pages.
-await requireMinicelt(join(root, "vendor"));
-await requireTurndown(join(root, "vendor"));
-// And ONNX Runtime, without which there is no sentence segmentation.
-await requireOnnxruntime(join(root, "vendor"));
-
-/** Copies an engine's directory as it is: the DLLs and licenses, not the headers or import libraries. */
-async function copyEngine(from: string, to: string): Promise<void> {
-  await mkdir(to, { recursive: true });
-  for (const name of await readdir(from)) {
-    if (name !== "include" && !name.endsWith(".lib") && !name.endsWith(".exp")) {
-      await cp(join(from, name), join(to, name));
-    }
-  }
-}
+await requireAllVendored();
 
 /** ISCC.exe: on the PATH, in the usual places, or from the pinned installer. */
 async function iscc(): Promise<string> {
@@ -87,8 +68,7 @@ async function iscc(): Promise<string> {
     }
   }
   const setup = join(work, "innosetup.exe");
-  await mkdir(work, { recursive: true });
-  await Bun.write(setup, await download(INNO.url, INNO.sha256));
+  await downloadUnlessMatches(INNO, setup);
   await run([setup, "/VERYSILENT", "/SUPPRESSMSGBOXES", "/NORESTART", "/CURRENTUSER"]);
   const installed = places[3]!;
   if (!(await Bun.file(installed).exists())) {
@@ -113,26 +93,10 @@ if (
 
 await rm(stage, { recursive: true, force: true });
 await mkdir(stage, { recursive: true });
-for (const name of await readdir(join(root, "src"))) {
-  if (name.endsWith(".ts")) {
-    await cp(join(root, "src", name), join(stage, "src", name));
-  }
-}
-// What src/webpage.ts runs inside a fetched page.
-await cp(join(root, "src", "page", "extract.ts"), join(stage, "src", "page", "extract.ts"));
-await cp(join(root, "public"), join(stage, "public"), { recursive: true });
-await cp(join(root, "prompts"), join(stage, "prompts"), { recursive: true });
-await cp(join(root, "docs", "openapi.yaml"), join(stage, "docs", "openapi.yaml"));
-await cp(join(root, "THIRD_PARTY_NOTICES.md"), join(stage, "THIRD_PARTY_NOTICES.md"));
-await cp(join(root, "scripts", "fetch_models.ts"), join(stage, "scripts", "fetch_models.ts"));
-await cp(join(root, "packaging", "bunfig.toml"), join(stage, "bunfig.toml"));
-await Bun.write(join(stage, "package.json"), `${JSON.stringify({ name: "index-translator", type: "module" })}\n`);
+await stageApp(stage);
 await copyEngine(llama, join(stage, "vendor", "llama.cpp"));
 await copyEngine(audio, join(stage, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(stage, "vendor", "soxr"));
-await copyEngine(join(root, "vendor", "onnxruntime"), join(stage, "vendor", "onnxruntime"));
-await cp(join(root, "vendor", "minicelt"), join(stage, "vendor", "minicelt"), { recursive: true });
-await cp(join(root, "vendor", "turndown"), join(stage, "vendor", "turndown"), { recursive: true });
 await cp(launcher, join(stage, "launcher.exe"));
 await cp(process.execPath, join(stage, "bun.exe"));
 

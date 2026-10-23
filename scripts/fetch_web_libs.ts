@@ -13,7 +13,7 @@
 import { mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { download } from "./build_tools";
+import { download, readStamp, untar, writeStamp } from "./fetch_tools";
 
 export interface Library {
   /** Directory under public/vendor/ (vendor/ for the server's own, scripts/fetch_turndown.ts). */
@@ -162,52 +162,12 @@ export const FILE_LIBRARIES: FileLibrary[] = [
   },
 ];
 
-/** Marks a directory as holding the whole of a pinned library; written last. */
-const STAMP = "VERSION";
-
 /** What the stamp of a library says: its version and the checksums of what was downloaded. */
 const stampOf = (lib: Library | FileLibrary) =>
   `${lib.version} ${"files" in lib ? lib.files.map((f) => f.sha256).join(" ") : lib.sha256}\n`;
 
-/**
- * The regular files of a gzipped tar archive (ustar, as npm packs it), by their path below the
- * archive's one top-level directory. Anything but files and directories is refused, links too unless
- * `skipLinks` (then they are left out).
- */
-export function untar(tgz: Uint8Array, skipLinks = false): Map<string, Uint8Array> {
-  const tar = Bun.gunzipSync(tgz as Uint8Array<ArrayBuffer>);
-  const text = new TextDecoder();
-  const field = (at: number, length: number) => text.decode(tar.subarray(at, at + length)).split("\0")[0]!;
-  const files = new Map<string, Uint8Array>();
-  for (let at = 0; at + 512 <= tar.length;) {
-    const name = field(at, 100);
-    if (name === "") {
-      break;
-    } // the end marker: empty blocks
-    const size = Number.parseInt(field(at + 124, 12).trim(), 8);
-    const type = field(at + 156, 1);
-    const prefix = field(at + 345, 155);
-    const path = prefix ? `${prefix}/${name}` : name;
-    if (Number.isNaN(size)) {
-      throw new TypeError(`unreadable size for ${path}`);
-    }
-    if (type === "0" || type === "") {
-      const inside = path.slice(path.indexOf("/") + 1);
-      if (inside.split("/").some((part) => part === ".." || part === "")) {
-        throw new Error(`refusing path ${path}`);
-      }
-      files.set(inside, tar.subarray(at + 512, at + 512 + size));
-    } else if (type !== "5" && !(skipLinks && (type === "1" || type === "2"))) {
-      throw new Error(`unexpected entry type "${type}" for ${path}`);
-    }
-    at += 512 + Math.ceil(size / 512) * 512;
-  }
-  return files;
-}
-
 export async function isPresent(lib: Library | FileLibrary, vendor: string): Promise<boolean> {
-  const present = Bun.file(join(vendor, lib.dir, STAMP));
-  return (await present.exists()) && (await present.text()) === stampOf(lib);
+  return (await readStamp(join(vendor, lib.dir))) === stampOf(lib);
 }
 
 export async function fetchFileLibrary(lib: FileLibrary, vendor: string): Promise<void> {
@@ -226,7 +186,7 @@ export async function fetchFileLibrary(lib: FileLibrary, vendor: string): Promis
     await Bun.write(join(dir, f.to), contents[i]!);
     bytes += contents[i]!.length;
   }
-  await Bun.write(join(dir, STAMP), stampOf(lib));
+  await writeStamp(dir, stampOf(lib));
   console.log(`ok ${lib.dir} ${lib.version.slice(0, 7)} (${lib.files.length} files, ${(bytes / 1024).toFixed(0)} KiB)`);
 }
 
@@ -257,7 +217,7 @@ export async function fetchLibrary(lib: Library, vendor: string): Promise<void> 
   if (missing.length > 0) {
     throw new Error(`${lib.url} has no ${missing.join(", ")}`);
   }
-  await Bun.write(join(dir, STAMP), stamp);
+  await writeStamp(dir, stamp);
   console.log(`ok ${lib.dir} ${lib.version} (${count} files, ${(bytes / 2 ** 20).toFixed(1)} MiB)`);
 }
 

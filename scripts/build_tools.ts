@@ -52,21 +52,6 @@ export function requireTools(tools: string[], hint: string): void {
   }
 }
 
-/** Downloads `url` and throws unless its SHA-256 is `sha256`. */
-export async function download(url: string, sha256: string): Promise<Uint8Array> {
-  console.log(`downloading ${url}`);
-  const res = await fetch(url);
-  if (!res.ok) {
-    throw new Error(`download failed: HTTP ${res.status} for ${url}`);
-  }
-  const bytes = await res.bytes();
-  const got = new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
-  if (got !== sha256) {
-    throw new Error(`checksum mismatch for ${url}: want ${sha256}, got ${got}`);
-  }
-  return bytes;
-}
-
 export const windows = process.platform === "win32";
 
 /** What to install when a build tool is missing, for the message. */

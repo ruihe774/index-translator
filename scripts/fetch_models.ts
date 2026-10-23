@@ -26,6 +26,7 @@ import { dirname, join } from "node:path";
 
 import { loadConfig } from "../src/config";
 import { MODELS } from "../src/models";
+import { fileSha256 } from "./fetch_tools";
 
 export interface Download {
   /** Path on the Hugging Face host, with the pinned revision in it. */
@@ -256,14 +257,6 @@ export function plan(
   return files;
 }
 
-async function sha256Of(path: string): Promise<string> {
-  const hasher = new Bun.CryptoHasher("sha256");
-  for await (const chunk of Bun.file(path).stream()) {
-    hasher.update(chunk);
-  }
-  return hasher.digest("hex");
-}
-
 /**
  * Makes `file.dest` the pinned file: kept when it is already there and right, downloaded
  * otherwise, to `<dest>.part` first so that only a verified file ever has the real name.
@@ -275,7 +268,7 @@ export async function fetchFile(
   log: (line: string) => void,
 ): Promise<void> {
   if (existsSync(file.dest)) {
-    const got = await sha256Of(file.dest);
+    const got = await fileSha256(file.dest);
     if (got === file.sha256) {
       return log(`ok ${file.dest}`);
     }
@@ -311,7 +304,7 @@ export async function fetchFile(
   const code = await child.exited;
   // 22 is an HTTP error, which is also what a .part file that is already complete gets (416 for the
   // empty range that is left to fetch), so there the file decides.
-  const got = existsSync(part) && (code === 0 || code === 22) ? await sha256Of(part) : "";
+  const got = existsSync(part) && (code === 0 || code === 22) ? await fileSha256(part) : "";
   if (got === file.sha256) {
     await rename(part, file.dest);
     return log(`ok ${file.dest}`);
