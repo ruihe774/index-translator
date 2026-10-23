@@ -16,7 +16,7 @@ import { basename, join } from "node:path";
 import type { SpeechLanguage, SpeechStatus, Voice } from "./api";
 import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
-import { fetchCommand } from "./preflight";
+import { fetchAdvice } from "./preflight";
 import type { SpeechWorkerReply, SpeechWorkerRequest } from "./speech-worker";
 import { type Pcm, readWav } from "./wav";
 
@@ -187,7 +187,7 @@ export class NativeSpeech implements Speech {
       return "the speech engine is not installed; run bun scripts/build_audiocpp.ts";
     }
     if (!existsSync(this.cfg.speechModelDir)) {
-      return `the speech model is not installed; run ${fetchCommand()} --model index-tts-2.5`;
+      return `the speech model is not installed; ${fetchAdvice(["index-tts-2.5"])}`;
     }
     return undefined;
   }

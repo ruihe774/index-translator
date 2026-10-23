@@ -19,6 +19,29 @@ export function fetchCommand(env: Env = Bun.env): string {
   return env.INDEX_TRANSLATOR_APPIMAGE ? `${env.INDEX_TRANSLATOR_APPIMAGE} fetch` : "bun scripts/fetch_models.ts";
 }
 
+/** How the server was started, as `GET /health` says it: the page words the download advice from it. */
+export function startedFrom(env: Env = Bun.env): "source" | "appimage" | "windows_launcher" {
+  return env.INDEX_TRANSLATOR_APPIMAGE ? "appimage" : env.INDEX_TRANSLATOR_LAUNCHER ? "windows_launcher" : "source";
+}
+
+/**
+ * How to download the models `ids` (every missing one when empty), as a clause that starts in lower
+ * case. From the Windows launcher (packaging/windows/launcher.c, which sets INDEX_TRANSLATOR_LAUNCHER)
+ * it is its button, which cannot name models: the download skips what is installed.
+ */
+export function fetchAdvice(ids: readonly string[] = [], env: Env = Bun.env): string {
+  if (env.INDEX_TRANSLATOR_LAUNCHER) {
+    return "click Download models in the Index Translator launcher";
+  }
+  return `run ${[fetchCommand(env), ...ids.map((id) => `--model ${id}`)].join(" ")}`;
+}
+
+/** `fetchAdvice` as a sentence. */
+export function fetchSentence(ids: readonly string[] = [], env: Env = Bun.env): string {
+  const advice = fetchAdvice(ids, env);
+  return `${advice[0]!.toUpperCase()}${advice.slice(1)}.`;
+}
+
 const DRIVERS =
   "for AMD and Intel: mesa-vulkan-drivers on Debian, Ubuntu and Fedora, vulkan-radeon or vulkan-intel on Arch; for NVIDIA: its own driver";
 const CPU_HINT = "To run on the processor instead, which is much slower, set GPU_LAYERS=0.";
@@ -82,7 +105,7 @@ export function preflight(
   // loadConfig has made sure the default model is a known one.
   const model = findModel(cfg.defaultModel)!;
   if (!existsSync(join(cfg.modelsDir, model.file))) {
-    return `The model ${model.id} is not in ${cfg.modelsDir} (${model.file}). Download the models with: ${fetchCommand(env)}`;
+    return `The model ${model.id} is not in ${cfg.modelsDir} (${model.file}). ${fetchSentence([], env)}`;
   }
   return undefined;
 }

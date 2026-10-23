@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import {
   adviceMessage,
   type Done,
+  engineDetail,
   healthMessage,
   imageAdviceMessage,
   INTERRUPTED_NOTE,
@@ -140,17 +141,43 @@ describe("healthMessage", () => {
     });
     expect(none.problem).toBe(false);
     expect(none.vram).not.toBeNull();
-    const cases: [{ required: string[]; optional: string[] }, string][] = [
-      [{ required: ["index-nailong-9b"], optional: [] }, "index-nailong-9b"],
-      [{ required: [], optional: ["labse"] }, "labse"],
+    const cases = [
+      { required: ["index-nailong-9b"], optional: [] },
+      { required: [], optional: ["labse"] },
     ];
-    for (const [missing_models, id] of cases) {
+    for (const missing_models of cases) {
       const m = healthMessage({ status: "ready", model: null, gpu_memory, queue, missing_models });
       expect(m.vram).toBeNull();
       expect(m.problem).toBe(true);
-      expect(m.text).toContain(id);
-      expect(m.text).toContain("fetch_models");
+      expect(m.text).toMatch(/^Disabled: [^.]+\.$/);
+      expect(m.text).not.toContain("fetch_models");
     }
+    expect(
+      healthMessage({ status: "ready", model: null, queue, missing_models: { required: [], optional: ["sat-3l-sm"] } })
+        .text,
+    ).toBe("Disabled: sentence segmentation.");
+  });
+
+  test("the dialog words the download for the way the server was started", () => {
+    const base = {
+      status: "ready",
+      model: null,
+      queue,
+      missing_models: { required: [], optional: ["labse"] },
+    } as const;
+    const detail = (started_from: "source" | "appimage" | "windows_launcher") =>
+      engineDetail({ ...base, started_from } as never);
+    expect(detail("source")).toStrictEqual({
+      message: "Disabled: sentence alignment.",
+      hint: { text: "Run in the program's folder:", command: "bun scripts/fetch_models.ts --model labse" },
+    });
+    expect(detail("appimage").hint?.command).toBe("Index_Translator.AppImage fetch --model labse");
+    expect(detail("windows_launcher").hint).toStrictEqual({
+      text: "Click Download models in the Index Translator launcher; it fetches what is missing.",
+    });
+    expect(
+      engineDetail({ status: "ready", model: null, queue, missing_models: { required: [], optional: [] } } as never),
+    ).toStrictEqual({ message: "Engine ready." });
   });
 
   test("loading is the only state that keeps polling", () => {

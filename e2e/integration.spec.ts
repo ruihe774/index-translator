@@ -232,6 +232,18 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   expect(copied.replaceAll("\r\n", "\n")).toBe(md);
 });
 
+test("the engine status opens a dialog with the health JSON, not the raw page", async ({ app }) => {
+  const dialog = app.page.locator("dialog.link-dialog");
+  await app.page.goto("/");
+  await app.page.locator("#engine").click();
+  await expect(dialog).toBeVisible();
+  await expect(dialog.getByRole("heading")).toHaveText("Engine status");
+  await expect(dialog).toContainText('"status": "ready"');
+  expect(new URL(app.page.url()).pathname).toBe("/");
+  await dialog.getByRole("button", { name: "Close" }).click();
+  await expect(dialog).toBeHidden();
+});
+
 test("output links ask for confirmation, with other wording for links that do not pair with the source", async ({
   app,
 }) => {

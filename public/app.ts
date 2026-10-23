@@ -21,6 +21,7 @@ import { looksLikeMarkdown } from "./markdown.ts";
 import {
   adviceMessage,
   type Done,
+  engineDetail,
   healthMessage,
   imageAdviceMessage,
   interruption,
@@ -318,6 +319,35 @@ async function pollHealth() {
   healthTimer = setTimeout(pollHealth, loading ? HEALTH_LOADING_POLL_MS : HEALTH_POLL_MS);
   showEngine(text, loading, vram, problem);
 }
+
+// The status is a link to the raw JSON (kept for a new tab or tool); a plain click shows it in a dialog.
+async function showEngineDialog() {
+  let detail: ReturnType<typeof engineDetail>;
+  let json = "";
+  try {
+    const health = (await (await fetch(`${API}/health`)).json()) as Health;
+    detail = engineDetail(health);
+    json = JSON.stringify(health, null, 2);
+  } catch {
+    detail = { message: "The server cannot be reached." };
+  }
+  await ask({
+    title: "Engine status",
+    ...detail,
+    target: json,
+    choices: [],
+    preformatted: true,
+    closeLabel: "Close",
+  });
+}
+
+engineEl.addEventListener("click", (event) => {
+  if (event.button !== 0 || event.ctrlKey || event.metaKey || event.shiftKey || event.altKey) {
+    return;
+  }
+  event.preventDefault();
+  void showEngineDialog();
+});
 
 /**
  * The engine status: a bar when the GPU memory is known or while a model loads (indeterminate), the

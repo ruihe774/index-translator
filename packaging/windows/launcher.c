@@ -267,6 +267,9 @@ int WINAPI wWinMain(HINSTANCE inst, HINSTANCE prev, PWSTR args, int show) {
                 L"Index Translator", MB_ICONERROR);
     return 1;
   }
+  /* The consoles started from here inherit it: the server tells the page how it was started, so the page
+     can say "click Download models" rather than a command (src/preflight.ts, startedFrom). */
+  SetEnvironmentVariableW(L"INDEX_TRANSLATOR_LAUNCHER", L"1");
   WNDCLASSW wc = {0};
   wc.lpfnWndProc = proc;
   wc.hInstance = inst;

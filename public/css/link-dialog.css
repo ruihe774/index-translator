@@ -23,6 +23,22 @@
     margin-block: 0 0.75rem;
   }
 
+  .link-dialog-hint {
+    padding: 0.5rem 0.75rem;
+    border-inline-start: 0.25rem solid var(--warn-border);
+    background: var(--surface-sunken);
+    border-radius: var(--radius-min);
+
+    code {
+      display: inline-block;
+      margin-block-start: 0.4rem;
+      font-family: "Cascadia Mono", Menlo, "Noto Sans Mono", monospace;
+      font-weight: 600;
+      overflow-wrap: anywhere;
+      user-select: all;
+    }
+  }
+
   .link-dialog-target {
     padding: 0.5rem;
     font-family: "Cascadia Mono", Menlo, "Noto Sans Mono", monospace;
@@ -30,6 +46,12 @@
     overflow-wrap: anywhere;
     background: var(--surface-sunken);
     border-radius: var(--radius-min);
+  }
+
+  .link-dialog-target.preformatted {
+    max-block-size: 50svh;
+    overflow: auto;
+    white-space: pre-wrap;
   }
 
   .link-dialog-buttons {

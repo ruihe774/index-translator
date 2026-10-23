@@ -5,7 +5,7 @@ import { join } from "node:path";
 
 import type { Probe } from "../src/llama-probe";
 import { MODELS } from "../src/models";
-import { fetchCommand, preflight, runProbe } from "../src/preflight";
+import { fetchAdvice, fetchCommand, preflight, runProbe, startedFrom } from "../src/preflight";
 import { config } from "./helpers/mock-engine";
 
 const GPU: Probe = { gpus: ["Vulkan0: Some GPU"], cpu: true, vulkanLoader: true };
@@ -99,9 +99,11 @@ describe("preflight", () => {
     const cfg = config({ modelsDir: join(dir, "empty") });
     const problem = preflight(cfg, () => GPU, {});
     expect(problem).toContain(`The model ${MODELS[0]!.id} is not in ${join(dir, "empty")}`);
-    expect(problem).toEndWith("bun scripts/fetch_models.ts");
+    expect(problem).toEndWith("Run bun scripts/fetch_models.ts.");
     const packaged = preflight(cfg, () => GPU, { INDEX_TRANSLATOR_APPIMAGE: "/home/u/Index_Translator.AppImage" });
-    expect(packaged).toEndWith("/home/u/Index_Translator.AppImage fetch");
+    expect(packaged).toEndWith("Run /home/u/Index_Translator.AppImage fetch.");
+    const launcher = preflight(cfg, () => GPU, { INDEX_TRANSLATOR_LAUNCHER: "1" });
+    expect(launcher).toEndWith("Click Download models in the Index Translator launcher.");
   });
 
   test("the hardware is checked before the model, so nobody downloads 17 GiB for a machine that cannot run it", () => {
@@ -113,6 +115,16 @@ describe("fetchCommand", () => {
   test("the script from a checkout, the subcommand from the AppImage", () => {
     expect(fetchCommand({})).toBe("bun scripts/fetch_models.ts");
     expect(fetchCommand({ INDEX_TRANSLATOR_APPIMAGE: "/a/b.AppImage" })).toBe("/a/b.AppImage fetch");
+  });
+});
+
+describe("startedFrom and fetchAdvice", () => {
+  test("the AppImage and the Windows launcher mark their environment; anything else is a checkout", () => {
+    expect(startedFrom({})).toBe("source");
+    expect(startedFrom({ INDEX_TRANSLATOR_APPIMAGE: "/a/b.AppImage" })).toBe("appimage");
+    expect(startedFrom({ INDEX_TRANSLATOR_LAUNCHER: "1" })).toBe("windows_launcher");
+    expect(fetchAdvice(["labse"], {})).toBe("run bun scripts/fetch_models.ts --model labse");
+    expect(fetchAdvice(["labse"], { INDEX_TRANSLATOR_LAUNCHER: "1" })).toStartWith("click Download models");
   });
 });
 

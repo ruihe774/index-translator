@@ -42,6 +42,7 @@ import { IMAGE_FORMATS, ImageRejected, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS, prepar
 import { Engine, EngineError, ImageInputError, ImageUnavailableError, type Launcher, launchNative } from "./llama";
 import { findModel, MODELS, type ModelSpec } from "./models";
 import { OPUS_TYPE, opusLoader, opusResponse } from "./opus-stream";
+import { startedFrom } from "./preflight";
 import {
   buildDocumentPrompt,
   buildImagePrompt,
@@ -1223,6 +1224,7 @@ export async function startApp(
                   ).map((m) => m.id),
                   optional: [...missingSpeechModels(cfg), ...missingSegmentModels(cfg)],
                 },
+                started_from: startedFrom(),
                 ...(memory && { gpu_memory: { total_bytes: memory.total, free_bytes: memory.free } }),
                 queue: { running: queue.running, waiting: queue.depth, max_waiting: cfg.maxQueue },
                 speech: { status: speech.state, error: speech.error },

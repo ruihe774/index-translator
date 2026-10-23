@@ -10,7 +10,7 @@ import { inferenceThreads } from "./cpu";
 import type { GpuMemory } from "./llama-ffi";
 import type { WorkerReply, WorkerRequest } from "./llama-worker";
 import type { ModelSpec } from "./models";
-import { fetchCommand } from "./preflight";
+import { fetchAdvice } from "./preflight";
 
 export type EngineState = "stopped" | "loading" | "ready" | "error";
 
@@ -149,7 +149,7 @@ class NativeWorker {
       }
       if (!(await Bun.file(mmproj).exists())) {
         throw new ImageUnavailableError(
-          `the image encoder of ${model.id} is not at ${mmproj}; download it with: ${fetchCommand()} --model ${model.id}`,
+          `the image encoder of ${model.id} is not at ${mmproj}; ${fetchAdvice([model.id])}`,
         );
       }
     };
@@ -244,7 +244,7 @@ let nativeWorker: NativeWorker | undefined;
 export const launchNative: Launcher = async (model, cfg) => {
   const modelPath = join(cfg.modelsDir, model.file);
   if (!(await Bun.file(modelPath).exists())) {
-    throw new EngineError(`model not found at ${modelPath}; run: ${fetchCommand()}`);
+    throw new EngineError(`model not found at ${modelPath}; ${fetchAdvice()}`);
   }
   nativeWorker ??= new NativeWorker(() => {
     if (nativeWorker === worker) {

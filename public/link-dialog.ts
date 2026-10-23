@@ -3,6 +3,7 @@
 // to what had it; Cancel comes first and has the initial focus.
 
 import { linkPrompt } from "./links.ts";
+import { focusableWhenScrolling } from "./scroll-focus.ts";
 
 /** A button of the dialog besides Cancel; the last one is the primary action. */
 export interface DialogChoice {
@@ -18,12 +19,19 @@ export interface DialogPrompt {
   choices: DialogChoice[];
   /** The question needs care (a link the check could not match): a warning border. */
   warn?: boolean;
+  /** What to do about it, set apart from the message: a sentence and optionally a command to run. */
+  hint?: { text: string; command?: string };
+  /** `target` is text of several lines (JSON): its line breaks are kept, and it scrolls when long. */
+  preformatted?: boolean;
+  /** The name of the button that only closes the dialog; "Cancel" unless the dialog asks nothing. */
+  closeLabel?: string;
 }
 
 interface Parts {
   dialog: HTMLDialogElement;
   title: HTMLElement;
   message: HTMLElement;
+  hint: HTMLElement;
   target: HTMLElement;
   row: HTMLElement;
 }
@@ -41,13 +49,16 @@ function build(): Parts {
   title.id = "link-dialog-title";
   const message = document.createElement("p");
   message.id = "link-dialog-message";
+  const hint = document.createElement("p");
+  hint.className = "link-dialog-hint";
   const target = document.createElement("p");
   target.className = "link-dialog-target";
   const row = document.createElement("div");
   row.className = "link-dialog-buttons";
-  dialog.append(title, message, target, row);
+  dialog.append(title, message, hint, target, row);
   document.body.append(dialog);
-  return { dialog, title, message, target, row };
+  focusableWhenScrolling(target, "Details");
+  return { dialog, title, message, hint, target, row };
 }
 
 function button(value: string, label: string, primary: boolean): HTMLButtonElement {
@@ -64,12 +75,26 @@ function button(value: string, label: string, primary: boolean): HTMLButtonEleme
 /** Asks `prompt`; resolves the value of the choice taken, or "cancel" (Cancel, Escape). */
 export function ask(prompt: DialogPrompt): Promise<string> {
   parts ??= build();
-  const { dialog, title, message, target, row } = parts;
+  const { dialog, title, message, hint, target, row } = parts;
   dialog.classList.toggle("warn", prompt.warn === true);
   title.textContent = prompt.title;
   message.textContent = prompt.message;
+  hint.hidden = !prompt.hint;
+  hint.replaceChildren();
+  if (prompt.hint) {
+    const lead = document.createElement("strong");
+    lead.textContent = "What to do: ";
+    hint.append(lead, prompt.hint.text);
+    if (prompt.hint.command) {
+      const command = document.createElement("code");
+      command.textContent = prompt.hint.command;
+      hint.append(document.createElement("br"), command);
+    }
+  }
   target.textContent = prompt.target;
-  const cancel = button("cancel", "Cancel", false);
+  target.hidden = prompt.target === "";
+  target.classList.toggle("preformatted", prompt.preformatted === true);
+  const cancel = button("cancel", prompt.closeLabel ?? "Cancel", false);
   cancel.autofocus = true;
   const choices = prompt.choices.map((c, i) => button(c.value, c.label, i === prompt.choices.length - 1));
   row.replaceChildren(cancel, ...choices);

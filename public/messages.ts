@@ -115,6 +115,41 @@ export function imageAdviceMessage(documentChosen: boolean, from: string, to: st
   return parts.join(" ");
 }
 
+/** What a missing model (by its `fetch_models.ts` id) takes away, in the words of the status line. */
+const FEATURES: Record<string, string> = {
+  "index-tts-2.5": "reading aloud",
+  "bs-roformer": "voice separation",
+  "sat-3l-sm": "sentence segmentation",
+  labse: "sentence alignment",
+};
+
+function featureName(id: string): string {
+  return FEATURES[id] ?? modelLabel(id);
+}
+
+/** How to download the missing models, for the way the server was started (`started_from` in /health). */
+export function fetchAdvice(
+  startedFrom: Health["started_from"],
+  ids: readonly string[],
+): { text: string; command?: string } {
+  const models = ids.map((id) => ` --model ${id}`).join("");
+  if (startedFrom === "windows_launcher") {
+    return { text: "Click Download models in the Index Translator launcher; it fetches what is missing." };
+  }
+  if (startedFrom === "appimage") {
+    return { text: "Run the AppImage with fetch, for example:", command: `Index_Translator.AppImage fetch${models}` };
+  }
+  return { text: "Run in the program's folder:", command: `bun scripts/fetch_models.ts${models}` };
+}
+
+/** The engine dialog's words: the status, and for missing models how to get them (a hint of its own). */
+export function engineDetail(health: Health): { message: string; hint?: { text: string; command?: string } } {
+  const { text } = healthMessage(health);
+  const { required, optional } = health.missing_models;
+  const missing = [...required, ...optional];
+  return missing.length > 0 ? { message: text, hint: fetchAdvice(health.started_from, missing) } : { message: text };
+}
+
 const GIB = 1024 ** 3;
 
 /** From this share of the GPU memory in use, free memory is tight. */
@@ -146,7 +181,7 @@ export function healthMessage(
     const absent = h.missing_models ? [...h.missing_models.required, ...h.missing_models.optional] : [];
     if (absent.length > 0) {
       return {
-        text: `Models missing: ${absent.join(", ")}. Some features are disabled; run the model download again (bun scripts/fetch_models.ts).`,
+        text: `Disabled: ${absent.map(featureName).join(", ")}.`,
         loading: false,
         vram: null,
         problem: true,

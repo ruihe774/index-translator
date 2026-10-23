@@ -11,7 +11,7 @@ import type { AlignedPair, AlignUnit, SegmentedText, SegmentStatus } from "./api
 import type { Config } from "./config";
 import { inferenceThreads } from "./cpu";
 import { libraryPath } from "./onnxruntime-ffi";
-import { fetchCommand } from "./preflight";
+import { fetchAdvice } from "./preflight";
 import type { SegmentModel, SegmentWorkerReply, SegmentWorkerRequest } from "./segment-worker";
 
 /** Most UTF-16 code units one request may hold in all its texts: about a second of work on a few cores. */
@@ -128,7 +128,7 @@ class ModelSlot implements ModelStatus {
       return "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts";
     }
     if (files.some((f) => !existsSync(join(dir(this.cfg), f)))) {
-      return `the ${name} model is not installed; run ${fetchCommand()} --model ${fetchId}`;
+      return `the ${name} model is not installed; ${fetchAdvice([fetchId])}`;
     }
     return undefined;
   }

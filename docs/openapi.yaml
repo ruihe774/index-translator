@@ -1387,7 +1387,7 @@ components:
           examples: [Chinese]
     Health:
       type: object
-      required: [status, model, limits, missing_models, queue]
+      required: [status, model, limits, missing_models, started_from, queue]
       properties:
         status:
           type: string
@@ -1439,6 +1439,13 @@ components:
               items:
                 type: string
               examples: [["labse"]]
+        started_from:
+          type: string
+          enum: [source, appimage, windows_launcher]
+          description: |
+            How the server was started, for telling the user how to download a missing model: `appimage`
+            (the AppImage's start script), `windows_launcher` (launcher.exe) or `source` (anything else,
+            such as `bun src/server.ts` in a checkout).
         queue:
           type: object
           required: [running, waiting, max_waiting]

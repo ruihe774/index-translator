@@ -717,6 +717,13 @@ export interface components {
                  */
                 optional: string[];
             };
+            /**
+             * @description How the server was started, for telling the user how to download a missing model: `appimage`
+             *     (the AppImage's start script), `windows_launcher` (launcher.exe) or `source` (anything else,
+             *     such as `bun src/server.ts` in a checkout).
+             * @enum {string}
+             */
+            started_from: "source" | "appimage" | "windows_launcher";
             queue: {
                 /** @description Whether a translation is in progress. */
                 running: boolean;
