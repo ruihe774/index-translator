@@ -19,10 +19,11 @@
 #pragma comment(lib, "user32.lib")
 #pragma comment(lib, "gdi32.lib")
 
-enum { ID_PORT_LABEL = 100, ID_PORT, ID_START, ID_FETCH, ID_NOTICES, ID_HELP, ID_QUIT };
+enum { ID_PORT_LABEL = 100, ID_PORT, ID_CTX_LABEL, ID_CTX, ID_DOM_LABEL, ID_DOM, ID_HOST_LABEL, ID_HOST, ID_ORI_LABEL, ID_ORI, ID_AH_LABEL, ID_AH, ID_CPU, ID_NOSPEECH, ID_START, ID_FETCH, ID_NOTICES, ID_HELP, ID_QUIT };
 
 /* 96-dpi layout */
-enum { MARGIN = 24, CLIENT_W = 400, ROW_H = 28, LINK_H = 62, GAP = 10, BTN_W = 110, BTN_H = 32 };
+enum { MARGIN = 24, CLIENT_W = 400, ROW_H = 28, LINK_H = 62, GAP = 10, BTN_W = 110, BTN_H = 32,
+       LABEL_W = 110, ROWP = ROW_H + 6, CHK_H = 22, CHKP = CHK_H + 4 };
 
 static const struct { int id; const WCHAR *title, *note; } links[] = {
   {ID_START, L"Start translator", L"Run the server and open it in the browser"},
@@ -90,11 +91,29 @@ static void make_font(HWND w, UINT dpi) {
   if (old) DeleteObject(old);
 }
 
+static void row(HWND w, UINT dpi, int label, int edit, int y, int edit_w) {
+  MoveWindow(GetDlgItem(w, label), px(MARGIN, dpi), px(y + 4, dpi), px(LABEL_W, dpi), px(ROW_H - 8, dpi), TRUE);
+  MoveWindow(GetDlgItem(w, edit), px(MARGIN + LABEL_W + 4, dpi), px(y, dpi), px(edit_w, dpi), px(ROW_H, dpi), TRUE);
+}
+
 static void layout(HWND w, UINT dpi) {
   int cw = CLIENT_W - 2 * MARGIN, y = MARGIN;
-  MoveWindow(GetDlgItem(w, ID_PORT_LABEL), px(MARGIN, dpi), px(y + 4, dpi), px(60, dpi), px(ROW_H - 8, dpi), TRUE);
-  MoveWindow(GetDlgItem(w, ID_PORT), px(MARGIN + 64, dpi), px(y, dpi), px(80, dpi), px(ROW_H, dpi), TRUE);
-  y += ROW_H + GAP + 6;
+  row(w, dpi, ID_PORT_LABEL, ID_PORT, y, 80);
+  y += ROWP;
+  row(w, dpi, ID_CTX_LABEL, ID_CTX, y, 80);
+  y += ROWP;
+  row(w, dpi, ID_DOM_LABEL, ID_DOM, y, cw - LABEL_W - 4);
+  y += ROWP;
+  row(w, dpi, ID_HOST_LABEL, ID_HOST, y, 140);
+  y += ROWP;
+  row(w, dpi, ID_ORI_LABEL, ID_ORI, y, cw - LABEL_W - 4);
+  y += ROWP;
+  row(w, dpi, ID_AH_LABEL, ID_AH, y, cw - LABEL_W - 4);
+  y += ROWP;
+  MoveWindow(GetDlgItem(w, ID_CPU), px(MARGIN, dpi), px(y, dpi), px(cw, dpi), px(CHK_H, dpi), TRUE);
+  y += CHKP;
+  MoveWindow(GetDlgItem(w, ID_NOSPEECH), px(MARGIN, dpi), px(y, dpi), px(cw, dpi), px(CHK_H, dpi), TRUE);
+  y += CHKP + GAP + 6;
   for (int i = 0; i < NLINKS; i++, y += LINK_H + GAP)
     MoveWindow(GetDlgItem(w, links[i].id), px(MARGIN, dpi), px(y, dpi), px(cw, dpi), px(LINK_H, dpi), TRUE);
   y += 6;
@@ -102,7 +121,7 @@ static void layout(HWND w, UINT dpi) {
 }
 
 static int client_height(void) {
-  return MARGIN + ROW_H + GAP + 6 + NLINKS * (LINK_H + GAP) + 6 + BTN_H + MARGIN;
+  return MARGIN + 6 * ROWP + 2 * CHKP + GAP + 6 + NLINKS * (LINK_H + GAP) + 6 + BTN_H + MARGIN;
 }
 
 static void fit_window(HWND w, UINT dpi) {
@@ -111,13 +130,48 @@ static void fit_window(HWND w, UINT dpi) {
   SetWindowPos(w, NULL, 0, 0, r.right - r.left, r.bottom - r.top, SWP_NOMOVE | SWP_NOZORDER | SWP_NOACTIVATE);
 }
 
+static void edit(HWND w, int id, const WCHAR *text, DWORD style, int limit) {
+  HWND e = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", text, WS_CHILD | WS_VISIBLE | WS_TABSTOP | style,
+                           0, 0, 0, 0, w, (HMENU)(INT_PTR)id, NULL, NULL);
+  SendMessageW(e, EM_LIMITTEXT, limit, 0);
+}
+
+/* The command line goes through cmd.exe, so only the characters a domain list needs are let through. */
+static BOOL chars_ok(const WCHAR *d, const WCHAR *extra) {
+  for (; *d; d++)
+    if (!((*d >= L'0' && *d <= L'9') || (*d >= L'a' && *d <= L'z') || (*d >= L'A' && *d <= L'Z') || wcschr(extra, *d)))
+      return FALSE;
+  return TRUE;
+}
+
+static BOOL loopback(const WCHAR *h) {
+  return !h[0] || !wcscmp(h, L"localhost") || !wcscmp(h, L"::1") || !wcsncmp(h, L"127.", 4);
+}
+
+static BOOL bad(HWND w, const WCHAR *msg) {
+  MessageBoxW(w, msg, L"Index Translator", MB_ICONERROR);
+  return TRUE;
+}
+
 static LRESULT CALLBACK proc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
   switch (m) {
     case WM_CREATE: {
       CreateWindowW(L"STATIC", L"Port", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, w, (HMENU)ID_PORT_LABEL, NULL, NULL);
-      HWND e = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"3000", WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_NUMBER | ES_CENTER,
-                               0, 0, 0, 0, w, (HMENU)ID_PORT, NULL, NULL);
-      SendMessageW(e, EM_LIMITTEXT, 5, 0);
+      edit(w, ID_PORT, L"3000", ES_NUMBER | ES_CENTER, 5);
+      CreateWindowW(L"STATIC", L"Context size", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, w, (HMENU)ID_CTX_LABEL, NULL, NULL);
+      edit(w, ID_CTX, L"65536", ES_NUMBER | ES_CENTER, 7);
+      CreateWindowW(L"STATIC", L"Web page domains", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, w, (HMENU)ID_DOM_LABEL, NULL, NULL);
+      edit(w, ID_DOM, L"", ES_AUTOHSCROLL, 200);
+      CreateWindowW(L"STATIC", L"Listen on", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, w, (HMENU)ID_HOST_LABEL, NULL, NULL);
+      edit(w, ID_HOST, L"127.0.0.1", ES_AUTOHSCROLL, 45);
+      CreateWindowW(L"STATIC", L"Allowed origins", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, w, (HMENU)ID_ORI_LABEL, NULL, NULL);
+      edit(w, ID_ORI, L"", ES_AUTOHSCROLL, 200);
+      CreateWindowW(L"STATIC", L"Allowed hosts", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0, w, (HMENU)ID_AH_LABEL, NULL, NULL);
+      edit(w, ID_AH, L"", ES_AUTOHSCROLL, 200);
+      CreateWindowW(L"BUTTON", L"Use the processor only (no GPU)", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                    0, 0, 0, 0, w, (HMENU)ID_CPU, NULL, NULL);
+      CreateWindowW(L"BUTTON", L"Turn off reading aloud", WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX,
+                    0, 0, 0, 0, w, (HMENU)ID_NOSPEECH, NULL, NULL);
       for (int i = 0; i < NLINKS; i++) {
         HWND b = CreateWindowW(L"BUTTON", links[i].title,
                                WS_CHILD | WS_VISIBLE | WS_TABSTOP | (i == 0 ? BS_DEFCOMMANDLINK : BS_COMMANDLINK),
@@ -146,10 +200,38 @@ static LRESULT CALLBACK proc(HWND w, UINT m, WPARAM wp, LPARAM lp) {
       if (HIWORD(wp) != BN_CLICKED) break;
       switch (LOWORD(wp)) {
         case ID_START: {
-          WCHAR port[8] = L"", line[256];
+          WCHAR port[8] = L"", ctx[16] = L"", dom[256] = L"", host[64] = L"", ori[256] = L"", ah[256] = L"", line[1024];
           GetDlgItemTextW(w, ID_PORT, port, 8);
+          GetDlgItemTextW(w, ID_CTX, ctx, 16);
+          GetDlgItemTextW(w, ID_DOM, dom, 256);
+          GetDlgItemTextW(w, ID_HOST, host, 64);
+          GetDlgItemTextW(w, ID_ORI, ori, 256);
+          GetDlgItemTextW(w, ID_AH, ah, 256);
+          if (!chars_ok(dom, L".*,-:") && bad(w, L"Web page domains: use only letters, digits and . * , - :")) break;
+          if (!chars_ok(host, L".:-") && bad(w, L"Listen on: use an address or name (letters, digits, . : -)")) break;
+          if (!chars_ok(ah, L".*,-:") && bad(w, L"Allowed hosts: use only letters, digits and . * , - :")) break;
+          if (!chars_ok(ori, L".*,-:/") && bad(w, L"Allowed origins: use only letters, digits and . * , - : /")) break;
+          if (ori[0] && !wcsstr(ori, L"://") &&
+              bad(w, L"Allowed origins look like http://name:port or https://*.name (scheme required, no bare *).")) break;
+          if (!loopback(host) &&
+              MessageBoxW(w,
+                          L"The translator has no password. Anyone who can reach this computer on that address can "
+                          L"use it, read what you translate and use your GPU.\n\n"
+                          L"Only continue on a network you trust (not a public or shared Wi-Fi), with a firewall "
+                          L"that blocks the port from the internet.\n\n"
+                          L"Listening on 0.0.0.0 or :: also needs \"Allowed hosts\" (the names others will type, "
+                          L"like mypc.local), or the server will not start.\n\nListen beyond this computer?",
+                          L"Index Translator", MB_ICONWARNING | MB_YESNO | MB_DEFBUTTON2) != IDYES)
+            break;
           if (!port[0]) wcscpy(port, L"3000");
-          swprintf(line, 256, L"bun --disallow-code-generation-from-strings=strict src\\server.ts --port %s", port);
+          int n = swprintf(line, 1024, L"bun --disallow-code-generation-from-strings=strict src\\server.ts --port %s", port);
+          if (host[0]) n += swprintf(line + n, 1024 - n, L" --host %s", host);
+          if (ori[0]) n += swprintf(line + n, 1024 - n, L" --allowed-origins \"%s\"", ori);
+          if (ah[0]) n += swprintf(line + n, 1024 - n, L" --allowed-hosts \"%s\"", ah);
+          if (ctx[0]) n += swprintf(line + n, 1024 - n, L" --ctx-size %s", ctx);
+          if (dom[0]) n += swprintf(line + n, 1024 - n, L" --allowed-webpage-domains \"%s\"", dom);
+          if (IsDlgButtonChecked(w, ID_CPU)) n += swprintf(line + n, 1024 - n, L" --gpu-layers 0");
+          if (IsDlgButtonChecked(w, ID_NOSPEECH)) n += swprintf(line + n, 1024 - n, L" --speech 0");
           if (run(w, line)) DestroyWindow(w); /* the console carries on on its own */
           break;
         }
