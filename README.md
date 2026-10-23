@@ -9,10 +9,13 @@ Built from [iyulab/undoc@3a9dbbb](https://github.com/iyulab/undoc/commit/3a9dbbb
 (upstream main, `undoc-wasm` 0.27.0):
 
 ```sh
-wasm-pack build undoc-wasm --release --target web --no-default-features --features docx
+RUSTFLAGS="-C target-feature=+simd128" \
+  wasm-pack build undoc-wasm --release --target web -- --no-default-features --features docx
 ```
 
-with wasm-pack 0.15.0 (its wasm-bindgen and wasm-opt) and rustc 1.99.1. Nothing here is edited by
+with wasm-pack 0.15.0 (its wasm-bindgen and wasm-opt) and rustc 1.99.1. rustc's default wasm32 features
+(sign-ext, nontrapping-fptoint, multivalue, reference-types, bulk-memory, mutable-globals) plus
+`simd128` are WebAssembly 2.0, which the runtime must support. Nothing here is edited by
 hand except this README; `LICENSE` is undoc's. `--target web`: an ES module that is used without a
 bundler and whose `default` export instantiates the binary. ZIP entries are inflated by the crate
 itself.
