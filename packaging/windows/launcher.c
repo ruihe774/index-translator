@@ -1,5 +1,6 @@
 /* Index Translator launcher: a small Win32 window whose command links run the subcommands in an
-   ordinary console window (cmd /k, so the output stays readable after the command ends). Nothing
+   ordinary console window (cmd /c, then `pause`, so the output stays readable after the command ends and
+   the window never drops back to a bare prompt). Nothing
    else: no status tracking, no embedding. Finds the repository by walking up from the exe until
    src\server.ts exists; `bun` comes from PATH.
    Modern look: Common Controls 6 (command links, visual styles) and Per-Monitor DPI Awareness V2,
@@ -57,7 +58,8 @@ static int find_root(void) {
    first. The box is modal over the launcher window, which closes once the command has started. */
 static BOOL run(HWND owner, const WCHAR *line) {
   WCHAR cmd[2048];
-  swprintf(cmd, 2048, L"cmd.exe /k %s", line);
+  /* cmd /c "..." with the outer quotes stripped by cmd; `&` so the prompt shows whatever the exit code. */
+  swprintf(cmd, 2048, L"cmd.exe /c \"%s & echo. & pause\"", line);
   MessageBoxW(owner,
               L"The command will run in a separate console window.\n\n"
               L"Do not close that window: closing it stops the command.\n"
