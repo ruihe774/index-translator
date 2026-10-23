@@ -138,7 +138,7 @@ export interface PdfDocument {
   readonly pageCount: number;
   /** Draws page `page` (1-based) into `canvas`, sized for `cssWidth` CSS pixels across. */
   render(page: number, canvas: HTMLCanvasElement, cssWidth: number): Promise<void>;
-  /** The page's text as Markdown. Reads the whole file each time, so it takes as long for one page as for all. */
+  /** The page's text as Markdown. The first call parses the whole file; the others only read their page. */
   extract(page: number): Promise<PageText>;
   /** Frees both libraries' copies of the file; what is still pending fails. */
   close(): void;

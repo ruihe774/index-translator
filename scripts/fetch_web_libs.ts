@@ -1,8 +1,8 @@
-// Fetch the libraries the web app runs in the browser, into public/vendor/: for PDF support,
-// pdf-inspector's WebAssembly build (page text as Markdown) and pdf.js (page thumbnails), both npm
-// packages downloaded from the registry by version and checksum, of which only the files the page
-// loads are unpacked, plus the licenses; and, each a few files of a git commit, undoc's WebAssembly
-// build (a Word document's text as Markdown) and the QOA codec of the speech stream. Nothing is
+// Fetch the libraries the web app runs in the browser, into public/vendor/: for PDF support, pdf.js
+// (page thumbnails), an npm package downloaded from the registry by version and checksum, of which
+// only the files the page loads are unpacked, plus the license; and, each a few files of a git commit,
+// pdf-inspector's WebAssembly build (page text as Markdown), undoc's (a Word document's text as
+// Markdown) and the QOA codec of the speech stream. Nothing is
 // installed with a package manager, and the page never loads them from the network: the server
 // serves public/vendor/ like the rest of public/. Without the PDF libraries or undoc opening a PDF
 // or a Word document is refused with a message; without the codec speech arrives as WAV.
@@ -28,15 +28,6 @@ export interface Library {
 }
 
 export const LIBRARIES: Library[] = [
-  {
-    dir: "pdf-inspector",
-    version: "1.25.2",
-    url: "https://registry.npmjs.org/@firecrawl/pdf-inspector-wasm/-/pdf-inspector-wasm-1.25.2.tgz",
-    sha256: "6b5b2306e933df497b3552f82651fd2ded2e03f9bb6b6e768102fd1074b00bc2",
-    place: (path) =>
-      ["pdf_inspector_wasm.js", "pdf_inspector_wasm_bg.wasm", "LICENSE"].includes(path) ? path : undefined,
-    expect: ["pdf_inspector_wasm.js", "pdf_inspector_wasm_bg.wasm", "LICENSE"],
-  },
   {
     dir: "pdfjs",
     version: "6.4.299",
@@ -100,13 +91,42 @@ const QOA_COMMIT = "3c85bd84595d56cb13bef779add463246e0908b7";
 const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${QOA_COMMIT}`;
 const UNDOC_COMMIT = "bfe9907f3c9f32020e8502e93ae3f72bdf1fc0e9";
 const UNDOC_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${UNDOC_COMMIT}`;
+const PDF_INSPECTOR_COMMIT = "832ad1f7b1fd80514aa12a91693c6e0c0a110fb2";
+const PDF_INSPECTOR_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${PDF_INSPECTOR_COMMIT}`;
 
-/**
- * qoa-wasm (the `qoa` branch of this project's repository): the QOA audio codec the speech stream
- * uses. src/qoa.ts fetches its two WebAssembly builds from `../dist/` relative to itself, so the
- * files keep the repository's layout. The server answers `.ts` as JavaScript, so they are used as they are.
- */
+/** Libraries kept as files on branches of this project's repository, each pinned by commit. */
 export const FILE_LIBRARIES: FileLibrary[] = [
+  /**
+   * pdf-inspector-wasm (the `pdf-inspector` branch: wasm-pack's output for ruihe774/pdf-inspector's
+   * `perf/wasm-opt-level-2`, upstream 1.25.2 plus `PdfDocument`, which parses a file once): a PDF
+   * page's text as Markdown. Back to the npm package once upstream has both changes.
+   */
+  {
+    dir: "pdf-inspector",
+    version: PDF_INSPECTOR_COMMIT,
+    files: [
+      {
+        to: "pdf_inspector_wasm.js",
+        url: `${PDF_INSPECTOR_RAW}/pdf_inspector_wasm.js`,
+        sha256: "3e492838887fb09048de134c21528f94fda01b638518bb6c007b2733f796ba0e",
+      },
+      {
+        to: "pdf_inspector_wasm_bg.wasm",
+        url: `${PDF_INSPECTOR_RAW}/pdf_inspector_wasm_bg.wasm`,
+        sha256: "6c51f5cc4dc777eecce727fcbe38b406b1a7d28affa0cb634e2123671ec17efc",
+      },
+      {
+        to: "LICENSE",
+        url: `${PDF_INSPECTOR_RAW}/LICENSE`,
+        sha256: "d31b40739ab8c626c561c6aa2900deb2af74e40d6b4522373d3e340417df4331",
+      },
+    ],
+  },
+  /**
+   * qoa-wasm (the `qoa` branch): the QOA audio codec the speech stream uses. src/qoa.ts fetches its two
+   * WebAssembly builds from `../dist/` relative to itself, so the files keep the repository's layout.
+   * The server answers `.ts` as JavaScript, so they are used as they are.
+   */
   {
     dir: "qoa",
     version: QOA_COMMIT,

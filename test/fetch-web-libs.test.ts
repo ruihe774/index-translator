@@ -42,8 +42,6 @@ describe("the pinned libraries", () => {
       expect(l.url).toContain(l.version);
       expect(l.expect).toContain("LICENSE");
     }
-    expect(lib("pdf-inspector").place("pdf_inspector_wasm_bg.wasm")).toBe("pdf_inspector_wasm_bg.wasm");
-    expect(lib("pdf-inspector").place("pdf_inspector_wasm.d.ts")).toBeUndefined();
   });
 });
 
@@ -60,6 +58,7 @@ describe("the pinned files of a commit", () => {
       expect(lib.files.map((f) => f.to)).toContain("LICENSE");
     }
     expect(files("qoa")).toStrictEqual(["src/qoa.ts", "dist/qoa.wasm", "dist/qoa-simd.wasm", "LICENSE"]);
+    expect(files("pdf-inspector")).toStrictEqual(["pdf_inspector_wasm.js", "pdf_inspector_wasm_bg.wasm", "LICENSE"]);
     expect(files("undoc")).toStrictEqual(["undoc_wasm.js", "undoc_wasm_bg.wasm", "LICENSE"]);
   });
 });
