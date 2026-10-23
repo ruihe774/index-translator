@@ -217,7 +217,7 @@ jobs:
           }
           expect "No GPU with a Vulkan driver was found" \
             "$appimage" --appimage-extract-and-run --open-browser 0
-          expect "Download the models with:" \
+          expect "The model index-translate-9b is not in" \
             "$appimage" --appimage-extract-and-run --open-browser 0 --gpu-layers 0
           expect 'unknown model "nope"' \
             "$appimage" --appimage-extract-and-run fetch --model nope
@@ -343,7 +343,7 @@ jobs:
           }
           expect "No GPU with a CUDA driver was found" \
             "$appimage" --appimage-extract-and-run --open-browser 0
-          expect "Download the models with:" \
+          expect "The model index-translate-9b is not in" \
             "$appimage" --appimage-extract-and-run --open-browser 0 --gpu-layers 0
           expect 'unknown model "nope"' \
             "$appimage" --appimage-extract-and-run fetch --model nope
@@ -476,7 +476,7 @@ jobs:
             [ "$code" -eq 1 ] && grep -qF -- "$want" <<<"$out"
           }
           expect "GPU_LAYERS=0" bun src/server.ts --open-browser 0
-          expect "Download the models with:" bun src/server.ts --open-browser 0 --gpu-layers 0
+          expect "The model index-translate-9b is not in" bun src/server.ts --open-browser 0 --gpu-layers 0
 
       - uses: actions/upload-artifact@v7
         with:
@@ -583,7 +583,7 @@ jobs:
           }
           cd "$dir"
           expect "GPU_LAYERS=0" ./bun.exe --no-env-file src/server.ts --open-browser 0
-          expect "Download the models with:" ./bun.exe --no-env-file src/server.ts --open-browser 0 --gpu-layers 0
+          expect "The model index-translate-9b is not in" ./bun.exe --no-env-file src/server.ts --open-browser 0 --gpu-layers 0
           cd "$RUNNER_TEMP"
           "$dir/unins000.exe" /VERYSILENT
           for _ in 1 2 3 4 5 6 7 8 9 10; do [ -e "$dir/bun.exe" ] || break; sleep 1; done
