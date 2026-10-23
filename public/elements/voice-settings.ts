@@ -5,8 +5,10 @@
 // It owns what happens in the browser: choosing, picking a file, recording. What needs the server
 // stays with the page: the list of voices and uploading a sample. The page hears about it from
 // events (`voicechange`, `speedchange`, and `sample` with the audio as picked or recorded, which the
-// page turns into a voice) and answers with `setVoices`, `addVoice` and `status`.
+// page turns into a voice) and answers with `setVoices`, `addVoice` and `status`. The chosen voice
+// and speed are kept in local storage here and put back when the element starts and the list arrives.
 
+import { KEYS, store, stored } from "../storage.ts";
 import { MicRecorder } from "../voice-sample.ts";
 
 export interface VoiceOption {
@@ -48,8 +50,15 @@ export class VoiceSettings extends HTMLElement {
     this.#record = find("#voice-record");
     this.#status = find("#clone-status");
 
-    this.#voice.addEventListener("change", () => void this.dispatchEvent(new Event("voicechange")));
-    this.#speed.addEventListener("change", () => void this.dispatchEvent(new Event("speedchange")));
+    this.speed = stored(KEYS.speed);
+    this.#voice.addEventListener("change", () => {
+      store(KEYS.voice, this.#voice.value);
+      this.dispatchEvent(new Event("voicechange"));
+    });
+    this.#speed.addEventListener("change", () => {
+      store(KEYS.speed, this.#speed.value);
+      this.dispatchEvent(new Event("speedchange"));
+    });
     find("#voice-file-button").addEventListener("click", () => this.#file.click());
     this.#file.addEventListener("change", () => void this.#loadFile());
     this.#record.addEventListener("click", () => void this.#toggleRecording());
@@ -91,8 +100,9 @@ export class VoiceSettings extends HTMLElement {
    * Puts the server's voices in the list. The voice selected now stays selected if it is still
    * there, else the remembered one, else the first. True when the selection moved to another voice.
    */
-  setVoices(voices: VoiceOption[], remembered: string | null): boolean {
+  setVoices(voices: VoiceOption[]): boolean {
     const before = this.#voice.value;
+    const remembered = stored(KEYS.voice);
     const wanted = [before, remembered].find((id) => voices.some((v) => v.id === id));
     this.#voice.replaceChildren(...voices.map((v) => new Option(v.name, v.id)));
     if (wanted) {
@@ -105,6 +115,7 @@ export class VoiceSettings extends HTMLElement {
   addVoice(voice: VoiceOption) {
     this.#voice.append(new Option(voice.name, voice.id));
     this.#voice.value = voice.id;
+    store(KEYS.voice, voice.id);
   }
 
   #sample(name: string, audio: ArrayBuffer) {

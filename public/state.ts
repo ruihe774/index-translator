@@ -5,12 +5,14 @@
 // player is asked) and anything else that is rebuilt incrementally on purpose; those are written to
 // the DOM as they happen and only report into this object.
 
+import type { Run } from "./run.ts";
+
 /** The two texts that can be read aloud. */
 export type Side = "source" | "output";
 
 export interface State {
-  /** The translation under way; `null` when none runs. Aborting it stops the request. */
-  running: AbortController | null;
+  /** The translation or page fetch under way; `null` when none runs. Its `stop()` ends it. */
+  running: Run | null;
   /** The raw translation as streamed so far (the copied text), also after it finished. */
   translation: string;
   /** False until the language selects hold their options. */
@@ -50,4 +52,16 @@ export function bindRender(render: () => void) {
 export function setState(patch: Partial<State>) {
   Object.assign(state, patch);
   renderer?.();
+}
+
+/**
+ * Adds streamed text to the translation. Only the first token changes what the controls show (Copy
+ * and Clear become available), so only it renders; the rest just grows the copied text.
+ */
+export function appendTranslation(text: string) {
+  if (state.translation.length === 0) {
+    setState({ translation: text });
+  } else {
+    state.translation += text;
+  }
 }

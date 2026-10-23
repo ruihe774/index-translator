@@ -123,6 +123,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     try {
       picture = await createImageBitmap(file);
     } catch {
+      // Any decode failure (an InvalidStateError, a corrupt file) means the same to the reader.
       reading(false, mine);
       if (mine === turn) {
         say(`${file.name} was not opened: it could not be read as an image.`, "error");

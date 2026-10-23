@@ -12,6 +12,8 @@
 // Each button is placed at its block's height and as tall as the block, so it scrolls with the
 // text by itself; the places are measured again when the scroller or any block changes size.
 
+import { hasFocus } from "./render.ts";
+
 export interface GutterBlock {
   /** The block's first line, its `data-line`. */
   line: number;
@@ -117,7 +119,7 @@ export class ReadGutter {
     });
     // Tab goes to the block being read, unless the reader is choosing in the column.
     const reading = blocks.findIndex((b) => b.line === current);
-    if (reading !== -1 && !this.el.contains(document.activeElement)) {
+    if (reading !== -1 && !hasFocus(this.el)) {
       this.setStop(reading);
     }
     this.place();
@@ -128,7 +130,7 @@ export class ReadGutter {
     if (this.el.hidden) {
       return false;
     }
-    const hadFocus = this.el.contains(document.activeElement);
+    const hadFocus = hasFocus(this.el);
     this.el.hidden = true;
     this.scroller.classList.remove("with-gutter");
     this.resize.disconnect();
@@ -165,7 +167,7 @@ export class ReadGutter {
   }
 
   private build() {
-    const focused = this.el.contains(document.activeElement);
+    const focused = hasFocus(this.el);
     this.buttons = this.blocks.map((block) => {
       const b = document.createElement("button");
       b.type = "button";
