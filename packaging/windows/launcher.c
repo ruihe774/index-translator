@@ -51,21 +51,22 @@ static int find_root(void) {
 }
 
 /* Run `cmd /k <line>` in a new console, in the repository directory. Returns whether it started.
-   Afterwards tells the user to keep that console open (closing it ends the command) and to answer
-   it when it asks; the box is modal over the launcher window, which closes once it is dismissed. */
+   First tells the user to keep that console open (closing it ends the command) and to answer it
+   when it asks; the console is created only after the box is confirmed, so the message is read
+   first. The box is modal over the launcher window, which closes once the command has started. */
 static BOOL run(HWND owner, const WCHAR *line) {
   WCHAR cmd[2048];
   swprintf(cmd, 2048, L"cmd.exe /k %s", line);
+  MessageBoxW(owner,
+              L"The command will run in a separate console window.\n\n"
+              L"Do not close that window: closing it stops the command.\n"
+              L"If it asks for confirmation, click it and type your answer there.",
+              L"Index Translator", MB_ICONINFORMATION | MB_OK);
   STARTUPINFOW si = {sizeof si};
   PROCESS_INFORMATION pi;
   if (CreateProcessW(NULL, cmd, NULL, NULL, FALSE, CREATE_NEW_CONSOLE, NULL, root, &si, &pi)) {
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
-    MessageBoxW(owner,
-                L"The command is running in a separate console window.\n\n"
-                L"Do not close that window: closing it stops the command.\n"
-                L"If it asks for confirmation, click it and type your answer there.",
-                L"Index Translator", MB_ICONINFORMATION | MB_OK);
     return TRUE;
   }
   MessageBoxW(owner, L"Could not start cmd.exe.", L"Index Translator", MB_ICONERROR);
