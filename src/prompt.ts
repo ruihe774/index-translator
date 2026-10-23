@@ -29,7 +29,7 @@ export function buildDocumentPrompt(direction: string, text: string): string {
   return template.replace(PLACEHOLDER, () => text.trim()).trim();
 }
 
-export interface PromptLanguage extends Language {
+interface PromptLanguage extends Language {
   /** Name used inside the prompt. */
   zh: string;
 }

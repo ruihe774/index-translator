@@ -84,10 +84,10 @@ const CUDA_RUNTIME = ["libcudart.so.13", "libcublas.so.13", "libcublasLt.so.13"]
 export const CUDA_FFT = "libcufft.so.12";
 
 /** What to install when the CUDA toolkit is missing, for the message. */
-export const CUDA_HINT =
+const CUDA_HINT =
   "install the CUDA 13 toolkit (on Debian and Ubuntu from NVIDIA's apt repository: cuda-nvcc-13-1 cuda-cudart-dev-13-1 libcublas-dev-13-1 libcufft-dev-13-1 cuda-driver-dev-13-1) and set CUDA_PATH if it is not in /usr/local/cuda-13";
 
-export interface Cuda {
+interface Cuda {
   /** The toolkit's directory (the one with bin/nvcc). */
   root: string;
   nvcc: string;
@@ -180,7 +180,7 @@ export async function bundleCuda(cuda: Cuda, dir: string, libraries: string[], e
   }
 }
 
-export interface Msvc {
+interface Msvc {
   /** The environment of a Developer Command Prompt for x64: `cl`, `link`, the Windows SDK's headers and libraries. */
   env: Record<string, string>;
   /** CMake's generator name for this Visual Studio. */

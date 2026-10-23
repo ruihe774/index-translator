@@ -31,7 +31,7 @@ export const libraryPath = (dir: string) => join(dir, libName("llama"));
 /** src/llama-shim.c as scripts/build_llama.ts compiled it, against the headers of the libllama beside it. */
 export const shimPath = (dir: string) => join(dir, libName("llama-shim"));
 /** llama.cpp's library for image input, from the same build. */
-export const mtmdPath = (dir: string) => join(dir, libName("mtmd"));
+const mtmdPath = (dir: string) => join(dir, libName("mtmd"));
 
 function bind(dir: string) {
   if (!existsSync(libraryPath(dir)) || !existsSync(shimPath(dir))) {
@@ -118,7 +118,7 @@ function open(dir: string): Lib {
   return lib;
 }
 
-export interface Device {
+interface Device {
   /** ggml's device type; a model is offloaded to the `gpu` and `igpu` ones. */
   type: "cpu" | "gpu" | "igpu" | "accel" | "meta" | "other";
   /** Name and description, e.g. "Vulkan0: AMD Radeon RX 9070 (RADV GFX1201)". */

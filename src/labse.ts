@@ -10,7 +10,7 @@
 // a Dense layer (768 → 768, tanh), normalized to length 1, so a dot product is a cosine.
 
 /** The encoder's last hidden state for a batch: `ids` and `mask` are `rows × width`; `DIMENSIONS` floats per token come back. */
-export type RunEncoder = (ids: BigInt64Array, mask: BigInt64Array, rows: number, width: number) => Float32Array;
+type RunEncoder = (ids: BigInt64Array, mask: BigInt64Array, rows: number, width: number) => Float32Array;
 
 export const DIMENSIONS = 768;
 

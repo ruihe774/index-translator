@@ -37,7 +37,7 @@ export function fetchAdvice(ids: readonly string[] = [], env: Env = Bun.env): st
 }
 
 /** `fetchAdvice` as a sentence. */
-export function fetchSentence(ids: readonly string[] = [], env: Env = Bun.env): string {
+function fetchSentence(ids: readonly string[] = [], env: Env = Bun.env): string {
   const advice = fetchAdvice(ids, env);
   return `${advice[0]!.toUpperCase()}${advice.slice(1)}.`;
 }

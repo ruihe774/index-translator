@@ -185,7 +185,7 @@ function blockNodes(blocks: Block[], tight = false): Child[] {
 }
 
 /** With prefers-reduced-motion: reduce, streamed text is shown in batches this far apart. */
-export const REDUCED_MOTION_FLUSH_MS = 1000;
+const REDUCED_MOTION_FLUSH_MS = 1000;
 
 function prefersReducedMotion(): boolean {
   try {

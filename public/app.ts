@@ -3,7 +3,7 @@
 // reads the form, calls the API and writes the results to the page.
 
 import type { Health, Language, Webpage } from "../src/api.ts";
-import { API, ApiFailure, failureMessage } from "./api.ts";
+import { API, ApiFailure, failureMessage, failureOf } from "./api.ts";
 // eslint-disable-next-line import/no-unassigned-import -- custom element definitions
 import "./elements/index.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
@@ -11,7 +11,7 @@ import type { PdfPages } from "./elements/pdf-pages.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { ViewSwitch } from "./elements/view-switch.ts";
 import type { VoiceSettings } from "./elements/voice-settings.ts";
-import { type ApiErrorBody, describeWebpageError } from "./errors.ts";
+import { describeWebpageError } from "./errors.ts";
 import { initHistoryUi } from "./history-ui.ts";
 import { type HistoryEntry, loadHistory, newId, saveHistory, withBlocks, withEntry } from "./history.ts";
 import { ask, confirmLink } from "./link-dialog.ts";
@@ -789,8 +789,7 @@ async function translate() {
               signal,
             });
         if (!res.ok || !res.body) {
-          const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-          throw new ApiFailure(payload?.error ?? {}, res.status);
+          throw await failureOf(res);
         }
         translationId ??= res.headers.get(TRANSLATION_ID_HEADER);
         return res;
@@ -832,7 +831,8 @@ async function translate() {
     const mismatch = image ? null : paragraphMismatch(text, translation);
     const mismatchNote = notes.map(addNote).find((li) => mismatch && li.textContent === mismatchMessage(mismatch));
     const matched = !image && done.finish_reason === "stop";
-    const alignment = matched ? alignBlocks(text, translation) : null;
+    const blocks = matched || markdown ? alignBlocks(text, translation) : null;
+    const alignment = matched ? blocks : null;
     const entryId = newId();
     if (alignment) {
       synced = { source: text, translation, alignment };
@@ -842,7 +842,7 @@ async function translate() {
     metaEl.show(metaLine(model, done));
     finished = true;
     if (markdown) {
-      linkCheck = { translation, ref: linkReference(text, alignBlocks(text, translation)) };
+      linkCheck = { translation, ref: linkReference(text, blocks) };
     }
     // An image's translation is not kept: the history holds texts, and the picture stays out of local storage.
     if (!image && translation.trim()) {
@@ -928,8 +928,7 @@ async function fetchWebpage(url: string) {
       signal: controller.signal,
     });
     if (!res.ok) {
-      const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-      throw new ApiFailure(payload?.error ?? {}, res.status);
+      throw await failureOf(res);
     }
     const page = (await res.json()) as Webpage;
     if (!page.markdown.trim()) {

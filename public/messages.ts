@@ -5,7 +5,7 @@ import type { DoneEvent, Health } from "../src/api.ts";
 import { mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
 import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type ModelId, type Selection } from "./select-model.ts";
 
-export const MODEL_LABELS: Record<ModelId, string> = {
+const MODEL_LABELS: Record<ModelId, string> = {
   [CHAT_MODEL]: "Index-Translate-9B",
   [DOCUMENT_MODEL]: "Index-NativeLong-9B",
 };
@@ -153,7 +153,7 @@ export function engineDetail(health: Health): { message: string; hint?: { text: 
 const GIB = 1024 ** 3;
 
 /** From this share of the GPU memory in use, free memory is tight. */
-export const VRAM_TIGHT = 0.9;
+const VRAM_TIGHT = 0.9;
 
 export interface Vram {
   used: number;

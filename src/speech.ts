@@ -56,7 +56,7 @@ export const MAX_SAMPLE_SECONDS = 15;
 /** The one rate BS-RoFormer accepts; the client resamples, so the server never does. */
 export const SAMPLE_RATE = 44_100;
 /** BS-RoFormer takes mono or stereo; a mono sample is duplicated by audio.cpp. */
-export const MAX_SAMPLE_CHANNELS = 2;
+const MAX_SAMPLE_CHANNELS = 2;
 
 export class SpeechError extends Error {}
 
@@ -132,7 +132,7 @@ export function validateSample(wav: ArrayBuffer): Pcm {
 }
 
 /** Starts the thread that owns libaudiocpp; replaceable in tests. */
-export type SpeechWorkerFactory = () => Worker;
+type SpeechWorkerFactory = () => Worker;
 
 const defaultWorker: SpeechWorkerFactory = () =>
   // Not referenced: the server decides when the process ends, not an idle speech thread.

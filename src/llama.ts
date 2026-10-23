@@ -12,7 +12,7 @@ import type { WorkerReply, WorkerRequest } from "./llama-worker";
 import type { ModelSpec } from "./models";
 import { fetchAdvice } from "./preflight";
 
-export type EngineState = "stopped" | "loading" | "ready" | "error";
+type EngineState = "stopped" | "loading" | "ready" | "error";
 
 export type { FinishReason, GpuMemory, Usage };
 

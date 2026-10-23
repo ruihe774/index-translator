@@ -11,7 +11,7 @@ export interface OpusPacket {
   validDuration: number;
 }
 
-export interface OggOpusOptions {
+interface OggOpusOptions {
   channels: 1 | 2;
   /** The rate of the original audio; informational, stored in OpusHead. */
   sampleRate: number;

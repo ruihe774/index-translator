@@ -20,7 +20,7 @@ import type { SegmentedText } from "../src/api.ts";
 import { type Block, type Inline, parseLines } from "./markdown.ts";
 
 /** The languages IndexTTS-2.5 speaks; the same list as SPEECH_LANGUAGES in src/speech.ts. */
-export const SPEECH_LANGS = ["zh", "en", "ja", "es", "ar"] as const;
+const SPEECH_LANGS = ["zh", "en", "ja", "es", "ar"] as const;
 type SpeechLang = (typeof SPEECH_LANGS)[number];
 
 export function canSpeak(lang: string | undefined): lang is string {

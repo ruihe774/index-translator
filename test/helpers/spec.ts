@@ -7,7 +7,7 @@ import { root } from "./mock-engine";
 
 const METHODS = ["get", "post", "put", "delete", "patch"] as const;
 
-export interface SpecSchema {
+interface SpecSchema {
   properties?: Record<string, SpecSchema>;
   default?: unknown;
   maxLength?: number;
@@ -15,11 +15,11 @@ export interface SpecSchema {
   maximum?: number;
 }
 
-export interface SpecOperation {
+interface SpecOperation {
   responses: Record<string, unknown>;
 }
 
-export interface Spec {
+interface Spec {
   openapi: string;
   servers: { url: string }[];
   paths: Record<string, Partial<Record<(typeof METHODS)[number], SpecOperation>>>;

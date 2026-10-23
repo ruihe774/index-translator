@@ -27,7 +27,7 @@ export function locate<N>(runs: Run<N>[], offset: number, edge: "start" | "end")
 }
 
 /** A sentence ends where the model says it more likely than not does (the cut `sat-native.test.ts` uses). */
-export const SENTENCE_END_PROBABILITY = 0.5;
+const SENTENCE_END_PROBABILITY = 0.5;
 
 /** [from, to) without the white space at either end; none when nothing else is left. */
 function trimmed(text: string, from: number, to: number): [number, number] | null {

@@ -46,7 +46,7 @@ const LOG_ERROR = 3;
 const ARENA_ALLOCATOR = 1;
 const MEM_TYPE_DEFAULT = 0;
 
-export class OrtError extends Error {}
+class OrtError extends Error {}
 
 /** The shared library inside `dir`: the SONAME link on Linux, the DLL on Windows (by full path: System32 has another). */
 export const libraryPath = (dir: string) =>
@@ -67,7 +67,7 @@ const out = () => new BigUint64Array(1);
 const pointerIn = (slot: BigUint64Array) => Number(slot[0]) as Pointer;
 
 /** An input tensor: int64 or float32, by its array's type. */
-export type Input = BigInt64Array | Float32Array;
+type Input = BigInt64Array | Float32Array;
 
 export interface Session {
   /**
@@ -79,7 +79,7 @@ export interface Session {
 }
 
 /** The names of a model's inputs, in the order `run` is given them, and of the one output it reads. */
-export interface Signature {
+interface Signature {
   inputs: string[];
   output: string;
 }
@@ -87,7 +87,6 @@ export interface Signature {
 export interface Runtime {
   readonly version: string;
   open(modelPath: string, threads: number, signature: Signature): Session;
-  close(): void;
 }
 
 export function loadRuntime(dir: string): Runtime {
@@ -274,11 +273,6 @@ export function loadRuntime(dir: string): Runtime {
           f.ReleaseSession(session);
         },
       };
-    },
-    close() {
-      f.ReleaseMemoryInfo(memory);
-      f.ReleaseEnv(env);
-      lib.close();
     },
   };
 }

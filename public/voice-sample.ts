@@ -2,7 +2,8 @@
 // becomes a mono 16-bit WAV that the server hands to the speech model as the reference voice.
 // The recording itself and the WAV writer are in mic-recorder.ts (no DOM types, tested with fakes).
 
-import type { ErrorResponse, Voice } from "../src/api.ts";
+import type { Voice } from "../src/api.ts";
+import { failureOf } from "./api.ts";
 import { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS } from "./mic-recorder.ts";
 
 export { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS, MicRecorder } from "./mic-recorder.ts";
@@ -43,8 +44,8 @@ export async function uploadVoice(api: string, name: string, wav: ArrayBuffer): 
     body: wav,
   });
   if (!res.ok) {
-    const body = (await res.json().catch(() => null)) as Partial<ErrorResponse> | null;
-    throw new Error(body?.error?.message ?? `The server answered HTTP ${res.status}.`);
+    const failure = await failureOf(res);
+    throw new Error(failure.body.message ?? `The server answered HTTP ${res.status}.`);
   }
   return (await res.json()) as Voice;
 }

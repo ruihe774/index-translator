@@ -19,7 +19,7 @@ export const MAX_SEGMENT_CHARS = 20_000;
 /** Most texts in one request. */
 export const MAX_SEGMENT_TEXTS = 256;
 /** Positions less likely than this to end a sentence are not reported. */
-export const MIN_BOUNDARY_PROBABILITY = 0.001;
+const MIN_BOUNDARY_PROBABILITY = 0.001;
 /** Most sentences or paragraphs on each side of one `POST /align`. */
 export const MAX_ALIGN_SENTENCES = 256;
 /**
@@ -37,7 +37,7 @@ export class SegmentError extends Error {}
  */
 export type SegmentState = SegmentStatus;
 
-export interface ModelStatus {
+interface ModelStatus {
   readonly state: SegmentState;
   readonly error: string | undefined;
 }
@@ -63,7 +63,7 @@ type Send<T> = T extends unknown ? Omit<T, "req"> : never;
 const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 /** Starts the thread that owns ONNX Runtime; replaceable in tests. */
-export type SegmentWorkerFactory = () => Worker;
+type SegmentWorkerFactory = () => Worker;
 
 const defaultWorker: SegmentWorkerFactory = () =>
   // Not referenced: the server decides when the process ends, not an idle segmentation thread.

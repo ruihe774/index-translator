@@ -154,6 +154,9 @@ export function parseArgs(argv: readonly string[]): Env {
   return out;
 }
 
+/** A directory setting, resolved so a relative path or a trailing slash cannot surprise; empty means `fallback`. */
+const dir = (env: Env, name: string, fallback: string) => resolve(env[name] || fallback);
+
 /** Settings come from `environment`, overridden by the command-line flags in `argv`. */
 export function loadConfig(environment: Env = Bun.env, argv: readonly string[] = []): Config {
   const env: Env = { ...environment, ...parseArgs(argv) };
@@ -173,22 +176,29 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
       `MAX_INPUT_TOKENS must be at most ${largestInput} for CTX_SIZE=${ctxSize} (MAX_INPUT_TOKENS + ${CONTEXT_MARGIN} must be less than CTX_SIZE, leaving room for output), got ${maxInputTokens}`,
     );
   }
+  const modelsDir = env.MODELS_DIR ?? join(root, "models");
   const allowedOrigins = list(env, "ALLOWED_ORIGINS");
   const allowedHosts = list(env, "ALLOWED_HOSTS");
   const allowedWebpageDomains = list(env, "ALLOWED_WEBPAGE_DOMAINS");
   // Fail at startup on an entry that could never match, rather than refuse requests later.
-  void allowedOrigins.map(parseOriginRule);
-  void allowedHosts.map(parseHostRule);
-  void allowedWebpageDomains.map(parseDomainRule);
+  for (const entry of allowedOrigins) {
+    parseOriginRule(entry);
+  }
+  for (const entry of allowedHosts) {
+    parseHostRule(entry);
+  }
+  for (const entry of allowedWebpageDomains) {
+    parseDomainRule(entry);
+  }
   return {
     host: env.HOST ?? "127.0.0.1",
     port: int(env, "PORT", 3000, { max: 65_535 }),
     // Resolved so a relative path, a trailing slash or "./" cannot break the static traversal check.
-    publicDir: resolve(env.PUBLIC_DIR || join(root, "public")),
+    publicDir: dir(env, "PUBLIC_DIR", join(root, "public")),
     specPath: join(root, "docs", "openapi.yaml"),
-    modelsDir: env.MODELS_DIR ?? join(root, "models"),
+    modelsDir,
     defaultModel,
-    llamaDir: resolve(env.LLAMA_DIR || join(root, "vendor", "llama.cpp")),
+    llamaDir: dir(env, "LLAMA_DIR", join(root, "vendor", "llama.cpp")),
     gpuLayers: env.GPU_LAYERS === undefined || env.GPU_LAYERS === "all" ? -1 : int(env, "GPU_LAYERS", -1),
     threads: int(env, "LLAMA_THREADS", 0),
     mtp: env.MTP !== "0",
@@ -201,21 +211,19 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     openBrowser: env.OPEN_BROWSER !== "0",
     devReload: env.DEV_RELOAD === "1",
     speech: env.SPEECH !== "0",
-    audioDir: resolve(env.AUDIO_DIR || join(root, "vendor", "audio.cpp")),
-    speechModelDir: resolve(env.SPEECH_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "IndexTTS2.5-GGUF")),
-    separationModelDir: resolve(
-      env.SEPARATION_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "BS-RoFormer-ep368-GGUF"),
-    ),
-    voicesDir: resolve(env.VOICES_DIR || join(root, "voices")),
+    audioDir: dir(env, "AUDIO_DIR", join(root, "vendor", "audio.cpp")),
+    speechModelDir: dir(env, "SPEECH_MODEL_DIR", join(modelsDir, "IndexTTS2.5-GGUF")),
+    separationModelDir: dir(env, "SEPARATION_MODEL_DIR", join(modelsDir, "BS-RoFormer-ep368-GGUF")),
+    voicesDir: dir(env, "VOICES_DIR", join(root, "voices")),
     speechBackend: env.SPEECH_BACKEND || "vulkan",
     speechIdleUnload: int(env, "SPEECH_IDLE_UNLOAD", 300),
     segment: env.SEGMENT !== "0",
-    onnxruntimeDir: resolve(env.ONNXRUNTIME_DIR || join(root, "vendor", "onnxruntime")),
-    segmentModelDir: resolve(env.SEGMENT_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "sat-3l-sm")),
+    onnxruntimeDir: dir(env, "ONNXRUNTIME_DIR", join(root, "vendor", "onnxruntime")),
+    segmentModelDir: dir(env, "SEGMENT_MODEL_DIR", join(modelsDir, "sat-3l-sm")),
     segmentThreads: int(env, "SEGMENT_THREADS", 0),
     segmentIdleUnload: int(env, "SEGMENT_IDLE_UNLOAD", 300),
     align: env.ALIGN !== "0",
-    alignModelDir: resolve(env.ALIGN_MODEL_DIR || join(env.MODELS_DIR ?? join(root, "models"), "labse")),
+    alignModelDir: dir(env, "ALIGN_MODEL_DIR", join(modelsDir, "labse")),
   };
 }
 

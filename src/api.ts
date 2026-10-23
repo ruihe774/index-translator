@@ -11,7 +11,6 @@ type Schemas = components["schemas"];
 
 export type TranslateRequest = Schemas["TranslateRequest"];
 export type TranslateResponse = Schemas["TranslateResponse"];
-export type TokenizeRequest = Schemas["TokenizeRequest"];
 export type TokenizeResponse = Schemas["TokenizeResponse"];
 export type ModelList = Schemas["ModelList"];
 export type ModelInfo = Schemas["ModelInfo"];
@@ -19,8 +18,6 @@ export type ModelId = ModelInfo["id"];
 export type ModelKind = ModelInfo["kind"];
 export type FinishReason = Schemas["FinishReason"];
 export type Usage = Schemas["Usage"];
-export type Timings = Schemas["Timings"];
-export type Limits = Schemas["Limits"];
 export type Language = Schemas["Language"];
 export type Health = Schemas["Health"];
 export type SpeechStatus = Schemas["SpeechStatus"];
@@ -36,7 +33,6 @@ export type AlignRequest = Schemas["AlignRequest"];
 export type AlignUnit = Schemas["AlignUnit"];
 export type Alignment = Schemas["Alignment"];
 export type AlignedPair = Schemas["AlignedPair"];
-export type WebpageRequest = Schemas["WebpageRequest"];
 export type Webpage = Schemas["Webpage"];
 
 /** The error envelope of every error response. */

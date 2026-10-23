@@ -2,6 +2,7 @@
 // Q6_K with its long context, not two), so a request for another model swaps the engine.
 
 import type { ModelId, ModelKind } from "./api";
+import { DOCUMENT_DIRECTIONS } from "./prompt";
 
 export interface ModelSpec {
   /** Public identifier used in requests and responses. */
@@ -38,7 +39,7 @@ const SPECS: Record<ModelId, Omit<ModelSpec, "id">> = {
     label: "Index-NativeLong-9B (Q6_K)",
     file: "Index-Nailong-9B.Q6_K.gguf",
     kind: "document",
-    directions: ["zh-en", "en-zh", "zh-ja", "ja-zh"],
+    directions: DOCUMENT_DIRECTIONS,
   },
 };
 

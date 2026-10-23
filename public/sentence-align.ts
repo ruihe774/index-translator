@@ -8,13 +8,12 @@
 // asking for a while (`BACKOFF_MS`), as `segment.ts` does.
 
 import type { AlignedPair, Alignment, AlignRequest, AlignUnit, Health } from "../src/api.ts";
-import { API, ApiFailure } from "./api.ts";
-import type { ApiErrorBody } from "./errors.ts";
+import { API, failureOf } from "./api.ts";
 
 /** Most sentences on each side: the server's limit. */
 export const MAX_SENTENCES = 256;
 /** Block pairs whose answers are kept. */
-export const MAX_CACHED = 500;
+const MAX_CACHED = 500;
 /** After a failure nothing is asked for this long. */
 export const BACKOFF_MS = 10_000;
 
@@ -35,8 +34,7 @@ export async function postAlign(
     signal,
   });
   if (!res.ok) {
-    const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-    throw new ApiFailure(payload?.error ?? {}, res.status);
+    throw await failureOf(res);
   }
   return ((await res.json()) as Alignment).pairs;
 }

@@ -14,6 +14,12 @@ export class ApiFailure extends Error {
   }
 }
 
+/** The failure a non-OK response stands for: its error body, which may be missing or not JSON. */
+export async function failureOf(res: Response): Promise<ApiFailure> {
+  const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
+  return new ApiFailure(payload?.error ?? {}, res.status);
+}
+
 /** A failed request as a sentence for the user. */
 export function failureMessage(e: unknown): string {
   if (e instanceof ApiFailure) {

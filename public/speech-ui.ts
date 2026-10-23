@@ -15,11 +15,10 @@
 // follows `state` (state.ts), so `refresh` is what `render()` runs after it writes the rest.
 
 import type { VoiceList } from "../src/api.ts";
-import { API, ApiFailure, failureMessage } from "./api.ts";
+import { API, failureMessage, failureOf } from "./api.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.ts";
-import type { ApiErrorBody } from "./errors.ts";
 import { parseLines } from "./markdown.ts";
 import { OPUS_TYPE, opusDecodable } from "./opus.ts";
 import { giveUpQoa, QOA_TYPE, qoaDecoder, QoaError } from "./qoa.ts";
@@ -43,7 +42,7 @@ const LABEL_CHARS = 48;
  * How long a reading waits for the server's sentence boundaries of the block it starts with (the first
  * request also loads the model); after that it is cut by `Intl.Segmenter` alone.
  */
-export const SEGMENT_WAIT_MS = 1500;
+const SEGMENT_WAIT_MS = 1500;
 
 /** What a side's text is read as: its pieces, and each block that has any with its lines. */
 interface Reading {
@@ -136,8 +135,7 @@ async function requestSpeech(
     signal,
   });
   if (!res.ok) {
-    const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-    throw new ApiFailure(payload?.error ?? {}, res.status);
+    throw await failureOf(res);
   }
   return res;
 }

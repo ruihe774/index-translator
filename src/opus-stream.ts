@@ -22,8 +22,6 @@ export const OPUS_TYPE = "audio/ogg";
 /** Samples per frame: 20 ms at 48 kHz. */
 const FRAME = 960;
 const RATE = 48_000;
-/** An Ogg Opus stream always counts in 48 kHz samples. */
-const PER_SAMPLE = 1;
 const BITRATE = 64_000;
 const COMPLEXITY = 6;
 /** OPUS_BANDWIDTH_SUPERWIDEBAND (12 kHz): the engine's audio is 22.05 kHz, so nothing above 11 kHz is coded. */
@@ -43,7 +41,7 @@ interface Minicelt {
 }
 
 /** The compiled encoder; each stream instantiates it again, since the module holds one encoder's state. */
-export interface OpusCodec {
+interface OpusCodec {
   module: WebAssembly.Module;
   resample: Resample;
 }
@@ -118,7 +116,7 @@ export function opusResponse(codec: OpusCodec, pcm: Pcm): Response {
   const mux = new OggOpusMuxer({
     channels: 1,
     sampleRate: pcm.sampleRate,
-    preSkip: lookahead * PER_SAMPLE,
+    preSkip: lookahead,
     vendor: "index-translator, minicelt",
   });
 
@@ -131,8 +129,8 @@ export function opusResponse(codec: OpusCodec, pcm: Pcm): Response {
       if (length < 0) {
         throw new Error(`minicelt_encode failed with ${length}`);
       }
-      const duration = FRAME * PER_SAMPLE;
-      const padding = frame === frames ? (frames * FRAME - target) * PER_SAMPLE : 0;
+      const duration = FRAME;
+      const padding = frame === frames ? frames * FRAME - target : 0;
       yield { data: output.slice(0, length), duration, validDuration: duration - padding };
     }
   }

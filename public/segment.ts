@@ -8,20 +8,19 @@
 // as `first` is sent before the ones still waiting. `abort` drops everything waiting or in flight.
 
 import type { Health, Segmentation, SegmentedText, SegmentRequest } from "../src/api.ts";
-import { API, ApiFailure } from "./api.ts";
-import type { ApiErrorBody } from "./errors.ts";
+import { API, failureOf } from "./api.ts";
 
 /** Most texts in one request: the server's limit. */
 export const MAX_TEXTS = 256;
 /** The answers kept, as the total length of their texts. */
-export const MAX_CACHED_CHARS = 400_000;
+const MAX_CACHED_CHARS = 400_000;
 /** After a failure nothing is asked for this long, so a server without the model costs no waiting. */
 export const BACKOFF_MS = 10_000;
 
 export type PostSegment = (texts: string[], signal: AbortSignal) => Promise<SegmentedText[]>;
 
 /** One request to the server. */
-export async function postSegment(texts: string[], signal: AbortSignal): Promise<SegmentedText[]> {
+async function postSegment(texts: string[], signal: AbortSignal): Promise<SegmentedText[]> {
   const body: SegmentRequest = { texts };
   const res = await fetch(`${API}/segment`, {
     method: "POST",
@@ -30,8 +29,7 @@ export async function postSegment(texts: string[], signal: AbortSignal): Promise
     signal,
   });
   if (!res.ok) {
-    const payload = (await res.json().catch(() => null)) as { error?: ApiErrorBody } | null;
-    throw new ApiFailure(payload?.error ?? {}, res.status);
+    throw await failureOf(res);
   }
   return ((await res.json()) as Segmentation).texts;
 }

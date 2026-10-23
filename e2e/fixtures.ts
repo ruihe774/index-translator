@@ -74,8 +74,7 @@ export interface Mock {
 /** The think block a model may put before the answer; the server strips it. */
 export const THINK = "<think>\n\n</think>\n\n";
 
-export const CHAT = "index-translate-9b";
-export const DOCUMENT = "index-nailong-9b";
+export { CHAT, DOCUMENT } from "../test/helpers/mock-engine";
 
 // Under `E2E_COVERAGE` every page measures its JS; globalTeardown merges the workers' data (`e2e/coverage.ts`).
 const coverage = COVERAGE ? new CoverageReport(REPORT) : undefined;

@@ -13,7 +13,7 @@
 import type { Side } from "./state.ts";
 
 /** Fewer blocks than this are not worth checking. */
-export const MIN_BLOCKS = 3;
+const MIN_BLOCKS = 3;
 
 export type Unit = "paragraphs" | "lines";
 

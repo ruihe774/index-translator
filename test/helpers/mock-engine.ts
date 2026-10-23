@@ -81,7 +81,7 @@ export function resetMock(): void {
   mock.gpuMemory = undefined;
 }
 
-export interface FakeHooks {
+interface FakeHooks {
   /** Called when a generation starts; `image` is the PNG the request's image was made into. */
   onStart?(prompt: string, maxTokens: number, image?: Uint8Array): void;
   /** A promise the generation waits for before its first chunk. */

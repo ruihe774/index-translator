@@ -282,10 +282,14 @@ function checkOrigin(req: Request, access: Access): void {
   }
 }
 
+/** The request's `Content-Type` without parameters, lower case; empty when there is none. */
+function mediaType(req: Request): string {
+  return (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
+}
+
 /** Browsers send a cross-site form POST as text/plain without a preflight, so only JSON is accepted. */
 function checkJsonContentType(req: Request): void {
-  const type = (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
-  if (type !== "application/json") {
+  if (mediaType(req) !== "application/json") {
     throw new ApiError(415, "unsupported_media_type", "request body must be application/json");
   }
 }
@@ -338,7 +342,7 @@ function optionalImage(body: Record<string, unknown>): Uint8Array | undefined {
   return bytes;
 }
 
-function parseTranslateRequest(req: Request, body: Record<string, unknown>, defaultModel: string): TranslateRequest {
+function parseTranslateRequest(body: Record<string, unknown>, defaultModel: string): TranslateRequest {
   const image = optionalImage(body);
   if (image) {
     if (body.text !== undefined && body.text !== null && typeof body.text !== "string") {
@@ -963,7 +967,7 @@ export async function startApp(
     if (speech.state === "unavailable") {
       throw speechUnavailable(speech.error ?? "reading aloud is not available");
     }
-    if ((req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase() !== "audio/wav") {
+    if (mediaType(req) !== "audio/wav") {
       throw new ApiError(415, "unsupported_media_type", "request body must be audio/wav");
     }
     const declared = Number(req.headers.get("content-length"));
@@ -1015,29 +1019,36 @@ export async function startApp(
     },
   ];
 
+  const wavResponse = (wav: ArrayBuffer) =>
+    new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store", vary: "accept" } });
+
   async function speechResponse(wav: ArrayBuffer, accept: string | null): Promise<Response> {
     const wanted = speechEncoders
       .map((encoder) => ({ encoder, weight: acceptWeight(accept, encoder.type) }))
       .filter(({ weight }) => weight > 0)
       .sort((a, b) => b.weight - a.weight);
-    if (wanted.length > 0) {
-      try {
-        const pcm = readWav(new Uint8Array(wav));
-        for (const { encoder } of pcm.samples.length > 0 ? wanted : []) {
-          try {
-            const response = await encoder.encode(pcm);
-            if (response) {
-              return response;
-            }
-          } catch (e) {
-            console.error(`[speech] the utterance could not be encoded as ${encoder.type}: ${String(e)}`);
-          }
-        }
-      } catch (e) {
-        console.error(`[speech] the utterance could not be read for encoding, sending WAV: ${String(e)}`);
-      }
+    if (wanted.length === 0) {
+      return wavResponse(wav);
     }
-    return new Response(wav, { headers: { "content-type": "audio/wav", "cache-control": "no-store", vary: "accept" } });
+    try {
+      const pcm = readWav(new Uint8Array(wav));
+      if (pcm.samples.length === 0) {
+        return wavResponse(wav);
+      }
+      for (const { encoder } of wanted) {
+        try {
+          const response = await encoder.encode(pcm);
+          if (response) {
+            return response;
+          }
+        } catch (e) {
+          console.error(`[speech] the utterance could not be encoded as ${encoder.type}: ${String(e)}`);
+        }
+      }
+    } catch (e) {
+      console.error(`[speech] the utterance could not be read for encoding, sending WAV: ${String(e)}`);
+    }
+    return wavResponse(wav);
   }
 
   async function speak(input: SpeechRequest, req: Request): Promise<Response> {
@@ -1344,14 +1355,14 @@ export async function startApp(
             if (body.image !== undefined && body.image !== null) {
               throw invalid("image is not supported by /tokenize", "image");
             }
-            const input = parseTranslateRequest(req, body, cfg.defaultModel);
+            const input = parseTranslateRequest(body, cfg.defaultModel);
             return json<TokenizeResponse>(await tokenize(input));
           }
           case "/translate": {
             if (req.method !== "POST") {
               return methodNotAllowed("POST");
             }
-            const input = parseTranslateRequest(req, await parseBody(req, true), cfg.defaultModel);
+            const input = parseTranslateRequest(await parseBody(req, true), cfg.defaultModel);
             // Before the queue: an upload that is not a usable image is refused like any other bad field.
             if (input.image) {
               input.image = await prepareImage(input.image);
