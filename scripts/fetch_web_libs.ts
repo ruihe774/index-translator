@@ -89,7 +89,7 @@ export interface FileLibrary {
 
 const QOA_COMMIT = "3c85bd84595d56cb13bef779add463246e0908b7";
 const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${QOA_COMMIT}`;
-const UNDOC_COMMIT = "bfe9907f3c9f32020e8502e93ae3f72bdf1fc0e9";
+const UNDOC_COMMIT = "4ee3c5831de4ffaaede507d957f475082f641ea8";
 const UNDOC_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${UNDOC_COMMIT}`;
 const PDF_INSPECTOR_COMMIT = "832ad1f7b1fd80514aa12a91693c6e0c0a110fb2";
 const PDF_INSPECTOR_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${PDF_INSPECTOR_COMMIT}`;
@@ -154,7 +154,7 @@ export const FILE_LIBRARIES: FileLibrary[] = [
     ],
   },
   /**
-   * undoc-wasm (the `undoc` branch: wasm-pack's output for upstream undoc, docx only, with simd128):
+   * undoc-wasm (the `undoc` branch: wasm-pack's output for upstream undoc, docx only, opt-level 2, no simd128):
    * a Word document's text as Markdown.
    */
   {
@@ -169,7 +169,7 @@ export const FILE_LIBRARIES: FileLibrary[] = [
       {
         to: "undoc_wasm_bg.wasm",
         url: `${UNDOC_RAW}/undoc_wasm_bg.wasm`,
-        sha256: "2bf79fb0110554e20ec4331b79bb8e9094358b62ff7ec01df52891a180796258",
+        sha256: "1c7a89a52771d8c031d6c75b23f1cb79f7a050f3559103d7245c90afd126ea67",
       },
       {
         to: "LICENSE",
