@@ -15,7 +15,7 @@ Built from [ruihe774/pdf-inspector@6402ae1](https://github.com/ruihe774/pdf-insp
 wasm-pack build wasm --target web --scope firecrawl --release
 ```
 
-with wasm-pack 0.15.0 (its wasm-bindgen and wasm-opt) and rustc 1.98.0 (the repository's pin). Nothing here
+with wasm-pack 0.15.0 (its wasm-bindgen; wasm-opt 133, the installed binary, which wasm-pack prefers to its own) and rustc 1.98.0 (the repository's pin). Nothing here
 is edited by hand except this README; `LICENSE` is pdf-inspector's. `--target web`: an ES module that is
 used without a bundler and whose `default` export instantiates the binary. `simd128` is not enabled: it made
 no measurable difference.
