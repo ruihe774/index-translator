@@ -107,8 +107,12 @@ async function generate(
   const utf8 = new TextDecoder();
   let produced = 0;
   let finishReason: FinishReason = "length";
+  // Tokens chosen and not sent yet; the last of them is not decoded yet. With multi-token prediction one
+  // decode may choose several.
+  let chosen: Int32Array = Int32Array.of(m.sample());
+  let sent = 0;
   while (!stopped()) {
-    const token = m.sample();
+    const token = chosen[sent++]!;
     produced++;
     if (m.isEnd(token)) {
       finishReason = "stop";
@@ -121,8 +125,11 @@ async function generate(
     if (produced >= limit) {
       break;
     }
-    m.decodeOne(token);
-    await tick();
+    if (sent === chosen.length) {
+      chosen = m.next(token, limit - produced);
+      sent = 0;
+      await tick();
+    }
   }
   if (cancelled.has(req)) {
     return;

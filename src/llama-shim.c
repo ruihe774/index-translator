@@ -1,11 +1,13 @@
 // The libllama and libmtmd (image input) calls that pass or return structs, which bun:ffi cannot
-// express, plus the log filter and the device list. Compiled by scripts/build_llama.ts into
-// libllama-shim, against the headers of the libraries it has just built and puts next to it, so the
-// struct layouts always match them. After a change here: bun scripts/build_llama.ts --shim. Everything else is called
-// directly from src/llama-ffi.ts.
+// express, plus the log filter, the device list and multi-token prediction. Compiled by
+// scripts/build_llama.ts into libllama-shim, with src/llama-shim-ext.cpp, against the headers of the
+// libraries it has just built and puts next to it, so the struct layouts always match them. After a
+// change here: bun scripts/build_llama.ts --shim. Everything else is called directly from src/llama-ffi.ts.
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 #include "llama.h"
 #include "mtmd.h"
@@ -90,19 +92,24 @@ SHIM_API int32_t shim_gpu_memory(uint64_t * free_bytes, uint64_t * total_bytes) 
     return counted;
 }
 
-// A negative `n_gpu_layers` offloads every layer.
-SHIM_API struct llama_model * shim_load_model(const char * path, int32_t n_gpu_layers) {
+// A negative `n_gpu_layers` offloads every layer. `load_mtp` also loads the model's MTP layers,
+// which are skipped otherwise.
+SHIM_API struct llama_model * shim_load_model(const char * path, int32_t n_gpu_layers, bool load_mtp) {
     struct llama_model_params params = llama_model_default_params();
     params.n_gpu_layers = n_gpu_layers;
+    params.load_mtp = load_mtp;
     return llama_model_load_from_file(path, params);
 }
 
 // One sequence that may use the whole window. `n_threads` of 0 keeps the library default.
-SHIM_API struct llama_context * shim_new_context(struct llama_model * model, uint32_t n_ctx, uint32_t n_batch, int32_t n_threads) {
+// `n_rs_seq`: how many of its last tokens a recurrent model can drop again (llama_memory_seq_rm),
+// which costs one more copy of the recurrent state each; 0 without speculative decoding.
+SHIM_API struct llama_context * shim_new_context(struct llama_model * model, uint32_t n_ctx, uint32_t n_batch, int32_t n_threads, uint32_t n_rs_seq) {
     struct llama_context_params params = llama_context_default_params();
     params.n_ctx = n_ctx;
     params.n_batch = n_batch;
     params.n_seq_max = 1;
+    params.n_rs_seq = n_rs_seq;
     if (n_threads > 0) {
         params.n_threads = n_threads;
         params.n_threads_batch = n_threads;
@@ -209,4 +216,211 @@ SHIM_API int32_t shim_mtmd_eval_chunk(mtmd_context * ctx, struct llama_context *
     const mtmd_input_chunk * chunk = mtmd_input_chunks_get(chunks, (size_t) index);
     bool last = (size_t) index + 1 == mtmd_input_chunks_size(chunks);
     return mtmd_helper_eval_chunk_single(ctx, lctx, chunk, *pos, 0, n_batch, last, pos);
+}
+
+// Multi-token prediction (MTP): the model's own MTP layer drafts the next tokens, and one decode of
+// the target checks them all. Greedy, one sequence, one MTP layer (Qwen3.5); ported from
+// common/speculative.cpp (draft-mtp) and the server's verification in tools/server/server-context.cpp.
+// The MTP layer reads, for each token, the hidden state the target computed for the token before
+// it; those come from the staging calls in src/llama-shim-ext.cpp.
+
+// From src/llama-shim-ext.cpp.
+void shim_ext_set_embeddings_nextn(struct llama_context * ctx, bool value, bool masked);
+float * shim_ext_get_embeddings_nextn(struct llama_context * ctx);
+float * shim_ext_get_embeddings_nextn_ith(struct llama_context * ctx, int32_t i);
+
+// Most tokens one step drafts.
+#define SHIM_MTP_MAX_DRAFT 8
+
+struct shim_mtp {
+    struct llama_context * tgt;
+    // A context of type MTP on the same model: the MTP layer with its own KV cache.
+    struct llama_context * dft;
+    struct llama_batch_ext * batch;
+    struct llama_sampler * greedy;
+    int32_t n_embd;
+    // The target's hidden state for the last token it has evaluated, which goes with the next token.
+    float * pending;
+    // The target's hidden states for the tokens of the last verification.
+    float * rows;
+};
+
+SHIM_API void shim_mtp_free(struct shim_mtp * m);
+
+// The MTP drafter for `tgt`, a context of `model` loaded with its MTP layers and created with
+// n_rs_seq of at least the draft length. NULL when the model has no MTP layer or the context cannot
+// be created. Freed with shim_mtp_free before `tgt`.
+SHIM_API struct shim_mtp * shim_mtp_new(struct llama_model * model, struct llama_context * tgt, uint32_t n_ctx, uint32_t n_batch, int32_t n_threads) {
+    if (llama_model_n_layer_nextn(model) < 1) {
+        return NULL;
+    }
+    struct llama_context_params params = llama_context_default_params();
+    params.ctx_type = LLAMA_CONTEXT_TYPE_MTP;
+    params.n_ctx = n_ctx;
+    params.n_batch = n_batch;
+    params.n_seq_max = 1;
+    // A draft has one output and catching up none: logits for a whole batch would reserve
+    // n_batch * n_vocab floats (half a GiB on Vulkan) for nothing.
+    params.n_outputs_max = 1;
+    if (n_threads > 0) {
+        params.n_threads = n_threads;
+        params.n_threads_batch = n_threads;
+    }
+    struct llama_context * dft = llama_init_from_model(model, params);
+    if (dft == NULL) {
+        return NULL;
+    }
+    struct shim_mtp * m = calloc(1, sizeof(*m));
+    if (m == NULL) {
+        llama_free(dft);
+        return NULL;
+    }
+    m->tgt = tgt;
+    m->dft = dft;
+    m->n_embd = llama_model_n_embd_out(model);
+    m->pending = calloc((size_t) m->n_embd, sizeof(float));
+    m->rows = calloc((size_t) (SHIM_MTP_MAX_DRAFT + 1) * (size_t) m->n_embd, sizeof(float));
+    m->batch = llama_batch_ext_init(dft);
+    m->greedy = llama_sampler_init_greedy();
+    if (m->pending == NULL || m->rows == NULL || m->batch == NULL || m->greedy == NULL) {
+        shim_mtp_free(m);
+        return NULL;
+    }
+    // The target's state for every token of a batch, the MTP layer's only for the ones with logits.
+    shim_ext_set_embeddings_nextn(tgt, true, false);
+    shim_ext_set_embeddings_nextn(dft, true, true);
+    return m;
+}
+
+SHIM_API void shim_mtp_free(struct shim_mtp * m) {
+    if (m->batch != NULL) {
+        llama_batch_ext_free(m->batch);
+    }
+    if (m->greedy != NULL) {
+        llama_sampler_free(m->greedy);
+    }
+    llama_free(m->dft);
+    free(m->pending);
+    free(m->rows);
+    free(m);
+}
+
+// Empties the MTP layer's cache, with the target's (llama_memory_clear), for a new prompt.
+SHIM_API void shim_mtp_reset(struct shim_mtp * m) {
+    llama_memory_clear(llama_get_memory(m->dft), true);
+    memset(m->pending, 0, (size_t) m->n_embd * sizeof(float));
+}
+
+// Feeds the MTP layer the `n` tokens the target has just decoded at positions `pos` on, each with
+// the target's state for the token before it. `rows`: also keep the target's states (at most
+// SHIM_MTP_MAX_DRAFT + 1). Returns llama_process's status.
+static int32_t mtp_catch_up(struct shim_mtp * m, const llama_token * tokens, int32_t n, llama_pos pos, bool rows) {
+    const float * h = shim_ext_get_embeddings_nextn(m->tgt);
+    if (h == NULL || n < 1) {
+        return -1;
+    }
+    const size_t row = (size_t) m->n_embd;
+    llama_batch_ext_clear(m->batch);
+    for (int32_t i = 0; i < n; i++) {
+        int32_t idx = llama_batch_ext_add_token(m->batch, 0, tokens[i]);
+        llama_pos p = pos + i;
+        struct llama_embd state = { i == 0 ? m->pending : h + (size_t) (i - 1) * row, 1, row };
+        if (idx < 0 || !llama_batch_ext_set_pos(m->batch, idx, &p) || !llama_batch_ext_set_embd_state(m->batch, idx, state)) {
+            return -1;
+        }
+    }
+    int32_t status = llama_process(m->dft, LLAMA_PROCESS_TYPE_DECODE, m->batch);
+    if (status != 0) {
+        return status;
+    }
+    memcpy(m->pending, h + (size_t) (n - 1) * row, row * sizeof(float));
+    if (rows) {
+        memcpy(m->rows, h, (size_t) n * row * sizeof(float));
+    }
+    return 0;
+}
+
+// After the target decoded `n` prompt tokens at positions `pos` on (shim_decode, which counts them).
+SHIM_API int32_t shim_mtp_catch_up(struct shim_mtp * m, const llama_token * tokens, int32_t n, llama_pos pos) {
+    return mtp_catch_up(m, tokens, n, pos, false);
+}
+
+// One step after `last`, the token the target chose at position `pos` that is not decoded yet:
+// drafts `n_draft` tokens (at most SHIM_MTP_MAX_DRAFT; 0 only decodes `last`), decodes `last` and
+// the drafts with the target and keeps the drafts it would have chosen itself. Writes the target's
+// choices to `out` (n_draft + 1 room): the token after `last`, then one more for each draft kept.
+// Returns how many, or -1 on failure. The contexts end after `last` and the kept drafts, so the next
+// step starts at `pos` + the count with `out`'s last token.
+SHIM_API int32_t shim_mtp_step(struct shim_mtp * m, struct llama_sampler * sampler, llama_token last, llama_pos pos, int32_t n_draft, llama_token * out) {
+    if (n_draft > SHIM_MTP_MAX_DRAFT) {
+        n_draft = SHIM_MTP_MAX_DRAFT;
+    }
+    if (n_draft < 0) {
+        n_draft = 0;
+    }
+    llama_memory_t mem_tgt = llama_get_memory(m->tgt);
+    llama_memory_t mem_dft = llama_get_memory(m->dft);
+    const size_t row = (size_t) m->n_embd;
+
+    // `tokens`: `last`, then the drafts. Each draft decodes the token before it with the state the
+    // MTP layer itself output for that one (the first: the target's).
+    llama_token tokens[SHIM_MTP_MAX_DRAFT + 1];
+    tokens[0] = last;
+    const float * state = m->pending;
+    for (int32_t i = 0; i < n_draft; i++) {
+        llama_batch_ext_clear(m->batch);
+        int32_t idx = llama_batch_ext_add_token(m->batch, 0, tokens[i]);
+        llama_pos p = pos + i;
+        struct llama_embd embd = { state, 1, row };
+        if (idx < 0 || !llama_batch_ext_set_pos(m->batch, idx, &p) || !llama_batch_ext_set_output_logits(m->batch, idx, true) ||
+            !llama_batch_ext_set_embd_state(m->batch, idx, embd)) {
+            return -1;
+        }
+        if (llama_process(m->dft, LLAMA_PROCESS_TYPE_DECODE, m->batch) != 0) {
+            return -1;
+        }
+        tokens[i + 1] = llama_sampler_sample(m->greedy, m->dft, idx);
+        state = shim_ext_get_embeddings_nextn_ith(m->dft, idx);
+        if (state == NULL) {
+            return -1;
+        }
+    }
+    // The drafts leave the MTP layer's cache: catching up after the verification writes it again.
+    if (n_draft > 0 && !llama_memory_seq_rm(mem_dft, 0, pos, -1)) {
+        return -1;
+    }
+
+    const int32_t n = n_draft + 1;
+    struct llama_batch batch = llama_batch_init(n, 0, 1);
+    for (int32_t i = 0; i < n; i++) {
+        batch.token[i] = tokens[i];
+        batch.pos[i] = pos + i;
+        batch.n_seq_id[i] = 1;
+        batch.seq_id[i][0] = 0;
+        batch.logits[i] = true;
+    }
+    batch.n_tokens = n;
+    int32_t status = llama_decode(m->tgt, batch);
+    llama_batch_free(batch);
+    if (status != 0 || mtp_catch_up(m, tokens, n, pos, true) != 0) {
+        return -1;
+    }
+
+    // The target's choice after each token; a draft is kept while it is what the target chose.
+    int32_t kept = 0;
+    for (;;) {
+        out[kept] = llama_sampler_sample(sampler, m->tgt, kept);
+        if (kept == n_draft || out[kept] != tokens[kept + 1]) {
+            break;
+        }
+        kept++;
+    }
+    memcpy(m->pending, m->rows + (size_t) kept * row, row * sizeof(float));
+    // Drop the drafts after the kept ones; the recurrent layers can (n_rs_seq), the KV caches always.
+    if (kept < n_draft) {
+        if (!llama_memory_seq_rm(mem_tgt, 0, pos + kept + 1, -1) || !llama_memory_seq_rm(mem_dft, 0, pos + kept + 1, -1)) {
+            return -1;
+        }
+    }
+    return kept + 1;
 }

@@ -46,6 +46,8 @@ export interface Config {
   gpuLayers: number;
   /** CPU threads for the engine; 0 uses the performance cores (at most 8, at most the CPUs this process may use). */
   threads: number;
+  /** Multi-token prediction for a model with an MTP layer, where the GPU has the memory for it (src/llama-ffi.ts). */
+  mtp: boolean;
   ctxSize: number;
   maxInputTokens: number;
   /** Requests allowed to wait behind the running one. */
@@ -105,6 +107,7 @@ export const SETTING_NAMES = [
   "GPU_LAYERS",
   "LLAMA_THREADS",
   "LLAMA_DIR",
+  "MTP",
   "PUBLIC_DIR",
   "SPEECH",
   "AUDIO_DIR",
@@ -188,6 +191,7 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     llamaDir: resolve(env.LLAMA_DIR || join(root, "vendor", "llama.cpp")),
     gpuLayers: env.GPU_LAYERS === undefined || env.GPU_LAYERS === "all" ? -1 : int(env, "GPU_LAYERS", -1),
     threads: int(env, "LLAMA_THREADS", 0),
+    mtp: env.MTP !== "0",
     ctxSize,
     maxInputTokens,
     maxQueue: int(env, "MAX_QUEUE", 8),
@@ -232,6 +236,7 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   GPU_LAYERS: "`all` (default), a layer count, or 0 to run on the processor",
   LLAMA_THREADS: "CPU threads for decoding (default the performance cores: P-cores or big cores, at most 8)",
   LLAMA_DIR: "directory with libllama and its backends (default vendor/llama.cpp)",
+  MTP: "0 turns multi-token prediction off (default on where all layers are on a GPU with more than 16 GiB)",
   PUBLIC_DIR: "directory with the web app (default public/)",
   SPEECH: "0 turns reading aloud off (default on)",
   AUDIO_DIR: "directory with libaudiocpp (default vendor/audio.cpp)",

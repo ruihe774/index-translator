@@ -18,6 +18,7 @@ describe("loadConfig defaults", () => {
       llamaDir: join(root, "vendor", "llama.cpp"),
       gpuLayers: -1,
       threads: 0,
+      mtp: true,
       ctxSize: 65_536,
       maxInputTokens: 28_000,
       maxQueue: 8,
@@ -67,6 +68,12 @@ describe("loadConfig defaults", () => {
     expect(loadConfig({ MODELS_DIR: "/m", SEPARATION_MODEL_DIR: "/b" }).separationModelDir).toBe(resolve("/b"));
     expect(loadConfig({ SPEECH_IDLE_UNLOAD: "0" }).speechIdleUnload).toBe(0);
     expect(() => loadConfig({ SPEECH_IDLE_UNLOAD: "soon" })).toThrow("SPEECH_IDLE_UNLOAD");
+  });
+
+  test("MTP=0 turns multi-token prediction off", () => {
+    expect(loadConfig({ MTP: "0" }).mtp).toBe(false);
+    expect(loadConfig({ MTP: "1" }).mtp).toBe(true);
+    expect(loadConfig({}, ["--mtp", "0"]).mtp).toBe(false);
   });
 
   test("DEV_RELOAD=1 enables the development reload", () => {

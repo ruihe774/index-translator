@@ -163,6 +163,7 @@ class NativeWorker {
         gpuLayers: cfg.gpuLayers,
         ctxSize: cfg.ctxSize,
         threads: inferenceThreads(cfg.threads),
+        mtp: cfg.mtp && model.mtp === true,
       },
     });
 

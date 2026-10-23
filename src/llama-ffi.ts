@@ -10,6 +10,17 @@ import { join } from "node:path";
 const BATCH_SIZE = 512;
 /** Prompt tokens per decode without a GPU, where a full batch would block the thread for seconds. */
 const CPU_PROMPT_STEP = 64;
+/**
+ * Tokens the MTP layer drafts per step. With Index-Translate-9B (Q8_0, GB10) 2 decoded 1.65 times as fast as without
+ * MTP, 1 1.53 times and 3 1.57 times: the layer is trained one token ahead, and a second draft is kept about half the time.
+ */
+const MTP_DRAFT = 2;
+/**
+ * GPU memory (all GPUs, as the backend reports it) that MTP needs: it adds about 0.65 GiB (the layer, its KV cache,
+ * two more copies of the recurrent state), and a 16 GiB card is already full with the chat model, an image and
+ * reading aloud. Every 16 GiB card is below this.
+ */
+const MTP_MIN_GPU_BYTES = 17 * 2 ** 30;
 
 const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
 
@@ -43,19 +54,7 @@ function bind(dir: string) {
     llama_sampler_sample: { args: ["ptr", "ptr", "i32"], returns: "i32" },
     llama_sampler_free: { args: ["ptr"], returns: "void" },
   }).symbols;
-  const shim = dlopen(shimPath(dir), {
-    shim_init: { args: ["ptr"], returns: "void" },
-    shim_devices: { args: ["ptr", "i32"], returns: "i32" },
-    shim_gpu_memory: { args: ["ptr", "ptr"], returns: "i32" },
-    shim_load_model: { args: ["ptr", "i32"], returns: "ptr" },
-    shim_new_context: { args: ["ptr", "u32", "u32", "i32"], returns: "ptr" },
-    shim_decode: { args: ["ptr", "ptr", "i32"], returns: "i32" },
-    shim_decode_at: { args: ["ptr", "ptr", "i32", "i32"], returns: "i32" },
-    shim_mtmd_load: { args: ["ptr", "ptr", "bool", "i32"], returns: "ptr" },
-    shim_mtmd_bitmap: { args: ["ptr", "usize"], returns: "ptr" },
-    shim_mtmd_tokenize: { args: ["ptr", "ptr", "usize", "ptr", "usize", "ptr", "ptr", "usize"], returns: "ptr" },
-    shim_mtmd_eval_chunk: { args: ["ptr", "ptr", "ptr", "i32", "i32", "ptr"], returns: "i32" },
-  }).symbols;
+  const shim = openShim(dir);
   // libmtmd (tools/mtmd/mtmd.h, mtmd-helper.h): the calls that need no struct. The shim links it.
   const mtmd = dlopen(mtmdPath(dir), {
     mtmd_free: { args: ["ptr"], returns: "void" },
@@ -66,6 +65,39 @@ function bind(dir: string) {
   }).symbols;
   shim.shim_init(cstr(dir));
   return { ...llama, ...shim, ...mtmd };
+}
+
+/** src/llama-shim.c and src/llama-shim-ext.cpp; a shim from an older build lacks some of these. */
+function openShim(dir: string) {
+  try {
+    return openShimSymbols(dir);
+  } catch (e) {
+    throw new Error(
+      `${e instanceof Error ? e.message : String(e)} (a shim from an older build); run: bun scripts/build_llama.ts`,
+      { cause: e },
+    );
+  }
+}
+
+function openShimSymbols(dir: string) {
+  return dlopen(shimPath(dir), {
+    shim_init: { args: ["ptr"], returns: "void" },
+    shim_devices: { args: ["ptr", "i32"], returns: "i32" },
+    shim_gpu_memory: { args: ["ptr", "ptr"], returns: "i32" },
+    shim_load_model: { args: ["ptr", "i32", "bool"], returns: "ptr" },
+    shim_new_context: { args: ["ptr", "u32", "u32", "i32", "u32"], returns: "ptr" },
+    shim_decode: { args: ["ptr", "ptr", "i32"], returns: "i32" },
+    shim_decode_at: { args: ["ptr", "ptr", "i32", "i32"], returns: "i32" },
+    shim_mtmd_load: { args: ["ptr", "ptr", "bool", "i32"], returns: "ptr" },
+    shim_mtmd_bitmap: { args: ["ptr", "usize"], returns: "ptr" },
+    shim_mtmd_tokenize: { args: ["ptr", "ptr", "usize", "ptr", "usize", "ptr", "ptr", "usize"], returns: "ptr" },
+    shim_mtmd_eval_chunk: { args: ["ptr", "ptr", "ptr", "i32", "i32", "ptr"], returns: "i32" },
+    shim_mtp_new: { args: ["ptr", "ptr", "u32", "u32", "i32"], returns: "ptr" },
+    shim_mtp_free: { args: ["ptr"], returns: "void" },
+    shim_mtp_reset: { args: ["ptr"], returns: "void" },
+    shim_mtp_catch_up: { args: ["ptr", "ptr", "i32", "i32"], returns: "i32" },
+    shim_mtp_step: { args: ["ptr", "ptr", "i32", "i32", "i32", "ptr"], returns: "i32" },
+  }).symbols;
 }
 
 type Lib = ReturnType<typeof bind>;
@@ -178,6 +210,11 @@ export interface ModelOptions {
   threads: number;
   /** The model's image encoder and projector (its mmproj GGUF); loaded when the first image arrives. */
   mmproj?: string;
+  /**
+   * Draft with the model's MTP layer (multi-token prediction) where it has one, every layer is on the GPU and the GPU
+   * has MTP_MIN_GPU_BYTES. Text prompts only: after an image the model decodes one token at a time.
+   */
+  mtp: boolean;
 }
 
 /** An image the model cannot take: not a readable image file, or the model has no encoder for one. */
@@ -227,6 +264,10 @@ export class Model {
   /** Where the next token goes after a prompt with an image, which only libmtmd can tell; -1 while libllama counts. */
   private nextPos = -1;
   private posBuf = new Int32Array(1);
+  /** Tokens of a text prompt and its answer in the context, so where the next one goes. */
+  private textPos = 0;
+  /** What `next()` answers. */
+  private chosen = new Int32Array(MTP_DRAFT + 1);
   private pieceBuf = new Uint8Array(256);
   private freed = false;
 
@@ -237,6 +278,8 @@ export class Model {
     private readonly onGpu: boolean,
     private readonly threads: number,
     private readonly mmproj: string | undefined,
+    /** The MTP drafter, when the model decodes with multi-token prediction. */
+    private readonly mtp: Handle | null,
   ) {
     this.promptStep = onGpu ? BATCH_SIZE : CPU_PROMPT_STEP;
     this.ctxSize = lib.llama_n_ctx(ctx);
@@ -253,16 +296,26 @@ export class Model {
 
   static load(opts: ModelOptions): Model {
     const lib = open(opts.dir);
-    const model = lib.shim_load_model(cstr(opts.path), opts.gpuLayers);
+    const mtp = opts.mtp && opts.gpuLayers < 0 && (gpuMemory()?.total ?? 0) >= MTP_MIN_GPU_BYTES;
+    const model = lib.shim_load_model(cstr(opts.path), opts.gpuLayers, mtp);
     if (!model) {
       throw new Error(`llama.cpp could not load ${opts.path}`);
     }
-    const ctx = lib.shim_new_context(model, opts.ctxSize, BATCH_SIZE, opts.threads);
+    // Rejected drafts are taken back out of the recurrent layers, which keep a copy of their state per draft token.
+    const ctx = lib.shim_new_context(model, opts.ctxSize, BATCH_SIZE, opts.threads, mtp ? MTP_DRAFT : 0);
     if (!ctx) {
       lib.llama_model_free(model);
       throw new Error(`llama.cpp could not create a ${opts.ctxSize}-token context (out of memory?)`);
     }
-    return new Model(lib, model, ctx, opts.gpuLayers !== 0, opts.threads, opts.mmproj);
+    const drafter = mtp ? lib.shim_mtp_new(model, ctx, opts.ctxSize, BATCH_SIZE, opts.threads) : null;
+    if (mtp) {
+      console.error(
+        drafter
+          ? `[engine] multi-token prediction: ${MTP_DRAFT} draft tokens per step`
+          : "[engine] no multi-token prediction: the model has no MTP layer, or its context could not be created",
+      );
+    }
+    return new Model(lib, model, ctx, opts.gpuLayers !== 0, opts.threads, opts.mmproj, drafter);
   }
 
   /** Tokens of the whole prompt for a user message with this content. Special tokens written out in the content are plain text. */
@@ -349,7 +402,11 @@ export class Model {
   /** Empties the context so the next prompt starts from position 0. */
   reset(): void {
     this.lib.llama_memory_clear(this.lib.llama_get_memory(this.ctx), true);
+    if (this.mtp) {
+      this.lib.shim_mtp_reset(this.mtp);
+    }
     this.nextPos = -1;
+    this.textPos = 0;
   }
 
   /** Evaluates up to `promptStep` tokens after what the context already holds. */
@@ -357,6 +414,11 @@ export class Model {
     let status: number;
     if (this.nextPos < 0) {
       status = this.lib.shim_decode(this.ctx, tokens, tokens.length);
+      // The MTP layer reads what the model computed for each token, so it follows every text decode.
+      if (status === 0 && this.mtp) {
+        status = this.lib.shim_mtp_catch_up(this.mtp, tokens, tokens.length, this.textPos);
+      }
+      this.textPos += tokens.length;
     } else {
       status = this.lib.shim_decode_at(this.ctx, tokens, tokens.length, this.nextPos);
       this.nextPos += tokens.length;
@@ -369,6 +431,26 @@ export class Model {
   decodeOne(token: number): void {
     this.one[0] = token;
     this.decode(this.one);
+  }
+
+  /**
+   * Decodes `token`, the last one chosen, and answers the most likely tokens after it: one, or with multi-token
+   * prediction after a text prompt up to MTP_DRAFT + 1, the same the model would choose one at a time. At most
+   * `most` (at least 1). The view is reused by the next call.
+   */
+  next(token: number, most: number): Int32Array {
+    if (!this.mtp || this.nextPos >= 0) {
+      this.decodeOne(token);
+      this.chosen[0] = this.sample();
+      return this.chosen.subarray(0, 1);
+    }
+    const draft = Math.max(0, Math.min(MTP_DRAFT, most - 1));
+    const n = this.lib.shim_mtp_step(this.mtp, this.sampler, token, this.textPos, draft, this.chosen);
+    if (n < 1) {
+      throw new Error("decoding with multi-token prediction failed");
+    }
+    this.textPos += n;
+    return this.chosen.subarray(0, n);
   }
 
   /** The most likely next token after the last decode. */
@@ -399,6 +481,9 @@ export class Model {
     this.lib.llama_sampler_free(this.sampler);
     if (this.vision) {
       this.lib.mtmd_free(this.vision);
+    }
+    if (this.mtp) {
+      this.lib.shim_mtp_free(this.mtp);
     }
     this.lib.llama_free(this.ctx);
     this.lib.llama_model_free(this.model);

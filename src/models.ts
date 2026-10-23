@@ -21,6 +21,8 @@ export interface ModelSpec {
    * that has one translates the text in an image; the file is loaded when the first image arrives.
    */
   mmproj?: string;
+  /** The GGUF has an MTP layer, which drafts tokens for faster decoding where the GPU has room for it. */
+  mtp?: boolean;
 }
 
 /** Keyed by the API's model ids: a model the spec adds or drops is a type error here. */
@@ -30,6 +32,7 @@ const SPECS: Record<ModelId, Omit<ModelSpec, "id">> = {
     file: "Index-Translate-9B.Q6_K.gguf",
     kind: "chat",
     mmproj: "Index-Translate-9B.mmproj-Q8_0.gguf",
+    mtp: true,
   },
   "index-nailong-9b": {
     label: "Index-NativeLong-9B (Q6_K)",

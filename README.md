@@ -472,6 +472,7 @@ closed); flags work as above.
 | `DEFAULT_MODEL` | `index-translate-9b` | Model loaded at startup |
 | `GPU_LAYERS` | `all` | Layers to run on the GPU; `0` runs on the CPU |
 | `LLAMA_THREADS` | the fast cores, at most 8 | CPU threads for the engine; matters when running on the CPU. The default is the number of performance cores (Intel P-cores, Arm big cores; where that is not known, half the CPU threads), at most 8 and at most the CPUs the app may use |
+| `MTP` | on | `0` turns multi-token prediction off. Where the whole model is on a GPU with more than 16 GiB of memory, Index-Translate-9B guesses two tokens ahead with its own prediction layer and checks them in one step, which writes text translations about 1.6 times as fast for about 0.65 GiB more GPU memory. The translation can differ in a word here and there from one written a token at a time: both are what the model finds most likely, computed in a different order. Images, and smaller GPUs, are translated a token at a time. |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
 | `ALLOWED_WEBPAGE_DOMAINS` | none (off) | Sites whose pages the app may fetch for translation, comma separated: `example.com`, `*.example.com` (its subdomains) or `*` (any site) |

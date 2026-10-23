@@ -521,6 +521,7 @@ export function config(overrides: Partial<Config> = {}): Config {
     llamaDir: "/nonexistent/llama.cpp",
     gpuLayers: -1,
     threads: 0,
+    mtp: true,
     ctxSize: 1000,
     maxInputTokens: 400,
     maxQueue: 1,

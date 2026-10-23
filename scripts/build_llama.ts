@@ -1,6 +1,7 @@
 // Build the translation engine: libllama and libmtmd (image input) from the pinned llama.cpp source,
 // with the Vulkan and CPU backends as loadable libraries and nothing else of llama.cpp (no tools,
-// server or examples), and the C shim (src/llama-shim.c) as libllama-shim, into ./vendor/llama.cpp.
+// server or examples), and the shim (src/llama-shim.c, src/llama-shim-ext.cpp) as libllama-shim, into
+// ./vendor/llama.cpp.
 // Usage: bun scripts/build_llama.ts [--native] [--keep] [--shim] [--cuda [--cuda-arch=LIST]]
 //
 //   --native  build the CPU backend for this machine's processor; the library may then die with
@@ -8,7 +9,7 @@
 //             FMA on x86-64 (Haswell, 2013), Armv8.2-A with dot product and fp16 on aarch64. The CPU
 //             is only a fallback, so llama.cpp's every-variant set is not worth its build time.
 //   --keep    keep the source and the build tree in vendor/.build/llama.cpp, and reuse them
-//   --shim    only compile src/llama-shim.c again, against the headers and libraries already in
+//   --shim    only compile the shim again, against the headers and libraries already in
 //             vendor/llama.cpp (after editing the shim)
 //   --cuda    the CUDA 13 variant for NVIDIA GPUs instead of the Vulkan one, into ./vendor/llama.cpp-cuda:
 //             the CUDA and CPU backends and no Vulkan, with the toolkit's runtime libraries (cudart, cuBLAS)
@@ -49,9 +50,13 @@ const TAG = "v0.7.0";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
 const COMMIT = "620d2225cc436ab0b001e3200e590e3b286ef9ab";
 const REPO = "https://github.com/ggml-org/llama.cpp.git";
-/** llama.h, libmtmd's headers and everything they include, relative to the source tree. The shim is compiled against them. */
+/**
+ * llama.h, libmtmd's headers and everything they include, relative to the source tree. The shim is compiled against
+ * them. src/llama-ext.h is llama.cpp's C++ staging header, which declares the calls multi-token prediction needs.
+ */
 const HEADERS = [
   "include/llama.h",
+  "src/llama-ext.h",
   "tools/mtmd/mtmd.h",
   "tools/mtmd/mtmd-helper.h",
   "ggml/include/ggml.h",
@@ -109,11 +114,16 @@ const build = join(work, "build");
 /** The new copy is put together here, so a failed build leaves the installed one alone. */
 const stage = join(work, "stage");
 
+/** The shim's C part, and its C++ part, which gives the staging header's functions C names. */
+const SHIM_C = join(root, "src", "llama-shim.c");
+const SHIM_CXX = join(root, "src", "llama-shim-ext.cpp");
+
 /** Compiles the shim into `dir`, against the headers and the libraries that are in it. */
 async function buildShim(dir: string): Promise<void> {
+  const objects = join(work, "shim");
+  await mkdir(objects, { recursive: true });
   if (windows) {
-    const objects = join(work, "shim");
-    await mkdir(objects, { recursive: true });
+    // cl compiles the .c file as C and the .cpp file as C++.
     await run(
       [
         "cl",
@@ -121,9 +131,12 @@ async function buildShim(dir: string): Promise<void> {
         "/O2",
         "/LD",
         "/W3",
+        "/EHsc",
+        "/std:c++17",
         `/Fo${objects}\\`,
         `/Fe${shimPath(dir)}`,
-        join(root, "src", "llama-shim.c"),
+        SHIM_C,
+        SHIM_CXX,
         `/I${join(dir, "include")}`,
         "/link",
         `/LIBPATH:${dir}`,
@@ -138,18 +151,20 @@ async function buildShim(dir: string): Promise<void> {
     }
     return;
   }
+  const compile = ["-O2", ...BASELINE, "-fPIC", "-Wall", "-Wextra", `-I${join(dir, "include")}`];
+  const cObject = join(objects, "llama-shim.o");
+  const cxxObject = join(objects, "llama-shim-ext.o");
+  await run(["cc", ...compile, "-c", "-o", cObject, SHIM_C]);
+  await run(["c++", ...compile, "-std=c++17", "-c", "-o", cxxObject, SHIM_CXX]);
+  // Linked as C++, which brings in its runtime library (libllama needs it anyway).
   await run([
-    "cc",
-    "-O2",
+    "c++",
     ...BASELINE,
-    "-fPIC",
     "-shared",
-    "-Wall",
-    "-Wextra",
     "-o",
     shimPath(dir),
-    join(root, "src", "llama-shim.c"),
-    `-I${join(dir, "include")}`,
+    cObject,
+    cxxObject,
     `-L${dir}`,
     "-lllama",
     "-lmtmd",
@@ -182,7 +197,13 @@ if (flags.has("--shim")) {
   if (flags.size > (cuda ? 2 : 1)) {
     throw new Error("--shim is used alone, or with --cuda");
   }
-  requireTools(windows ? [] : ["cc"], TOOLS_HINT);
+  requireTools(windows ? [] : ["cc", "c++"], TOOLS_HINT);
+  for (const header of HEADERS) {
+    const name = header.slice(header.lastIndexOf("/") + 1);
+    if (!(await Bun.file(join(dest, "include", name)).exists())) {
+      throw new Error(`${dest} has no ${name} (an older build); build it again: bun scripts/build_llama.ts`);
+    }
+  }
   await buildShim(dest);
   await rm(join(work, "shim"), { recursive: true, force: true });
   report(dest, "shim rebuilt");
