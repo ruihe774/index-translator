@@ -1,0 +1,163 @@
+/* tslint:disable */
+/* eslint-disable */
+
+export type PdfType = "TextBased" | "Scanned" | "ImageBased" | "Mixed";
+export type MarkdownProfile = "fidelity" | "compact";
+
+export interface ProcessOptions {
+    /** Restrict extraction to these 1-indexed page numbers. */
+    pages?: number[];
+    /** Password for an encrypted PDF. */
+    password?: string;
+    /** Source-faithful output by default, or compact output for fewer tokens. */
+    profile?: MarkdownProfile;
+    /** Insert `<!-- Page N -->` markers between pages. */
+    includePageMarkers?: boolean;
+    /** Include image placeholders in Markdown output. */
+    includeImages?: boolean;
+}
+
+export interface PageOcrReasons {
+    /** 1-indexed page number. */
+    page: number;
+    reasons: string[];
+}
+
+/**
+ * A font whose ToUnicode CMap — or, for a font without one, the embedded
+ * program's cmap table — had no entry for some of the codes the document
+ * shows through it, and what became of those codes.
+ */
+export interface FontCmapGaps {
+    /** The font's /BaseFont name, or its resource name when it has none. */
+    font: string;
+    /** Codes shown through the font's CMap, repeats included: two-byte codes, or the bytes of a single-byte CMap. */
+    codes: number;
+    /** Codes without an entry that were read from the mapped codes around them. */
+    interpolated: number;
+    /** Codes without an entry that could not be read; each is a U+FFFD in the text. */
+    unmapped: number;
+}
+
+export interface LayoutComplexity {
+    isComplex: boolean;
+    /** 1-indexed page numbers. */
+    pagesWithTables: number[];
+    /** 1-indexed page numbers. */
+    pagesWithColumns: number[];
+}
+
+export interface PdfProcessResult {
+    pdfType: PdfType;
+    markdown?: string;
+    pageCount: number;
+    processingTimeMs: number;
+    /** 1-indexed page numbers. */
+    pagesNeedingOcr: number[];
+    ocrReasonsByPage: PageOcrReasons[];
+    /**
+     * The `/Title` of the document information dictionary, decoded as a PDF
+     * text string (UTF-16 or UTF-8 after a byte order mark, PDFDocEncoding
+     * otherwise). Absent when the entry is missing or not a string. The
+     * entries below follow the same decoding and missing-value rule.
+     */
+    title?: string;
+    /** The document information dictionary's `/Author`. */
+    author?: string;
+    /** The document information dictionary's `/Subject`. */
+    subject?: string;
+    /** The document information dictionary's `/Keywords`. */
+    keywords?: string;
+    /** The document information dictionary's `/Creator`: the application the document was authored in. */
+    creator?: string;
+    /** The document information dictionary's `/Producer`: the application that wrote the PDF. */
+    producer?: string;
+    /** The document information dictionary's `/CreationDate` as written, a PDF date string such as `D:20240115103000+01'00'`. */
+    creationDate?: string;
+    /** The document information dictionary's `/ModDate` as written. */
+    modDate?: string;
+    confidence: number;
+    layout: LayoutComplexity;
+    hasEncodingIssues: boolean;
+    /**
+     * Fonts whose ToUnicode CMap — or, for a font without one, the embedded
+     * program's cmap table — lacked an entry for a code the document shows
+     * through it. Always empty for `detectPdf`, which decodes no text;
+     * otherwise empty when every such code had an entry.
+     */
+    cmapGaps: FontCmapGaps[];
+}
+
+export interface PdfClassification {
+    pdfType: PdfType;
+    pageCount: number;
+    /** 0-indexed page numbers, matching the native Node.js API. */
+    pagesNeedingOcr: number[];
+    confidence: number;
+}
+
+/**
+ * A PDF parsed once and processed repeatedly. Call `free()` when done to
+ * release the parsed document.
+ */
+export class PdfDocument {
+    /** Throws when the bytes are not a readable PDF or the password is missing or wrong. */
+    constructor(data: Uint8Array, password?: string);
+    readonly pageCount: number;
+    /** Like `processPdf`, without parsing again. `options.password` is ignored. */
+    processPages(options?: Omit<ProcessOptions, "password">): PdfProcessResult;
+    free(): void;
+}
+
+export function processPdf(data: Uint8Array, options?: ProcessOptions): PdfProcessResult;
+export function detectPdf(data: Uint8Array, options?: Pick<ProcessOptions, "password">): PdfProcessResult;
+export function classifyPdf(data: Uint8Array): PdfClassification;
+export function extractText(data: Uint8Array): string;
+export function version(): string;
+
+
+
+export type InitInput = RequestInfo | URL | Response | BufferSource | WebAssembly.Module;
+
+export interface InitOutput {
+    readonly memory: WebAssembly.Memory;
+    readonly __wbg_pdfdocument_free: (a: number, b: number) => void;
+    readonly classifyPdf: (a: number, b: number) => [number, number, number];
+    readonly detectPdf: (a: number, b: number, c: any) => [number, number, number];
+    readonly extractText: (a: number, b: number) => [number, number, number, number];
+    readonly pdfdocument_new: (a: number, b: number, c: number, d: number) => [number, number, number];
+    readonly pdfdocument_pageCount: (a: number) => number;
+    readonly pdfdocument_processPages: (a: number, b: any) => [number, number, number];
+    readonly processPdf: (a: number, b: number, c: any) => [number, number, number];
+    readonly version: () => [number, number];
+    readonly __wbindgen_malloc: (a: number, b: number) => number;
+    readonly __wbindgen_realloc: (a: number, b: number, c: number, d: number) => number;
+    readonly __wbindgen_exn_store: (a: number) => void;
+    readonly __externref_table_alloc: () => number;
+    readonly __wbindgen_externrefs: WebAssembly.Table;
+    readonly __wbindgen_free: (a: number, b: number, c: number) => void;
+    readonly __externref_table_dealloc: (a: number) => void;
+    readonly __wbindgen_start: () => void;
+}
+
+export type SyncInitInput = BufferSource | WebAssembly.Module;
+
+/**
+ * Instantiates the given `module`, which can either be bytes or
+ * a precompiled `WebAssembly.Module`.
+ *
+ * @param {{ module: SyncInitInput }} module - Passing `SyncInitInput` directly is deprecated.
+ *
+ * @returns {InitOutput}
+ */
+export function initSync(module: { module: SyncInitInput } | SyncInitInput): InitOutput;
+
+/**
+ * If `module_or_path` is {RequestInfo} or {URL}, makes a request and
+ * for everything else, calls `WebAssembly.instantiate` directly.
+ *
+ * @param {{ module_or_path: InitInput | Promise<InitInput> }} module_or_path - Passing `InitInput` directly is deprecated.
+ *
+ * @returns {Promise<InitOutput>}
+ */
+export default function __wbg_init (module_or_path?: { module_or_path: InitInput | Promise<InitInput> } | InitInput | Promise<InitInput>): Promise<InitOutput>;

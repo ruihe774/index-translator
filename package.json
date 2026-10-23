@@ -1,0 +1,25 @@
+{
+  "name": "@firecrawl/pdf-inspector-wasm",
+  "type": "module",
+  "collaborators": [
+    "Firecrawl Team"
+  ],
+  "description": "Browser WebAssembly bindings for pdf-inspector",
+  "version": "1.25.2",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/firecrawl/pdf-inspector"
+  },
+  "files": [
+    "pdf_inspector_wasm_bg.wasm",
+    "pdf_inspector_wasm.js",
+    "pdf_inspector_wasm.d.ts"
+  ],
+  "main": "pdf_inspector_wasm.js",
+  "homepage": "https://github.com/firecrawl/pdf-inspector",
+  "types": "pdf_inspector_wasm.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
