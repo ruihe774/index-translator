@@ -7,8 +7,9 @@
 // (scripts/fetch_onnxruntime.ts), and a new pin means counting them again. A wrong slot calls the
 // wrong function, so the version string is checked at load as well.
 
-import { CFunction, dlopen, type FFIFunction, type Pointer, ptr, read, suffix, toArrayBuffer } from "bun:ffi";
-import { join } from "node:path";
+import { CFunction, dlopen, type FFIFunction, type Pointer, ptr, read, toArrayBuffer } from "bun:ffi";
+
+import { cstr, libraryFile, pointerOf, slot } from "./ffi-util";
 
 /** The API version of the pinned release's header; a library older than that refuses it. */
 const ORT_API_VERSION = 31;
@@ -49,8 +50,7 @@ const MEM_TYPE_DEFAULT = 0;
 class OrtError extends Error {}
 
 /** The shared library inside `dir`: the SONAME link on Linux, the DLL on Windows (by full path: System32 has another). */
-export const libraryPath = (dir: string) =>
-  join(dir, process.platform === "win32" ? `onnxruntime.${suffix}` : `libonnxruntime.${suffix}.1`);
+export const libraryPath = (dir: string) => libraryFile(dir, "onnxruntime", 1);
 
 /** A path as `ORTCHAR_T*`: UTF-16 on Windows, UTF-8 elsewhere; NUL-terminated. */
 function ortPath(path: string): Uint8Array {
@@ -59,12 +59,6 @@ function ortPath(path: string): Uint8Array {
   }
   return new TextEncoder().encode(`${path}\0`);
 }
-
-const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
-
-/** A slot for one pointer the library writes, and what it wrote. */
-const out = () => new BigUint64Array(1);
-const pointerIn = (slot: BigUint64Array) => Number(slot[0]) as Pointer;
 
 /** An input tensor: int64 or float32, by its array's type. */
 type Input = BigInt64Array | Float32Array;
@@ -178,21 +172,42 @@ export function loadRuntime(dir: string): Runtime {
     throw new OrtError(`${what}: ${message}`);
   }
 
-  const slot = out();
-  check(f.CreateEnv(LOG_ERROR, ptr(cstr("index-translator")), ptr(slot)), "CreateEnv");
-  const env = pointerIn(slot);
-  check(f.CreateCpuMemoryInfo(ARENA_ALLOCATOR, MEM_TYPE_DEFAULT, ptr(slot)), "CreateCpuMemoryInfo");
-  const memory = pointerIn(slot);
+  const scratch = slot();
+  // The environment and the log id it was created with live together: whatever the library keeps of the
+  // id must stay valid for as long as `env` is used (every session `open` creates names it).
+  const logId = cstr("index-translator");
+  check(f.CreateEnv(LOG_ERROR, ptr(logId), ptr(scratch)), "CreateEnv");
+  const env = { handle: pointerOf(scratch), logId };
+  check(f.CreateCpuMemoryInfo(ARENA_ALLOCATOR, MEM_TYPE_DEFAULT, ptr(scratch)), "CreateCpuMemoryInfo");
+  const memory = pointerOf(scratch);
 
   /** An OrtValue over `data`, which must outlive it. */
   function tensor(data: Input, dims: BigInt64Array): Pointer {
-    const value = out();
+    const value = slot();
     const type = data instanceof BigInt64Array ? INT64 : FLOAT;
     check(
       f.CreateTensorWithDataAsOrtValue(memory, ptr(data), data.byteLength, ptr(dims), dims.length, type, ptr(value)),
       "CreateTensorWithDataAsOrtValue",
     );
-    return pointerIn(value);
+    return pointerOf(value);
+  }
+
+  /** The `size` floats of the output tensor `output`, copied; its element count must be exactly `size`. */
+  function readOutput(output: Pointer, size: number, describe: string): Float32Array {
+    check(f.GetTensorTypeAndShape(output, ptr(scratch)), "GetTensorTypeAndShape");
+    const info = pointerOf(scratch);
+    const count = slot();
+    try {
+      check(f.GetTensorShapeElementCount(info, ptr(count)), "GetTensorShapeElementCount");
+    } finally {
+      f.ReleaseTensorTypeAndShapeInfo(info);
+    }
+    // Read exactly what the library holds: a model with another output shape is an error, not a stray read.
+    if (Number(count[0]) !== size) {
+      throw new OrtError(`the model answered ${count[0]} values for ${describe}`);
+    }
+    check(f.GetTensorMutableData(output, ptr(scratch)), "GetTensorMutableData");
+    return new Float32Array(toArrayBuffer(pointerOf(scratch), 0, size * 4).slice(0));
   }
 
   return {
@@ -205,8 +220,8 @@ export function loadRuntime(dir: string): Runtime {
         const table = (of: Uint8Array[]) => BigUint64Array.from(of.map((s) => BigInt(ptr(s))));
         return { strings, inputs: table(strings.slice(0, -1)), outputs: table(strings.slice(-1)) };
       })();
-      check(f.CreateSessionOptions(ptr(slot)), "CreateSessionOptions");
-      const options = pointerIn(slot);
+      check(f.CreateSessionOptions(ptr(scratch)), "CreateSessionOptions");
+      const options = pointerOf(scratch);
       let session: Pointer;
       try {
         check(f.SetIntraOpNumThreads(options, threads), "SetIntraOpNumThreads");
@@ -214,8 +229,8 @@ export function loadRuntime(dir: string): Runtime {
         check(f.SetInterOpNumThreads(options, 1), "SetInterOpNumThreads");
         // The arena keeps the largest batch's memory for good (a gigabyte); without it memory follows the work.
         check(f.DisableCpuMemArena(options), "DisableCpuMemArena");
-        check(f.CreateSession(env, ptr(ortPath(modelPath)), options, ptr(slot)), "CreateSession");
-        session = pointerIn(slot);
+        check(f.CreateSession(env.handle, ptr(ortPath(modelPath)), options, ptr(scratch)), "CreateSession");
+        session = pointerOf(scratch);
       } finally {
         f.ReleaseSessionOptions(options);
       }
@@ -229,7 +244,7 @@ export function loadRuntime(dir: string): Runtime {
           const dims = BigInt64Array.of(BigInt(rows), BigInt(width));
           const size = rows * width * perToken;
           const inputs = data.map((d) => tensor(d, dims));
-          const outputs = new BigUint64Array(1);
+          const outputs = slot();
           try {
             check(
               f.Run(
@@ -244,22 +259,9 @@ export function loadRuntime(dir: string): Runtime {
               ),
               "Run",
             );
-            const output = pointerIn(outputs);
+            const output = pointerOf(outputs);
             try {
-              check(f.GetTensorTypeAndShape(output, ptr(slot)), "GetTensorTypeAndShape");
-              const info = pointerIn(slot);
-              const count = out();
-              try {
-                check(f.GetTensorShapeElementCount(info, ptr(count)), "GetTensorShapeElementCount");
-              } finally {
-                f.ReleaseTensorTypeAndShapeInfo(info);
-              }
-              // Read exactly what the library holds: a model with another output shape is an error, not a stray read.
-              if (Number(count[0]) !== size) {
-                throw new OrtError(`the model answered ${count[0]} values for ${rows * width} tokens × ${perToken}`);
-              }
-              check(f.GetTensorMutableData(output, ptr(slot)), "GetTensorMutableData");
-              return new Float32Array(toArrayBuffer(pointerIn(slot), 0, size * 4).slice(0));
+              return readOutput(output, size, `${rows * width} tokens × ${perToken}`);
             } finally {
               f.ReleaseValue(output);
             }

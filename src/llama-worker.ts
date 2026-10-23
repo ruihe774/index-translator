@@ -163,7 +163,7 @@ serve<LlamaProtocol>(
       epoch++;
       return exclusive(() => {
         unload();
-        model = Model.load(msg.options);
+        model = Model.load(msg.options, gpuMemory(msg.options.dir)?.total ?? 0);
         modelNo = msg.model;
         return { type: "ok" };
       });

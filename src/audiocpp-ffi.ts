@@ -7,26 +7,23 @@
 // hidden. audio.cpp's ggml is a fork with the same library name as llama.cpp's; a libaudiocpp that
 // looked for a shared libggml would be handed the one libllama has loaded, and fail.
 
-import { CString, dlopen, type Pointer, ptr, suffix, toArrayBuffer } from "bun:ffi";
+import { CString, dlopen, type Pointer, ptr, toArrayBuffer } from "bun:ffi";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { cstr, libraryFile, once, pointerOf, slot } from "./ffi-util";
 import type { Pcm } from "./wav";
 
 /** The major version of the C API these declarations were written against (`audiocpp.h`, 0.2). */
 const ABI_MAJOR = 0;
 
-const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
-
-export const libraryPath = (dir: string) =>
-  join(dir, process.platform === "win32" ? `audiocpp.${suffix}` : `libaudiocpp.${suffix}`);
+export const libraryPath = (dir: string) => libraryFile(dir, "audiocpp");
 
 /** Where scripts/build_soxr.ts puts libsoxr, beside the engine directory `audioDir`. */
 export const soxrDir = (audioDir: string) => join(audioDir, "..", "soxr");
 
 /** The file audio.cpp asks for: the library's SONAME on Linux, `soxr.dll` on Windows. */
-export const soxrLibraryPath = (dir: string) =>
-  join(dir, process.platform === "win32" ? `soxr.${suffix}` : `libsoxr.${suffix}.0`);
+export const soxrLibraryPath = (dir: string) => libraryFile(dir, "soxr", 0);
 
 /**
  * audio.cpp resamples with libsoxr when it can open one by name, and otherwise with resamplers of
@@ -48,6 +45,7 @@ export function soxrVersion(dir: string): string {
   return version ? new CString(version) : "";
 }
 
+/** Opens libsoxr, then libaudiocpp (see `openSoxr`), and checks the C API version. */
 function bind(dir: string) {
   const libPath = libraryPath(dir);
   if (!existsSync(libPath)) {
@@ -87,22 +85,12 @@ function bind(dir: string) {
 
 type Lib = ReturnType<typeof bind>;
 
-let lib: Lib | undefined;
-let libDir = "";
-
-/** Opens the library in `dir`, once per process. */
-function open(dir: string): Lib {
-  if (lib && libDir !== dir) {
-    throw new Error(`libaudiocpp is already loaded from ${libDir}`);
-  }
-  lib ??= bind(dir);
-  libDir = dir;
-  return lib;
-}
+/** The library, opened once per process. */
+const audiocpp = once("libaudiocpp", bind);
 
 /** The C API version and audio.cpp's own version of the library in `dir`. */
 export function libraryVersion(dir: string): { abi: string; build: string } {
-  const lib = open(dir);
+  const lib = audiocpp.open(dir);
   const abi = lib.audiocpp_abi_version();
   const build = lib.audiocpp_build_version();
   return { abi: `${abi >> 16}.${(abi >> 8) & 0xff}.${abi & 0xff}`, build: build ? new CString(build) : "" };
@@ -129,8 +117,50 @@ function structWithString(text: string, size: number): Uint8Array {
   return struct;
 }
 
-/** The handle a call wrote to its out parameter. */
-const handle = (out: BigUint64Array) => Number(out[0]) as Pointer;
+/** Runs `fn` with a new request, which is freed afterwards. */
+function withRequest<T>(lib: Lib, fn: (request: NonNullable<ReturnType<Lib["audiocpp_request_create"]>>) => T): T {
+  const request = lib.audiocpp_request_create();
+  if (!request) {
+    throw new Error("audio.cpp could not create a request (out of memory?)");
+  }
+  try {
+    return fn(request);
+  } finally {
+    lib.audiocpp_request_free(request);
+  }
+}
+
+/** Runs `fn` with a result, which is freed afterwards: what `fn` borrows from it must be copied. */
+function withResult<T>(lib: Lib, result: Pointer, fn: () => T): T {
+  try {
+    return fn();
+  } finally {
+    lib.audiocpp_result_free(result);
+  }
+}
+
+/** The out parameters of `audiocpp_result_audio` and `audiocpp_result_named_audio`. */
+function audioSlots() {
+  const samples = slot();
+  const frames = slot();
+  const sampleRate = new Int32Array(1);
+  const channels = new Int32Array(1);
+  return {
+    samples,
+    frames,
+    sampleRate,
+    channels,
+    /** The audio the library wrote to the slots, copied out of the result's memory; `empty` is the error for none. */
+    read(empty: string): Pcm {
+      const count = Number(frames[0]) * channels[0]!;
+      if (count < 1) {
+        throw new Error(empty);
+      }
+      const borrowed = new Float32Array(toArrayBuffer(pointerOf(samples), 0, count * 4));
+      return { samples: borrowed.slice(), sampleRate: sampleRate[0]!, channels: channels[0]! };
+    },
+  };
+}
 
 export interface SpeechModelOptions {
   /** Directory with libaudiocpp. */
@@ -157,10 +187,10 @@ class Loaded {
 
   /** Loads the model and creates its session for `task` (`tts`, `sep`, ...). */
   protected static open(opts: SpeechModelOptions, task: string): [Lib, Pointer, Pointer, Pointer] {
-    const lib = open(opts.dir);
-    const out = new BigUint64Array(1);
+    const lib = audiocpp.open(opts.dir);
+    const out = slot();
     check(lib, lib.audiocpp_registry_create(null, out), "audiocpp_registry_create");
-    const registry = handle(out);
+    const registry = pointerOf(out);
     // Each handle is freed only once it exists, newest first. audiocpp.h keeps parents alive
     // internally, so the order is a courtesy, and freeing NULL would be a no-op anyway.
     let model: Pointer | null = null;
@@ -169,7 +199,7 @@ class Loaded {
       // struct audiocpp_model_config { const char * family_hint, * config_id, * weight_id, * model_spec_override; }
       const config = structWithString(opts.family, 32);
       check(lib, lib.audiocpp_model_load(registry, cstr(opts.modelPath), config, null, out), "audiocpp_model_load");
-      model = handle(out);
+      model = pointerOf(out);
 
       // struct audiocpp_backend_config { const char * backend; int device; int threads; }
       const backend = structWithString(opts.backend, 16);
@@ -181,7 +211,7 @@ class Loaded {
         lib.audiocpp_session_create(model, cstr(task), cstr("offline"), backend, null, out),
         "audiocpp_session_create",
       );
-      session = handle(out);
+      session = pointerOf(out);
       return [lib, registry, model, session];
     } catch (e) {
       if (session) {
@@ -227,12 +257,7 @@ export class SpeechModel extends Loaded {
    */
   synthesize(text: string, lang: string, voice: Pcm, options: Record<string, string>, abort?: Int32Array): Pcm {
     const { lib } = this;
-    const out = new BigUint64Array(1);
-    const request = lib.audiocpp_request_create();
-    if (!request) {
-      throw new Error("audio.cpp could not create a request (out of memory?)");
-    }
-    try {
+    const result = withRequest(lib, (request) => {
       check(lib, lib.audiocpp_request_set_text(request, cstr(text), cstr(lang)), "audiocpp_request_set_text");
       const frames = voice.samples.length / voice.channels;
       check(
@@ -243,38 +268,34 @@ export class SpeechModel extends Loaded {
       for (const [key, value] of Object.entries(options)) {
         check(lib, lib.audiocpp_request_set_option(request, cstr(key), cstr(value)), "audiocpp_request_set_option");
       }
-      if (abort) {
-        lib.audiocpp_set_abort_flag(abort);
+      const out = slot();
+      let status: number;
+      try {
+        if (abort) {
+          lib.audiocpp_set_abort_flag(abort);
+        }
+        status = lib.audiocpp_session_run(this.session, request, out);
+      } finally {
+        // The library must not keep a pointer to memory that may be collected.
+        lib.audiocpp_set_abort_flag(null);
       }
-      const status = lib.audiocpp_session_run(this.session, request, out);
       // A run that failed while the flag was up is taken to have failed because of it.
       if (status !== 0 && abort && Atomics.load(abort, 0) !== 0) {
         throw new AbortedError();
       }
       check(lib, status, "audiocpp_session_run");
-    } finally {
-      // The library must not keep a pointer to memory that may be collected.
-      lib.audiocpp_set_abort_flag(null);
-      lib.audiocpp_request_free(request);
-    }
+      return pointerOf(out);
+    });
 
-    const result = handle(out);
-    try {
-      const samples = new BigUint64Array(1);
-      const frames = new BigUint64Array(1);
-      const sampleRate = new Int32Array(1);
-      const channels = new Int32Array(1);
-      check(lib, lib.audiocpp_result_audio(result, samples, frames, sampleRate, channels), "audiocpp_result_audio");
-      const count = Number(frames[0]) * channels[0]!;
-      if (count < 1) {
-        throw new Error("audio.cpp returned no audio");
-      }
-      // Borrowed until the result is freed, so it is copied.
-      const borrowed = new Float32Array(toArrayBuffer(handle(samples), 0, count * 4));
-      return { samples: borrowed.slice(), sampleRate: sampleRate[0]!, channels: channels[0]! };
-    } finally {
-      lib.audiocpp_result_free(result);
-    }
+    return withResult(lib, result, () => {
+      const audio = audioSlots();
+      check(
+        lib,
+        lib.audiocpp_result_audio(result, audio.samples, audio.frames, audio.sampleRate, audio.channels),
+        "audiocpp_result_audio",
+      );
+      return audio.read("audio.cpp returned no audio");
+    });
   }
 }
 
@@ -290,52 +311,34 @@ export class VoiceSeparator extends Loaded {
    */
   vocals(mixture: Pcm): Pcm {
     const { lib } = this;
-    const out = new BigUint64Array(1);
-    const request = lib.audiocpp_request_create();
-    if (!request) {
-      throw new Error("audio.cpp could not create a request (out of memory?)");
-    }
-    try {
+    const result = withRequest(lib, (request) => {
       const frames = mixture.samples.length / mixture.channels;
       check(
         lib,
         lib.audiocpp_request_set_audio(request, mixture.samples, frames, mixture.sampleRate, mixture.channels),
         "audiocpp_request_set_audio",
       );
+      const out = slot();
       check(lib, lib.audiocpp_session_run(this.session, request, out), "audiocpp_session_run");
-    } finally {
-      lib.audiocpp_request_free(request);
-    }
+      return pointerOf(out);
+    });
 
-    const result = handle(out);
-    try {
+    return withResult(lib, result, () => {
       // The stems come as named audio: "vocals" and "instrumental" (the mixture minus the vocals).
       const count = Number(lib.audiocpp_result_named_audio_count(result));
       for (let i = 0; i < count; i++) {
-        const id = new BigUint64Array(1);
-        const samples = new BigUint64Array(1);
-        const frames = new BigUint64Array(1);
-        const sampleRate = new Int32Array(1);
-        const channels = new Int32Array(1);
+        const id = slot();
+        const audio = audioSlots();
         check(
           lib,
-          lib.audiocpp_result_named_audio(result, i, id, samples, frames, sampleRate, channels),
+          lib.audiocpp_result_named_audio(result, i, id, audio.samples, audio.frames, audio.sampleRate, audio.channels),
           "audiocpp_result_named_audio",
         );
-        if (new CString(handle(id)) !== "vocals") {
-          continue;
+        if (new CString(pointerOf(id)) === "vocals") {
+          return audio.read("audio.cpp returned no vocals");
         }
-        const length = Number(frames[0]) * channels[0]!;
-        if (length < 1) {
-          throw new Error("audio.cpp returned no vocals");
-        }
-        // Borrowed until the result is freed, so it is copied.
-        const borrowed = new Float32Array(toArrayBuffer(handle(samples), 0, length * 4));
-        return { samples: borrowed.slice(), sampleRate: sampleRate[0]!, channels: channels[0]! };
       }
       throw new Error("audio.cpp returned no vocals stem");
-    } finally {
-      lib.audiocpp_result_free(result);
-    }
+    });
   }
 }

@@ -130,7 +130,7 @@ describe("runProbe", () => {
   test("a directory without the engine is an error with the build hint, from a process of its own", () => {
     const probe = runProbe(join(dir, "empty"));
     expect(probe).toStrictEqual({
-      error: `libllama and its shim not found in ${join(dir, "empty")}; run: bun scripts/build_llama.ts`,
+      error: `libllama, libmtmd or the shim not found in ${join(dir, "empty")}; run: bun scripts/build_llama.ts`,
     });
   });
 });
