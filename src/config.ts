@@ -236,7 +236,7 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   GPU_LAYERS: "`all` (default), a layer count, or 0 to run on the processor",
   LLAMA_THREADS: "CPU threads for decoding (default the performance cores: P-cores or big cores, at most 8)",
   LLAMA_DIR: "directory with libllama and its backends (default vendor/llama.cpp)",
-  MTP: "0 turns multi-token prediction off (default on where all layers are on a GPU with more than 16 GiB)",
+  MTP: "0 turns multi-token prediction off (default on where all layers are on a GPU with 16 GiB or more)",
   PUBLIC_DIR: "directory with the web app (default public/)",
   SPEECH: "0 turns reading aloud off (default on)",
   AUDIO_DIR: "directory with libaudiocpp (default vendor/audio.cpp)",

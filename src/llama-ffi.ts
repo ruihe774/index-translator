@@ -17,10 +17,11 @@ const CPU_PROMPT_STEP = 64;
 const MTP_DRAFT = 2;
 /**
  * GPU memory (all GPUs, as the backend reports it) that MTP needs: it adds about 0.65 GiB (the layer, its KV cache,
- * two more copies of the recurrent state), and a 16 GiB card is already full with the chat model, an image and
- * reading aloud. Every 16 GiB card is below this.
+ * two more copies of the recurrent state). A 16 GiB card reports a little under that (15.9 GiB on an RX 9070), so the
+ * limit sits below it: measured there, the chat model, an image and reading aloud still load with MTP on (reading
+ * aloud takes what is left), and text decodes about 1.4 times as fast.
  */
-const MTP_MIN_GPU_BYTES = 17 * 2 ** 30;
+const MTP_MIN_GPU_BYTES = 15.5 * 2 ** 30;
 
 const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
 
