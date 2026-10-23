@@ -60,27 +60,45 @@ function start(module: WebAssembly.Module): Minicelt {
   return encoder;
 }
 
-/** Loads the encoder on first use; undefined while it is not installed or does not run here. */
-export function opusLoader(audioDir: string, resample: Resample): () => Promise<OpusCodec | undefined> {
-  let loading: Promise<OpusCodec | undefined> | undefined;
+/**
+ * A codec loaded on first use from `file()`: undefined while the file is not there, or when loading
+ * it fails (logged as `failure` and the codec is given up for good). The file's absence is not
+ * remembered, so installing it needs no restart.
+ */
+export function lazyOptional<T>(
+  file: () => string,
+  load: (file: string) => Promise<T>,
+  failure: string,
+): () => Promise<T | undefined> {
+  let loading: Promise<T | undefined> | undefined;
   return async () => {
-    const file = miniceltPath(audioDir);
-    // Not remembered while the file is missing, so installing it needs no restart.
-    if (!loading && !existsSync(file)) {
+    const path = file();
+    if (!loading && !existsSync(path)) {
       return;
     }
-    loading ??= (async () => {
+    loading ??= (async (): Promise<T | undefined> => {
       try {
-        const module = await WebAssembly.compile(await Bun.file(file).arrayBuffer());
-        // Fails here, not in the first request, when the runtime lacks what the build needs (relaxed SIMD).
-        start(module);
-        return { module, resample };
+        return await load(path);
       } catch (e) {
-        console.error(`[speech] the Opus encoder cannot be loaded, speech is sent as QOA or WAV: ${String(e)}`);
+        console.error(`[speech] ${failure}: ${String(e)}`);
       }
     })();
     return loading;
   };
+}
+
+/** Loads the encoder on first use; undefined while it is not installed or does not run here. */
+export function opusLoader(audioDir: string, resample: Resample): () => Promise<OpusCodec | undefined> {
+  return lazyOptional(
+    () => miniceltPath(audioDir),
+    async (file) => {
+      const module = await WebAssembly.compile(await Bun.file(file).arrayBuffer());
+      // Fails here, not in the first request, when the runtime lacks what the build needs (relaxed SIMD).
+      start(module);
+      return { module, resample };
+    },
+    "the Opus encoder cannot be loaded, speech is sent as QOA or WAV",
+  );
 }
 
 /** Mono 48 kHz samples in -1 to 1 from the engine's audio: channels averaged, then resampled. */

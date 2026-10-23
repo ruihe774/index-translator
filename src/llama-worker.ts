@@ -5,31 +5,25 @@
 
 import type { EngineTimings, FinishReason, Usage } from "./llama";
 import { type GpuMemory, gpuMemory, ImageError, type ImagePrompt, Model, type ModelOptions } from "./llama-ffi";
+import { type NoBody, serve } from "./worker-rpc";
 
-export type WorkerRequest =
-  | { type: "load"; req: number; model: number; options: ModelOptions }
+// `image`: a PNG file that follows the content in the user message.
+export interface LlamaProtocol {
+  load: { request: { model: number; options: ModelOptions }; reply: { type: "ok" } };
   // Answered between decodes, like `count`; waits for a load in progress.
-  | { type: "memory"; req: number }
-  | { type: "unload"; req: number; model: number }
-  // `image`: a PNG file that follows the content in the user message.
-  | { type: "count"; req: number; model: number; content: string; image?: Uint8Array }
-  | { type: "generate"; req: number; model: number; content: string; maxTokens: number; image?: Uint8Array }
-  | { type: "cancel"; req: number };
+  memory: { request: NoBody; reply: { type: "memory"; memory?: GpuMemory } };
+  unload: { request: { model: number }; reply: { type: "ok" } };
+  count: { request: { model: number; content: string; image?: Uint8Array }; reply: { type: "count"; tokens: number } };
+  generate: {
+    request: { model: number; content: string; maxTokens: number; image?: Uint8Array };
+    stream: { type: "delta"; text: string };
+    reply: { type: "done"; finishReason: FinishReason; usage: Usage; timings: EngineTimings };
+  };
+  // `target`: the `req` of the generation to give up; never answered.
+  cancel: { request: { target: number }; reply: never };
+}
 
-export type WorkerReply =
-  | { type: "ok"; req: number }
-  | { type: "count"; req: number; tokens: number }
-  | { type: "memory"; req: number; memory?: GpuMemory }
-  | { type: "delta"; req: number; text: string }
-  | { type: "done"; req: number; finishReason: FinishReason; usage: Usage; timings: EngineTimings }
-  // `image`: the image itself is at fault, not the engine.
-  | { type: "error"; req: number; message: string; image?: boolean };
-
-declare var self: Worker;
-
-const post = (reply: WorkerReply) => self.postMessage(reply);
 const tick = () => new Promise<void>((resolve) => void setImmediate(resolve));
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
 
 let model: Model | undefined;
 /** The main thread's number for `model`; requests for any other one are stale. */
@@ -42,11 +36,14 @@ let chain: Promise<void> = Promise.resolve();
 const active = new Set<number>();
 const cancelled = new Set<number>();
 
-const postError = (req: number, e: unknown) =>
-  post({ type: "error", req, message: messageOf(e), ...(e instanceof ImageError && { image: true }) });
-
-function exclusive(req: number, fn: () => void | Promise<void>): void {
-  chain = chain.then(fn).catch((e) => postError(req, e));
+/** Runs `fn` after everything before it; a failure answers its own request and not the ones behind it. */
+function exclusive<T>(fn: () => T | Promise<T>): Promise<T> {
+  const run = chain.then(fn);
+  chain = run.then(
+    () => {},
+    () => {},
+  );
+  return run;
 }
 
 function unload(): void {
@@ -72,8 +69,9 @@ async function generate(
   req: number,
   content: string,
   maxTokens: number,
-  image?: Uint8Array,
-): Promise<void> {
+  image: Uint8Array | undefined,
+  post: (delta: { type: "delta"; text: string }) => void,
+): Promise<LlamaProtocol["generate"]["reply"] | undefined> {
   // True once the client is gone or the model is about to be replaced.
   const stopped = () => cancelled.has(req) || epoch !== started;
 
@@ -120,7 +118,7 @@ async function generate(
     }
     const text = utf8.decode(m.piece(token), { stream: true });
     if (text) {
-      post({ type: "delta", req, text });
+      post({ type: "delta", text });
     }
     if (produced >= limit) {
       break;
@@ -139,9 +137,8 @@ async function generate(
   }
 
   const generationMs = performance.now() - generationStart;
-  post({
+  return {
     type: "done",
-    req,
     finishReason,
     usage: { prompt_tokens: promptTokens, completion_tokens: produced },
     timings: {
@@ -149,92 +146,77 @@ async function generate(
       generation_ms: Math.round(generationMs),
       tokens_per_second: generationMs > 0 ? Number(((produced * 1000) / generationMs).toFixed(2)) : 0,
     },
-  });
+  };
 }
 
-self.onmessage = (event: MessageEvent<WorkerRequest>) => {
-  const msg = event.data;
-  switch (msg.type) {
-    case "load": {
+/** The model a request names, or the error that it is not loaded (replaced, or freed meanwhile). */
+function loadedModel(no: number): Model {
+  if (!model || no !== modelNo) {
+    throw new Error("the model is not loaded");
+  }
+  return model;
+}
+
+serve<LlamaProtocol>(
+  {
+    load: (msg) => {
       epoch++;
-      exclusive(msg.req, () => {
+      return exclusive(() => {
         unload();
         model = Model.load(msg.options);
         modelNo = msg.model;
-        post({ type: "ok", req: msg.req });
+        return { type: "ok" };
       });
-      break;
-    }
-    case "unload": {
+    },
+    unload: (msg) => {
       if (msg.model === modelNo) {
         epoch++;
       }
-      exclusive(msg.req, () => {
+      return exclusive(() => {
         if (msg.model === modelNo) {
           unload();
         }
-        post({ type: "ok", req: msg.req });
+        return { type: "ok" };
       });
-      break;
-    }
-    case "memory": {
-      try {
-        post({ type: "memory", req: msg.req, memory: gpuMemory() });
-      } catch (e) {
-        postError(msg.req, e);
-      }
-      break;
-    }
-    case "count": {
+    },
+    memory: () => ({ type: "memory", memory: gpuMemory() }),
+    count: (msg) => {
       const { image } = msg;
-      if (image) {
-        // Counting an image means decoding and scaling it, and the first one loads the encoder: that
-        // waits its turn like a generation, which the caller has the queue slot for anyway.
-        exclusive(msg.req, () => {
-          if (!model || msg.model !== modelNo) {
-            throw new Error("the model is not loaded");
-          }
-          const prompt = model.imagePrompt(msg.content, image);
-          const { tokens } = prompt;
-          prompt.free();
-          post({ type: "count", req: msg.req, tokens });
-        });
-        break;
+      if (!image) {
+        return { type: "count", tokens: loadedModel(msg.model).tokenize(msg.content).length };
       }
-      try {
-        if (!model || msg.model !== modelNo) {
-          throw new Error("the model is not loaded");
-        }
-        post({ type: "count", req: msg.req, tokens: model.tokenize(msg.content).length });
-      } catch (e) {
-        postError(msg.req, e);
-      }
-      break;
-    }
-    case "generate": {
+      // Counting an image means decoding and scaling it, and the first one loads the encoder: that
+      // waits its turn like a generation, which the caller has the queue slot for anyway.
+      return exclusive(() => {
+        const prompt = loadedModel(msg.model).imagePrompt(msg.content, image);
+        const { tokens } = prompt;
+        prompt.free();
+        return { type: "count", tokens };
+      });
+    },
+    generate: (msg, post) => {
       const started = epoch;
       active.add(msg.req);
-      exclusive(msg.req, async () => {
+      return exclusive(async () => {
         try {
           if (cancelled.has(msg.req)) {
             return;
           }
-          if (!model || msg.model !== modelNo || epoch !== started) {
+          if (epoch !== started) {
             throw new Error("the model is not loaded");
           }
-          await generate(model, started, msg.req, msg.content, msg.maxTokens, msg.image);
+          return await generate(loadedModel(msg.model), started, msg.req, msg.content, msg.maxTokens, msg.image, post);
         } finally {
           active.delete(msg.req);
           cancelled.delete(msg.req);
         }
       });
-      break;
-    }
-    case "cancel": {
-      if (active.has(msg.req)) {
-        cancelled.add(msg.req);
+    },
+    cancel: (msg) => {
+      if (active.has(msg.target)) {
+        cancelled.add(msg.target);
       }
-      break;
-    }
-  }
-};
+    },
+  },
+  (e) => (e instanceof ImageError ? { image: true } : {}),
+);

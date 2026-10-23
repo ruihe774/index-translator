@@ -17,8 +17,9 @@ import type { SpeechLanguage, SpeechStatus, Voice } from "./api";
 import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
 import { fetchAdvice } from "./preflight";
-import type { SpeechWorkerReply, SpeechWorkerRequest } from "./speech-worker";
+import type { SpeechProtocol } from "./speech-worker";
 import { type Pcm, readWav } from "./wav";
+import { abortable, LazyModel, messageOf, WorkerClient } from "./worker-rpc";
 
 /** The languages IndexTTS-2.5 speaks. Any other text comes out as noise, so it is refused. */
 const SPEECH_LANGUAGE_SET: Record<SpeechLanguage, true> = { zh: true, en: true, ja: true, es: true, ar: true };
@@ -103,10 +104,6 @@ export interface Speech {
 
 export type SpeechLauncher = (cfg: Config) => Speech;
 
-type Send<T> = T extends unknown ? Omit<T, "req"> : never;
-
-const messageOf = (e: unknown) => (e instanceof Error ? e.message : String(e));
-
 /** Decodes an uploaded sample and checks its sample rate and duration. Throws SpeechError. */
 export function validateSample(wav: ArrayBuffer): Pcm {
   let pcm: Pcm;
@@ -156,16 +153,8 @@ export function missingSpeechModels(cfg: Config): string[] {
 
 export class NativeSpeech implements Speech {
   /** The thread that owns libaudiocpp, started by the first request. */
-  private worker: Worker | null = null;
-  private readonly waiting = new Map<number, (reply: SpeechWorkerReply) => void>();
-  private lastReq = 0;
-
-  private loaded = false;
-  private loading: Promise<void> | null = null;
-  private failure: string | undefined;
-  /** Utterances asked for that the worker has not finished, whether or not their client still waits. */
-  private pending = 0;
-  private idle: Timer | undefined;
+  private readonly worker: WorkerClient<SpeechProtocol>;
+  private readonly model: LazyModel;
   /** Set while a sample is being separated, which needs the GPU to itself; settles when it is over. */
   private separating: Promise<void> | null = null;
 
@@ -175,8 +164,39 @@ export class NativeSpeech implements Speech {
 
   constructor(
     private readonly cfg: Config,
-    private readonly makeWorker: SpeechWorkerFactory = defaultWorker,
-  ) {}
+    makeWorker: SpeechWorkerFactory = defaultWorker,
+  ) {
+    // If the thread dies its model is gone with it; the next request starts another.
+    this.worker = new WorkerClient({
+      start: makeWorker,
+      label: "speech thread",
+      fail: (reply) => new SpeechError(reply.message),
+      onLost: (reason) => {
+        this.model.workerLost(reason);
+        console.error(`[speech] ${reason}`);
+      },
+    });
+    this.model = new LazyModel({
+      tag: "speech",
+      model: "speech model",
+      missing: () => this.missing(),
+      idleUnload: cfg.speechIdleUnload,
+      load: async () => {
+        await this.worker.call("load", {
+          options: {
+            dir: cfg.audioDir,
+            modelPath: cfg.speechModelDir,
+            family: FAMILY,
+            backend: cfg.speechBackend,
+            threads: THREADS,
+          },
+        });
+        return "";
+      },
+      unload: () => this.worker.call("unload"),
+      error: (message) => new SpeechError(message),
+    });
+  }
 
   /** Why speech cannot run at all, checked each time so an install does not need a restart. */
   private missing(): string | undefined {
@@ -193,20 +213,11 @@ export class NativeSpeech implements Speech {
   }
 
   get state(): SpeechState {
-    if (this.missing()) {
-      return "unavailable";
-    }
-    if (this.loaded) {
-      return "ready";
-    }
-    if (this.loading) {
-      return "starting";
-    }
-    return this.failure ? "error" : "stopped";
+    return this.model.state;
   }
 
   get error(): string | undefined {
-    return this.missing() ?? (this.loaded || this.loading ? undefined : this.failure);
+    return this.model.error;
   }
 
   async voices(): Promise<Voice[]> {
@@ -270,30 +281,27 @@ export class NativeSpeech implements Speech {
     this.separating = new Promise<void>((resolve) => void (finished = resolve));
     try {
       // A load in progress ends first, or it would report a model that is gone.
-      await this.loading?.catch(() => {});
+      await this.model.settled();
       const modelPath = this.separationModel();
       if (!modelPath) {
         throw new SeparationError("the separation model is gone");
       }
-      clearTimeout(this.idle);
-      this.loaded = false;
+      this.model.unloaded();
       const started = performance.now();
-      const reply = await this.call({
-        type: "separate",
-        options: {
-          dir: this.cfg.audioDir,
-          modelPath,
-          family: SEPARATION_FAMILY,
-          backend: this.cfg.speechBackend,
-          threads: THREADS,
-        },
-        wav,
-      }).catch((e) => {
-        throw new SeparationError(`separating the voice failed: ${messageOf(e)}`);
-      });
-      if (reply.type !== "audio") {
-        throw new SeparationError(`unexpected ${reply.type} reply to a separation`);
-      }
+      const reply = await this.worker
+        .call("separate", {
+          options: {
+            dir: this.cfg.audioDir,
+            modelPath,
+            family: SEPARATION_FAMILY,
+            backend: this.cfg.speechBackend,
+            threads: THREADS,
+          },
+          wav,
+        })
+        .catch((e) => {
+          throw new SeparationError(`separating the voice failed: ${messageOf(e)}`);
+        });
       console.error(`[speech] voice separated (${Math.round(performance.now() - started)} ms)`);
       return reply.wav;
     } finally {
@@ -302,130 +310,37 @@ export class NativeSpeech implements Speech {
     }
   }
 
-  /** One request to the worker, one reply. */
-  private call(msg: Send<SpeechWorkerRequest>): Promise<SpeechWorkerReply> {
-    const worker = this.worker ?? this.startWorker();
-    return new Promise((resolve, reject) => {
-      const req = ++this.lastReq;
-      this.waiting.set(req, (reply) => {
-        this.waiting.delete(req);
-        if (reply.type === "error") {
-          reject(new SpeechError(reply.message));
-        } else {
-          resolve(reply);
-        }
-      });
-      worker.postMessage({ ...msg, req });
-    });
-  }
-
-  private startWorker(): Worker {
-    const worker = this.makeWorker();
-    worker.onmessage = (event: MessageEvent<SpeechWorkerReply>) => this.waiting.get(event.data.req)?.(event.data);
-    // If the thread dies its model is gone with it; the next request starts another.
-    const lost = (reason: string) => {
-      if (this.worker !== worker) {
-        return;
-      }
-      this.worker = null;
-      this.loaded = false;
-      this.failure = reason;
-      console.error(`[speech] ${reason}`);
-      for (const [req, deliver] of this.waiting) {
-        deliver({ type: "error", req, message: reason });
-      }
-    };
-    worker.onerror = (event) => lost(`the speech thread failed: ${event.message}`);
-    worker.addEventListener("close", () => lost("the speech thread exited"));
-    this.worker = worker;
-    return worker;
-  }
-
-  private async load(): Promise<void> {
-    const started = performance.now();
-    try {
-      await this.call({
-        type: "load",
-        options: {
-          dir: this.cfg.audioDir,
-          modelPath: this.cfg.speechModelDir,
-          family: FAMILY,
-          backend: this.cfg.speechBackend,
-          threads: THREADS,
-        },
-      });
-    } catch (e) {
-      this.failure = `the speech model could not be loaded: ${messageOf(e)}`;
-      console.error(`[speech] ${this.failure}`);
-      throw new SpeechError(this.failure);
-    }
-    this.loaded = true;
-    this.failure = undefined;
-    console.error(`[speech] model ready (${Math.round(performance.now() - started)} ms)`);
-  }
-
-  private ready(): Promise<void> {
-    if (this.loaded) {
-      return Promise.resolve();
-    }
-    this.loading ??= this.load().finally(() => void (this.loading = null));
-    return this.loading;
-  }
-
-  /** Frees the model once nothing has been asked of it for `SPEECH_IDLE_UNLOAD` seconds. */
-  private unloadWhenIdle(): void {
-    clearTimeout(this.idle);
-    if (this.pending > 0 || !this.loaded || this.cfg.speechIdleUnload <= 0) {
-      return;
-    }
-    this.idle = setTimeout(() => {
-      if (this.pending > 0 || !this.loaded) {
-        return;
-      }
-      // A request that arrives from here on loads the model again; the worker frees it first.
-      this.loaded = false;
-      this.call({ type: "unload" }).then(
-        () => console.error("[speech] model unloaded after being idle"),
-        () => {},
-      );
-    }, this.cfg.speechIdleUnload * 1000);
-    this.idle.unref();
-  }
-
   /**
-   * `posted` is set once the utterance has been handed to the worker. From then on only `abort`
-   * (the flag the worker and the library read) stops it, and the worker's reply says when it has.
+   * One utterance, once the model is loaded and no separation is under way. `started` is called when
+   * it is handed to the worker. From then on only `abort` (the flag the worker and the library read)
+   * stops it, and the worker's reply says when it has.
    */
   private async run(
     req: SpeechRequest,
     signal: AbortSignal,
-    posted: { value: boolean },
-    abort: Int32Array,
+    abort: SharedArrayBuffer,
+    started: () => void,
   ): Promise<ArrayBuffer> {
     // The model is checked again after every wait: a separation that starts in between frees it.
     do {
       while (this.separating) {
         await this.separating;
       }
-      await this.ready();
-    } while (this.separating || !this.loaded);
+      await this.model.ready();
+    } while (this.separating || !this.model.loaded);
     // Gone while the model was loading: the utterance is never sent.
     signal.throwIfAborted();
-    posted.value = true;
-    const reply = await this.call({
-      type: "synthesize",
+    started();
+    const reply = await this.worker.call("synthesize", {
       text: req.text,
       lang: req.lang,
       voicePath: this.uploads.get(req.voice)?.path ?? join(this.cfg.voicesDir, `${req.voice}.wav`),
       speed: req.speed,
-      abort: abort.buffer as SharedArrayBuffer,
+      abort,
     });
     // Nobody receives this: the caller was answered with the signal's reason when it aborted.
     if (reply.type === "aborted") {
       throw new SpeechError("the utterance was stopped");
-    }
-    if (reply.type !== "audio") {
-      throw new SpeechError(`unexpected ${reply.type} reply to an utterance`);
     }
     return reply.wav;
   }
@@ -444,48 +359,31 @@ export class NativeSpeech implements Speech {
       release();
       return Promise.reject(new SpeechError(missing));
     }
-    if (signal.aborted) {
-      release();
-      return Promise.reject(signal.reason as Error);
-    }
-    clearTimeout(this.idle);
-    this.pending++;
-    const posted = { value: false };
-    // Shared with the worker thread, which is inside the library and reads no messages meanwhile.
-    const abort = new Int32Array(new SharedArrayBuffer(4));
-    const work = this.run(req, signal, posted, abort).finally(() => {
-      this.pending--;
-      this.unloadWhenIdle();
-      release();
-    });
     // An aborted request is answered at once. A posted utterance is stopped through the flag, at
     // the library's next step, and `done` waits for the worker to say so. An utterance not posted
     // yet is never sent, and its `done` need not wait for the model to load.
-    return new Promise((resolve, reject) => {
-      const onAbort = () => {
-        Atomics.store(abort, 0, 1);
-        if (!posted.value) {
+    return abortable(
+      signal,
+      async (abort, started) => {
+        const unhold = this.model.hold();
+        try {
+          return await this.run(req, signal, abort, started);
+        } finally {
+          unhold();
           release();
         }
-        reject(signal.reason as Error);
-      };
-      signal.addEventListener("abort", onAbort, { once: true });
-      work.then(resolve, reject).finally(() => signal.removeEventListener("abort", onAbort));
-    });
+      },
+      release,
+    );
   }
 
   async stop(): Promise<void> {
-    clearTimeout(this.idle);
-    const { worker } = this;
-    if (worker) {
+    if (this.worker.started) {
       // Waits for a running utterance, then frees the model.
-      await this.call({ type: "unload" }).catch(() => {});
-      if (this.worker === worker) {
-        this.worker = null;
-      }
-      worker.terminate();
+      await this.worker.call("unload").catch(() => {});
+      this.worker.terminate();
     }
-    this.loaded = false;
+    this.model.unloaded();
     await rm(this.uploadDir, { recursive: true, force: true });
     this.uploads.clear();
   }
