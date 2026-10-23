@@ -5,18 +5,17 @@ The WebAssembly build of [undoc](https://github.com/iyulab/undoc), the `undoc-wa
 browser to read a Word document's text as Markdown (`scripts/fetch_web_libs.ts` on `main` fetches
 these files by commit and checksum).
 
-Built from [ruihe774/undoc@393af42](https://github.com/ruihe774/undoc/commit/393af42e3922fb1417e1465019e07530b35866ba),
-which inflates ZIP entries with the host's `DecompressionStream` instead of a decompressor compiled
-into the binary:
+Built from [iyulab/undoc@3a9dbbb](https://github.com/iyulab/undoc/commit/3a9dbbb911b30e944323402d30278e0629444885)
+(upstream main, `undoc-wasm` 0.27.0):
 
 ```sh
 wasm-pack build undoc-wasm --release --target web --no-default-features --features docx
 ```
 
-with wasm-pack 0.15.0 (its wasm-bindgen and wasm-opt) and rustc 1.98.1. Nothing here is edited by
+with wasm-pack 0.15.0 (its wasm-bindgen and wasm-opt) and rustc 1.99.1. Nothing here is edited by
 hand except this README; `LICENSE` is undoc's. `--target web`: an ES module that is used without a
-bundler and whose `default` export instantiates the binary (`snippets/` holds the
-`DecompressionStream` glue it imports).
+bundler and whose `default` export instantiates the binary. ZIP entries are inflated by the crate
+itself.
 
 ## Usage
 
@@ -24,9 +23,7 @@ bundler and whose `default` export instantiates the binary (`snippets/` holds th
 import init, { parse } from "./undoc_wasm.js";
 
 await init({ module_or_path: "./undoc_wasm_bg.wasm" });
-const doc = await parse(new Uint8Array(await file.arrayBuffer())); // rejects with an Error carrying `kind`
+const doc = parse(new Uint8Array(await file.arrayBuffer())); // throws an Error carrying `kind`
 const markdown = doc.toMarkdown();
 doc.free();
 ```
-
-The runtime must provide `DecompressionStream` (`deflate-raw`): current browsers, Node.js 18+, Bun.

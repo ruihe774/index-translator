@@ -2,7 +2,7 @@
   "name": "undoc-wasm",
   "type": "module",
   "description": "High-performance Microsoft Office (DOCX, XLSX, PPTX, DOC, XLS, PPT) extraction to Markdown (WebAssembly)",
-  "version": "0.24.0",
+  "version": "0.27.0",
   "license": "MIT",
   "repository": {
     "type": "git",

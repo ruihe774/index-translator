@@ -6,14 +6,14 @@ export class OfficeDocument {
     free(): void;
     [Symbol.dispose](): void;
     format(): string;
-    static fromBytes(data: Uint8Array): Promise<OfficeDocument>;
+    static fromBytes(data: Uint8Array): OfficeDocument;
     metadata(): string;
     toJson(): string;
     toMarkdown(): string;
     toText(): string;
 }
 
-export function parse(data: Uint8Array): Promise<OfficeDocument>;
+export function parse(data: Uint8Array): OfficeDocument;
 
 /**
  * The formats this package can parse, as JSON.
@@ -25,6 +25,9 @@ export function parse(data: Uint8Array): Promise<OfficeDocument>;
  * format -- silently, because nothing compares the two. Asking the package removes the
  * second copy. The name is included so a consumer can label a file without inventing its
  * own wording for a format this package already names.
+ *
+ * Only the formats this build parses are listed: a build made with a subset of the format
+ * features omits the rest, which `parse` would reject as unsupported.
  */
 export function supportedFormats(): string;
 
@@ -34,19 +37,16 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly __wbg_officedocument_free: (a: number, b: number) => void;
     readonly officedocument_format: (a: number) => [number, number];
-    readonly officedocument_fromBytes: (a: number, b: number) => any;
+    readonly officedocument_fromBytes: (a: number, b: number) => [number, number, number];
     readonly officedocument_metadata: (a: number) => [number, number, number, number];
     readonly officedocument_toJson: (a: number) => [number, number, number, number];
     readonly officedocument_toMarkdown: (a: number) => [number, number, number, number];
     readonly officedocument_toText: (a: number) => [number, number, number, number];
-    readonly parse: (a: number, b: number) => any;
+    readonly parse: (a: number, b: number) => [number, number, number];
     readonly supportedFormats: () => [number, number, number, number];
-    readonly wasm_bindgen_b886f896fd34b232___convert__closures_____invoke___js_sys_7d3929aa405b9504___Function_fn_wasm_bindgen_b886f896fd34b232___JsValue_____wasm_bindgen_b886f896fd34b232___sys__Undefined___js_sys_7d3929aa405b9504___Function_fn_wasm_bindgen_b886f896fd34b232___JsValue_____wasm_bindgen_b886f896fd34b232___sys__Undefined_______true_: (a: number, b: number, c: any, d: any) => void;
-    readonly wasm_bindgen_b886f896fd34b232___convert__closures_____invoke___wasm_bindgen_b886f896fd34b232___JsValue__core_ed718c3d60ebd546___result__Result_____wasm_bindgen_b886f896fd34b232___JsError___true_: (a: number, b: number, c: any) => [number, number];
     readonly __wbindgen_exn_store: (a: number) => void;
     readonly __externref_table_alloc: () => number;
     readonly __wbindgen_externrefs: WebAssembly.Table;
-    readonly __wbindgen_destroy_closure: (a: number, b: number) => void;
     readonly __wbindgen_free: (a: number, b: number, c: number) => void;
     readonly __wbindgen_malloc: (a: number, b: number) => number;
     readonly __externref_table_dealloc: (a: number) => void;
