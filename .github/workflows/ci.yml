@@ -265,6 +265,7 @@ jobs:
 
       # Only the compiler and the libraries the engines link: not the whole toolkit (several GB), no driver.
       # cuda-driver-dev has the stub libcuda.so to link against; the real one is the user's driver.
+      # cuda-documentation has EULA.txt, which bundleCuda packs beside the runtime libraries.
       - name: Install the CUDA toolkit
         run: |
           keyring=cuda-keyring_1.1-1_all.deb
@@ -274,7 +275,7 @@ jobs:
           sudo apt-get update
           v=$CUDA_PACKAGE_VERSION
           sudo apt-get install -y --no-install-recommends \
-            cuda-nvcc-$v cuda-cudart-dev-$v libcublas-dev-$v cuda-driver-dev-$v
+            cuda-nvcc-$v cuda-cudart-dev-$v libcublas-dev-$v cuda-driver-dev-$v cuda-documentation-$v
           "$CUDA_PATH/bin/nvcc" --version
 
       - name: Cache the translation engine
