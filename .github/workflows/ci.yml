@@ -232,6 +232,8 @@ jobs:
   # Vulkan and no CUDA), with the CUDA runtime libraries packed. No GPU or driver is needed to build it.
   appimage-cuda:
     name: AppImage with CUDA (${{ matrix.arch }})
+    # Manual runs only (Actions → CI → Run workflow): not on push or pull request.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     strategy:
       fail-fast: false
       matrix:
