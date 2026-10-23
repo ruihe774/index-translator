@@ -2,9 +2,10 @@
 // its chat prompt, tokenize, decode and sample. Every call here blocks its thread, so this module
 // is only used from src/llama-worker.ts.
 
-import { CString, dlopen, type Pointer, suffix } from "bun:ffi";
+import { CString, dlopen, type Pointer } from "bun:ffi";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
+
+import { cstr, libraryFile, once } from "./ffi-util";
 
 /** Most tokens one llama_decode call accepts. */
 const BATCH_SIZE = 512;
@@ -23,22 +24,16 @@ const MTP_DRAFT = 2;
  */
 const MTP_MIN_GPU_BYTES = 15.5 * 2 ** 30;
 
-const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
-
-const libName = (name: string) => (process.platform === "win32" ? `${name}.${suffix}` : `lib${name}.${suffix}`);
-
-export const libraryPath = (dir: string) => join(dir, libName("llama"));
+export const libraryPath = (dir: string) => libraryFile(dir, "llama");
 /** src/llama-shim.c as scripts/build_llama.ts compiled it, against the headers of the libllama beside it. */
-export const shimPath = (dir: string) => join(dir, libName("llama-shim"));
+export const shimPath = (dir: string) => libraryFile(dir, "llama-shim");
 /** llama.cpp's library for image input, from the same build. */
-const mtmdPath = (dir: string) => join(dir, libName("mtmd"));
+const mtmdPath = (dir: string) => libraryFile(dir, "mtmd");
 
+/** Opens libllama, libmtmd and the shim (which links the other two) in `dir`, and registers the backends. */
 function bind(dir: string) {
-  if (!existsSync(libraryPath(dir)) || !existsSync(shimPath(dir))) {
-    throw new Error(`libllama and its shim not found in ${dir}; run: bun scripts/build_llama.ts`);
-  }
-  if (!existsSync(mtmdPath(dir))) {
-    throw new Error(`libmtmd not found in ${dir} (a build from before image input); run: bun scripts/build_llama.ts`);
+  if (![libraryPath(dir), shimPath(dir), mtmdPath(dir)].every((path) => existsSync(path))) {
+    throw new Error(`libllama, libmtmd or the shim not found in ${dir}; run: bun scripts/build_llama.ts`);
   }
   const llama = dlopen(libraryPath(dir), {
     llama_model_free: { args: ["ptr"], returns: "void" },
@@ -55,8 +50,7 @@ function bind(dir: string) {
     llama_sampler_sample: { args: ["ptr", "ptr", "i32"], returns: "i32" },
     llama_sampler_free: { args: ["ptr"], returns: "void" },
   }).symbols;
-  const shim = openShim(dir);
-  // libmtmd (tools/mtmd/mtmd.h, mtmd-helper.h): the calls that need no struct. The shim links it.
+  // libmtmd (tools/mtmd/mtmd.h, mtmd-helper.h): the calls that need no struct.
   const mtmd = dlopen(mtmdPath(dir), {
     mtmd_free: { args: ["ptr"], returns: "void" },
     mtmd_bitmap_free: { args: ["ptr"], returns: "void" },
@@ -64,59 +58,34 @@ function bind(dir: string) {
     mtmd_input_chunks_free: { args: ["ptr"], returns: "void" },
     mtmd_helper_get_n_tokens: { args: ["ptr"], returns: "usize" },
   }).symbols;
-  shim.shim_init(cstr(dir));
-  return { ...llama, ...shim, ...mtmd };
-}
-
-/** src/llama-shim.c and src/llama-shim-ext.cpp; a shim from an older build lacks some of these. */
-function openShim(dir: string) {
-  try {
-    return openShimSymbols(dir);
-  } catch (e) {
-    throw new Error(
-      `${e instanceof Error ? e.message : String(e)} (a shim from an older build); run: bun scripts/build_llama.ts`,
-      { cause: e },
-    );
-  }
-}
-
-function openShimSymbols(dir: string) {
-  return dlopen(shimPath(dir), {
+  // src/llama-shim.c and src/llama-shim-ext.cpp.
+  const shim = dlopen(shimPath(dir), {
     shim_init: { args: ["ptr"], returns: "void" },
     shim_devices: { args: ["ptr", "i32"], returns: "i32" },
     shim_gpu_memory: { args: ["ptr", "ptr"], returns: "i32" },
     shim_load_model: { args: ["ptr", "i32", "bool"], returns: "ptr" },
     shim_new_context: { args: ["ptr", "u32", "u32", "i32", "u32"], returns: "ptr" },
-    shim_decode: { args: ["ptr", "ptr", "i32"], returns: "i32" },
     shim_decode_at: { args: ["ptr", "ptr", "i32", "i32"], returns: "i32" },
     shim_mtmd_load: { args: ["ptr", "ptr", "bool", "i32"], returns: "ptr" },
     shim_mtmd_bitmap: { args: ["ptr", "usize"], returns: "ptr" },
     shim_mtmd_tokenize: { args: ["ptr", "ptr", "usize", "ptr", "usize", "ptr", "ptr", "usize"], returns: "ptr" },
     shim_mtmd_eval_chunk: { args: ["ptr", "ptr", "ptr", "i32", "i32", "ptr"], returns: "i32" },
-    shim_mtp_new: { args: ["ptr", "ptr", "u32", "u32", "i32"], returns: "ptr" },
+    shim_mtp_new: { args: ["ptr", "ptr", "u32", "u32", "i32", "i32"], returns: "ptr" },
     shim_mtp_free: { args: ["ptr"], returns: "void" },
     shim_mtp_reset: { args: ["ptr"], returns: "void" },
     shim_mtp_catch_up: { args: ["ptr", "ptr", "i32", "i32"], returns: "i32" },
     shim_mtp_step: { args: ["ptr", "ptr", "i32", "i32", "i32", "ptr"], returns: "i32" },
   }).symbols;
+  shim.shim_init(cstr(dir));
+  return { ...llama, ...shim, ...mtmd };
 }
 
 type Lib = ReturnType<typeof bind>;
-/** A non-null pointer returned by the library. */
+/** A non-null pointer returned by the library (bun:ffi types a `ptr` result as either; it cannot be narrowed). */
 type Handle = Pointer | bigint;
 
-let lib: Lib | undefined;
-let libDir = "";
-
-/** Opens the libraries in `dir` and registers the backends, once per process. */
-function open(dir: string): Lib {
-  if (lib && libDir !== dir) {
-    throw new Error(`libllama is already loaded from ${libDir}`);
-  }
-  lib ??= bind(dir);
-  libDir = dir;
-  return lib;
-}
+/** The libraries, opened once per process. */
+const llama = once("libllama", bind);
 
 interface Device {
   /** ggml's device type; a model is offloaded to the `gpu` and `igpu` ones. */
@@ -132,7 +101,7 @@ interface Device {
  */
 export function devices(dir: string): Device[] {
   const text = new Uint8Array(8192);
-  open(dir).shim_devices(text, text.length);
+  llama.open(dir).shim_devices(text, text.length);
   const end = text.indexOf(0);
   const lines = new TextDecoder()
     .decode(text.subarray(0, Math.max(end, 0)))
@@ -150,8 +119,12 @@ export interface GpuMemory {
   total: number;
 }
 
-/** The GPUs' memory summed, or undefined without a GPU or before the libraries are open. */
-export function gpuMemory(): GpuMemory | undefined {
+/**
+ * The GPUs' memory summed, or undefined without a GPU. With `dir` it opens the libraries there if they are not open
+ * yet; without it, the answer is undefined before they are.
+ */
+export function gpuMemory(dir?: string): GpuMemory | undefined {
+  const lib = dir === undefined ? llama.loaded : llama.open(dir);
   if (!lib) {
     return undefined;
   }
@@ -162,23 +135,17 @@ export function gpuMemory(): GpuMemory | undefined {
   return { free: Number(out[0]), total: Number(out[1]) };
 }
 
+const PROMPT_HEAD = "<|im_start|>user\n";
+const promptTail = (emptyThink: boolean) =>
+  `<|im_end|>\n<|im_start|>assistant\n${emptyThink ? "<think>\n\n</think>\n\n" : ""}`;
+
 /**
  * The prompt for one user message in three pieces: what the template writes before the content, the
  * trimmed content, and what it writes after. Only the first and the last are tokenized with special
  * tokens parsed; the content is the user's text, in which `<|im_start|>` and the like are just text.
  */
-export function chatPromptParts(
-  content: string,
-  emptyThink: boolean,
-  image = false,
-): [head: string, body: string, tail: string] {
-  // With an image after it the content keeps its trailing whitespace, as the template leaves it.
-  const trimmed = content.replace(image ? /^[ \t\n\r]+/ : /^[ \t\n\r]+|[ \t\n\r]+$/g, "");
-  return [
-    "<|im_start|>user\n",
-    trimmed,
-    `<|im_end|>\n<|im_start|>assistant\n${emptyThink ? "<think>\n\n</think>\n\n" : ""}`,
-  ];
+export function chatPromptParts(content: string, emptyThink: boolean): [head: string, body: string, tail: string] {
+  return [PROMPT_HEAD, content.replaceAll(/^[ \t\n\r]+|[ \t\n\r]+$/g, ""), promptTail(emptyThink)];
 }
 
 /**
@@ -190,13 +157,18 @@ export function chatPrompt(content: string, emptyThink: boolean): string {
   return chatPromptParts(content, emptyThink).join("");
 }
 
+/** The pieces of `chatPromptParts` for a user message followed by one image: the content keeps its trailing whitespace. */
+function imagePromptParts(content: string, emptyThink: boolean): [head: string, body: string, tail: string] {
+  return [PROMPT_HEAD, content.replace(/^[ \t\n\r]+/, ""), promptTail(emptyThink)];
+}
+
 /**
  * The same prompt for a user message of `content` followed by one image, as what stands before the
  * image and what stands after it. The template writes the image as `<|vision_start|>`, its
  * embeddings, `<|vision_end|>`, which libmtmd puts between the two.
  */
 export function imageChatPrompt(content: string, emptyThink: boolean): [before: string, after: string] {
-  const [head, body, tail] = chatPromptParts(content, emptyThink, true);
+  const [head, body, tail] = imagePromptParts(content, emptyThink);
   return [head + body, tail];
 }
 
@@ -217,6 +189,13 @@ export interface ModelOptions {
    */
   mtp: boolean;
 }
+
+/**
+ * Whether a loaded model decodes with multi-token prediction: `off` when the options did not ask for it,
+ * `ineligible` when they did but not every layer is on the GPU or the GPU is under MTP_MIN_GPU_BYTES, `no-layer` when
+ * the model has no MTP layer (or its context could not be created), `on` otherwise.
+ */
+export type MtpStatus = "off" | "ineligible" | "no-layer" | "on";
 
 /** An image the model cannot take: not a readable image file, or the model has no encoder for one. */
 export class ImageError extends Error {}
@@ -249,74 +228,115 @@ export class ImagePrompt {
   }
 }
 
+/** What the model has loaded, for the constructor. */
+interface Loaded {
+  lib: Lib;
+  model: Handle;
+  ctx: Handle;
+  emptyThink: boolean;
+  onGpu: boolean;
+  threads: number;
+  mmproj: string | undefined;
+  /** The MTP drafter, when the model decodes with multi-token prediction. */
+  mtp: Handle | null;
+  mtpStatus: MtpStatus;
+}
+
 /** One model with one context. Not thread-safe; `free()` must be called to release its memory. */
 export class Model {
   /** Context window in tokens, as the library allocated it. */
   readonly ctxSize: number;
   /** Tokens to hand to one decode() call: the prompt is fed in pieces so the caller can stop between them. */
   readonly promptStep: number;
+  readonly mtpStatus: MtpStatus;
 
+  private readonly lib: Lib;
+  private readonly model: Handle;
+  private readonly ctx: Handle;
   private readonly vocab: Handle;
   private readonly sampler: Handle;
   private readonly emptyThink: boolean;
-  private one = new Int32Array(1);
+  private readonly onGpu: boolean;
+  private readonly threads: number;
+  private readonly mmproj: string | undefined;
+  private readonly mtp: Handle | null;
   /** The image encoder, once an image has asked for it. */
   private vision?: Handle;
-  /** Where the next token goes after a prompt with an image, which only libmtmd can tell; -1 while libllama counts. */
-  private nextPos = -1;
+  /** Where the next token goes: the tokens the context holds, or after an image what libmtmd made of it. */
+  private pos = 0;
+  /** What the context holds. Only after a text prompt does the MTP layer draft; M-RoPE counts an image's positions its own way. */
+  private prompt: "text" | "image" = "text";
+  /** `evalChunk`'s position, which libmtmd reads and advances. */
   private posBuf = new Int32Array(1);
-  /** Tokens of a text prompt and its answer in the context, so where the next one goes. */
-  private textPos = 0;
-  /** What `next()` answers. */
-  private chosen = new Int32Array(MTP_DRAFT + 1);
+  private readonly one = new Int32Array(1);
+  /** What the MTP step writes the target's choices to. */
+  private readonly chosen = new Int32Array(MTP_DRAFT + 1);
   private pieceBuf = new Uint8Array(256);
   private freed = false;
 
-  private constructor(
-    private readonly lib: Lib,
-    private readonly model: Handle,
-    private readonly ctx: Handle,
-    private readonly onGpu: boolean,
-    private readonly threads: number,
-    private readonly mmproj: string | undefined,
-    /** The MTP drafter, when the model decodes with multi-token prediction. */
-    private readonly mtp: Handle | null,
-  ) {
-    this.promptStep = onGpu ? BATCH_SIZE : CPU_PROMPT_STEP;
-    this.ctxSize = lib.llama_n_ctx(ctx);
-    this.vocab = lib.llama_model_get_vocab(model)!;
-    this.sampler = lib.llama_sampler_init_greedy()!;
-    const template = lib.llama_model_chat_template(model, null);
-    const text = template ? new CString(template) : "";
-    if (!text.includes("<|im_start|>")) {
-      this.free();
-      throw new Error("the model's chat template is not ChatML, which is the only format this engine writes");
-    }
-    this.emptyThink = text.includes("enable_thinking");
+  private constructor(m: Loaded) {
+    this.lib = m.lib;
+    this.model = m.model;
+    this.ctx = m.ctx;
+    this.emptyThink = m.emptyThink;
+    this.onGpu = m.onGpu;
+    this.threads = m.threads;
+    this.mmproj = m.mmproj;
+    this.mtp = m.mtp;
+    this.mtpStatus = m.mtpStatus;
+    this.promptStep = m.onGpu ? BATCH_SIZE : CPU_PROMPT_STEP;
+    this.ctxSize = m.lib.llama_n_ctx(m.ctx);
+    this.vocab = m.lib.llama_model_get_vocab(m.model)!;
+    this.sampler = m.lib.llama_sampler_init_greedy()!;
   }
 
-  static load(opts: ModelOptions): Model {
-    const lib = open(opts.dir);
-    const mtp = opts.mtp && opts.gpuLayers < 0 && (gpuMemory()?.total ?? 0) >= MTP_MIN_GPU_BYTES;
-    const model = lib.shim_load_model(cstr(opts.path), opts.gpuLayers, mtp);
+  /**
+   * Loads the model in `opts.dir`, which opens the libraries on the first call. `gpuTotal` is the GPUs' memory in
+   * bytes (0 without one), which decides whether MTP is on; the outcome is `mtpStatus`, and logged unless it was not
+   * asked for.
+   */
+  static load(opts: ModelOptions, gpuTotal: number): Model {
+    const lib = llama.open(opts.dir);
+    const eligible = opts.gpuLayers < 0 && gpuTotal >= MTP_MIN_GPU_BYTES;
+    const useMtp = opts.mtp && eligible;
+    const model = lib.shim_load_model(cstr(opts.path), opts.gpuLayers, useMtp);
     if (!model) {
       throw new Error(`llama.cpp could not load ${opts.path}`);
     }
+    const template = lib.llama_model_chat_template(model, null);
+    const templateText = template ? new CString(template) : "";
+    if (!templateText.includes("<|im_start|>")) {
+      lib.llama_model_free(model);
+      throw new Error("the model's chat template is not ChatML, which is the only format this engine writes");
+    }
     // Rejected drafts are taken back out of the recurrent layers, which keep a copy of their state per draft token.
-    const ctx = lib.shim_new_context(model, opts.ctxSize, BATCH_SIZE, opts.threads, mtp ? MTP_DRAFT : 0);
+    const ctx = lib.shim_new_context(model, opts.ctxSize, BATCH_SIZE, opts.threads, useMtp ? MTP_DRAFT : 0);
     if (!ctx) {
       lib.llama_model_free(model);
       throw new Error(`llama.cpp could not create a ${opts.ctxSize}-token context (out of memory?)`);
     }
-    const drafter = mtp ? lib.shim_mtp_new(model, ctx, opts.ctxSize, BATCH_SIZE, opts.threads) : null;
-    if (mtp) {
-      console.error(
-        drafter
-          ? `[engine] multi-token prediction: ${MTP_DRAFT} draft tokens per step`
-          : "[engine] no multi-token prediction: the model has no MTP layer, or its context could not be created",
-      );
+    const mtp = useMtp ? lib.shim_mtp_new(model, ctx, opts.ctxSize, BATCH_SIZE, opts.threads, MTP_DRAFT) : null;
+    const mtpStatus: MtpStatus = !opts.mtp ? "off" : !eligible ? "ineligible" : mtp ? "on" : "no-layer";
+    const messages: Record<MtpStatus, string> = {
+      off: "",
+      ineligible: "no multi-token prediction: not every layer is on the GPU, or the GPU has too little memory",
+      "no-layer": "no multi-token prediction: the model has no MTP layer, or its context could not be created",
+      on: `multi-token prediction: ${MTP_DRAFT} draft tokens per step`,
+    };
+    if (mtpStatus !== "off") {
+      console.error(`[engine] ${messages[mtpStatus]}`);
     }
-    return new Model(lib, model, ctx, opts.gpuLayers !== 0, opts.threads, opts.mmproj, drafter);
+    return new Model({
+      lib,
+      model,
+      ctx,
+      emptyThink: templateText.includes("enable_thinking"),
+      onGpu: opts.gpuLayers !== 0,
+      threads: opts.threads,
+      mmproj: opts.mmproj,
+      mtp,
+      mtpStatus,
+    });
   }
 
   /** Tokens of the whole prompt for a user message with this content. Special tokens written out in the content are plain text. */
@@ -363,9 +383,11 @@ export class Model {
     if (!bitmap) {
       throw new ImageError("the image could not be decoded");
     }
-    const [head, body, tail] = chatPromptParts(content, this.emptyThink, true).map((s) =>
-      new TextEncoder().encode(s),
-    ) as [Uint8Array, Uint8Array, Uint8Array];
+    const [head, body, tail] = imagePromptParts(content, this.emptyThink).map((s) => new TextEncoder().encode(s)) as [
+      Uint8Array,
+      Uint8Array,
+      Uint8Array,
+    ];
     const chunks = this.lib.shim_mtmd_tokenize(
       this.vision,
       head,
@@ -386,18 +408,17 @@ export class Model {
 
   /**
    * Evaluates piece `index` of an image prompt after what the context already holds, starting with
-   * 0 on an empty context. The image's piece runs the encoder and decodes its embeddings in one
-   * blocking call.
+   * 0 on an emptied context (`reset`). The image's piece runs the encoder and decodes its embeddings
+   * in one blocking call.
    */
   evalChunk(prompt: ImagePrompt, index: number): void {
-    if (index === 0) {
-      this.posBuf[0] = 0;
-    }
+    this.posBuf[0] = this.pos;
     const status = this.lib.shim_mtmd_eval_chunk(this.vision!, this.ctx, prompt.handle, index, BATCH_SIZE, this.posBuf);
     if (status !== 0) {
       throw new Error(`evaluating the image prompt failed with status ${status}`);
     }
-    this.nextPos = this.posBuf[0]!;
+    this.pos = this.posBuf[0]!;
+    this.prompt = "image";
   }
 
   /** Empties the context so the next prompt starts from position 0. */
@@ -406,52 +427,41 @@ export class Model {
     if (this.mtp) {
       this.lib.shim_mtp_reset(this.mtp);
     }
-    this.nextPos = -1;
-    this.textPos = 0;
+    this.pos = 0;
+    this.prompt = "text";
   }
 
   /** Evaluates up to `promptStep` tokens after what the context already holds. */
   decode(tokens: Int32Array): void {
-    let status: number;
-    if (this.nextPos < 0) {
-      status = this.lib.shim_decode(this.ctx, tokens, tokens.length);
-      // The MTP layer reads what the model computed for each token, so it follows every text decode.
-      if (status === 0 && this.mtp) {
-        status = this.lib.shim_mtp_catch_up(this.mtp, tokens, tokens.length, this.textPos);
-      }
-      this.textPos += tokens.length;
-    } else {
-      status = this.lib.shim_decode_at(this.ctx, tokens, tokens.length, this.nextPos);
-      this.nextPos += tokens.length;
+    let status = this.lib.shim_decode_at(this.ctx, tokens, tokens.length, this.pos);
+    // The MTP layer reads what the model computed for each token, so it follows every text decode.
+    if (status === 0 && this.mtp && this.prompt === "text") {
+      status = this.lib.shim_mtp_catch_up(this.mtp, tokens, tokens.length, this.pos);
     }
     if (status !== 0) {
       throw new Error(`llama_decode failed with status ${status}`);
     }
-  }
-
-  decodeOne(token: number): void {
-    this.one[0] = token;
-    this.decode(this.one);
+    this.pos += tokens.length;
   }
 
   /**
    * Decodes `token`, the last one chosen, and answers the most likely tokens after it: one, or with multi-token
    * prediction after a text prompt up to MTP_DRAFT + 1, the same the model would choose one at a time. At most
-   * `most` (at least 1). The view is reused by the next call.
+   * `most` (at least 1).
    */
   next(token: number, most: number): Int32Array {
-    if (!this.mtp || this.nextPos >= 0) {
-      this.decodeOne(token);
-      this.chosen[0] = this.sample();
-      return this.chosen.subarray(0, 1);
+    if (!this.mtp || this.prompt === "image") {
+      this.one[0] = token;
+      this.decode(this.one);
+      return Int32Array.of(this.sample());
     }
     const draft = Math.max(0, Math.min(MTP_DRAFT, most - 1));
-    const n = this.lib.shim_mtp_step(this.mtp, this.sampler, token, this.textPos, draft, this.chosen);
+    const n = this.lib.shim_mtp_step(this.mtp, this.sampler, token, this.pos, draft, this.chosen);
     if (n < 1) {
       throw new Error("decoding with multi-token prediction failed");
     }
-    this.textPos += n;
-    return this.chosen.subarray(0, n);
+    this.pos += n;
+    return this.chosen.slice(0, n);
   }
 
   /** The most likely next token after the last decode. */
@@ -464,14 +474,14 @@ export class Model {
     return this.lib.llama_vocab_is_eog(this.vocab, token);
   }
 
-  /** The token's UTF-8 bytes, which may end inside a character. Control tokens render as nothing. The view is reused by the next call. */
+  /** The token's UTF-8 bytes, which may end inside a character. Control tokens render as nothing. */
   piece(token: number): Uint8Array {
     let n = this.lib.llama_token_to_piece(this.vocab, token, this.pieceBuf, this.pieceBuf.length, 0, false);
     if (n < 0) {
       this.pieceBuf = new Uint8Array(-n);
       n = this.lib.llama_token_to_piece(this.vocab, token, this.pieceBuf, this.pieceBuf.length, 0, false);
     }
-    return this.pieceBuf.subarray(0, Math.max(n, 0));
+    return this.pieceBuf.slice(0, Math.max(n, 0));
   }
 
   free(): void {
