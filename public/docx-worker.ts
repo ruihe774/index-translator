@@ -1,8 +1,8 @@
 // The worker that turns a Word document (.docx) into Markdown with undoc's WebAssembly build
 // (public/vendor/undoc, see scripts/fetch_web_libs.ts). A worker so that the page's script policy
 // needs no `wasm-unsafe-eval` (as with pdf-worker.ts), and a large document does not freeze the
-// page. undoc inflates the package's entries with the browser's DecompressionStream. One worker
-// reads one document; docx.ts starts it and ends it after the answer.
+// page. `parse` is synchronous and inflates the package's entries itself. One worker reads one
+// document; docx.ts starts it and ends it after the answer.
 //
 // Message in: `{ bytes }`, the file. Out: `{ markdown }` or `{ error, kind }` (`kind` is undoc's
 // reason, see `docxFailure` in open-file.ts; undefined when the library itself did not load).
@@ -15,7 +15,7 @@ export type DocxReply = { markdown: string } | { error: string; kind: number | u
 /** The part of undoc-wasm's module that is used (its `undoc_wasm.d.ts`). */
 interface Undoc {
   default(input: { module_or_path: string }): Promise<unknown>;
-  parse(data: Uint8Array): Promise<{ toMarkdown(): string; free(): void }>;
+  parse(data: Uint8Array): { toMarkdown(): string; free(): void };
 }
 
 const DIR = "/vendor/undoc";
@@ -29,7 +29,7 @@ async function answer({ bytes }: DocxRequest): Promise<DocxReply> {
     return { error: e instanceof Error ? e.message : String(e), kind: undefined };
   }
   try {
-    const doc = await undoc.parse(new Uint8Array(bytes));
+    const doc = undoc.parse(new Uint8Array(bytes));
     try {
       return { markdown: doc.toMarkdown() };
     } finally {

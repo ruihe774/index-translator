@@ -92,10 +92,8 @@ export interface FileLibrary {
 
 const QOA_COMMIT = "3c85bd84595d56cb13bef779add463246e0908b7";
 const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${QOA_COMMIT}`;
-const UNDOC_COMMIT = "591a28e21b647dddc58d2924ebb94a4e71b3fd97";
+const UNDOC_COMMIT = "bfe9907f3c9f32020e8502e93ae3f72bdf1fc0e9";
 const UNDOC_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${UNDOC_COMMIT}`;
-/** wasm-bindgen names the directory after the crate and a hash; a new build may move it (see undoc_wasm.js's import). */
-const UNDOC_SNIPPET = "snippets/undoc-wasm-0162723ffca917e4/inline0.js";
 
 /**
  * qoa-wasm (the `qoa` branch of this project's repository): the QOA audio codec the speech stream
@@ -130,9 +128,8 @@ export const FILE_LIBRARIES: FileLibrary[] = [
     ],
   },
   /**
-   * undoc-wasm (the `undoc` branch: wasm-pack's output for undoc, docx only): a Word document's
-   * text as Markdown. undoc_wasm.js imports its DecompressionStream glue from `snippets/`, so the
-   * files keep the package's layout.
+   * undoc-wasm (the `undoc` branch: wasm-pack's output for upstream undoc, docx only, with simd128):
+   * a Word document's text as Markdown.
    */
   {
     dir: "undoc",
@@ -141,17 +138,12 @@ export const FILE_LIBRARIES: FileLibrary[] = [
       {
         to: "undoc_wasm.js",
         url: `${UNDOC_RAW}/undoc_wasm.js`,
-        sha256: "f655397f5606742d288ccacf8dae6cd7767633cc8fc9c61bfadf01622bdd6057",
+        sha256: "b93987bc0c9af79e4e379d3a17f877cd4127f8a8f337dac88cf590b4eb6ea350",
       },
       {
         to: "undoc_wasm_bg.wasm",
         url: `${UNDOC_RAW}/undoc_wasm_bg.wasm`,
-        sha256: "458f178e647d8328caf9d2b59b3752b49d49240a94e90ca61ab1164e4c7d5891",
-      },
-      {
-        to: UNDOC_SNIPPET,
-        url: `${UNDOC_RAW}/${UNDOC_SNIPPET}`,
-        sha256: "c7362dbb9648c99bc4e718e07434a192d2c4fcc7649f779466a9a45d1d992cf4",
+        sha256: "2bf79fb0110554e20ec4331b79bb8e9094358b62ff7ec01df52891a180796258",
       },
       {
         to: "LICENSE",
