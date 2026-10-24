@@ -7,6 +7,7 @@
 
 import { LINK_NOTE, linkProblem, type LinkReference } from "./links.ts";
 import { type Align, type Block, type Inline, MarkdownStream, type ParsedBlock } from "./markdown.ts";
+import { prefersReducedMotion } from "./media-query.ts";
 
 /** What the rendered tree holds: elements and text; nothing else is ever created. */
 type Child = Element | Text;
@@ -186,14 +187,6 @@ function blockNodes(blocks: Block[], tight = false): Child[] {
 
 /** With prefers-reduced-motion: reduce, streamed text is shown in batches this far apart. */
 const REDUCED_MOTION_FLUSH_MS = 1000;
-
-function prefersReducedMotion(): boolean {
-  try {
-    return matchMedia("(prefers-reduced-motion: reduce)").matches;
-  } catch {
-    return false;
-  }
-}
 
 /** Plain text: one span per line, holding the line and its newline; the last span grows. */
 function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
