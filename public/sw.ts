@@ -77,13 +77,16 @@ async function prefetch(manifest: Manifest): Promise<void> {
   const cache = await caches.open(CACHE);
   const cached = await cache.keys();
   await Promise.all(cached.filter((req) => !(new URL(req.url).pathname in manifest)).map((req) => cache.delete(req)));
-  await Promise.all(
-    Object.keys(manifest).map(async (path) => {
-      if (!(await current(cache, path, manifest))) {
-        await download(path, "low").catch(() => {});
-      }
-    }),
-  );
+  // Network Information API is of limited availability. This detection is of best effort.
+  if (navigator.connection?.saveData !== true) {
+    await Promise.all(
+      Object.keys(manifest).map(async (path) => {
+        if (!(await current(cache, path, manifest))) {
+          await download(path, "low").catch(() => {});
+        }
+      }),
+    );
+  }
 }
 
 interface Sync {
