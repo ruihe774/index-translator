@@ -78,7 +78,7 @@ await run(
   console.error("the build failed; is a tool missing?");
   throw e;
 });
-await run(["cmake", "--build", build, "--parallel", String(navigator.hardwareConcurrency)], undefined, buildEnv);
+await run(["cmake", "--build", build], undefined, buildEnv);
 
 // Built before the existing copy is replaced.
 await rm(dest, { recursive: true, force: true });

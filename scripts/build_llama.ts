@@ -276,7 +276,7 @@ try {
     undefined,
     buildEnv,
   );
-  await run(["cmake", "--build", build, "--parallel", String(navigator.hardwareConcurrency)], undefined, buildEnv);
+  await run(["cmake", "--build", build], undefined, buildEnv);
 
   await rm(stage, { recursive: true, force: true });
   await mkdir(join(stage, "include"), { recursive: true });

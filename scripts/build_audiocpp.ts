@@ -146,11 +146,7 @@ try {
     undefined,
     buildEnv,
   );
-  await run(
-    ["cmake", "--build", build, "--target", "audiocpp", "--parallel", String(navigator.hardwareConcurrency)],
-    undefined,
-    buildEnv,
-  );
+  await run(["cmake", "--build", build, "--target", "audiocpp"], undefined, buildEnv);
 } catch (e) {
   console.error(`the build failed; if a tool or a header is missing, ${TOOLS_HINT}`);
   throw e;
