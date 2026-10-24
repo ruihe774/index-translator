@@ -22,7 +22,7 @@ async function inlineHash(tag: "script" | "style"): Promise<string> {
 async function expectedCsp(): Promise<string> {
   const script = await inlineHash("script");
   const style = await inlineHash("style");
-  return `default-src 'self'; frame-ancestors 'none'; script-src 'self' ${script}; style-src 'self' ${style}`;
+  return `default-src 'self'; frame-ancestors 'none'; style-src 'self' ${style}; script-src 'self' ${script}`;
 }
 
 let dir: string;
