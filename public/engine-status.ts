@@ -100,7 +100,7 @@ export function initEngineStatus({ el, onHealth }: EngineStatusDeps): EngineStat
     let vram: Vram | null = null;
     let problem: boolean;
     try {
-      const res = await fetch(`${API}/health`);
+      const res = await fetch(`${API}/health`, { priority: "low" });
       const health = (await res.json()) as Health;
       ({ text, loading, vram, problem } = healthMessage(health));
       onHealth(health);
