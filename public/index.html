@@ -27,7 +27,7 @@
     <strong>Failed to launch: JavaScript is disabled</strong>
   </noscript>
 </p>
-<!-- sha256-1Sns+OOCQntaEvABrxLsVFKQWQWMbaA+MjMaprpKSt8= -->
+<!-- sha256-3UZwvRm3UKR9RB0lE57/ZGxUodThIOqU6t14BTQJ4Wk= -->
 <!-- prettier-ignore -->
 <style>
 *{margin:0;padding:0}
@@ -37,17 +37,19 @@ body{background:light-dark(#f3f5fa,#101217);color:light-dark(#1b1f2a,#ebedf3)}
 @media(display-mode:standalone){
 #icon{display:block;position:fixed;width:8rem;height:8rem;left:calc(50vw - 4rem);top:calc(50vh - 8rem);opacity:0;animation:400ms ease-out 100ms forwards show}
 #status{display:block;position:fixed;width:100vw;height:2rem;line-height:2rem;top:50vh;font-family:system-ui;text-align:center}
-}
+@media(prefers-reduced-motion:reduce){
+#icon{animation-duration:1ms}
+}}
 </style>
-<!-- sha256-sV5FDjCnV75A1ASkdpMalKWRiIqcZn+Kow6gprlone8= -->
+<!-- sha256-mPO7V38BOo1RlEecQ/LNj5fR3FFanGg+QCFN4pFYXxg= -->
 <!-- prettier-ignore -->
 <script>
 (()=>{
-var f=fetch("/app.html")
+var f=fetch("/app.html").then(r=>{if(r.ok)return r.text();throw new Error(r.statusText)})
 onload=()=>{
 with(document){
 getElementById("stylesheet").remove()
-f.then(r=>{if(r.ok)return r.text();throw new Error(r.statusText)}).then(t=>{open();write(t);close();body.style.opacity="0"})
+f.then(t=>{open();write(t);close();body.style.opacity="0"})
 .catch(e=>{var s=getElementById("status");s.textContent=e.message;s.insertAdjacentHTML("afterbegin", "<strong>Network error: </strong>")})
 }}})()
 </script>
