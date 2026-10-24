@@ -1,8 +1,10 @@
 // The service worker. The server lists every file it serves with its ETag (/asset-manifest.json).
 // The worker fetches that list first, answers a request from the cache only when the cached copy has
 // the listed ETag, and otherwise downloads the file and caches it. Right after the list arrives, every
-// file that is missing or out of date is requested at low priority. So no stale file is ever served;
-// the price is a slower first render, and the app is no use without its server anyway.
+// file that is missing or out of date is requested at low priority. So no stale file is ever served,
+// except the loading page (index.html), which is answered from the cache without waiting for the list:
+// it only fetches app.html, which is checked. The price for the rest is a slower first render, and the
+// app is no use without its server anyway.
 // On loopback (development, or the app on its own machine) the worker does nothing.
 
 /** The part of the service worker scope that is used (the DOM library has no `webworker` types). */
@@ -141,16 +143,26 @@ if (onLoopback(sw.location.hostname)) {
     }
     const { manifest, done } = sync;
     event.waitUntil(done);
+    const path = url.pathname;
     event.respondWith(
-      manifest.then(async (m) => {
-        const path = url.pathname;
-        // No list, or a file the server does not list: not ours to cache.
-        if (!m?.[path]) {
-          return fetch(req);
+      (async () => {
+        // The loading page may be stale: it only fetches app.html, which is checked against the list. The sync
+        // started above brings the copy up to date for the next load.
+        if (path === "/" || path === "/index.html") {
+          const hit = await caches.open(CACHE).then((cache) => cache.match(path));
+          if (hit) {
+            return hit;
+          }
         }
-        const cache = await caches.open(CACHE);
-        return (await current(cache, path, m)) ?? download(path, "auto");
-      }),
+        return manifest.then(async (m) => {
+          // No list, or a file the server does not list: not ours to cache.
+          if (!m?.[path]) {
+            return fetch(req);
+          }
+          const cache = await caches.open(CACHE);
+          return (await current(cache, path, m)) ?? download(path, "auto");
+        });
+      })(),
     );
   });
 }
