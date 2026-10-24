@@ -10,7 +10,7 @@ import type { PublicWatcher } from "./public-watch";
 
 /** The page loads only same-origin scripts and styles, and nothing can frame it. */
 const HTML_CSP =
-  "default-src 'self'; frame-ancestors 'none'; script-src 'self' 'sha256-bJBqbWskzYYi820jgQZ3d3ZIGbLu+i+hgRa6sPLGMY4='; style-src 'self' 'sha256-LMtvsEz6lkHV2tDltBgu1wHTpdzt38FliP0teVzqFb4='";
+  "default-src 'self'; frame-ancestors 'none'; script-src 'self' 'sha256-sV5FDjCnV75A1ASkdpMalKWRiIqcZn+Kow6gprlone8='; style-src 'self' 'sha256-+TQAamsCa7Svzrv6E/p2WXXGiHmOHLTkdc+/4iGgOkw='";
 
 interface Transpiled {
   mtimeMs: number;
