@@ -9,7 +9,7 @@
 // built here before libaudiocpp, so audio.cpp is always handed this one, never another that is
 // installed.
 //
-// Needs git, cmake (3.5 or later), ninja and a C compiler. On Windows, Visual Studio 2022 (or its Build Tools)
+// Needs git, cmake (3.5 or later), ninja and a C compiler. On Windows, Visual Studio 2022 or later (or its Build Tools)
 // with the "Desktop development with C++" workload; the result is soxr.dll. Building needs no administrator
 // rights.
 

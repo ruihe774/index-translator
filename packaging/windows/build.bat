@@ -1,5 +1,5 @@
 @echo off
-rem Builds launcher.exe with MSVC (Visual Studio 2022 or Build Tools, "Desktop development with C++").
+rem Builds launcher.exe with MSVC (Visual Studio 2022 or later, or Build Tools, "Desktop development with C++").
 rem launcher.rc embeds launcher.ico (made from public\icons\icon.svg).
 rem launcher.manifest (Common Controls 6, Per-Monitor DPI Awareness V2) is embedded in the exe.
 setlocal

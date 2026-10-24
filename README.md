@@ -167,8 +167,8 @@ Both engines then need an x86-64 processor with AVX2 (Haswell, 2013, or newer) o
 Armv8.2-A dot product and fp16 (Cortex-A76 and Apple M1 or newer).
 
 On Windows the same three commands work in Command Prompt or PowerShell. Instead of the packages
-above you need Git, CMake (on the `PATH`), Visual Studio 2022 or its Build Tools with the "Desktop
-development with C++" workload, and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (for
+above you need Git, CMake and Ninja (on the `PATH`), Visual Studio 2022 or later, or its Build Tools, with the
+"Desktop development with C++" workload, and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (for
 `glslc`); `curl` comes with Windows. Open a new terminal after installing them, so it sees the new
 `PATH`. More in [WINDOWS.md](WINDOWS.md).
 

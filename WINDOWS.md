@@ -38,7 +38,7 @@ CRLF and do not commit CRLF. Editors and `sed -i` in Git Bash keep LF; check wit
 `bun scripts/build_llama.ts`, `bun scripts/build_audiocpp.ts` and `bun scripts/build_soxr.ts` (libsoxr, as
 `soxr.dll`; it needs only Git, CMake, Ninja and the Visual Studio tools) build for Windows with no administrator
 rights. They need: Git, CMake and Ninja (both on the PATH; `winget install Ninja-build.Ninja` installs Ninja
-for the current user), Visual Studio 2022 or its Build Tools with the "Desktop development with C++" workload
+for the current user), Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload
 (found with `vswhere`; `vcvars64.bat` supplies `cl`, whose environment the scripts hand to CMake), and the Vulkan
 SDK (`glslc`, headers, `vulkan-1.lib`; sets `VULKAN_SDK`). As on Linux, CMake's Ninja generator is used
 (single-configuration, `CMAKE_BUILD_TYPE=Release`); a build tree kept with `--keep` from before this (Visual
@@ -65,7 +65,7 @@ console in the repository directory. It finds the repository by walking up from 
 `src\server.ts` exists, and takes `bun` from the `PATH`, so keep `launcher.exe` inside the checkout.
 
 - Build: `packaging\windows\build.bat` (from `cmd` or PowerShell; in Git Bash `cmd //c packaging\windows\build.bat`).
-  Needs Visual Studio 2022 or its Build Tools with the "Desktop development with C++" workload,
+  Needs Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload,
   found with `vswhere`; the script calls `vcvars64.bat` itself, so no Developer Prompt is needed.
 - Output: `packaging/windows/launcher.exe` (untracked, listed in `.gitignore`). `launcher.manifest`
   (Common Controls 6 for command links and visual styles, Per-Monitor DPI Awareness V2) is embedded

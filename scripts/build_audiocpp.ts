@@ -14,7 +14,7 @@
 //
 // Needs git, cmake (3.20 or later), ninja, a C++ compiler, glslc and the Vulkan headers. On Debian and Ubuntu:
 //   sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
-// On Windows: git, cmake, ninja (winget install Ninja-build.Ninja), Visual Studio 2022 (or its Build Tools) with the "Desktop development
+// On Windows: git, cmake, ninja (winget install Ninja-build.Ninja), Visual Studio 2022 or later (or its Build Tools) with the "Desktop development
 // with C++" workload, and the Vulkan SDK (glslc, the headers and vulkan-1.lib; it sets VULKAN_SDK).
 // The result is audiocpp.dll. Building needs no administrator rights.
 //

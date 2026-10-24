@@ -358,7 +358,7 @@ jobs:
   # are mocked, so there is no GPU or model. The browser tests are not run here.
   test-windows:
     name: Tests (Windows)
-    runs-on: windows-2022
+    runs-on: windows-2025-vs2026
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
@@ -378,7 +378,7 @@ jobs:
 
   engines-windows:
     name: Engines (Windows)
-    runs-on: windows-2022
+    runs-on: windows-2025-vs2026
     timeout-minutes: 90
     env:
       # The Vulkan SDK supplies glslc, the headers and vulkan-1.lib; the runner has no administrator
@@ -391,7 +391,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
-      # Visual Studio 2022 with the C++ tools, Git, CMake and Ninja are on the runner image.
+      # Visual Studio 2026 with the C++ tools, Git, CMake and Ninja are on the runner image.
       - name: Install the Vulkan SDK
         shell: pwsh
         run: |
@@ -409,7 +409,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-windows-2022-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
@@ -420,7 +420,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-windows-2022-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-windows-vs2026-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
@@ -431,7 +431,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-windows-2022-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+          key: audio-windows-vs2026-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
@@ -495,7 +495,7 @@ jobs:
   installer-windows:
     name: Installer (Windows)
     needs: engines-windows
-    runs-on: windows-2022
+    runs-on: windows-2025-vs2026
     timeout-minutes: 90
     env:
       VULKAN_SDK_VERSION: "1.4.363.0"
@@ -522,7 +522,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-windows-2022-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
@@ -533,7 +533,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-windows-2022-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-windows-vs2026-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
@@ -544,7 +544,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-windows-2022-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+          key: audio-windows-vs2026-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
