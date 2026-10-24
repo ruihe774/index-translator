@@ -178,9 +178,37 @@ describe("the muxer", () => {
     );
   });
 
+  test("takes its defaults and options: vendor, channels, a page a second, a random serial", () => {
+    const vendorOf = (bytes: Uint8Array) => {
+      const tags = pages(bytes)[1]!.packets[0]!;
+      const length = new DataView(tags.buffer).getUint32(8, true);
+      return new TextDecoder().decode(tags.subarray(12, 12 + length));
+    };
+    const plain = new OggOpusMuxer({ channels: 2, sampleRate: 48_000, preSkip: 0 });
+    const head = plain.header();
+    expect(vendorOf(head)).toBe("index-translator");
+    expect(pages(head)[0]!.packets[0]![9]).toBe(2);
+    expect(plain.serial).toBeGreaterThanOrEqual(0);
+    expect(plain.serial).toBeLessThan(2 ** 32);
+    expect(pages(head).every((p) => p.serial === plain.serial)).toBe(true);
+    // 48 000 samples of audio close the page: the 50th packet of 20 ms.
+    const sizes: number[] = [];
+    for (let i = 0; i < 49; i++) {
+      sizes.push(plain.addPacket(packet(10)).length);
+    }
+    expect(sizes.every((n) => n === 0)).toBe(true);
+    const page = pages(plain.addPacket(packet(10)));
+    expect(page.map((p) => [p.packets.length, p.granule])).toStrictEqual([[50, 48_000]]);
+
+    const named = new OggOpusMuxer({ channels: 1, sampleRate: 8000, preSkip: 0, vendor: "väl", serial: 2 ** 32 + 5 });
+    expect(vendorOf(named.header())).toBe("väl");
+    expect(named.serial).toBe(5);
+  });
+
   test("refuses packets before the header and after the end", () => {
     const mux = new OggOpusMuxer({ channels: 1, sampleRate: 16_000, preSkip: 0 });
     expect(() => mux.addPacket(packet(10))).toThrow("header");
+    expect(() => mux.finish()).toThrow("header");
     mux.header();
     expect(() => mux.header()).toThrow("already");
     mux.finish();

@@ -1,10 +1,16 @@
+# Loads the modules of src/ that were compiled to WebAssembly (bun scripts/build_scriptc.ts) when they match
+# their sources, and the TypeScript otherwise; SCRIPTC_WASM=0 for the TypeScript always (src/scriptc-plugin.ts).
+preload = ["./src/scriptc-plugin.ts"]
+
 [test]
+preload = ["./src/scriptc-plugin.ts"]
 # Playwright specs under e2e/ run with `bun run e2e`, not `bun test`.
 root = "test"
 onlyFailures = true
 # `bun test --coverage` (`bun run test:coverage`) reports the application code, not the tests or their mocks.
 coverageSkipTestFiles = true
-coveragePathIgnorePatterns = ["test/**", "e2e/**", "public/vendor/**"]
+# The WebAssembly loader and its adapters are run only by tests that load a compiled module (SCRIPTC_WASM, CI's second test run).
+coveragePathIgnorePatterns = ["test/**", "e2e/**", "public/vendor/**", "src/scriptc-*.ts", "scriptc/**"]
 
 [test.reporter]
 dots = true

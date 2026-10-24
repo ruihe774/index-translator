@@ -83,6 +83,20 @@ jobs:
           # A fork's pull request has no secret: Codecov's tokenless upload may fail without failing the checks.
           fail_ci_if_error: ${{ github.event.pull_request.head.repo.fork != true }}
 
+      # The tests again, on the modules of scriptc/ compiled to WebAssembly (scriptc/README.md); the run above
+      # measured the TypeScript (it sets SCRIPTC_WASM=0). SCRIPTC_EXPECT_WASM makes test/scriptc.test.ts fail
+      # if a module was not the one loaded. Zig, which links them, is fetched with scriptc.
+      - name: Fetch scriptc
+        run: bun scripts/fetch_scriptc.ts
+
+      - name: Compile the modules to WebAssembly
+        run: bun scripts/build_scriptc.ts
+
+      - name: Unit and API integration tests on the compiled modules
+        run: bun test
+        env:
+          SCRIPTC_EXPECT_WASM: "1"
+
       - name: Markdown conformance
         run: bun scripts/commonmark.ts
 

@@ -1,0 +1,29 @@
+{
+  "profile_format": 1,
+  "name": "ogg-opus",
+  "entry": "ogg-opus.entry.ts",
+  "emission": "llvm",
+  "abi": {
+    "prefix": "ogg_opus_",
+    "init_symbol": "ogg_opus_init",
+    "sink_register_symbol": "ogg_opus_sink"
+  },
+  "exports": [
+    { "export": "lastError", "symbol": "ogg_opus_last_error", "params": [], "returns": "string" },
+    {
+      "export": "muxNew",
+      "symbol": "ogg_opus_mux_new",
+      "params": ["f64", "f64", "f64", "f64", "bool", "string", "f64"],
+      "returns": "f64"
+    },
+    { "export": "muxSerial", "symbol": "ogg_opus_mux_serial", "params": ["f64"], "returns": "f64" },
+    { "export": "muxHeader", "symbol": "ogg_opus_mux_header", "params": ["f64"], "returns": "bytes" },
+    {
+      "export": "muxAddPacket",
+      "symbol": "ogg_opus_mux_add_packet",
+      "params": ["f64", "bytes", "f64", "f64"],
+      "returns": "bytes"
+    },
+    { "export": "muxFinish", "symbol": "ogg_opus_mux_finish", "params": ["f64"], "returns": "bytes" }
+  ]
+}
