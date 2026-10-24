@@ -766,6 +766,10 @@ paths:
         scripts and whatever the page hides are left out. Links and images keep absolute
         addresses; a link that is not `http`, `https` or `mailto` keeps only its text.
 
+        A response of type `text/markdown` or `text/plain` is answered as it is, decoded by the
+        charset it names, with an empty `title`. Any type other than HTML (`text/html`,
+        `application/xhtml+xml`), Markdown or plain text is refused (`502`, `webpage_error`).
+
         The server opens only hosts that `ALLOWED_WEBPAGE_DOMAINS` covers (`example.com`,
         `*.example.com` for its subdomains, or `*` for any host), on any port; anything else is
         refused (`403`, `forbidden_webpage`). A page that redirects, or whose script moves on, to

@@ -37,8 +37,17 @@ function only(selector: string): HTMLElement | null {
   return all.length === 1 ? all[0]! : null;
 }
 
+/** A response that is not a page: its media type, for src/webpage.ts to refuse. */
+interface UnsupportedPage {
+  contentType: string;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- called by src/webpage.ts in the page
-async function extractPage(loadWaitMs: number, quietMs: number, renderWaitMs: number): Promise<ExtractedPage> {
+async function extractPage(
+  loadWaitMs: number,
+  quietMs: number,
+  renderWaitMs: number,
+): Promise<ExtractedPage | UnsupportedPage> {
   // The view reports a navigation when it commits; the page's own scripts may still be filling it.
   // Not `readyState`: it is "complete" just before the `load` handlers run. `loadEventEnd` is set
   // once they have; a listener added now runs after the page's own, then one task more.
@@ -48,6 +57,18 @@ async function extractPage(loadWaitMs: number, quietMs: number, renderWaitMs: nu
       addEventListener("load", () => void setTimeout(resolve, 0), { once: true });
       setTimeout(resolve, loadWaitMs);
     });
+  }
+  // Markdown and plain text are already what we answer: the browser shows them as text in a single
+  // <pre>, which is taken as it is. Any other response that is not HTML (an image, JSON, a PDF) has no page to read.
+  // `document.contentType` is the media type without parameters; the browser has decoded the text by
+  // the charset it names, a BOM or a <meta>, so nothing here depends on UTF-8.
+  const contentType = document.contentType.toLowerCase();
+  if (contentType === "text/markdown" || contentType === "text/plain") {
+    const pre = document.querySelector("pre");
+    return { url: location.href, title: "", markdown: pre?.textContent ?? document.body.textContent };
+  }
+  if (contentType !== "text/html" && contentType !== "application/xhtml+xml") {
+    return { contentType };
   }
   // Many pages only start filling themselves on `load`: wait until the DOM stays unchanged for
   // `quietMs`, or `renderWaitMs` at most for a page that never stops (a clock, a carousel).

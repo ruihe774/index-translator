@@ -75,6 +75,24 @@ beforeAll(() => {
       if (pathname === "/redirect") {
         return Response.redirect(`http://localhost:${server.port}/article`, 302);
       }
+      if (pathname === "/doc.md") {
+        return new Response("# Título\n\n*Ünï* — **kept**\n\n- one\n", {
+          headers: { "content-type": "text/markdown; charset=utf-8" },
+        });
+      }
+      if (pathname === "/latin1.md") {
+        return new Response(new Uint8Array([0x23, 0x20, 0x43, 0x61, 0x66, 0xe9]), {
+          headers: { "content-type": "text/markdown; charset=iso-8859-1" },
+        });
+      }
+      if (pathname === "/notes.txt") {
+        return new Response("Line one\n\n  indented <b>not html</b>\n", {
+          headers: { "content-type": "text/plain; charset=utf-8" },
+        });
+      }
+      if (pathname === "/data.json") {
+        return new Response('{"a":1}', { headers: { "content-type": "application/json" } });
+      }
       const page = PAGES[pathname];
       return new Response(page ?? "not found", {
         status: page ? 200 : 404,
@@ -139,6 +157,26 @@ describe.skipIf(!installed)("webViewFetcher", () => {
     expect(page.markdown).toStartWith("Content.");
     expect(performance.now() - started).toBeGreaterThan(4500);
     expect(performance.now() - started).toBeLessThan(10_000);
+  }, 30_000);
+
+  test("Markdown is answered as it is", async () => {
+    const page = await fetcher.fetch(new URL(`${base}/doc.md`), local, new AbortController().signal);
+    expect(page.markdown).toBe("# Título\n\n*Ünï* — **kept**\n\n- one\n");
+  }, 30_000);
+
+  test("plain text is answered as it is", async () => {
+    const page = await fetcher.fetch(new URL(`${base}/notes.txt`), local, new AbortController().signal);
+    expect(page.markdown).toBe("Line one\n\n  indented <b>not html</b>\n");
+  }, 30_000);
+
+  test("Markdown in another charset is decoded by it", async () => {
+    const page = await fetcher.fetch(new URL(`${base}/latin1.md`), local, new AbortController().signal);
+    expect(page.markdown).toBe("# Café");
+  }, 30_000);
+
+  test("a response that is not HTML or Markdown is a WebpageError", async () => {
+    const fetching = fetcher.fetch(new URL(`${base}/data.json`), local, new AbortController().signal);
+    await expect(fetching).rejects.toThrow("application/json");
   }, 30_000);
 
   test("a redirect to a host that is not allowed is refused", async () => {

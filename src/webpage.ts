@@ -166,6 +166,10 @@ export function webViewFetcher(turndown = turndownPath(), browser?: string): Web
       });
       await Promise.race([navigated, stopped]);
       const page: unknown = await Promise.race([view.evaluate(code), stopped]);
+      const unsupported = (page as { contentType?: unknown } | null)?.contentType;
+      if (typeof unsupported === "string") {
+        throw new WebpageError(`the address answers ${unsupported}, not a web page (HTML, Markdown or plain text)`);
+      }
       if (!isWebpage(page)) {
         throw new WebpageError("the page could not be read");
       }
