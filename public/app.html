@@ -41,7 +41,9 @@
             <div class="pane-head">
               <div class="field language">
                 <label for="from">From</label>
-                <select id="from" name="from"></select>
+                <select id="from" name="from" value="auto">
+                  <option value="auto">Detect</option>
+                </select>
               </div>
               <button type="button" id="open" aria-label="Open a file">Open</button>
               <input type="file" id="open-file" aria-label="Text, Markdown, PDF, Word or image file to open" hidden />

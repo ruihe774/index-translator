@@ -40,8 +40,7 @@ export async function fillLanguages(from: HTMLSelectElement, to: HTMLSelectEleme
     languages = FALLBACK;
     note = "Could not load the full language list, so only English, Chinese and Japanese are offered.";
   }
-  add(from, "auto", "Detect");
-  // "Detect" is not a language, so a rule separates it from the list.
+  // "Detect" is not a language and is already in HTML. A rule separates it from the list.
   from.append(document.createElement("hr"));
   for (const l of languages) {
     add(from, l.code, l.name);
