@@ -355,3 +355,7 @@ ignorePatterns = ["*.md", "docs/", "src/api-schema.d.ts"]
 [run]
 noOrphans = true
 bun = true
+
+[install]
+auto = "disable"
+minimumReleaseAge = 259200
