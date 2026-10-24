@@ -36,11 +36,14 @@ CRLF and do not commit CRLF. Editors and `sed -i` in Git Bash keep LF; check wit
 ## Building the engines
 
 `bun scripts/build_llama.ts`, `bun scripts/build_audiocpp.ts` and `bun scripts/build_soxr.ts` (libsoxr, as
-`soxr.dll`; it needs only Git, CMake and the Visual Studio tools) build for Windows with no administrator
-rights. They need: Git, CMake (on the PATH), Visual Studio 2022 or its Build Tools with the "Desktop
-development with C++" workload (found with `vswhere`; `vcvars64.bat` supplies `cl`), and the Vulkan SDK
-(`glslc`, headers, `vulkan-1.lib`; sets `VULKAN_SDK`). Ninja is not needed: CMake's Visual Studio
-generator is used (`--config Release`). A terminal opened before the installs needs a restart to see the new PATH.
+`soxr.dll`; it needs only Git, CMake, Ninja and the Visual Studio tools) build for Windows with no administrator
+rights. They need: Git, CMake and Ninja (both on the PATH; `winget install Ninja-build.Ninja` installs Ninja
+for the current user), Visual Studio 2022 or its Build Tools with the "Desktop development with C++" workload
+(found with `vswhere`; `vcvars64.bat` supplies `cl`, whose environment the scripts hand to CMake), and the Vulkan
+SDK (`glslc`, headers, `vulkan-1.lib`; sets `VULKAN_SDK`). As on Linux, CMake's Ninja generator is used
+(single-configuration, `CMAKE_BUILD_TYPE=Release`); a build tree kept with `--keep` from before this (Visual
+Studio generator) must be deleted (`vendor/.build`). A terminal opened before the installs needs a restart to see
+the new PATH. The GitHub runner image already has Ninja.
 
 - llama.cpp gives `llama.dll`, `mtmd.dll` (image input; not yet built or run on Windows: the shim links `mtmd.lib`
   and takes `stbi_load_from_memory` from it, which `WINDOWS_EXPORT_ALL_SYMBOLS` should export), `ggml*.dll`, `ggml-vulkan.dll`, `ggml-cpu.dll` (AVX2), and `llama-shim.dll`

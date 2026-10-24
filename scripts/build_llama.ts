@@ -19,10 +19,10 @@
 //             machine's GPU, which is much faster to build); by default 75-virtual;86-virtual: PTX for Turing and
 //             Ampere that the driver compiles for the GPU on the first run (DEFAULT_CUDA_ARCH in build_tools.ts)
 //
-// Needs git, cmake (3.14 or later), a C and a C++ compiler, glslc and the Vulkan headers; ninja is
-// used when it is installed. On Debian and Ubuntu:
+// Needs git, cmake (3.14 or later), ninja, a C and a C++ compiler, glslc and the Vulkan headers. On Debian and
+// Ubuntu:
 //   sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
-// On Windows: git, cmake, Visual Studio 2022 (or its Build Tools) with the "Desktop development
+// On Windows: git, cmake, ninja (winget install Ninja-build.Ninja), Visual Studio 2022 (or its Build Tools) with the "Desktop development
 // with C++" workload, and the Vulkan SDK (glslc, the headers and vulkan-1.lib; it sets VULKAN_SDK).
 // The result is llama.dll, mtmd.dll, ggml*.dll, ggml-cpu.dll, ggml-vulkan.dll and llama-shim.dll, plus the
 // import libraries the shim is linked against. Building needs no administrator rights.
@@ -32,6 +32,7 @@ import { join, resolve } from "node:path";
 
 import { devices, libraryPath, shimPath } from "../src/llama-ffi";
 import {
+  BUILD_TOOLS,
   bundleCuda,
   checkout,
   COMPILERS,
@@ -86,8 +87,16 @@ const CPU_ISA =
       ? ["-DGGML_CPU_ARM_ARCH=armv8.2-a+dotprod+fp16"]
       : [];
 const CPU_ISA_NAME = process.arch === "x64" ? "AVX2" : process.arch === "arm64" ? "Armv8.2-A" : process.arch;
-/** The import libraries the shim is linked against on Windows; they stay beside the DLLs so `--shim` works. */
-const IMPORT_LIBS = ["llama", "mtmd", "ggml", "ggml-base"];
+/**
+ * The import libraries the shim is linked against on Windows, with the build directory each one is written to
+ * (its target's own, as llama.cpp sets no archive output directory); they stay beside the DLLs so `--shim` works.
+ */
+const IMPORT_LIBS: Record<string, string> = {
+  llama: "src",
+  mtmd: join("tools", "mtmd"),
+  ggml: join("ggml", "src"),
+  "ggml-base": join("ggml", "src"),
+};
 
 const OPTIONS = ["--native", "--keep", "--shim", "--cuda"];
 const flags = new Set(Bun.argv.slice(2));
@@ -140,7 +149,7 @@ async function buildShim(dir: string): Promise<void> {
         `/I${join(dir, "include")}`,
         "/link",
         `/LIBPATH:${dir}`,
-        ...IMPORT_LIBS.map((name) => `${name}.lib`),
+        ...Object.keys(IMPORT_LIBS).map((name) => `${name}.lib`),
       ],
       undefined,
       (await msvc()).env,
@@ -210,9 +219,10 @@ if (flags.has("--shim")) {
   process.exit(0);
 }
 
-requireTools(["git", "cmake", ...COMPILERS, ...(cuda ? [] : ["glslc"])], TOOLS_HINT);
+requireTools([...BUILD_TOOLS, ...COMPILERS, ...(cuda ? [] : ["glslc"])], TOOLS_HINT);
 const cudaToolkit = cuda ? await findCuda() : undefined;
-const visualStudio = windows ? await msvc() : undefined;
+// On Windows Ninja finds `cl` through the environment of a Developer Command Prompt.
+const buildEnv = windows ? (await msvc()).env : undefined;
 
 if (!keep) {
   await rm(work, { recursive: true, force: true });
@@ -221,74 +231,64 @@ await checkout(REPO, COMMIT, source);
 
 const started = performance.now();
 try {
-  await run([
-    "cmake",
-    "-S",
-    source,
-    "-B",
-    build,
-    ...(visualStudio
-      ? ["-G", visualStudio.generator, "-A", "x64"]
-      : [...(Bun.which("ninja") ? ["-G", "Ninja"] : []), "-DCMAKE_BUILD_TYPE=Release"]),
-    "-DBUILD_SHARED_LIBS=ON",
-    // The libraries find each other in their own directory, wherever that is (on Windows a DLL's
-    // dependencies are looked for beside it without any setting).
-    ...(windows ? [] : ["-DCMAKE_INSTALL_RPATH=$ORIGIN", "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON"]),
-    // Backends are libraries the shim loads from that directory (ggml_backend_load_all_from_path).
-    "-DGGML_BACKEND_DL=ON",
-    // Exactly one GPU backend, whichever the variant: a kept tree must not carry the other one over.
-    `-DGGML_VULKAN=${cudaToolkit ? "OFF" : "ON"}`,
-    `-DGGML_CUDA=${cudaToolkit ? "ON" : "OFF"}`,
-    ...(cudaToolkit
-      ? [
-          ...cudaCMakeOptions(cudaToolkit, arch),
-          // No NCCL (multi-GPU communication): one more library to ship, for a single-GPU engine.
-          "-DGGML_CUDA_NCCL=OFF",
-        ]
-      : []),
-    `-DGGML_NATIVE=${native ? "ON" : "OFF"}`,
-    "-DGGML_CPU_ALL_VARIANTS=OFF",
-    ...(native
-      ? []
-      : [...CPU_ISA, ...BASELINE.flatMap((flag) => [`-DCMAKE_C_FLAGS=${flag}`, `-DCMAKE_CXX_FLAGS=${flag}`])]),
-    // Only libllama, libmtmd and ggml: the tools, the server and the tests all need the common library.
-    "-DLLAMA_BUILD_COMMON=OFF",
-    // libmtmd on its own, for image input. Its video support would start an ffmpeg found in PATH.
-    "-DLLAMA_BUILD_MTMD=ON",
-    "-DMTMD_VIDEO=OFF",
-    "-DLLAMA_BUILD_TOOLS=OFF",
-    "-DLLAMA_BUILD_SERVER=OFF",
-    "-DLLAMA_BUILD_APP=OFF",
-    "-DLLAMA_BUILD_EXAMPLES=OFF",
-    "-DLLAMA_BUILD_TESTS=OFF",
-  ]);
-  await run(["cmake", "--build", build, "--config", "Release", "--parallel", String(navigator.hardwareConcurrency)]);
+  await run(
+    [
+      "cmake",
+      "-S",
+      source,
+      "-B",
+      build,
+      "-G",
+      "Ninja",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DBUILD_SHARED_LIBS=ON",
+      // The libraries find each other in their own directory, wherever that is (on Windows a DLL's
+      // dependencies are looked for beside it without any setting).
+      ...(windows ? [] : ["-DCMAKE_INSTALL_RPATH=$ORIGIN", "-DCMAKE_BUILD_WITH_INSTALL_RPATH=ON"]),
+      // Backends are libraries the shim loads from that directory (ggml_backend_load_all_from_path).
+      "-DGGML_BACKEND_DL=ON",
+      // Exactly one GPU backend, whichever the variant: a kept tree must not carry the other one over.
+      `-DGGML_VULKAN=${cudaToolkit ? "OFF" : "ON"}`,
+      `-DGGML_CUDA=${cudaToolkit ? "ON" : "OFF"}`,
+      ...(cudaToolkit
+        ? [
+            ...cudaCMakeOptions(cudaToolkit, arch),
+            // No NCCL (multi-GPU communication): one more library to ship, for a single-GPU engine.
+            "-DGGML_CUDA_NCCL=OFF",
+          ]
+        : []),
+      `-DGGML_NATIVE=${native ? "ON" : "OFF"}`,
+      "-DGGML_CPU_ALL_VARIANTS=OFF",
+      ...(native
+        ? []
+        : [...CPU_ISA, ...BASELINE.flatMap((flag) => [`-DCMAKE_C_FLAGS=${flag}`, `-DCMAKE_CXX_FLAGS=${flag}`])]),
+      // Only libllama, libmtmd and ggml: the tools, the server and the tests all need the common library.
+      "-DLLAMA_BUILD_COMMON=OFF",
+      // libmtmd on its own, for image input. Its video support would start an ffmpeg found in PATH.
+      "-DLLAMA_BUILD_MTMD=ON",
+      "-DMTMD_VIDEO=OFF",
+      "-DLLAMA_BUILD_TOOLS=OFF",
+      "-DLLAMA_BUILD_SERVER=OFF",
+      "-DLLAMA_BUILD_APP=OFF",
+      "-DLLAMA_BUILD_EXAMPLES=OFF",
+      "-DLLAMA_BUILD_TESTS=OFF",
+    ],
+    undefined,
+    buildEnv,
+  );
+  await run(["cmake", "--build", build, "--parallel", String(navigator.hardwareConcurrency)], undefined, buildEnv);
 
   await rm(stage, { recursive: true, force: true });
   await mkdir(join(stage, "include"), { recursive: true });
+  // The libraries and, on Linux, the links to them (libllama.so -> libllama.so.0 -> the file), kept as links.
+  for (const name of await readdir(join(build, "bin"))) {
+    if (windows ? name.endsWith(".dll") : /\.so(\.|$)/.test(name)) {
+      await cp(join(build, "bin", name), join(stage, name), { verbatimSymlinks: true });
+    }
+  }
   if (windows) {
-    // The Visual Studio generator puts the DLLs in bin/Release and each import library in its target's own directory.
-    const bin = join(build, "bin", "Release");
-    for (const name of await readdir(bin)) {
-      if (name.endsWith(".dll")) {
-        await cp(join(bin, name), join(stage, name));
-      }
-    }
-    for (const name of IMPORT_LIBS) {
-      const [found] = await Array.fromAsync(
-        new Bun.Glob(`**/Release/${name}.lib`).scan({ cwd: build, absolute: true }),
-      );
-      if (!found) {
-        throw new Error(`the build left no ${name}.lib`);
-      }
-      await cp(found, join(stage, `${name}.lib`));
-    }
-  } else {
-    // The libraries and the links to them (libllama.so -> libllama.so.0 -> the file), kept as links.
-    for (const name of await readdir(join(build, "bin"))) {
-      if (/\.so(\.|$)/.test(name)) {
-        await cp(join(build, "bin", name), join(stage, name), { verbatimSymlinks: true });
-      }
+    for (const [name, directory] of Object.entries(IMPORT_LIBS)) {
+      await cp(join(build, directory, `${name}.lib`), join(stage, `${name}.lib`));
     }
   }
   for (const header of HEADERS) {

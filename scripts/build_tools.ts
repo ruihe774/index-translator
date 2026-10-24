@@ -56,8 +56,11 @@ export const windows = process.platform === "win32";
 
 /** What to install when a build tool is missing, for the message. */
 export const TOOLS_HINT = windows
-  ? "on Windows: install Git, CMake (https://cmake.org/download/, add it to the PATH), Visual Studio 2022 or its Build Tools with the 'Desktop development with C++' workload, and the Vulkan SDK (https://vulkan.lunarg.com/sdk/home, for glslc)"
+  ? "on Windows: install Git, CMake (https://cmake.org/download/, add it to the PATH), Ninja (winget install Ninja-build.Ninja), Visual Studio 2022 or its Build Tools with the 'Desktop development with C++' workload, and the Vulkan SDK (https://vulkan.lunarg.com/sdk/home, for glslc)"
   : "on Debian and Ubuntu: sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers";
+
+/** The build tools every engine needs on the PATH, on both systems. */
+export const BUILD_TOOLS = ["git", "cmake", "ninja"];
 
 /** The C and C++ compilers' names on the PATH. On Windows `cl` comes from `msvc()`, not from the PATH. */
 export const COMPILERS = windows ? [] : ["cc", "c++"];
@@ -168,8 +171,6 @@ export async function bundleCuda(cuda: Cuda, dir: string, libraries: string[], e
 interface Msvc {
   /** The environment of a Developer Command Prompt for x64: `cl`, `link`, the Windows SDK's headers and libraries. */
   env: Record<string, string>;
-  /** CMake's generator name for this Visual Studio. */
-  generator: string;
 }
 
 let msvcCache: Promise<Msvc> | undefined;
@@ -194,8 +195,6 @@ export function msvc(): Promise<Msvc> {
     if (!path) {
       throw new Error(`Visual Studio with the C++ tools (x64) not found; ${TOOLS_HINT}`);
     }
-    const major = Number.parseInt(await query("installationVersion"), 10);
-    const years: Record<number, string> = { 16: "2019", 17: "2022", 18: "2026" };
     const bat = join(path, "VC", "Auxiliary", "Build", "vcvars64.bat");
     // A batch file, because the quotes around the path would not survive being a command-line argument.
     const script = join(tmpdir(), `msvc-env-${process.pid}.bat`);
@@ -216,7 +215,7 @@ export function msvc(): Promise<Msvc> {
         env[line.slice(0, eq)] = line.slice(eq + 1);
       }
     }
-    return { env, generator: `Visual Studio ${major} ${years[major] ?? ""}`.trim() };
+    return { env };
   })();
   return msvcCache;
 }

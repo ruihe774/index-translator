@@ -9,14 +9,15 @@
 // built here before libaudiocpp, so audio.cpp is always handed this one, never another that is
 // installed.
 //
-// Needs git, cmake (3.5 or later) and a C compiler; ninja is used when it is installed. On Windows, Visual Studio 2022 (or its Build Tools) with the "Desktop development with
-// C++" workload; the result is soxr.dll. Building needs no administrator rights.
+// Needs git, cmake (3.5 or later), ninja and a C compiler. On Windows, Visual Studio 2022 (or its Build Tools)
+// with the "Desktop development with C++" workload; the result is soxr.dll. Building needs no administrator
+// rights.
 
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { soxrLibraryPath, soxrVersion } from "../src/audiocpp-ffi";
-import { checkout, COMPILERS, msvc, requireTools, run, windows } from "./build_tools";
+import { BUILD_TOOLS, checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
 
 const VERSION = "0.1.3";
 /**
@@ -41,11 +42,9 @@ const work = join(root, "vendor", ".build", "soxr");
 const source = join(work, "src");
 const build = join(work, "build");
 
-requireTools(
-  ["git", "cmake", ...COMPILERS],
-  "on Debian and Ubuntu: sudo apt install build-essential git cmake ninja-build",
-);
-const visualStudio = windows ? await msvc() : undefined;
+requireTools([...BUILD_TOOLS, ...COMPILERS], TOOLS_HINT);
+// On Windows Ninja finds `cl` through the environment of a Developer Command Prompt.
+const buildEnv = windows ? (await msvc()).env : undefined;
 
 if (!keep) {
   await rm(work, { recursive: true, force: true });
@@ -53,41 +52,44 @@ if (!keep) {
 await checkout(REPO, COMMIT, source);
 
 const started = performance.now();
-await run([
-  "cmake",
-  "-S",
-  source,
-  "-B",
-  build,
-  ...(visualStudio
-    ? ["-G", visualStudio.generator, "-A", "x64"]
-    : [...(Bun.which("ninja") ? ["-G", "Ninja"] : []), "-DCMAKE_BUILD_TYPE=Release"]),
-  "-DBUILD_SHARED_LIBS=ON",
-  "-DBUILD_TESTS=OFF",
-  "-DBUILD_EXAMPLES=OFF",
-  // The resampler needs one thread, and OpenMP would make the library need libgomp.
-  "-DWITH_OPENMP=OFF",
-  // Nothing uses the libsamplerate-like interface.
-  "-DWITH_LSR_BINDINGS=OFF",
-  // soxr's CMake says 3.1 as its minimum, which CMake 4 no longer accepts.
-  "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
-]).catch((e: unknown) => {
+await run(
+  [
+    "cmake",
+    "-S",
+    source,
+    "-B",
+    build,
+    "-G",
+    "Ninja",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DBUILD_SHARED_LIBS=ON",
+    "-DBUILD_TESTS=OFF",
+    "-DBUILD_EXAMPLES=OFF",
+    // The resampler needs one thread, and OpenMP would make the library need libgomp.
+    "-DWITH_OPENMP=OFF",
+    // Nothing uses the libsamplerate-like interface.
+    "-DWITH_LSR_BINDINGS=OFF",
+    // soxr's CMake says 3.1 as its minimum, which CMake 4 no longer accepts.
+    "-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
+  ],
+  undefined,
+  buildEnv,
+).catch((e: unknown) => {
   console.error("the build failed; is a tool missing?");
   throw e;
 });
-await run(["cmake", "--build", build, "--config", "Release", "--parallel", String(navigator.hardwareConcurrency)]);
+await run(["cmake", "--build", build, "--parallel", String(navigator.hardwareConcurrency)], undefined, buildEnv);
 
 // Built before the existing copy is replaced.
 await rm(dest, { recursive: true, force: true });
 await mkdir(dest, { recursive: true });
 // On Linux the file is named libsoxr.so.0.1.2 with links libsoxr.so.0 and libsoxr.so; the copy is
-// named as its SONAME, which is what audio.cpp asks for. The Visual Studio generator puts the DLL
-// in a configuration directory of its own.
-const [built] = await Array.fromAsync(
-  new Bun.Glob(windows ? "**/soxr.dll" : "src/libsoxr.so.0.*").scan({ cwd: build, absolute: true }),
-);
+// named as its SONAME, which is what audio.cpp asks for. On Windows soxr's CMakeLists puts the DLL in bin.
+const built = windows
+  ? join(build, "bin", "soxr.dll")
+  : (await Array.fromAsync(new Bun.Glob("src/libsoxr.so.0.*").scan({ cwd: build, absolute: true })))[0];
 if (!built) {
-  throw new Error(`the build left no ${windows ? "soxr.dll" : "libsoxr.so.0.*"}`);
+  throw new Error("the build left no libsoxr.so.0.*");
 }
 await cp(built, soxrLibraryPath(dest), { dereference: true });
 await cp(join(source, "LICENCE"), join(dest, "LICENCE"));

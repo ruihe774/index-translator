@@ -391,7 +391,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
-      # Visual Studio 2022 with the C++ tools, Git and CMake are on the runner image.
+      # Visual Studio 2022 with the C++ tools, Git, CMake and Ninja are on the runner image.
       - name: Install the Vulkan SDK
         shell: pwsh
         run: |
