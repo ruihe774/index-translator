@@ -97,7 +97,8 @@ export function createDevReload(watcher: PublicWatcher) {
         return res;
       }
       const html = await res.text();
-      const body = html.includes("</body>") ? html.replace("</body>", `${SCRIPT_TAG}</body>`) : html + SCRIPT_TAG;
+      // There is only one file without `</body>`: the loading page, which is explicitly excluded.
+      const body = html.includes("</body>") ? html.replace("</body>", `${SCRIPT_TAG}</body>`) : html;
       const headers = new Headers(res.headers);
       headers.delete("etag");
       headers.delete("content-length");

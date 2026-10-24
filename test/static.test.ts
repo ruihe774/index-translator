@@ -8,6 +8,23 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { createStaticServer } from "../src/static";
 
+/** The hash of the one inline `<tag>` in the real loading page, as a CSP source. */
+async function inlineHash(tag: "script" | "style"): Promise<string> {
+  const html = await Bun.file(join(import.meta.dir, "../public/index.html")).text();
+  const body = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(html)?.[1];
+  if (body === undefined) {
+    throw new Error(`public/index.html has no inline <${tag}>`);
+  }
+  return `'sha256-${new Bun.CryptoHasher("sha256").update(body).digest("base64")}'`;
+}
+
+/** The policy src/static.ts sends with HTML: the loading page's inline script and style are allowed by hash. */
+async function expectedCsp(): Promise<string> {
+  const script = await inlineHash("script");
+  const style = await inlineHash("style");
+  return `default-src 'self'; frame-ancestors 'none'; script-src 'self' ${script}; style-src 'self' ${style}`;
+}
+
 let dir: string;
 // One server per test, as in src/app.ts, so the transpile cache is shared between requests.
 let serve: ReturnType<typeof createStaticServer>;
@@ -61,6 +78,12 @@ describe("caching", () => {
     expect((await get("/style.css")).headers.get("cache-control")).toBe("no-cache");
     expect((await get("/icons/icon.svg")).headers.get("cache-control")).toBe("public, max-age=86400");
     expect((await get("/vendor/lib/a.js")).headers.get("cache-control")).toBe("public, max-age=86400");
+  });
+
+  test("the loading page at the top is kept for a day, a nested index.html is revalidated", async () => {
+    await write("sub/index.html", "<p>sub</p>");
+    expect((await get("/")).headers.get("cache-control")).toBe("public, max-age=86400");
+    expect((await get("/sub/")).headers.get("cache-control")).toBe("no-cache");
   });
 
   test("the service worker is served as a script that is always revalidated", async () => {
@@ -243,7 +266,7 @@ describe("headers", () => {
 
   test("HTML carries the content security policy, other files do not", async () => {
     const html = await get("/");
-    expect(html.headers.get("content-security-policy")).toBe("default-src 'self'; frame-ancestors 'none'");
+    expect(html.headers.get("content-security-policy")).toBe(await expectedCsp());
     await html.text();
     for (const path of ["/style.css", "/app.ts", "/missing.html"]) {
       const res = await get(path);
@@ -255,7 +278,7 @@ describe("headers", () => {
   test("plain files are no-cache and revalidated by ETag", async () => {
     for (const path of ["/index.html", "/style.css"]) {
       const res = await get(path);
-      expect(res.headers.get("cache-control")).toBe("no-cache");
+      expect(res.headers.get("cache-control")).toBe(path === "/index.html" ? "public, max-age=86400" : "no-cache");
       const etag = res.headers.get("etag")!;
       expect(etag).toStartWith('W/"');
       await res.text();
@@ -270,8 +293,8 @@ describe("headers", () => {
     const res = await get("/index.html", { method: "HEAD" });
     expect(res.status).toBe(200);
     expect(res.headers.get("x-content-type-options")).toBe("nosniff");
-    expect(res.headers.get("content-security-policy")).toBe("default-src 'self'; frame-ancestors 'none'");
-    expect(res.headers.get("cache-control")).toBe("no-cache");
+    expect(res.headers.get("content-security-policy")).toBe(await expectedCsp());
+    expect(res.headers.get("cache-control")).toBe("public, max-age=86400");
     await res.text();
   });
 });

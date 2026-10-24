@@ -1,0 +1,258 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#1f4e79" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Index" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>Translate – Index Translator</title>
+    <link rel="stylesheet" href="/style.css" />
+    <script type="module" src="/app.ts"></script>
+  </head>
+  <body>
+    <a class="skip-link" href="#main">Skip to main content</a>
+
+    <header class="site-header">
+      <h1>
+        <img class="logo" src="/icons/icon.svg" alt="" width="32" height="32" />
+        Index Translator
+      </h1>
+      <p role="status" class="engine">
+        <a id="engine" href="/api/v1/health" title="Checking the translation engine…">
+          <span class="bar indeterminate" aria-hidden="true"><span class="fill"></span></span>
+          <span class="sr-only">Checking the translation engine…</span>
+        </a>
+      </p>
+    </header>
+
+    <main id="main" tabindex="-1">
+      <form id="form" novalidate>
+        <div class="workspace">
+          <section class="panel source" aria-labelledby="source-heading">
+            <h2 id="source-heading" class="sr-only">Source text</h2>
+            <div class="pane-head">
+              <div class="field language">
+                <label for="from">From</label>
+                <select id="from" name="from"></select>
+              </div>
+              <button type="button" id="open" aria-label="Open a file">Open</button>
+              <input type="file" id="open-file" aria-label="Text, Markdown, PDF, Word or image file to open" hidden />
+              <view-switch id="source-switch" class="view-switch" role="group" aria-label="Source view">
+                <button type="button" data-value="raw" aria-pressed="true" aria-disabled="true">Raw</button>
+                <button type="button" data-value="preview" aria-pressed="false" aria-disabled="true">Preview</button>
+              </view-switch>
+            </div>
+
+            <div id="source-field" class="field source-field">
+              <pdf-pages id="pdf-pages" class="pdf-pages" hidden>
+                <ol></ol>
+              </pdf-pages>
+              <textarea
+                id="text"
+                name="text"
+                required
+                aria-required="true"
+                aria-label="Text to translate"
+                aria-describedby="count text-error"
+                placeholder="Text to translate"
+                dir="auto"
+              ></textarea>
+              <div id="source-area" class="output-area" hidden>
+                <div id="source-view" class="output" dir="auto"></div>
+              </div>
+              <div id="source-image" class="output-area source-image" hidden>
+                <canvas id="source-canvas" role="img" aria-label="Image to translate" aria-describedby="count"></canvas>
+              </div>
+            </div>
+
+            <div class="panel-foot">
+              <speech-controls
+                id="speech-source"
+                class="speech"
+                role="group"
+                side="source"
+                subject="source text"
+              ></speech-controls>
+              <p id="count" class="hint"></p>
+              <div class="actions">
+                <button type="button" id="clear" aria-disabled="true">Clear</button>
+                <button type="button" id="stop" hidden>Stop</button>
+                <button type="submit" id="translate" class="primary">Translate</button>
+              </div>
+            </div>
+            <p id="file-note" class="hint" role="status" hidden></p>
+            <p id="source-status" class="sr-only" role="status"></p>
+            <p id="text-error" class="error" hidden></p>
+            <p id="advice" class="advice"></p>
+          </section>
+
+          <section class="panel result" aria-labelledby="result-heading">
+            <h2 id="result-heading" class="sr-only">Translation</h2>
+            <div class="pane-head">
+              <div class="field language">
+                <label for="to">To</label>
+                <select id="to" name="to"></select>
+              </div>
+              <view-switch id="output-switch" class="view-switch" role="group" aria-label="Translation view">
+                <button type="button" data-value="raw" aria-pressed="false" aria-disabled="true">Raw</button>
+                <button type="button" data-value="preview" aria-pressed="true" aria-disabled="true">Preview</button>
+              </view-switch>
+            </div>
+
+            <div id="output-area" class="output-area">
+              <div id="output" class="output" dir="auto"></div>
+              <p id="placeholder" class="placeholder">The translation appears here.</p>
+            </div>
+
+            <div class="panel-foot">
+              <speech-controls
+                id="speech-output"
+                class="speech"
+                role="group"
+                side="output"
+                subject="translation"
+              ></speech-controls>
+              <meta-line id="meta" class="hint" role="status"></meta-line>
+              <button type="button" id="copy" aria-label="Copy translation" aria-disabled="true">Copy</button>
+            </div>
+            <ul id="notes" class="notes" aria-live="polite"></ul>
+          </section>
+        </div>
+
+        <section class="settings" aria-labelledby="settings-heading">
+          <div class="settings-head">
+            <h2 id="settings-heading">Model and options</h2>
+            <view-switch id="model-switch" class="view-switch" role="group" aria-label="Model">
+              <button type="button" data-value="auto" aria-pressed="true">
+                <span class="long">Automatic</span>
+                <span class="short">Auto</span>
+              </button>
+              <button type="button" data-value="index-translate-9b" aria-pressed="false">
+                <span class="long">Index-Translate-9B</span>
+                <span class="short">Index-Translate</span>
+              </button>
+              <button type="button" data-value="index-nailong-9b" aria-pressed="false">
+                <span class="long">Index-NativeLong-9B</span>
+                <span class="short">Nailong</span>
+              </button>
+            </view-switch>
+          </div>
+
+          <details id="speech-settings" hidden>
+            <summary>Reading aloud</summary>
+            <voice-settings id="voice-settings" class="speech-settings">
+              <div class="field">
+                <label for="voice">Voice for reading aloud</label>
+                <select id="voice"></select>
+              </div>
+              <div class="field">
+                <label for="speed">Reading speed</label>
+                <select id="speed">
+                  <option value="0.5">0.5× (slowest)</option>
+                  <option value="0.75">0.75×</option>
+                  <option value="1" selected>1× (normal)</option>
+                  <option value="1.25">1.25×</option>
+                  <option value="1.5">1.5×</option>
+                  <option value="2">2× (fastest)</option>
+                </select>
+              </div>
+              <div class="field">
+                <span id="clone-label">Clone a voice</span>
+                <div class="clone-row" role="group" aria-labelledby="clone-label">
+                  <button type="button" id="voice-file-button">Upload audio…</button>
+                  <input
+                    type="file"
+                    id="voice-file"
+                    aria-label="Voice sample audio file"
+                    accept="audio/*,.m4a,.mp3,.wav,.aac,audio/mp4,audio/x-m4a"
+                    hidden
+                  />
+                  <button type="button" id="voice-record">Record</button>
+                </div>
+                <p id="clone-status" role="status"></p>
+              </div>
+            </voice-settings>
+          </details>
+
+          <details id="advanced">
+            <summary>Glossary and constraints</summary>
+            <fieldset id="options" class="options">
+              <p id="options-note" class="hint">
+                Available with Index-Translate-9B only. Index-NativeLong-9B takes none of these.
+              </p>
+              <div class="field">
+                <label for="glossary">Glossary</label>
+                <textarea
+                  id="glossary"
+                  name="glossary"
+                  rows="3"
+                  aria-describedby="glossary-hint glossary-error"
+                  placeholder="One entry per line: source term = target term"
+                ></textarea>
+                <p id="glossary-hint" class="sr-only">One entry per line: source term = target term.</p>
+                <p id="glossary-error" class="error" hidden></p>
+              </div>
+              <div class="field">
+                <label for="hard">Hard constraints</label>
+                <textarea
+                  id="hard"
+                  name="hard"
+                  rows="2"
+                  aria-describedby="hard-hint"
+                  placeholder="One per line, for example keeping placeholders or JSON unchanged. Chinese works best."
+                ></textarea>
+                <p id="hard-hint" class="sr-only">
+                  One per line, for example keeping placeholders or JSON unchanged. Chinese works best.
+                </p>
+              </div>
+              <div class="field">
+                <label for="soft">Soft constraints</label>
+                <textarea
+                  id="soft"
+                  name="soft"
+                  rows="2"
+                  aria-describedby="soft-hint"
+                  placeholder="One per line, for example tone or register. Chinese works best."
+                ></textarea>
+                <p id="soft-hint" class="sr-only">One per line, for example tone or register. Chinese works best.</p>
+              </div>
+              <div class="field">
+                <label for="genre">Genre</label>
+                <input type="text" id="genre" name="genre" maxlength="64" aria-describedby="genre-hint" />
+                <p id="genre-hint" class="hint">
+                  For example
+                  <span lang="zh">学术论文</span>
+                  or
+                  <span lang="zh">字幕</span>
+                  . Used only together with a glossary or constraints.
+                </p>
+              </div>
+            </fieldset>
+          </details>
+        </section>
+      </form>
+
+      <section class="history" aria-labelledby="history-heading">
+        <div class="settings-head">
+          <h2 id="history-heading">History</h2>
+          <div class="history-buttons">
+            <button type="button" id="history-pause" aria-label="Pause history">Pause</button>
+            <button type="button" id="history-clear" aria-label="Clear history" aria-disabled="true">Clear</button>
+          </div>
+        </div>
+        <p id="history-count" class="hint"></p>
+        <p id="history-empty" class="hint">
+          Finished translations appear here. They are kept in this browser only and never sent to the server.
+        </p>
+        <ul id="history-list" class="history-list" hidden></ul>
+      </section>
+    </main>
+  </body>
+</html>

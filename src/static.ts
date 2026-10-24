@@ -9,7 +9,8 @@ import { join, normalize, resolve, sep } from "node:path";
 import type { PublicWatcher } from "./public-watch";
 
 /** The page loads only same-origin scripts and styles, and nothing can frame it. */
-const HTML_CSP = "default-src 'self'; frame-ancestors 'none'";
+const HTML_CSP =
+  "default-src 'self'; frame-ancestors 'none'; script-src 'self' 'sha256-KLYCJ4ehAyettXIFpfan6KrveBKgMja//tQ9z9UOOp8='; style-src 'self' 'sha256-LMtvsEz6lkHV2tDltBgu1wHTpdzt38FliP0teVzqFb4='";
 
 interface Transpiled {
   mtimeMs: number;
@@ -34,9 +35,12 @@ function withSecurityHeaders(res: Response): Response {
 /**
  * Pages, scripts and styles change with the code and are revalidated on every load (a 304 is cheap).
  * Icons and the vendored libraries change only with a release or a pinned upgrade, so a day old is fine.
+ * So does the loading page, `index.html` at the top: it only fetches `app.html`, which is revalidated.
  */
 function cacheControl(relativePath: string): string {
-  return /^(icons|vendor)[\\/]/.test(relativePath) ? "public, max-age=86400" : "no-cache";
+  return relativePath === "index.html" || /^(icons|vendor)[\\/]/.test(relativePath)
+    ? "public, max-age=86400"
+    : "no-cache";
 }
 
 /**
