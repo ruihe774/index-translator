@@ -31,7 +31,6 @@ import {
 } from "./messages.ts";
 import { initOpenUi } from "./open-ui.ts";
 import { alignBlocks, mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
-import { registerServiceWorker } from "./pwa.ts";
 import { createRender, restoreFocusAfter } from "./render.ts";
 import { buildImageRequest, buildRequest, type FormValues, glossaryMessage, hasOptions } from "./request.ts";
 import { Run, streamTranslation } from "./run.ts";
@@ -769,7 +768,6 @@ refreshControls();
 history.show();
 void loadLanguages();
 void speech.loadVoices();
-registerServiceWorker();
 void engine.poll();
 document.addEventListener("visibilitychange", () => {
   void engine.poll();
