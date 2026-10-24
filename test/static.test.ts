@@ -66,7 +66,7 @@ describe("HTML whitespace", () => {
     const res = await get("/ws.html");
     expect(res.headers.get("content-type")).toStartWith("text/html");
     await expect(res.text()).resolves.toBe(
-      "<!doctype html><p> a <b>b</b><i>c</i></p><textarea>\n  x  </textarea><pre>  y\n  z</pre><script>let  a = 1;\n</script>",
+      "<!doctype html><p>a<b>b</b><i>c</i></p><textarea>\n  x  </textarea><pre>  y\n  z</pre><script>let  a = 1;\n</script>",
     );
   });
 });

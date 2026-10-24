@@ -78,7 +78,7 @@ function stripWhitespace(html: Response): Response {
         if (!chunk.lastInTextNode) {
           return;
         }
-        const text = pending.replaceAll(/\s+/g, " ");
+        const text = pending.replaceAll(/\s+/g, " ").trim();
         pending = "";
         if (text !== " ") {
           chunk.after(text, { html: true });
