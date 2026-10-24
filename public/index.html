@@ -22,7 +22,14 @@
     <path d="M128 120h64M128 146h64M128 172h64M128 198h36" />
   </g>
 </svg>
-<p role="status" id="status">&nbsp;Loading<noscript>&nbsp;failed:&nbsp;<strong>JavaScript is disabled</strong></noscript>…</p>
+<p role="status" id="status">
+  &nbsp;Loading
+  <noscript>
+    &nbsp;failed:&nbsp;
+    <strong>JavaScript is disabled</strong>
+  </noscript>
+  …
+</p>
 <!-- prettier-ignore -->
 <style>
 *{margin:0;padding:0}
@@ -33,9 +40,9 @@
 <!-- prettier-ignore -->
 <script>
 with(document){
-fetch("/app.html").then(r=>{if(r.ok)return r.text();throw new Error(r.statusText)}).then(t=>{open();write(t);close()})
+fetch("/app.html").then(r=>{if(r.ok)return r.text();throw new Error(r.statusText)}).then(t=>{open();write(t);close();body.style.opacity="0"})
 .catch(e=>{var s=getElementById("status");s.textContent=e.message;s.insertAdjacentHTML("afterbegin", "<strong>Network error: </strong>")})
 }
 </script>
-<!-- sha256-KLYCJ4ehAyettXIFpfan6KrveBKgMja//tQ9z9UOOp8= -->
+<!-- sha256-bJBqbWskzYYi820jgQZ3d3ZIGbLu+i+hgRa6sPLGMY4= -->
 <!-- This file is not subject to A11Y acceptance -->
