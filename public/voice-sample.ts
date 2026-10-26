@@ -8,6 +8,38 @@ import { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS } from "./mic-recorde
 
 export { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS, MicRecorder } from "./mic-recorder.ts";
 
+/**
+ * What the voice file picker offers, as an `accept` list: explicit extensions and types, never
+ * `audio/*`. WebKit maps that wildcard to a movie type, so on iOS the picker offers the video
+ * recorder and leaves audio files out (https://bugs.webkit.org/show_bug.cgi?id=242110). WebM is
+ * left out too: both `.webm` and `audio/webm` bring the video recorder back. Whether the browser
+ * can decode a picked file is still settled by `audioToWav`.
+ */
+export const ACCEPT_AUDIO = [
+  ".wav",
+  ".mp3",
+  ".m4a",
+  ".aac",
+  ".ogg",
+  ".oga",
+  ".opus",
+  ".flac",
+  ".aiff",
+  ".aif",
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/mpeg",
+  "audio/mp4",
+  "audio/x-m4a",
+  "audio/aac",
+  "audio/ogg",
+  "audio/opus",
+  "audio/flac",
+  "audio/aiff",
+  "audio/x-aiff",
+].join(",");
+
 /** The only rate the server accepts (`sample_rate` of `GET /voices`): it is what the voice separator takes. */
 const RATE = 44_100;
 

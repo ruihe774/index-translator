@@ -737,6 +737,12 @@ test("with no voice Read aloud says so, and a recorded voice is not needed to se
   await app.page.getByText("Reading aloud", { exact: true }).click();
   await expect(app.page.getByLabel("Voice for reading aloud").locator("option")).toHaveCount(0);
   await expect(app.page.locator("#voice-record")).toBeVisible();
+  // Never `audio/*`: WebKit maps it to `video/*`, so iOS offers the video recorder and filters
+  // out audio (https://bugs.webkit.org/show_bug.cgi?id=242110). WebM brings the recorder back.
+  const accept = await app.page.locator("#voice-file").getAttribute("accept");
+  expect(accept).toContain(".m4a");
+  expect(accept).not.toContain("audio/*");
+  expect(accept).not.toContain("webm");
   expect((await mock.state()).speech.requests).toStrictEqual([]);
 });
 

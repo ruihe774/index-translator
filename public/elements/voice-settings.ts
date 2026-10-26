@@ -9,7 +9,7 @@
 // and speed are kept in local storage here and put back when the element starts and the list arrives.
 
 import { KEYS, store, stored } from "../storage.ts";
-import { MicRecorder } from "../voice-sample.ts";
+import { ACCEPT_AUDIO, MicRecorder } from "../voice-sample.ts";
 
 export interface VoiceOption {
   id: string;
@@ -47,6 +47,7 @@ export class VoiceSettings extends HTMLElement {
     this.#voice = find("#voice");
     this.#speed = find("#speed");
     this.#file = find("#voice-file");
+    this.#file.accept = ACCEPT_AUDIO;
     this.#record = find("#voice-record");
     this.#status = find("#clone-status");
 
