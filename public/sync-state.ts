@@ -21,7 +21,8 @@ import {
   paragraphMismatch,
   unitOf,
 } from "./paragraphs.ts";
-import { MAX_SENTENCES, postAlign, type SentenceAligner } from "./sentence-align.ts";
+import { MAX_TEXTS } from "./segment.ts";
+import { postAlign, type SentenceAligner } from "./sentence-align.ts";
 import { type Side, state } from "./state.ts";
 import { clearLinked, hoveredLine, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
 
@@ -125,7 +126,7 @@ export function initSyncState(d: SyncStateDeps): SyncState {
     if (
       !aligner.available ||
       !matchable(sourceBlocks) ||
-      [sourceBlocks, outputBlocks].some((blocks) => blocks.length === 0 || blocks.length > MAX_SENTENCES)
+      [sourceBlocks, outputBlocks].some((blocks) => blocks.length === 0 || blocks.length > MAX_TEXTS)
     ) {
       return;
     }

@@ -123,9 +123,9 @@ export class SpeechPlayer {
       // home screen, a call) and does not resume it: the audio is silent but the player would
       // still say "playing". Show it as paused; Resume then restarts the context from a tap.
       this.ctx.addEventListener("statechange", () => this.syncWithContext());
-      (globalThis as { document?: EventTarget }).document?.addEventListener("visibilitychange", () =>
-        this.syncWithContext(),
-      );
+      if (typeof document !== "undefined") {
+        document.addEventListener("visibilitychange", () => this.syncWithContext());
+      }
     }
     void this.ctx.resume();
   }

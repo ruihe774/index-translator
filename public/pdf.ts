@@ -8,12 +8,15 @@
 
 import type { PageText } from "./open-file.ts";
 import type { WorkerReply, WorkerRequest } from "./pdf-worker.ts";
+import { workerClient } from "./worker-client.ts";
 
 const PDFJS = "/vendor/pdfjs";
 const INSPECTOR = "/vendor/pdf-inspector";
 
 /** A failure with a message for the user. */
-export class PdfError extends Error {}
+export class PdfError extends Error {
+  override name = "PdfError";
+}
 
 const NOT_LOADED = "PDF support could not be loaded";
 
@@ -75,30 +78,20 @@ export async function pdfInstalled(): Promise<boolean> {
 // ---- the extraction worker -------------------------------------------------------------------
 
 type Reply = { ok: true } | PageText;
-type Ask = { open: ArrayBuffer } | { page: number };
 
 interface Extractor {
-  ask(request: Ask, transfer?: Transferable[]): Promise<Reply>;
+  ask(request: { open: ArrayBuffer }, transfer: Transferable[]): Promise<{ ok: true }>;
+  ask(request: { page: number }): Promise<PageText>;
   end(): void;
 }
 
 function startExtractor(): Extractor {
   const worker = new Worker("/pdf-worker.ts", { type: "module" });
-  const waiting = new Map<number, { resolve: (reply: Reply) => void; reject: (e: Error) => void }>();
-  let next = 0;
-  let dead: Error | undefined;
+  const client = workerClient<Reply>();
 
-  const fail = (e: Error) => {
-    dead = e;
-    for (const w of waiting.values()) {
-      w.reject(e);
-    }
-    waiting.clear();
-  };
   worker.addEventListener("message", (event: MessageEvent<WorkerReply>) => {
     const { id, ...reply } = event.data;
-    const w = waiting.get(id);
-    waiting.delete(id);
+    const w = client.take(id);
     if (!w) {
       return;
     }
@@ -109,22 +102,17 @@ function startExtractor(): Extractor {
     }
   });
   // The worker's own script did not load or threw outside a request.
-  worker.addEventListener("error", () => fail(new PdfError(`${NOT_LOADED}.`)));
+  worker.addEventListener("error", () => client.fail(new PdfError(`${NOT_LOADED}.`)));
 
+  // The overloads say which reply answers which request; the worker's protocol keeps to them.
+  function ask(request: { open: ArrayBuffer } | { page: number }, transfer: Transferable[] = []) {
+    return client.request((id) => worker.postMessage({ id, ...request } satisfies WorkerRequest, transfer));
+  }
   return {
-    ask(request, transfer = []) {
-      if (dead) {
-        return Promise.reject(dead);
-      }
-      const id = next++;
-      return new Promise<Reply>((resolve, reject) => {
-        waiting.set(id, { resolve, reject });
-        worker.postMessage({ id, ...request } satisfies WorkerRequest, transfer);
-      });
-    },
+    ask: ask as Extractor["ask"],
     end() {
       worker.terminate();
-      fail(new PdfError("The PDF was closed."));
+      client.fail(new PdfError("The PDF was closed."));
     },
   };
 }
@@ -194,7 +182,7 @@ export async function openPdf(bytes: Uint8Array<ArrayBuffer>): Promise<PdfDocume
       page.cleanup();
     },
     async extract(n) {
-      return (await extractor.ask({ page: n })) as PageText;
+      return extractor.ask({ page: n });
     },
     close() {
       extractor.end();

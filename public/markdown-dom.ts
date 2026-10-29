@@ -79,14 +79,14 @@ function inlineNodes(nodes: Inline[]): Child[] {
   });
 }
 
-const ALIGN_CLASS = (a: Align) => (a ? `align-${a}` : "");
+const alignClass = (a: Align) => (a ? `align-${a}` : "");
+
+let scrollWatch: ResizeObserver | undefined;
 
 /**
  * A code block or table that is wider than its room scrolls sideways; only then is it focusable
  * (a named group; `scroll-focus.ts` does the same for the panes), so keyboard users can scroll it and the others add no tab stop.
  */
-let scrollWatch: ResizeObserver | undefined;
-
 function keyboardScrollable(box: HTMLElement, label: string) {
   scrollWatch ??= new ResizeObserver((entries) => {
     for (const { target } of entries) {
@@ -158,7 +158,7 @@ function blockNode(b: Block, tight = false): Child[] {
     }
     case "table": {
       const cell = (tag: "th" | "td", content: Inline[], k: number) =>
-        el(tag, inlineNodes(content), ALIGN_CLASS(b.align[k] ?? null));
+        el(tag, inlineNodes(content), alignClass(b.align[k] ?? null));
       const head = el("thead", [
         el(
           "tr",

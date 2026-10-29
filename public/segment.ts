@@ -10,7 +10,10 @@
 import type { Health, Segmentation, SegmentedText, SegmentRequest } from "../src/api.ts";
 import { API, failureOf } from "./api.ts";
 
-/** Most texts in one request: the server's limit. */
+/**
+ * Most texts in one request: the server's limit (`maxItems` of `SegmentRequest` and of each side of
+ * `AlignRequest` in docs/openapi.yaml, both 256; `sentence-align.ts` and `sync-state.ts` use it too).
+ */
 export const MAX_TEXTS = 256;
 /** The answers kept, as the total length of their texts. */
 const MAX_CACHED_CHARS = 400_000;

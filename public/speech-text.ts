@@ -168,18 +168,17 @@ const P_CLAUSE = 0.01;
 const P_WORD = 1e-6;
 
 /**
- * What a sentence model says about a text: offset p (UTF-16 units) means a sentence may end between
- * `text.slice(0, p)` and `text.slice(p)`, with this probability. Positions not listed are unlikely.
+ * What `speechSegments` looks the model's answer up by: the text as the page shows it, not as it is spoken.
+ * The answer says where a sentence may end: offset p (UTF-16 units) is between `text.slice(0, p)` and
+ * `text.slice(p)`, with its probability; positions not listed are unlikely.
  */
-export type Boundaries = SegmentedText;
-/** What `speechSegments` looks the model's answer up by: the text as the page shows it, not as it is spoken. */
-export type BoundaryLookup = (text: string) => Boundaries | undefined;
+export type BoundaryLookup = (text: string) => SegmentedText | undefined;
 
 /**
  * The model's probability of a cut after each unit (`p[k]`: between unit k and k + 1); 0 where it reports none.
  * Where a sentence may end is the same wherever the answer is used, so this is also how marking a sentence reads it.
  */
-export function modelProbabilities(text: string, lang: string, boundaries: Boundaries): Float64Array {
+export function modelProbabilities(text: string, lang: string, boundaries: SegmentedText): Float64Array {
   const p = new Float64Array(text.length);
   boundaries.offsets.forEach((offset, i) => {
     // The ends of the text are no cuts.
@@ -206,7 +205,7 @@ export function modelProbabilities(text: string, lang: string, boundaries: Bound
  * model's (its probability where it reports one) instead of `Intl.Segmenter`'s, and clause punctuation
  * stays at least as likely as `P_CLAUSE`.
  */
-function cutLogProbabilities(text: string, lang: string, boundaries?: Boundaries): Float64Array {
+function cutLogProbabilities(text: string, lang: string, boundaries?: SegmentedText): Float64Array {
   const p = new Float64Array(text.length);
   for (let k = 0; k < text.length - 1; k++) {
     if (/[\uD800-\uDBFF]/.test(text[k]!) && /[\uDC00-\uDFFF]/.test(text[k + 1]!)) {
@@ -246,7 +245,7 @@ function bestCuts(
   lang: string,
   soft: number,
   hard: number,
-  boundaries?: Boundaries,
+  boundaries?: SegmentedText,
 ): number[] | undefined {
   const n = text.length;
   const count = Math.max(1, Math.round(n / soft));
@@ -315,7 +314,7 @@ function clauses(text: string, hard: number): string[] {
   return out;
 }
 
-function pieces(text: string, lang: string, boundaries?: Boundaries): string[] {
+function pieces(text: string, lang: string, boundaries?: SegmentedText): string[] {
   const { soft, hard } = limits(lang);
   const cuts = bestCuts(text, lang, soft, hard, boundaries);
   let parts: string[];
@@ -421,7 +420,7 @@ function cleanedDerived(d: Derived, lang: string): Derived | undefined {
 }
 
 /** The answer of the model for `d.shown`, with its offsets turned into positions of `d.text`. */
-function carried(answer: Boundaries, d: Derived): Boundaries {
+function carried(answer: SegmentedText, d: Derived): SegmentedText {
   const offsets: number[] = [];
   const probabilities: number[] = [];
   answer.offsets.forEach((p, i) => {

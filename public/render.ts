@@ -48,14 +48,24 @@ export function restoreFocusAfter(within: Element, to: HTMLElement, change: () =
   }
 }
 
+/** Whether Clear has anything to act on. */
+export function clearEnabled(): boolean {
+  return state.source.length > 0 || state.image || state.translation.length > 0;
+}
+
+/** Whether Copy has a finished translation to copy. */
+export function copyEnabled(): boolean {
+  return state.translation.length > 0 && state.running === null;
+}
+
 export function createRender(t: RenderTargets): () => void {
   return function render() {
     const running = state.running !== null;
     const hasText = state.source.length > 0;
     const hasOutput = state.translation.length > 0;
     setAttr(t.translate, "aria-disabled", String(running || !state.languagesReady));
-    setAttr(t.clear, "aria-disabled", String(!hasText && !state.image && !hasOutput));
-    setAttr(t.copy, "aria-disabled", String(!hasOutput || running));
+    setAttr(t.clear, "aria-disabled", String(!clearEnabled()));
+    setAttr(t.copy, "aria-disabled", String(!copyEnabled()));
     t.sourceSwitch.disabled = !hasText;
     t.outputSwitch.disabled = !hasOutput;
     setHidden(t.stop, !running);

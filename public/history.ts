@@ -27,24 +27,23 @@ export interface HistoryEntry {
   blocks?: "same" | BlockGroup[];
 }
 
+const isRecord = (v: unknown): v is Record<string, unknown> => typeof v === "object" && v !== null;
+
 const isNumbers = (v: unknown) => Array.isArray(v) && v.every((n) => Number.isInteger(n));
 
 function isBlocks(v: unknown): v is NonNullable<HistoryEntry["blocks"]> {
   return (
     v === "same" ||
     (Array.isArray(v) &&
-      v.every((g: unknown) => {
-        const group = g as Record<string, unknown> | null;
-        return typeof group === "object" && group !== null && isNumbers(group.source) && isNumbers(group.output);
-      }))
+      v.every((group: unknown) => isRecord(group) && isNumbers(group.source) && isNumbers(group.output)))
   );
 }
 
 function isEntry(v: unknown): v is HistoryEntry {
-  if (typeof v !== "object" || v === null) {
+  if (!isRecord(v)) {
     return false;
   }
-  const e = v as Record<string, unknown>;
+  const e = v;
   return (
     typeof e.id === "string" &&
     typeof e.at === "number" &&
@@ -116,6 +115,7 @@ export function saveHistory(list: HistoryEntry[]): HistoryEntry[] {
   return kept;
 }
 
+// Not `crypto.randomUUID()`: it exists only in secure contexts, and the page is also served over plain HTTP on a LAN.
 let counter = 0;
 export function newId(): string {
   return `${Date.now().toString(36)}-${(counter++).toString(36)}`;

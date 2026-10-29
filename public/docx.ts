@@ -8,6 +8,7 @@
 
 import type { DocxReply, DocxRequest } from "./docx-worker.ts";
 import { docxFailure } from "./open-file.ts";
+import { workerClient } from "./worker-client.ts";
 
 const UNDOC = "/vendor/undoc";
 
@@ -30,21 +31,21 @@ export async function docxInstalled(): Promise<boolean> {
 /** The text of a .docx file as Markdown. The buffer is given up to the worker (transferred). */
 export function readDocx(bytes: ArrayBuffer): Promise<string> {
   const worker = new Worker("/docx-worker.ts", { type: "module" });
-  return new Promise<string>((resolve, reject) => {
-    worker.addEventListener("message", (event: MessageEvent<DocxReply>) => {
-      const reply = event.data;
-      if ("markdown" in reply) {
-        resolve(reply.markdown);
-      } else if (reply.kind === undefined) {
-        console.error(reply.error);
-        reject(new DocxError(NOT_LOADED));
-      } else {
-        console.error(reply.error);
-        reject(new DocxError(docxFailure(reply.kind)));
-      }
-    });
-    // The worker's own script did not load or threw outside the request.
-    worker.addEventListener("error", () => reject(new DocxError(NOT_LOADED)));
-    worker.postMessage({ bytes } satisfies DocxRequest, [bytes]);
-  }).finally(() => worker.terminate());
+  const client = workerClient<string>();
+  // One request per worker, so the reply carries no id: it answers the first.
+  worker.addEventListener("message", (event: MessageEvent<DocxReply>) => {
+    const reply = event.data;
+    const pending = client.take(0);
+    if ("markdown" in reply) {
+      pending?.resolve(reply.markdown);
+    } else {
+      console.error(reply.error);
+      pending?.reject(new DocxError(reply.kind === undefined ? NOT_LOADED : docxFailure(reply.kind)));
+    }
+  });
+  // The worker's own script did not load or threw outside the request.
+  worker.addEventListener("error", () => client.fail(new DocxError(NOT_LOADED)));
+  return client
+    .request(() => worker.postMessage({ bytes } satisfies DocxRequest, [bytes]))
+    .finally(() => worker.terminate());
 }

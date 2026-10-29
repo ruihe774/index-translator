@@ -6,6 +6,7 @@ import { failureMessage } from "./api.ts";
 import { $, setLang, setText, showFieldError } from "./dom.ts";
 // eslint-disable-next-line import/no-unassigned-import -- custom element definitions
 import "./elements/index.ts";
+import { writeClipboard } from "./clipboard.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { PdfPages } from "./elements/pdf-pages.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
@@ -31,7 +32,7 @@ import {
 } from "./messages.ts";
 import { initOpenUi } from "./open-ui.ts";
 import { alignBlocks, mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
-import { createRender, restoreFocusAfter } from "./render.ts";
+import { clearEnabled, copyEnabled, createRender, restoreFocusAfter } from "./render.ts";
 import { buildImageRequest, buildRequest, type FormValues, glossaryMessage, hasOptions } from "./request.ts";
 import { Run, streamTranslation } from "./run.ts";
 import { focusableWhenScrolling } from "./scroll-focus.ts";
@@ -187,6 +188,11 @@ const views = {
 
 let output: OutputView | null = null;
 
+/** Sets one side's view state in one place. */
+function setView(side: keyof typeof views, available: boolean, view: View) {
+  views[side] = { available, view };
+}
+
 function showSwitch(el: ViewSwitch, side: keyof typeof views) {
   el.value = views[side].view;
 }
@@ -215,6 +221,12 @@ function showSource() {
   refreshControls();
   sync.refresh();
   speech.showSpeaking();
+}
+
+/** Sets the source's view state and shows it: Markdown sources start rendered, others raw. */
+function showSourceAs(available: boolean, view: View) {
+  setView("source", available, view);
+  showSource();
 }
 
 /** Rebuilds the output in the chosen view; text still streaming is appended to the new view. */
@@ -351,7 +363,7 @@ function clearResult(markdown: boolean) {
   sync.reset();
   boundaries.abort();
   aligner.abort();
-  views.output = { available: markdown, view: "preview" };
+  setView("output", markdown, "preview");
   setState({ translation: "" });
   showOutput();
   metaEl.show("");
@@ -455,8 +467,7 @@ function startTranslation(job: Job): Run {
   setState({ running: run });
   following = true;
   clearResult(job.markdown);
-  views.source = { available: job.markdown, view: job.markdown ? "preview" : "raw" };
-  showSource();
+  showSourceAs(job.markdown, job.markdown ? "preview" : "raw");
   outputEl.lang = toSelect.value;
   stopBtn.focus();
   metaEl.show(`Translating with ${modelLabel(job.model)}…`);
@@ -567,8 +578,7 @@ function loadSource(text: string, preview = false) {
   textInput.scrollTop = 0;
   sourceArea.scrollTop = 0;
   showFieldError(textError, textInput, null);
-  views.source = { available: preview && looksLikeMarkdown(text), view: preview && text ? "preview" : "raw" };
-  showSource();
+  showSourceAs(preview && looksLikeMarkdown(text), preview && text ? "preview" : "raw");
   clearResult(false);
   placeholderEl.hidden = false;
   sync.refresh();
@@ -585,7 +595,7 @@ function loadImage(file: File, picture: ImageBitmap) {
 
 /** Empties the source and the result and returns the source to the plain textarea. */
 function clearAll() {
-  if (state.running || clearBtn.getAttribute("aria-disabled") === "true") {
+  if (state.running || !clearEnabled()) {
     return;
   }
   loadSource("");
@@ -649,8 +659,7 @@ function restoreEntry(entry: HistoryEntry) {
   }
   const markdown = looksLikeMarkdown(entry.source);
   clearResult(markdown);
-  views.source = { available: markdown, view: markdown ? "preview" : "raw" };
-  showSource();
+  showSourceAs(markdown, markdown ? "preview" : "raw");
   outputEl.lang = toSelect.value;
   setState({ translation: entry.translation });
   showOutput();
@@ -732,31 +741,15 @@ modelSwitch.addEventListener("change", () => {
 });
 
 async function copyTranslation(): Promise<void> {
-  if (copyBtn.getAttribute("aria-disabled") === "true") {
+  if (!copyEnabled()) {
     return;
   }
   // A rendered Markdown translation goes out as rich text too; the plain text stays the source Markdown.
   const html = outputEl.classList.contains("markdown") ? clipboardHtml(outputEl) : null;
-  try {
-    if (html !== null && typeof ClipboardItem !== "undefined") {
-      try {
-        await navigator.clipboard.write([
-          new ClipboardItem({
-            "text/plain": new Blob([state.translation], { type: "text/plain" }),
-            "text/html": new Blob([html], { type: "text/html" }),
-          }),
-        ]);
-        metaEl.flash("Translation copied to the clipboard.");
-        return;
-      } catch {
-        // No HTML for this browser (or the write was refused): plain text alone is what Copy promised.
-      }
-    }
-    await navigator.clipboard.writeText(state.translation);
-    metaEl.flash("Translation copied to the clipboard.");
-  } catch {
-    metaEl.flash("Copying failed. Select the translation and copy it by hand.");
-  }
+  const copied = await writeClipboard(state.translation, html);
+  metaEl.flash(
+    copied ? "Translation copied to the clipboard." : "Copying failed. Select the translation and copy it by hand.",
+  );
 }
 copyBtn.addEventListener("click", () => void copyTranslation());
 
