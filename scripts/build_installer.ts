@@ -16,7 +16,8 @@
 import { cp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
-import { libraryPath as audioLibrary, soxrLibraryPath } from "../src/audiocpp-ffi";
+import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
+import { soxrLibraryPath } from "../src/ffi-util";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { output, run } from "./build_tools";
 import { downloadUnlessMatches } from "./fetch_tools";

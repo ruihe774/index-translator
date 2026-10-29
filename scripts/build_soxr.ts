@@ -16,7 +16,8 @@
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { soxrLibraryPath, soxrVersion } from "../src/audiocpp-ffi";
+import { soxrVersion } from "../src/audiocpp-ffi";
+import { soxrLibraryPath } from "../src/ffi-util";
 import { BUILD_TOOLS, checkout, COMPILERS, msvc, requireTools, run, TOOLS_HINT, windows } from "./build_tools";
 
 const VERSION = "0.1.3";

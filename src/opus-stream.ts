@@ -9,9 +9,9 @@
 // The engine returns the whole utterance at once, so what is streamed is the encoded file: pages of
 // about a second, encoded as the client reads.
 
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { lazyOptional } from "./lazy-optional";
 import { concat, OggOpusMuxer, type OpusPacket } from "./ogg-opus";
 import type { Resample } from "./resample";
 import type { Pcm } from "./wav";
@@ -58,33 +58,6 @@ function start(module: WebAssembly.Module): Minicelt {
     throw new Error(`minicelt_set_bandwidth failed with ${bandwidth}`);
   }
   return encoder;
-}
-
-/**
- * A codec loaded on first use from `file()`: undefined while the file is not there, or when loading
- * it fails (logged as `failure` and the codec is given up for good). The file's absence is not
- * remembered, so installing it needs no restart.
- */
-export function lazyOptional<T>(
-  file: () => string,
-  load: (file: string) => Promise<T>,
-  failure: string,
-): () => Promise<T | undefined> {
-  let loading: Promise<T | undefined> | undefined;
-  return async () => {
-    const path = file();
-    if (!loading && !existsSync(path)) {
-      return;
-    }
-    loading ??= (async (): Promise<T | undefined> => {
-      try {
-        return await load(path);
-      } catch (e) {
-        console.error(`[speech] ${failure}: ${String(e)}`);
-      }
-    })();
-    return loading;
-  };
 }
 
 /** Loads the encoder on first use; undefined while it is not installed or does not run here. */

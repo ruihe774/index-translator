@@ -9,9 +9,8 @@
 
 import { CString, dlopen, type Pointer, ptr, toArrayBuffer } from "bun:ffi";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 
-import { cstr, libraryFile, once, pointerOf, slot } from "./ffi-util";
+import { cstr, libraryFile, once, pointerOf, slot, soxrDir, soxrLibraryPath } from "./ffi-util";
 import type { Pcm } from "./wav";
 import { isAborted } from "./worker-rpc";
 
@@ -19,12 +18,6 @@ import { isAborted } from "./worker-rpc";
 const ABI_MAJOR = 0;
 
 export const libraryPath = (dir: string) => libraryFile(dir, "audiocpp");
-
-/** Where scripts/build_soxr.ts puts libsoxr, beside the engine directory `audioDir`. */
-export const soxrDir = (audioDir: string) => join(audioDir, "..", "soxr");
-
-/** The file audio.cpp asks for: the library's SONAME on Linux, `soxr.dll` on Windows. */
-export const soxrLibraryPath = (dir: string) => libraryFile(dir, "soxr", 0);
 
 /**
  * audio.cpp resamples with libsoxr when it can open one by name, and otherwise with resamplers of
