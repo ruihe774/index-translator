@@ -142,6 +142,16 @@ export async function frames(page: Page, n = 2): Promise<void> {
   }, n);
 }
 
+/**
+ * Waits `ms` of real time, for what nothing shows: something that must not happen (a request not made, a mark not
+ * painted), audio time or real-time recording. The one place `waitForTimeout` is called, so every fixed wait is
+ * found here; a call site says in a comment what it waits for. Anything that can be observed uses `expect.poll`,
+ * a web-first assertion, `frames` or `transitionsDone` instead (README.md).
+ */
+export async function quiet(page: Page, ms: number): Promise<void> {
+  await page.waitForTimeout(ms);
+}
+
 export class AppPage {
   readonly from: Locator;
   readonly to: Locator;

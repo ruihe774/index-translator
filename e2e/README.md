@@ -9,7 +9,8 @@ Waiting: no `waitForTimeout` where something can be observed. Use `expect.poll` 
 assertion, the control port (`mock.state()`), `transitionsDone(locator)` for a CSS transition,
 `frames(page)` for a handler that runs on the next frame, or `page.clock` to move the page's timers
 by hand. A fixed wait stays only for what nothing shows (an absent request, real audio time or
-real-time recording), with a comment saying why.
+real-time recording), through `quiet(page, ms)` in `fixtures.ts`, the one audited call of `waitForTimeout`, with a
+comment saying why.
 
 - `translate.spec.ts`: end to end, real server and mock engine; `fixtures.ts` scripts the engine
   through a control port (`/mock`).
