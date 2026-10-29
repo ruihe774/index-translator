@@ -3,7 +3,7 @@
 
 import type { TokenizeResponse, TranslateEvents, TranslateResponse } from "./api";
 import { type Config, CONTEXT_MARGIN } from "./config";
-import { ApiError, cancelled, json } from "./http";
+import { ApiError, cancelled, json, unavailable } from "./http";
 import { type Engine, EngineError } from "./llama";
 import { promptFor, type TranslateRequest } from "./parse";
 import type { Ticket } from "./queue";
@@ -174,17 +174,13 @@ export function createTranslator(cfg: Config, engine: Engine, line: Line) {
    * which model did the counting.
    */
   async function tokenize(input: TranslateRequest): Promise<TokenizeResponse> {
-    const unavailable = () =>
-      new ApiError(
-        503,
-        "engine_unavailable",
-        "the engine is loading or switching models; retry in a moment",
-        undefined,
-        { "retry-after": "2" },
-      );
+    const notReady = () =>
+      unavailable("engine_unavailable", "the engine is loading or switching models; retry in a moment", {
+        "retry-after": "2",
+      });
     const counter = engine.loaded;
     if (engine.state !== "ready" || !counter) {
-      throw unavailable();
+      throw notReady();
     }
     let promptTokens: number;
     try {
@@ -192,7 +188,7 @@ export function createTranslator(cfg: Config, engine: Engine, line: Line) {
     } catch (e) {
       // The model went away between the check above and the count (a swap freed it).
       if (e instanceof EngineError) {
-        throw unavailable();
+        throw notReady();
       }
       throw e;
     }

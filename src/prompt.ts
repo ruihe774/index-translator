@@ -87,6 +87,22 @@ export interface PromptInput {
   genre?: string;
 }
 
+/** Whether a source language was named: not omitted, blank or "auto". */
+export function hasSourceLang(lang: string | undefined): lang is string {
+  const name = lang?.trim().toLowerCase();
+  return !!name && name !== "auto";
+}
+
+/** The source language's prompt name; empty when it is omitted or "auto". */
+function sourceName(lang: string | undefined): string {
+  return hasSourceLang(lang) ? languageName(lang) : "";
+}
+
+/** The glossary as `source→target` terms. */
+function glossaryTerms(glossary: Record<string, string> | undefined): string[] {
+  return Object.entries(glossary ?? {}).map(([k, v]) => `${k.trim()}→${v.trim()}`);
+}
+
 const HARD = "【硬性要求】";
 const SOFT = "【注意】";
 
@@ -124,8 +140,7 @@ function isJsonObject(text: string): boolean {
  */
 export function buildImagePrompt(input: Partial<Pick<PromptInput, "text">> & Omit<PromptInput, "text">): string {
   const tgt = languageName(input.targetLang);
-  const hasSource = !!input.sourceLang && input.sourceLang.trim().toLowerCase() !== "auto";
-  const src = hasSource ? languageName(input.sourceLang!) : "";
+  const src = sourceName(input.sourceLang);
   const base = `请将图片中的${src}文本翻译为${tgt}，直接输出翻译结果，不要进行任何解释。`;
 
   const extras: string[] = [];
@@ -137,7 +152,7 @@ export function buildImagePrompt(input: Partial<Pick<PromptInput, "text">> & Omi
     ...constraintLines(input.hardConstraints, HARD, [HARD]),
     ...constraintLines(input.softConstraints, "【软性要求】", [SOFT, "【软性要求】"]),
   );
-  const terms = Object.entries(input.glossary ?? {}).map(([k, v]) => `${k.trim()}→${v.trim()}`);
+  const terms = glossaryTerms(input.glossary);
   if (terms.length) {
     extras.push(`【专名/术语对照】${terms.join("、")}`);
   }
@@ -150,11 +165,10 @@ export function buildImagePrompt(input: Partial<Pick<PromptInput, "text">> & Omi
 export function buildPrompt(input: PromptInput): string {
   const text = input.text.trim();
   const tgt = languageName(input.targetLang);
-  const hasSource = !!input.sourceLang && input.sourceLang.trim().toLowerCase() !== "auto";
-  const src = hasSource ? languageName(input.sourceLang!) : "";
+  const src = sourceName(input.sourceLang);
 
   const constraints = constraintLines(input.hardConstraints, HARD, [HARD]);
-  const terms = Object.entries(input.glossary ?? {}).map(([k, v]) => `${k.trim()}→${v.trim()}`);
+  const terms = glossaryTerms(input.glossary);
   if (terms.length) {
     constraints.push(`${HARD}专名/术语对照: ${terms.join("、")}`);
   }

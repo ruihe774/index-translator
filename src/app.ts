@@ -22,9 +22,9 @@ import { ApiError, cancelled, errorResponse, invalid, json, methodNotAllowed } f
 import { prepareImage } from "./image";
 import { createJobs } from "./jobs";
 import { Engine, type Launcher, launchNative } from "./llama";
-import { findModel } from "./models";
+import { defaultModelSpec } from "./models";
 import {
-  MAX_BODY_BYTES,
+  MAX_REQUEST_BYTES,
   mediaType,
   parseAlignRequest,
   parseBody,
@@ -155,7 +155,7 @@ export async function startApp(
     speech: makeLine("speech requests", cfg.maxQueue),
     segment: makeLine("segmentations and alignments", cfg.maxQueue),
   };
-  const defaultModel = findModel(cfg.defaultModel)!;
+  const defaultModel = defaultModelSpec(cfg);
   const translator = createTranslator(cfg, engine, lines.translations);
   const jobs = createJobs();
   const speechResponse = createSpeechResponder(cfg);
@@ -367,8 +367,8 @@ export async function startApp(
   const server = Bun.serve({
     hostname: cfg.host,
     port: cfg.port,
-    // Hard backstop; parseBody rejects anything over MAX_BODY_BYTES with a proper error body first.
-    maxRequestBodySize: MAX_BODY_BYTES * 4,
+    // Hard backstop; each route rejects what is over its own limit with a proper error body first.
+    maxRequestBodySize: MAX_REQUEST_BYTES,
     async fetch(req, server) {
       const url = new URL(req.url);
       const path = url.pathname;

@@ -50,3 +50,12 @@ export const DEFAULT_MODEL_ID: ModelId = "index-translate-9b";
 export function findModel(id: string): ModelSpec | undefined {
   return MODELS.find((m) => m.id === id);
 }
+
+/** The spec of the configured default model; `loadConfig` has refused an unknown id, so it exists. */
+export function defaultModelSpec(cfg: { defaultModel: string }): ModelSpec {
+  const model = findModel(cfg.defaultModel);
+  if (!model) {
+    throw new Error(`unknown default model "${cfg.defaultModel}"`);
+  }
+  return model;
+}

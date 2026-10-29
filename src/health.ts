@@ -8,7 +8,7 @@ import type { Config } from "./config";
 import { json } from "./http";
 import { IMAGE_FORMATS, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS } from "./image";
 import type { Engine } from "./llama";
-import { findModel, MODELS } from "./models";
+import { defaultModelSpec, MODELS } from "./models";
 import { launchMode } from "./preflight";
 import type { SlotQueue } from "./queue";
 import { MAX_ALIGN_CHARS, MAX_SEGMENT_CHARS, missingSegmentModels, type Segmenter } from "./segment";
@@ -30,7 +30,7 @@ export interface HealthDeps {
 
 export function createStatus(d: HealthDeps) {
   const { cfg, engine, speech, segmenter, queue } = d;
-  const defaultModel = findModel(cfg.defaultModel)!;
+  const defaultModel = defaultModelSpec(cfg);
   let missing: { at: number; value: Health["missing_models"] } | undefined;
 
   /** The file system is read at most once per MISSING_CACHE_MS: `existsSync` blocks the polled endpoint. */
