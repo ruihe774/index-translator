@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 import { BACKOFF_MS } from "../public/segment";
 import { pairOf, SentenceAligner } from "../public/sentence-align";
 import type { AlignedPair } from "../src/api";
+import { tick } from "./helpers/harness";
 
 const ONE: AlignedPair[] = [{ source: [0], target: [0], similarity: 0.9 }];
 
@@ -22,8 +23,6 @@ function server() {
   return { calls, post };
 }
 
-const flush = () => Bun.sleep(0);
-
 function ready(post: ReturnType<typeof server>["post"], now = () => 0) {
   const aligner = new SentenceAligner(post, now);
   aligner.configure({ status: "stopped", max_chars: 100 });
@@ -39,7 +38,7 @@ describe("SentenceAligner", () => {
     aligner.request(["A."], ["B."], () => void done++);
     expect(s.calls).toHaveLength(1);
     s.calls[0]!.answer(ONE);
-    await flush();
+    await tick();
     expect(done).toBe(1);
     expect(aligner.get(["A."], ["B."])).toStrictEqual(ONE);
     aligner.request(["A."], ["B."], () => void done++);
@@ -54,7 +53,7 @@ describe("SentenceAligner", () => {
     aligner.request(["3"], ["3"], () => {});
     expect(s.calls.map((c) => c.source)).toStrictEqual([["1"]]);
     s.calls[0]!.answer(ONE);
-    await flush();
+    await tick();
     expect(s.calls.map((c) => c.source)).toStrictEqual([["1"], ["3"]]);
   });
 
@@ -75,7 +74,7 @@ describe("SentenceAligner", () => {
     const aligner = ready(s.post, () => now);
     aligner.request(["A."], ["B."], () => {});
     s.calls[0]!.fail();
-    await flush();
+    await tick();
     aligner.request(["C."], ["D."], () => {});
     expect(s.calls).toHaveLength(1);
     now = BACKOFF_MS;
@@ -91,7 +90,7 @@ describe("SentenceAligner", () => {
     aligner.abort();
     expect(s.calls[0]!.signal.aborted).toBe(true);
     s.calls[0]!.answer(ONE);
-    await flush();
+    await tick();
     expect(done).toBe(0);
     expect(aligner.get(["A."], ["B."])).toBeUndefined();
   });

@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import type { Page } from "@playwright/test";
 
-import { expect, frames, test } from "./fixtures";
+import { expect, frames, quiet, test } from "./fixtures";
 
 // The server encodes Opus with minicelt, resampled by libsoxr (bun scripts/fetch_minicelt.ts, build_soxr.ts).
 const VENDOR = join(import.meta.dirname, "..", "vendor");
@@ -309,7 +309,7 @@ test("Pause holds the reading where it is and Resume goes on; Read aloud ends it
   // Paused: the audio of the rest is made meanwhile, one piece after the other, but nothing plays on.
   await expect.poll(async () => (await mock.state()).speech.requests.length).toBe(SPOKEN.length);
   // Nothing observable shows audio that does not play: wait longer than the piece (1 s), as real audio time.
-  await app.page.waitForTimeout(1500);
+  await quiet(app.page, 1500);
   await expect(listen).toHaveAttribute("data-state", "paused");
   await expect(app.meta).toHaveText("");
   expect((await mock.state()).speech.requests.length).toBe(SPOKEN.length);
@@ -321,7 +321,7 @@ test("Pause holds the reading where it is and Resume goes on; Read aloud ends it
   await expect(pause).toBeHidden();
   const asked = (await mock.state()).speech.requests.length;
   // No event for a request that is not made: the mock takes 200 ms per utterance, so this lets one be asked and answered.
-  await app.page.waitForTimeout(600);
+  await quiet(app.page, 600);
   expect((await mock.state()).speech.requests.length).toBe(asked);
 });
 
@@ -875,7 +875,7 @@ test.describe("recording a voice sample", () => {
     await expect(record).toHaveText("Stop recording");
     await expect(status).toContainText("Recording");
     // The fake microphone records in real time and the sample must be at least a second long: nothing else shows it.
-    await app.page.waitForTimeout(1500);
+    await quiet(app.page, 1500);
     await record.click();
     await expect(record).toHaveText("Record");
     await expect(status).toContainText(/Voice "Recording .*" added/);
@@ -905,7 +905,7 @@ test.describe("recording a voice sample", () => {
     await app.page.evaluate(() => (window as unknown as { __release: () => void }).__release());
     await expect(record).toHaveText("Stop recording");
     // Real-time recording again, at least a second.
-    await app.page.waitForTimeout(1200);
+    await quiet(app.page, 1200);
     await record.click();
     await expect(record).toHaveText("Record");
     await expect(app.page.locator("#clone-status")).toContainText(/added/);

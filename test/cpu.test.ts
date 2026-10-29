@@ -1,17 +1,10 @@
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { describe, expect, test } from "bun:test";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { autoThreads, inferenceThreads, MAX_AUTO_THREADS, parseCpuList, performanceCores } from "../src/cpu";
-
-const roots: string[] = [];
-
-afterAll(() => {
-  for (const root of roots) {
-    rmSync(root, { recursive: true, force: true });
-  }
-});
+import { tempDir } from "./helpers/harness";
 
 interface Cpu {
   /** Sibling list, e.g. "0-1"; absent when the kernel gives none. */
@@ -21,8 +14,7 @@ interface Cpu {
 
 /** A copy of the parts of `/sys/devices` that `performanceCores` reads. */
 function sysfs(cpus: Cpu[], extra: { online?: string; cpuCore?: string } = {}): string {
-  const root = mkdtempSync(join(tmpdir(), "sysfs-"));
-  roots.push(root);
+  const root = tempDir("sysfs-");
   const cpuDir = join(root, "system", "cpu");
   mkdirSync(cpuDir, { recursive: true });
   writeFileSync(join(cpuDir, "online"), `${extra.online ?? `0-${cpus.length - 1}`}\n`);

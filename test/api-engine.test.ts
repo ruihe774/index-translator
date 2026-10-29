@@ -10,23 +10,28 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 
-import type { Health, TokenizeResponse, TranslateResponse } from "../src/api";
+import type { TokenizeResponse, TranslateResponse } from "../src/api";
 import { type App, startApp } from "../src/app";
 import type { Config } from "../src/config";
 import { EngineError, type Launcher } from "../src/llama";
 import {
   bodyOf,
   CHAT,
+  collect,
   config,
   DOCUMENT,
   errorOf,
   fakeModel,
+  getJson,
+  healthResponse,
   mock,
   postTo,
+  queueOf,
   resetMock,
   type SseEvent,
   until,
   waitReady,
+  within,
 } from "./helpers/mock-engine";
 
 afterEach(() => resetMock());
@@ -151,14 +156,6 @@ function fixture(overrides: Partial<Config> = {}) {
 const chatBody = { text: "Hi", target_lang: "zh" };
 const docBody = { text: "The fox.", source_lang: "en", target_lang: "zh", model: DOCUMENT };
 
-function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
-  let timer: ReturnType<typeof setTimeout> | undefined;
-  const timeout = new Promise<never>(
-    (_, reject) => void (timer = setTimeout(() => reject(new Error(`timed out: ${what}`)), ms)),
-  );
-  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
-}
-
 function translate(origin: string, body: unknown, init: RequestInit = {}): Promise<Response> {
   return postTo(origin, "/api/v1/translate", body, init);
 }
@@ -169,19 +166,6 @@ function tokenize(origin: string, body: unknown): Promise<Response> {
 
 async function jsonOf(p: Promise<Response>): Promise<TranslateResponse> {
   return bodyOf<TranslateResponse>(await p);
-}
-
-async function getHealth(origin: string): Promise<{ status: number; body: Health }> {
-  const res = await fetch(origin + "/api/v1/health");
-  return { status: res.status, body: await bodyOf<Health>(res) };
-}
-
-async function queueOf(origin: string): Promise<{ running: boolean; waiting: number; max_waiting: number }> {
-  return (await getHealth(origin)).body.queue;
-}
-
-async function getJson<T>(origin: string, path: string): Promise<T> {
-  return bodyOf<T>(await fetch(origin + path));
 }
 
 /** Loads `model` with a tiny request, so the next test starts from a known engine. */
@@ -226,14 +210,6 @@ async function nextEvent(it: AsyncGenerator<SseEvent>): Promise<SseEvent> {
   return r.value;
 }
 
-async function collect(it: AsyncGenerator<SseEvent>): Promise<SseEvent[]> {
-  const out: SseEvent[] = [];
-  for await (const ev of it) {
-    out.push(ev);
-  }
-  return out;
-}
-
 const queuedPositions = (events: SseEvent[]) => events.filter((e) => e.event === "queued").map((e) => e.data.position);
 
 describe("health gpu_memory", () => {
@@ -241,16 +217,16 @@ describe("health gpu_memory", () => {
 
   test("is the loaded model's reading, and absent without a GPU", async () => {
     await warm(h.origin, CHAT);
-    expect((await getHealth(h.origin)).body.gpu_memory).toBeUndefined();
+    expect((await healthResponse(h.origin)).body.gpu_memory).toBeUndefined();
 
     mock.gpuMemory = { free: 3, total: 10 };
-    expect((await getHealth(h.origin)).body.gpu_memory).toStrictEqual({ total_bytes: 10, free_bytes: 3 });
+    expect((await healthResponse(h.origin)).body.gpu_memory).toStrictEqual({ total_bytes: 10, free_bytes: 3 });
   });
 
   test("is absent while no model is loaded", async () => {
     mock.gpuMemory = { free: 3, total: 10 };
     await h.app.engine.unload();
-    expect((await getHealth(h.origin)).body.gpu_memory).toBeUndefined();
+    expect((await healthResponse(h.origin)).body.gpu_memory).toBeUndefined();
   });
 });
 
@@ -293,7 +269,7 @@ describe("engine thread dies", () => {
 
   async function expectErrorStateThenReload(): Promise<void> {
     await until(() => h.app.engine.state === "error", "engine to report the error");
-    const health = await getHealth(h.origin);
+    const health = await healthResponse(h.origin);
     expect(health.status).toBe(503);
     expect(health.body).toMatchObject({ status: "error", model: null });
     expect(health.body.error).toBe(KILLED);
@@ -304,7 +280,7 @@ describe("engine thread dies", () => {
     expect(next.status).toBe(200);
     expect((await bodyOf<TranslateResponse>(next)).model).toBe(CHAT);
     expect(h.ctl.launches.slice(launchesBefore)).toStrictEqual([CHAT]);
-    expect((await getHealth(h.origin)).status).toBe(200);
+    expect((await healthResponse(h.origin)).status).toBe(200);
   }
 
   test("dying mid-stream in JSON mode fails the request; health then reports the error and the next request reloads", async () => {
@@ -338,14 +314,17 @@ describe("engine thread dies", () => {
     const launchesBefore = h.ctl.launches.length;
     h.ctl.latest().kill();
 
-    await until(async () => (await getHealth(h.origin)).status === 503, "health to report the dead engine", 1000);
-    const health = await getHealth(h.origin);
+    await until(async () => (await healthResponse(h.origin)).status === 503, "health to report the dead engine", 1000);
+    const health = await healthResponse(h.origin);
     expect(health.body).toMatchObject({ status: "error", model: null });
     expect(health.body.error).toBe(KILLED);
 
     await warm(h.origin, CHAT);
     expect(h.ctl.launches.slice(launchesBefore)).toStrictEqual([CHAT]);
-    await expect(getHealth(h.origin)).resolves.toMatchObject({ status: 200, body: { status: "ready", model: CHAT } });
+    await expect(healthResponse(h.origin)).resolves.toMatchObject({
+      status: 200,
+      body: { status: "ready", model: CHAT },
+    });
   });
 });
 
@@ -361,7 +340,7 @@ describe("default model fails to load at startup", () => {
       const { origin } = app.server.url;
       await until(() => app.engine.state === "error", "startup load to fail");
 
-      const health = await getHealth(origin);
+      const health = await healthResponse(origin);
       expect(health.status).toBe(503);
       expect(health.body).toMatchObject({ status: "error", error: "model file is corrupt", model: null });
 
@@ -375,7 +354,7 @@ describe("default model fails to load at startup", () => {
       const ok = await translate(origin, chatBody);
       expect(ok.status).toBe(200);
       expect((await bodyOf<TranslateResponse>(ok)).model).toBe(CHAT);
-      const recovered = await getHealth(origin);
+      const recovered = await healthResponse(origin);
       expect(recovered.status).toBe(200);
       expect(recovered.body).toMatchObject({ status: "ready", model: CHAT });
       expect(recovered.body.error).toBeUndefined();
@@ -398,7 +377,7 @@ describe("model swaps", () => {
     await until(() => h.app.engine.state === "loading", "swap to start");
 
     // Known quirk, review finding #8: the target model is reported as loaded before its engine is ready.
-    const health = await getHealth(h.origin);
+    const health = await healthResponse(h.origin);
     expect(health.status).toBe(503);
     expect(health.body).toMatchObject({ status: "loading", model: DOCUMENT });
     await expect(getJson(h.origin, "/api/v1/models")).resolves.toMatchObject({ default: CHAT, loaded: DOCUMENT });
@@ -410,7 +389,7 @@ describe("model swaps", () => {
 
     release();
     expect((await pending).model).toBe(DOCUMENT);
-    await expect(getHealth(h.origin)).resolves.toMatchObject({
+    await expect(healthResponse(h.origin)).resolves.toMatchObject({
       status: 200,
       body: { status: "ready", model: DOCUMENT },
     });
@@ -453,8 +432,8 @@ describe("model swaps", () => {
     await until(async () => !(await queueOf(h.origin)).running, "queue slot to be freed");
 
     release();
-    await until(async () => (await getHealth(h.origin)).status === 200, "document engine to be ready");
-    expect((await getHealth(h.origin)).body.model).toBe(DOCUMENT);
+    await until(async () => (await healthResponse(h.origin)).status === 200, "document engine to be ready");
+    expect((await healthResponse(h.origin)).body.model).toBe(DOCUMENT);
     await expect(queueOf(h.origin)).resolves.toMatchObject({ running: false, waiting: 0 });
 
     const next = await translate(h.origin, { text: "你好", target_lang: "en" });

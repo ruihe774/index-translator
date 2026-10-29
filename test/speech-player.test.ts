@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, jest, test } from "bun:test";
 
 import { type PlayerState, SpeechPlayer, type SpeechSettings, UPDATE_SETTLE_MS } from "../public/speech";
 import type { Segment } from "../public/speech-text";
+import { flush } from "./helpers/harness";
 
 // ---- fakes -----------------------------------------------------------------------------------
 
@@ -109,13 +110,6 @@ const seg = (text: string, line: number, pause = 0): Segment => ({ text, line, p
 /** Blocks (by line): A = a1 a2, B = b1, C = c1. */
 const SEGMENTS = [seg("a1", 0), seg("a2", 0), seg("b1", 2), seg("c1", 4)];
 const SETTINGS: SpeechSettings = { lang: "en", voice: "v1", speed: 1 };
-
-const flush = async () => {
-  for (let i = 0; i < 5; i++) {
-    // Not Bun.sleep: fake timers (see "update") would hold it back.
-    await new Promise<void>((resolve) => void setImmediate(resolve));
-  }
-};
 
 function setup(auto = false) {
   const synth = makeSynth(auto);

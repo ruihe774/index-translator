@@ -5,8 +5,6 @@
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { type App, startApp } from "../src/app";
@@ -20,6 +18,7 @@ import {
   postTo,
   resetMockSpeech,
   speechLauncher,
+  tempDir,
   waitReady,
 } from "./helpers/mock-engine";
 
@@ -129,14 +128,9 @@ describe.skipIf(!installed)("qoaResponse", () => {
 
 describe("the loader", () => {
   test("is undefined while the codec is not installed, and finds it when it is installed later", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "qoa-loader-"));
-    try {
-      const load = qoaLoader(dir);
-      await expect(load()).resolves.toBeUndefined();
-      await expect(load()).resolves.toBeUndefined();
-    } finally {
-      await rm(dir, { recursive: true, force: true });
-    }
+    const load = qoaLoader(tempDir("qoa-loader-"));
+    await expect(load()).resolves.toBeUndefined();
+    await expect(load()).resolves.toBeUndefined();
   });
 });
 
@@ -151,7 +145,7 @@ describe("POST /speech", () => {
     app = await startApp(config(), launcher, speechLauncher);
     base = app.server.url.origin;
     await waitReady(app);
-    emptyDir = await mkdtemp(join(tmpdir(), "qoa-public-"));
+    emptyDir = tempDir("qoa-public-");
     bare = await startApp(config({ publicDir: emptyDir }), launcher, speechLauncher);
     bareBase = bare.server.url.origin;
     await waitReady(bare);
@@ -160,7 +154,6 @@ describe("POST /speech", () => {
   afterAll(async () => {
     await app.stop();
     await bare.stop();
-    await rm(emptyDir, { recursive: true, force: true });
   });
 
   const speak = (to: string, accept?: string) =>

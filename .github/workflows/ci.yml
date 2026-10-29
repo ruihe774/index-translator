@@ -14,9 +14,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Runs the checks, and is the Bun that gets packed into the AppImage. Needs `bun lint --type-check`
-  # (the type checker of `bun check`), which only canary has. Canary builds are published only under the moving `canary` release (a
-  # versioned canary tag 404s), so this cannot be pinned.
+  # Runs the checks, and is the Bun that gets packed into the AppImage. `bun lint` (builtin linter and type
+  # checker) needs the builtins that only canary has. Canary builds are published only under the moving `canary`
+  # release (a versioned canary tag 404s), so this cannot be pinned.
   BUN_VERSION: canary
 
 jobs:
@@ -195,7 +195,7 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
-      # Packed, for the sentence segmentation to come; nothing runs it yet.
+      # Packed for POST /segment and POST /align (sentence segmentation and alignment).
       - name: Fetch ONNX Runtime
         run: bun scripts/fetch_onnxruntime.ts
 
@@ -322,6 +322,7 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
+      # Packed for POST /segment and POST /align (sentence segmentation and alignment).
       - name: Fetch ONNX Runtime
         run: bun scripts/fetch_onnxruntime.ts
 
@@ -559,7 +560,7 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
-      # Packed, for the sentence segmentation to come; nothing runs it yet.
+      # Packed for POST /segment and POST /align (sentence segmentation and alignment).
       - name: Fetch ONNX Runtime
         run: bun scripts/fetch_onnxruntime.ts
 

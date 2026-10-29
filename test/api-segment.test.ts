@@ -3,13 +3,14 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 
-import type { Health, Segmentation } from "../src/api";
+import type { Segmentation } from "../src/api";
 import { type App, startApp } from "../src/app";
 import { MAX_SEGMENT_CHARS, MAX_SEGMENT_TEXTS } from "../src/segment";
 import {
   bodyOf,
   config,
   errorOf,
+  getHealth,
   inFlight,
   launcher,
   mockBoundaries,
@@ -140,7 +141,7 @@ describe("POST /segment", () => {
 
 describe("GET /health", () => {
   test("reports the segmenter's state and the request limit", async () => {
-    const health = async () => (await bodyOf<Health>(await fetch(app.server.url.origin + "/api/v1/health"))).segment;
+    const health = async () => (await getHealth(app.server.url.origin)).segment;
     await expect(health()).resolves.toStrictEqual({ status: "stopped", max_chars: MAX_SEGMENT_CHARS });
     await segment({ texts: ["One."] });
     await expect(health()).resolves.toStrictEqual({ status: "ready", max_chars: MAX_SEGMENT_CHARS });

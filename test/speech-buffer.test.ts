@@ -3,6 +3,7 @@ import { describe, expect, test } from "bun:test";
 
 import { AHEAD_SECONDS, blockStarts, KEEP_SECONDS, NEAR_SECONDS, SpeechBuffer } from "../public/speech-buffer";
 import type { Segment } from "../public/speech-text";
+import { flush } from "./helpers/harness";
 
 interface Request {
   text: string;
@@ -25,11 +26,6 @@ function setup(lines: number[], seconds = 10) {
     });
   const buffer = new SpeechBuffer(synthesize, () => Promise.resolve({ duration: seconds } as AudioBuffer));
   buffer.open(segments, { lang: "en", voice: "v", speed: 1 });
-  const flush = async () => {
-    for (let i = 0; i < 5; i++) {
-      await Bun.sleep(0);
-    }
-  };
   /** The requests nobody aborted and nobody answered: at most one, if the buffer keeps its word. */
   const live = () => requests.filter((r) => !r.signal.aborted && !answered.has(r));
   const answered = new Set<Request>();

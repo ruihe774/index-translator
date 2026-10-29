@@ -2,7 +2,7 @@
 
 import type { Page } from "@playwright/test";
 
-import { expect, test } from "./fixtures";
+import { expect, quiet, test } from "./fixtures";
 
 const SOURCE = "# Title\n\nFirst sentence here. Second sentence there.\n";
 
@@ -344,7 +344,7 @@ test("without an aligner nothing is matched, and only the sentence is marked", a
   await hover(app.page, "#output", "phrase");
   await expect.poll(() => marked(app.page)).toStrictEqual(["Une phrase."]);
   // Nothing observable shows a request that is not made: a counterpart would be marked within this time.
-  await app.page.waitForTimeout(300);
+  await quiet(app.page, 300);
   await hover(app.page, "#output", "Une");
   expect(await marked(app.page)).toStrictEqual(["Une phrase."]);
   await expect(app.page.locator("#output-area")).not.toHaveClass(/synced/);

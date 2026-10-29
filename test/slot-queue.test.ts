@@ -1,9 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { QueueFullError, SlotQueue } from "../src/queue";
-
-/** Lets every pending promise callback run (a macrotask, so all microtasks drain first). */
-const flush = () => Bun.sleep(0);
+import { tick } from "./helpers/harness";
 
 describe("SlotQueue admission", () => {
   test("with no waiting room the first request runs and the second is refused", () => {
@@ -102,7 +100,7 @@ describe("SlotQueue leave", () => {
 
     let cGranted = false;
     void c.ready.then((v) => (cGranted = v));
-    await flush();
+    await tick();
     expect(cGranted).toBe(false);
 
     b.leave();
@@ -144,7 +142,7 @@ describe("SlotQueue ordering", () => {
         await expect(t.ready).resolves.toBe(true);
         expect(q.running).toBe(true);
         log.push(`start ${i}`);
-        await flush();
+        await tick();
         log.push(`end ${i}`);
         t.leave();
       }),

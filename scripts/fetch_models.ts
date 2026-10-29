@@ -284,6 +284,8 @@ export async function fetchFile(
   const url = endpoint + file.url;
   await mkdir(dirname(file.dest), { recursive: true });
   log(`downloading ${url}`);
+  // curl rather than fetch_tools.ts's download helpers: the models are about 18 GiB, so a download must resume
+  // (`--continue-at`) from the .part file of an interrupted run.
   const child = Bun.spawn(
     [
       curl,

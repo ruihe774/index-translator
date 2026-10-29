@@ -5,11 +5,9 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
 import { existsSync } from "node:fs";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-import type { Health, Voice, VoiceList } from "../src/api";
+import type { Voice, VoiceList } from "../src/api";
 import { type App, startApp } from "../src/app";
 import { libraryPath } from "../src/audiocpp-ffi";
 import {
@@ -25,6 +23,8 @@ import {
   bodyOf,
   config,
   errorOf,
+  flush,
+  getHealth,
   inFlight,
   launcher,
   mockSpeech,
@@ -32,7 +32,9 @@ import {
   resetMockSpeech,
   silentWav,
   speechLauncher,
+  tempDir,
   until,
+  UPLOAD_VOICES_DIR,
   waitReady,
 } from "./helpers/mock-engine";
 
@@ -207,7 +209,7 @@ describe("GET /voices and health", () => {
 
   test("health carries the speech engine's state", async () => {
     await speak({ text: "Hello", lang: "en" });
-    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
+    const health = await getHealth(base);
     expect(health.speech).toStrictEqual({ status: "ready" });
   });
 
@@ -235,19 +237,15 @@ describe("the native speech engine without audio.cpp", () => {
   });
 
   test("a voice is a .wav file in the voices directory", async () => {
-    const dir = await mkdtemp(join(tmpdir(), "voices-"));
-    try {
-      for (const name of ["narrator_two.wav", "alice.wav", "notes.txt", "clip.mp3"]) {
-        await Bun.write(join(dir, name), "");
-      }
-      await expect(nativeSpeech(config({ voicesDir: dir })).voices()).resolves.toStrictEqual([
-        { id: "alice", name: "Alice" },
-        { id: "narrator_two", name: "Narrator two" },
-      ]);
-      await expect(nativeSpeech(config({ voicesDir: join(dir, "missing") })).voices()).resolves.toStrictEqual([]);
-    } finally {
-      await rm(dir, { recursive: true });
+    const dir = tempDir("voices-");
+    for (const name of ["narrator_two.wav", "alice.wav", "notes.txt", "clip.mp3"]) {
+      await Bun.write(join(dir, name), "");
     }
+    await expect(nativeSpeech(config({ voicesDir: dir })).voices()).resolves.toStrictEqual([
+      { id: "alice", name: "Alice" },
+      { id: "narrator_two", name: "Narrator two" },
+    ]);
+    await expect(nativeSpeech(config({ voicesDir: join(dir, "missing") })).voices()).resolves.toStrictEqual([]);
   });
 });
 
@@ -269,11 +267,9 @@ describe("NativeSpeech with a fake worker", () => {
   const request: SpeechRequest = { text: "Hi", lang: "en", voice: "a", speed: 1 };
   /** Waits until the worker has been sent `n` messages. */
   const posted = (w: any, n: number) => until(() => w.posted.length >= n);
-  /** For asserting that nothing more happens: there is no event to wait for. */
-  const settle = () => Bun.sleep(5);
 
   async function setup() {
-    const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
+    const dir = tempDir("native-speech-");
     await Bun.write(libraryPath(dir), "");
     const worker = fakeWorker();
     const speech = new NativeSpeech(config({ speech: true, audioDir: dir, speechModelDir: dir }), () => worker);
@@ -282,101 +278,85 @@ describe("NativeSpeech with a fake worker", () => {
   const kinds = (w: any) => w.posted.map((m: any) => m.type);
 
   test("an utterance aborted while the model loads is never posted", async () => {
-    const { dir, worker, speech } = await setup();
-    try {
-      const gone = new AbortController();
-      let released = 0;
-      const result = speech.synthesize(request, gone.signal, () => void released++);
-      const rejected = result.then(
-        () => null,
-        (e) => e,
-      );
-      await posted(worker, 1);
-      expect(kinds(worker)).toStrictEqual(["load"]);
-      gone.abort();
-      await expect(rejected).resolves.toBe(gone.signal.reason);
-      expect(released).toBe(1);
-      worker.reply(worker.posted[0].req, { type: "ok" });
-      await settle();
-      expect(kinds(worker)).toStrictEqual(["load"]);
-      expect(released).toBe(1);
-    } finally {
-      await rm(dir, { recursive: true });
-    }
+    const { worker, speech } = await setup();
+    const gone = new AbortController();
+    let released = 0;
+    const result = speech.synthesize(request, gone.signal, () => void released++);
+    const rejected = result.then(
+      () => null,
+      (e) => e,
+    );
+    await posted(worker, 1);
+    expect(kinds(worker)).toStrictEqual(["load"]);
+    gone.abort();
+    await expect(rejected).resolves.toBe(gone.signal.reason);
+    expect(released).toBe(1);
+    worker.reply(worker.posted[0].req, { type: "ok" });
+    await flush();
+    expect(kinds(worker)).toStrictEqual(["load"]);
+    expect(released).toBe(1);
   });
 
   test("a posted utterance that is aborted is flagged for the worker and released when it says it stopped", async () => {
-    const { dir, worker, speech } = await setup();
-    try {
-      const gone = new AbortController();
-      let released = 0;
-      const result = speech.synthesize(request, gone.signal, () => void released++);
-      const rejected = result.then(
-        () => null,
-        (e) => e,
-      );
-      await posted(worker, 1);
-      worker.reply(worker.posted[0].req, { type: "ok" });
-      await posted(worker, 2);
-      expect(kinds(worker)).toStrictEqual(["load", "synthesize"]);
-      // The flag the worker thread and the library read while no message can reach them.
-      expect(worker.posted[1].abort).toBeInstanceOf(SharedArrayBuffer);
-      const flag = new Int32Array(worker.posted[1].abort);
-      expect(flag[0]).toBe(0);
-      gone.abort();
-      expect(flag[0]).toBe(1);
-      await expect(rejected).resolves.toBe(gone.signal.reason);
-      expect(released).toBe(0);
-      worker.reply(worker.posted[1].req, { type: "aborted" });
-      await until(() => released === 1);
-      expect(speech.state).toBe("ready");
-    } finally {
-      await rm(dir, { recursive: true });
-    }
+    const { worker, speech } = await setup();
+    const gone = new AbortController();
+    let released = 0;
+    const result = speech.synthesize(request, gone.signal, () => void released++);
+    const rejected = result.then(
+      () => null,
+      (e) => e,
+    );
+    await posted(worker, 1);
+    worker.reply(worker.posted[0].req, { type: "ok" });
+    await posted(worker, 2);
+    expect(kinds(worker)).toStrictEqual(["load", "synthesize"]);
+    // The flag the worker thread and the library read while no message can reach them.
+    expect(worker.posted[1].abort).toBeInstanceOf(SharedArrayBuffer);
+    const flag = new Int32Array(worker.posted[1].abort);
+    expect(flag[0]).toBe(0);
+    gone.abort();
+    expect(flag[0]).toBe(1);
+    await expect(rejected).resolves.toBe(gone.signal.reason);
+    expect(released).toBe(0);
+    worker.reply(worker.posted[1].req, { type: "aborted" });
+    await until(() => released === 1);
+    expect(speech.state).toBe("ready");
   });
 
   test("an utterance that finished just before the abort reached the engine is released as well", async () => {
-    const { dir, worker, speech } = await setup();
-    try {
-      const gone = new AbortController();
-      let released = 0;
-      const rejected = speech
-        .synthesize(request, gone.signal, () => void released++)
-        .then(
-          () => null,
-          (e) => e,
-        );
-      await posted(worker, 1);
-      worker.reply(worker.posted[0].req, { type: "ok" });
-      await posted(worker, 2);
-      gone.abort();
-      await expect(rejected).resolves.toBe(gone.signal.reason);
-      worker.reply(worker.posted[1].req, { type: "audio", wav: new ArrayBuffer(4) });
-      await until(() => released === 1);
-    } finally {
-      await rm(dir, { recursive: true });
-    }
+    const { worker, speech } = await setup();
+    const gone = new AbortController();
+    let released = 0;
+    const rejected = speech
+      .synthesize(request, gone.signal, () => void released++)
+      .then(
+        () => null,
+        (e) => e,
+      );
+    await posted(worker, 1);
+    worker.reply(worker.posted[0].req, { type: "ok" });
+    await posted(worker, 2);
+    gone.abort();
+    await expect(rejected).resolves.toBe(gone.signal.reason);
+    worker.reply(worker.posted[1].req, { type: "audio", wav: new ArrayBuffer(4) });
+    await until(() => released === 1);
   });
 
   test("every utterance has a flag of its own", async () => {
-    const { dir, worker, speech } = await setup();
-    try {
-      const gone = new AbortController();
-      speech.synthesize(request, gone.signal, () => {}).catch(() => {});
-      await posted(worker, 1);
-      worker.reply(worker.posted[0].req, { type: "ok" });
-      await posted(worker, 2);
-      const kept = speech.synthesize(request, new AbortController().signal, () => {});
-      await posted(worker, 3);
-      gone.abort();
-      expect(new Int32Array(worker.posted[1].abort)[0]).toBe(1);
-      expect(new Int32Array(worker.posted[2].abort)[0]).toBe(0);
-      worker.reply(worker.posted[1].req, { type: "aborted" });
-      worker.reply(worker.posted[2].req, { type: "audio", wav: new ArrayBuffer(4) });
-      await expect(kept).resolves.toBeInstanceOf(ArrayBuffer);
-    } finally {
-      await rm(dir, { recursive: true });
-    }
+    const { worker, speech } = await setup();
+    const gone = new AbortController();
+    speech.synthesize(request, gone.signal, () => {}).catch(() => {});
+    await posted(worker, 1);
+    worker.reply(worker.posted[0].req, { type: "ok" });
+    await posted(worker, 2);
+    const kept = speech.synthesize(request, new AbortController().signal, () => {});
+    await posted(worker, 3);
+    gone.abort();
+    expect(new Int32Array(worker.posted[1].abort)[0]).toBe(1);
+    expect(new Int32Array(worker.posted[2].abort)[0]).toBe(0);
+    worker.reply(worker.posted[1].req, { type: "aborted" });
+    worker.reply(worker.posted[2].req, { type: "audio", wav: new ArrayBuffer(4) });
+    await expect(kept).resolves.toBeInstanceOf(ArrayBuffer);
   });
 });
 
@@ -434,7 +414,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
 
   /** `separation`: the separation model is installed (a .gguf file in its directory). */
   async function setup(overrides: object = {}, separation = false) {
-    const dir = await mkdtemp(join(tmpdir(), "native-speech-"));
+    const dir = tempDir("native-speech-");
     await Bun.write(libraryPath(dir), "");
     if (separation) {
       await Bun.write(join(dir, "bs-roformer.gguf"), "");
@@ -448,11 +428,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         return w;
       },
     );
-    return { dir, workers, speech, cleanup: () => rm(dir, { recursive: true }) };
+    return { dir, workers, speech };
   }
 
   test("stopped, then starting while the model loads, then ready", async () => {
-    const { workers, speech, cleanup } = await setup();
+    const { workers, speech } = await setup();
     const log = quiet();
     try {
       expect(speech.state).toBe("stopped");
@@ -467,12 +447,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       expect(workers).toHaveLength(1);
     } finally {
       log.mockRestore();
-      await cleanup();
     }
   });
 
   test("a failed load is the error state, and the next request tries again", async () => {
-    const { workers, speech, cleanup } = await setup();
+    const { workers, speech } = await setup();
     const log = quiet();
     try {
       const first = say(speech);
@@ -488,12 +467,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       expect(kinds(workers[0])).toStrictEqual(["load", "load", "synthesize"]);
     } finally {
       log.mockRestore();
-      await cleanup();
     }
   });
 
   test("the model is unloaded after SPEECH_IDLE_UNLOAD and loaded again by the next request", async () => {
-    const { workers, speech, cleanup } = await setup({ speechIdleUnload: 0.03 });
+    const { workers, speech } = await setup({ speechIdleUnload: 0.03 });
     const log = quiet();
     try {
       await say(speech);
@@ -508,12 +486,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     } finally {
       log.mockRestore();
       await speech.stop();
-      await cleanup();
     }
   });
 
   test("an utterance in flight postpones the unload", async () => {
-    const { workers, speech, cleanup } = await setup({ speechIdleUnload: 0.03 });
+    const { workers, speech } = await setup({ speechIdleUnload: 0.03 });
     const log = quiet();
     try {
       await say(speech);
@@ -529,7 +506,6 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     } finally {
       log.mockRestore();
       await speech.stop();
-      await cleanup();
     }
   });
 
@@ -537,7 +513,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     ["onerror", (w: any) => w.onerror({ message: "boom" }), "the speech thread failed: boom"],
     ["close", (w: any) => w.listeners.close(), "the speech thread exited"],
   ])("a worker crash (%s) rejects waiters, and the next request starts a new worker", async (_n, crash, message) => {
-    const { workers, speech, cleanup } = await setup();
+    const { workers, speech } = await setup();
     const log = quiet();
     try {
       await say(speech);
@@ -563,12 +539,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       expect(speech.state).toBe("ready");
     } finally {
       log.mockRestore();
-      await cleanup();
     }
   });
 
   test("a crash while the model loads rejects the request", async () => {
-    const { workers, speech, cleanup } = await setup();
+    const { workers, speech } = await setup();
     const log = quiet();
     try {
       const result = say(speech).then(
@@ -580,18 +555,17 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       expect(speech.state).toBe("error");
     } finally {
       log.mockRestore();
-      await cleanup();
     }
   });
 
   test("stop() unloads, ends the worker and deletes the uploads", async () => {
-    const { workers, speech, cleanup } = await setup();
+    const { workers, speech } = await setup();
     const log = quiet();
     try {
       await say(speech);
       const voice = await speech.addVoice("Mine", wav());
       expect((await speech.voices()).map((v) => v.id)).toContain(voice.id);
-      const uploadDir = join(tmpdir(), `index-translator-voices-${process.pid}`);
+      const uploadDir = UPLOAD_VOICES_DIR;
       expect(existsSync(join(uploadDir, `${voice.id}.wav`))).toBe(true);
 
       await speech.stop();
@@ -602,12 +576,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       expect(speech.state).toBe("stopped");
     } finally {
       log.mockRestore();
-      await cleanup();
     }
   });
 
   test("at most 16 uploads are kept", async () => {
-    const { speech, cleanup } = await setup();
+    const { speech } = await setup();
     try {
       for (let i = 0; i < MAX_UPLOADED_VOICES; i++) {
         await speech.addVoice(`v${i}`, wav());
@@ -618,41 +591,33 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       await speech.addVoice("again", wav());
     } finally {
       await speech.stop();
-      await cleanup();
     }
   });
 
   test("addVoice refuses samples outside the limits without keeping them", async () => {
-    const { speech, cleanup } = await setup();
-    try {
-      await expect(speech.addVoice("x", silentWav(0.5, 44_100))).rejects.toThrow("too short");
-      await expect(speech.addVoice("x", silentWav(1.5, 48_000))).rejects.toThrow("sample rate");
-      await expect(speech.addVoice("x", new ArrayBuffer(100))).rejects.toThrow(SpeechError);
-      await expect(speech.voices()).resolves.toStrictEqual([]);
-    } finally {
-      await cleanup();
-    }
+    const { speech } = await setup();
+    await expect(speech.addVoice("x", silentWav(0.5, 44_100))).rejects.toThrow("too short");
+    await expect(speech.addVoice("x", silentWav(1.5, 48_000))).rejects.toThrow("sample rate");
+    await expect(speech.addVoice("x", new ArrayBuffer(100))).rejects.toThrow(SpeechError);
+    await expect(speech.voices()).resolves.toStrictEqual([]);
   });
 
   describe("separating the voice of an uploaded sample", () => {
     test("without the separation model the sample is kept as it is, and no worker is started", async () => {
-      const { dir, workers, speech, cleanup } = await setup();
+      const { dir, workers, speech } = await setup();
       try {
         const voice = await speech.addVoice("Mine", wav());
         expect(workers).toHaveLength(0);
-        const kept = await Bun.file(
-          join(tmpdir(), `index-translator-voices-${process.pid}`, `${voice.id}.wav`),
-        ).bytes();
+        const kept = await Bun.file(join(UPLOAD_VOICES_DIR, `${voice.id}.wav`)).bytes();
         expect(kept).toStrictEqual(new Uint8Array(wav()));
         expect(dir).toBeTruthy();
       } finally {
         await speech.stop();
-        await cleanup();
       }
     });
 
     test("the speech model is freed for it, the separated voice is what is kept, and speech loads again after", async () => {
-      const { dir, workers, speech, cleanup } = await setup({}, true);
+      const { dir, workers, speech } = await setup({}, true);
       const log = quiet();
       try {
         await say(speech);
@@ -669,9 +634,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         // The recording as uploaded goes to the worker, which does the rest on the speech thread.
         expect(new Uint8Array(separation.wav)).toStrictEqual(new Uint8Array(wav()));
         expect(speech.state).toBe("stopped");
-        const kept = await Bun.file(
-          join(tmpdir(), `index-translator-voices-${process.pid}`, `${voice.id}.wav`),
-        ).bytes();
+        const kept = await Bun.file(join(UPLOAD_VOICES_DIR, `${voice.id}.wav`)).bytes();
         expect(kept).toStrictEqual(new Uint8Array(separated()));
 
         await say(speech);
@@ -680,12 +643,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       } finally {
         log.mockRestore();
         await speech.stop();
-        await cleanup();
       }
     });
 
     test("an utterance asked for during the separation waits for it, then loads the speech model again", async () => {
-      const { workers, speech, cleanup } = await setup({}, true);
+      const { workers, speech } = await setup({}, true);
       const log = quiet();
       try {
         await say(speech);
@@ -709,12 +671,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       } finally {
         log.mockRestore();
         await speech.stop();
-        await cleanup();
       }
     });
 
     test("an utterance already with the worker finishes before the separation starts", async () => {
-      const { workers, speech, cleanup } = await setup({}, true);
+      const { workers, speech } = await setup({}, true);
       const log = quiet();
       try {
         await say(speech);
@@ -732,12 +693,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       } finally {
         log.mockRestore();
         await speech.stop();
-        await cleanup();
       }
     });
 
     test("a separation waits for a model that is loading, and two uploads run one after the other", async () => {
-      const { workers, speech, cleanup } = await setup({}, true);
+      const { workers, speech } = await setup({}, true);
       const log = quiet();
       try {
         holdLoads = true;
@@ -759,12 +719,11 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         holdLoads = false;
         log.mockRestore();
         await speech.stop();
-        await cleanup();
       }
     });
 
     test("a failed separation is a SeparationError, keeps nothing, and leaves speech working", async () => {
-      const { workers, speech, cleanup } = await setup({}, true);
+      const { workers, speech } = await setup({}, true);
       const log = quiet();
       try {
         await say(speech);
@@ -787,18 +746,13 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       } finally {
         log.mockRestore();
         await speech.stop();
-        await cleanup();
       }
     });
 
     test("a sample outside the limits is refused before the speech model is touched", async () => {
-      const { workers, speech, cleanup } = await setup({}, true);
-      try {
-        await expect(speech.addVoice("x", silentWav(0.5, 44_100))).rejects.toThrow("too short");
-        expect(workers).toHaveLength(0);
-      } finally {
-        await cleanup();
-      }
+      const { workers, speech } = await setup({}, true);
+      await expect(speech.addVoice("x", silentWav(0.5, 44_100))).rejects.toThrow("too short");
+      expect(workers).toHaveLength(0);
     });
   });
 });

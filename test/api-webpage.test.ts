@@ -3,12 +3,13 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 
-import type { Health, Webpage } from "../src/api";
+import type { Webpage } from "../src/api";
 import { type App, startApp } from "../src/app";
 import {
   bodyOf,
   config,
   errorOf,
+  getHealth,
   launcher,
   mockWebpage,
   postTo,
@@ -102,8 +103,7 @@ describe("POST /webpage", () => {
     const error = await errorOf(res);
     expect(error.code).toBe("webpage_unavailable");
     expect(error.message).toContain("ALLOWED_WEBPAGE_DOMAINS");
-    const health = async (target: App) =>
-      (await bodyOf<Health>(await fetch(`${target.server.url.origin}/api/v1/health`))).webpage;
+    const health = async (target: App) => (await getHealth(target.server.url.origin)).webpage;
     await expect(health(off)).resolves.toMatchObject({ status: "unavailable" });
     await expect(health(app)).resolves.toStrictEqual({ status: "available" });
 

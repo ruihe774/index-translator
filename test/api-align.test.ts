@@ -3,13 +3,14 @@
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";
 
-import type { Alignment, Health } from "../src/api";
+import type { Alignment } from "../src/api";
 import { type App, startApp } from "../src/app";
 import { MAX_ALIGN_CHARS, MAX_ALIGN_SENTENCES } from "../src/segment";
 import {
   bodyOf,
   config,
   errorOf,
+  getHealth,
   inFlight,
   launcher,
   mockAlign,
@@ -113,7 +114,7 @@ describe("POST /align", () => {
 
 describe("GET /health", () => {
   test("reports the aligner's state and the request limit", async () => {
-    const health = async () => (await bodyOf<Health>(await fetch(app.server.url.origin + "/api/v1/health"))).align;
+    const health = async () => (await getHealth(app.server.url.origin)).align;
     await expect(health()).resolves.toStrictEqual({ status: "stopped", max_chars: MAX_ALIGN_CHARS });
     await align({ source: ["a"], target: ["b"] });
     await expect(health()).resolves.toStrictEqual({ status: "ready", max_chars: MAX_ALIGN_CHARS });
