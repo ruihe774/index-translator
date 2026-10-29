@@ -242,10 +242,9 @@ export class NativeSegmenter implements Segmenter {
   async stop(): Promise<void> {
     if (this.worker.started) {
       // Waits for a running request, then frees the models.
-      await Promise.all([
-        this.worker.call("unload", { model: "sat" }).catch(() => {}),
-        this.worker.call("unload", { model: "labse" }).catch(() => {}),
-      ]);
+      await Promise.all(
+        (Object.keys(MODELS) as SegmentModel[]).map((model) => this.worker.call("unload", { model }).catch(() => {})),
+      );
       this.worker.terminate();
     }
     this.sentences.stopped();

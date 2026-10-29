@@ -142,11 +142,19 @@ export function missingSpeechModels(cfg: Config): string[] {
   if (!existsSync(cfg.speechModelDir)) {
     missing.push("index-tts-2.5");
   }
-  const dir = cfg.separationModelDir;
-  if (!existsSync(dir) || new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().done) {
+  if (!findSeparationModel(cfg)) {
     missing.push("bs-roformer");
   }
   return missing;
+}
+
+/** The first BS-RoFormer GGUF in `SEPARATION_MODEL_DIR`, if there is one. */
+function findSeparationModel(cfg: Config): string | undefined {
+  const dir = cfg.separationModelDir;
+  const file = existsSync(dir)
+    ? (new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().value as string | undefined)
+    : undefined;
+  return file ? join(dir, file) : undefined;
 }
 
 export class NativeSpeech implements Speech {
@@ -255,11 +263,7 @@ export class NativeSpeech implements Speech {
     if (this.missing()) {
       return undefined;
     }
-    const dir = this.cfg.separationModelDir;
-    const file = existsSync(dir)
-      ? (new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().value as string | undefined)
-      : undefined;
-    return file ? join(dir, file) : undefined;
+    return findSeparationModel(this.cfg);
   }
 
   private separationInstalled(): boolean {
