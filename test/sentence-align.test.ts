@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-import { BACKOFF_MS, pairOf, SentenceAligner } from "../public/sentence-align";
+import { BACKOFF_MS } from "../public/segment";
+import { pairOf, SentenceAligner } from "../public/sentence-align";
 import type { AlignedPair } from "../src/api";
 
 const ONE: AlignedPair[] = [{ source: [0], target: [0], similarity: 0.9 }];

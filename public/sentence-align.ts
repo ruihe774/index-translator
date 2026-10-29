@@ -9,13 +9,10 @@
 
 import type { AlignedPair, Alignment, AlignRequest, AlignUnit, Health } from "../src/api.ts";
 import { API, failureOf } from "./api.ts";
+import { BACKOFF_MS, MAX_TEXTS } from "./segment.ts";
 
-/** Most sentences on each side: the server's limit. */
-export const MAX_SENTENCES = 256;
 /** Block pairs whose answers are kept. */
 const MAX_CACHED = 500;
-/** After a failure nothing is asked for this long. */
-export const BACKOFF_MS = 10_000;
 
 export type PostAlign = (source: string[], target: string[], signal: AbortSignal) => Promise<AlignedPair[]>;
 
@@ -92,8 +89,8 @@ export class SentenceAligner {
       this.inFlight === key ||
       source.length === 0 ||
       target.length === 0 ||
-      source.length > MAX_SENTENCES ||
-      target.length > MAX_SENTENCES ||
+      source.length > MAX_TEXTS ||
+      target.length > MAX_TEXTS ||
       [...source, ...target].reduce((n, t) => n + t.length, 0) > this.maxChars
     ) {
       return;
