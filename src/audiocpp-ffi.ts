@@ -13,6 +13,7 @@ import { join } from "node:path";
 
 import { cstr, libraryFile, once, pointerOf, slot } from "./ffi-util";
 import type { Pcm } from "./wav";
+import { isAborted } from "./worker-rpc";
 
 /** The major version of the C API these declarations were written against (`audiocpp.h`, 0.2). */
 const ABI_MAJOR = 0;
@@ -280,7 +281,7 @@ export class SpeechModel extends Loaded {
         lib.audiocpp_set_abort_flag(null);
       }
       // A run that failed while the flag was up is taken to have failed because of it.
-      if (status !== 0 && abort && Atomics.load(abort, 0) !== 0) {
+      if (status !== 0 && abort && isAborted(abort)) {
         throw new AbortedError();
       }
       check(lib, status, "audiocpp_session_run");

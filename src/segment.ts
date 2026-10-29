@@ -13,7 +13,7 @@ import { inferenceThreads } from "./cpu";
 import { libraryPath } from "./onnxruntime-ffi";
 import { fetchAdvice } from "./preflight";
 import type { SegmentModel, SegmentProtocol } from "./segment-worker";
-import { abortable, LazyModel, WorkerClient } from "./worker-rpc";
+import { abortable, LazyModel, startWorker, WorkerClient } from "./worker-rpc";
 
 /** Most UTF-16 code units one request may hold in all its texts: about a second of work on a few cores. */
 export const MAX_SEGMENT_CHARS = 20_000;
@@ -62,9 +62,7 @@ export type SegmentLauncher = (cfg: Config) => Segmenter;
 /** Starts the thread that owns ONNX Runtime; replaceable in tests. */
 type SegmentWorkerFactory = () => Worker;
 
-const defaultWorker: SegmentWorkerFactory = () =>
-  // Not referenced: the server decides when the process ends, not an idle segmentation thread.
-  new Worker(new URL("segment-worker.ts", import.meta.url).href, { ref: false });
+const defaultWorker: SegmentWorkerFactory = () => startWorker("segment-worker.ts");
 
 type SegmentClient = WorkerClient<SegmentProtocol>;
 

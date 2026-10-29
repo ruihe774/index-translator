@@ -19,7 +19,7 @@ import type { Config } from "./config";
 import { fetchAdvice } from "./preflight";
 import type { SpeechProtocol } from "./speech-worker";
 import { type Pcm, readWav } from "./wav";
-import { abortable, LazyModel, messageOf, WorkerClient } from "./worker-rpc";
+import { abortable, LazyModel, messageOf, startWorker, WorkerClient } from "./worker-rpc";
 
 /** The languages IndexTTS-2.5 speaks. Any other text comes out as noise, so it is refused. */
 const SPEECH_LANGUAGE_SET: Record<SpeechLanguage, true> = { zh: true, en: true, ja: true, es: true, ar: true };
@@ -131,9 +131,7 @@ export function validateSample(wav: ArrayBuffer): Pcm {
 /** Starts the thread that owns libaudiocpp; replaceable in tests. */
 type SpeechWorkerFactory = () => Worker;
 
-const defaultWorker: SpeechWorkerFactory = () =>
-  // Not referenced: the server decides when the process ends, not an idle speech thread.
-  new Worker(new URL("speech-worker.ts", import.meta.url).href, { ref: false });
+const defaultWorker: SpeechWorkerFactory = () => startWorker("speech-worker.ts");
 
 /** The `fetch_models.ts` ids of the speech and separation models that are not installed; none while speech is off. */
 export function missingSpeechModels(cfg: Config): string[] {

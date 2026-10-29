@@ -311,6 +311,18 @@ export class LazyModel {
   }
 }
 
+/** The flag of an `abortable` request, read from the shared memory its message carries. */
+export const abortFlag = (buffer: SharedArrayBuffer): Int32Array => new Int32Array(buffer);
+
+/** Whether the client has set the flag (`abortable` stores 1). */
+export const isAborted = (flag: Int32Array): boolean => Atomics.load(flag, 0) !== 0;
+
+/**
+ * Starts a worker thread that runs `file` (next to this module). Not referenced: the server decides when the
+ * process ends, not an idle engine thread.
+ */
+export const startWorker = (file: string): Worker => new Worker(new URL(file, import.meta.url).href, { ref: false });
+
 /**
  * Runs `run` for a request that `signal` can stop. `run` is given the flag, one Int32 in shared memory
  * that the worker (inside its library, reading no messages) checks, and `started`, which it calls when

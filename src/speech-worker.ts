@@ -7,7 +7,7 @@ import { readFileSync } from "node:fs";
 
 import { AbortedError, SpeechModel, type SpeechModelOptions, VoiceSeparator } from "./audiocpp-ffi";
 import { normalizeLoudness, readWav, writeWav } from "./wav";
-import { type NoBody, serve } from "./worker-rpc";
+import { abortFlag, isAborted, type NoBody, serve } from "./worker-rpc";
 
 interface Ok {
   type: "ok";
@@ -59,9 +59,9 @@ serve<SpeechProtocol>({
     if (!model) {
       throw new Error("the speech model is not loaded");
     }
-    const abort = new Int32Array(msg.abort);
+    const abort = abortFlag(msg.abort);
     // Given up while it waited behind another message.
-    if (Atomics.load(abort, 0) !== 0) {
+    if (isAborted(abort)) {
       return { type: "aborted" };
     }
     const voice = readWav(readFileSync(msg.voicePath));

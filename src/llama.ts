@@ -11,7 +11,7 @@ import type { GpuMemory } from "./llama-ffi";
 import type { LlamaProtocol } from "./llama-worker";
 import type { ModelSpec } from "./models";
 import { fetchAdvice } from "./preflight";
-import { messageOf, WorkerClient } from "./worker-rpc";
+import { messageOf, startWorker, WorkerClient } from "./worker-rpc";
 
 type EngineState = "stopped" | "loading" | "ready" | "error";
 
@@ -71,9 +71,7 @@ type LlamaClient = WorkerClient<LlamaProtocol>;
 /** Starts the engine thread; replaceable in tests. */
 type EngineWorkerFactory = () => Worker;
 
-const defaultWorker: EngineWorkerFactory = () =>
-  // Not referenced: the server decides when the process ends, not an idle engine thread.
-  new Worker(new URL("llama-worker.ts", import.meta.url).href, { ref: false });
+const defaultWorker: EngineWorkerFactory = () => startWorker("llama-worker.ts");
 
 /** One reading of the GPU memory, shared by whoever asks within a second. */
 class MemoryReader {
