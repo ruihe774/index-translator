@@ -16,13 +16,18 @@ export const MAX_IMAGE_PIXELS = 50_000_000;
  * resampling, so `prepareImage` resizes to it once, here, and the engine gets exactly what it wants.
  * Check them on every llama.cpp pin change and for every other mmproj.
  */
-const ALIGN = 16 * 2;
+const PATCH_ALIGN = 16 * 2;
 const MIN_TOKENS = 8;
 const MAX_TOKENS = 4096;
-const MIN_PIXELS = MIN_TOKENS * ALIGN * ALIGN;
-const MAX_PIXELS = MAX_TOKENS * ALIGN * ALIGN;
+const MIN_PIXELS = MIN_TOKENS * PATCH_ALIGN * PATCH_ALIGN;
+const MAX_PIXELS = MAX_TOKENS * PATCH_ALIGN * PATCH_ALIGN;
 /** What an upload may be, as Bun.Image names the formats. */
 export const IMAGE_FORMATS = ["jpeg", "png", "webp"] as const;
+
+/** The `code` of an error Bun.Image threw, when it has one. */
+function errorCode(e: unknown): string | undefined {
+  return typeof e === "object" && e !== null && "code" in e && typeof e.code === "string" ? e.code : undefined;
+}
 
 /** Why an upload is not taken; `code` is the API's error code. */
 export class ImageRejected extends Error {
@@ -41,15 +46,15 @@ export class ImageRejected extends Error {
  */
 export function engineSize(width: number, height: number): { width: number; height: number } {
   const f = Math.fround;
-  const round = (x: number) => Math.round(f(x / ALIGN)) * ALIGN;
-  const ceil = (x: number) => Math.ceil(f(x / ALIGN)) * ALIGN;
-  const floor = (x: number) => Math.floor(f(x / ALIGN)) * ALIGN;
-  let w = Math.max(ALIGN, round(width));
-  let h = Math.max(ALIGN, round(height));
+  const round = (x: number) => Math.round(f(x / PATCH_ALIGN)) * PATCH_ALIGN;
+  const ceil = (x: number) => Math.ceil(f(x / PATCH_ALIGN)) * PATCH_ALIGN;
+  const floor = (x: number) => Math.floor(f(x / PATCH_ALIGN)) * PATCH_ALIGN;
+  let w = Math.max(PATCH_ALIGN, round(width));
+  let h = Math.max(PATCH_ALIGN, round(height));
   if (h * w > MAX_PIXELS) {
     const beta = f(Math.sqrt(f(f(f(height) * width) / MAX_PIXELS)));
-    h = Math.max(ALIGN, floor(f(height / beta)));
-    w = Math.max(ALIGN, floor(f(width / beta)));
+    h = Math.max(PATCH_ALIGN, floor(f(height / beta)));
+    w = Math.max(PATCH_ALIGN, floor(f(width / beta)));
   } else if (h * w < MIN_PIXELS) {
     const beta = f(Math.sqrt(f(MIN_PIXELS / f(f(height) * width))));
     h = ceil(f(height * beta));
@@ -82,7 +87,7 @@ export async function prepareImage(file: Uint8Array): Promise<Uint8Array> {
     if (e instanceof ImageRejected) {
       throw e;
     }
-    const { code } = e as { code?: string };
+    const code = errorCode(e);
     if (code === "ERR_IMAGE_TOO_MANY_PIXELS") {
       throw new ImageRejected("image_too_large", `the image has more than ${MAX_IMAGE_PIXELS} pixels`);
     }

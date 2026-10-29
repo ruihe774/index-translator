@@ -24,6 +24,11 @@ export function cancelled(): ApiError {
   return new ApiError(499, "cancelled", "the request was cancelled");
 }
 
+/** A feature that cannot serve now (503). */
+export function unavailable(code: ErrorCode, message: string, headers?: Record<string, string>): ApiError {
+  return new ApiError(503, code, message, undefined, headers);
+}
+
 export function invalid(message: string, field?: string): ApiError {
   return new ApiError(400, "invalid_request", message, field ? { field } : undefined);
 }

@@ -3,13 +3,21 @@
 
 import type { AlignUnit } from "./api";
 import type { Config } from "./config";
-import { ApiError, invalid } from "./http";
+import { ApiError, invalid, unavailable } from "./http";
 import { MAX_IMAGE_BYTES } from "./image";
 import { findModel, type ModelSpec } from "./models";
-import { buildDocumentPrompt, buildImagePrompt, buildPrompt, DOCUMENT_DIRECTIONS, type PromptInput } from "./prompt";
+import {
+  buildDocumentPrompt,
+  buildImagePrompt,
+  buildPrompt,
+  DOCUMENT_DIRECTIONS,
+  hasSourceLang,
+  type PromptInput,
+} from "./prompt";
 import { MAX_ALIGN_CHARS, MAX_ALIGN_SENTENCES, MAX_SEGMENT_CHARS, MAX_SEGMENT_TEXTS, type Segmenter } from "./segment";
 import {
   isSpeechLanguage,
+  MAX_SAMPLE_BYTES,
   MAX_SPEECH_CHARS,
   MAX_SPEED,
   MIN_SPEED,
@@ -21,6 +29,8 @@ import {
 export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 /** Longest `image` string: the largest image in base64, with room for a data URL's head. */
 const MAX_IMAGE_CHARS = Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 64;
+/** The largest body any route reads: a JSON body with an image, or a voice sample. A backstop for the server. */
+export const MAX_REQUEST_BYTES = Math.max(MAX_BODY_BYTES + MAX_IMAGE_CHARS, MAX_SAMPLE_BYTES);
 
 /** A field the client sent: JSON `null` counts as not sent. */
 export function present<T>(v: T): v is NonNullable<T> {
@@ -48,11 +58,24 @@ export function optionalString(body: Record<string, unknown>, field: string, max
   if (typeof v !== "string") {
     throw invalid(`${field} must be a string`, field);
   }
+  return checkedLength(v, field, maxLength);
+}
+
+function checkedLength(v: string, field: string, maxLength: number): string {
   // JSON Schema counts code points; String.length counts UTF-16 units, so only spread when that could matter.
   if (v.length > maxLength && Array.from(v).length > maxLength) {
     throw invalid(`${field} must be at most ${maxLength} characters`, field);
   }
   return v;
+}
+
+/** A string that is not blank; a missing or non-string field is as wrong as a blank one. */
+function requiredString(body: Record<string, unknown>, field: string, maxLength: number): string {
+  const v = body[field];
+  if (typeof v !== "string" || !v.trim()) {
+    throw invalid(`${field} must be a non-empty string`, field);
+  }
+  return checkedLength(v, field, maxLength);
 }
 
 function optionalStringArray(body: Record<string, unknown>, field: string): string[] | undefined {
@@ -196,10 +219,10 @@ export function parseTranslateRequest(body: Record<string, unknown>, defaultMode
 
 /** The document model takes a whole text in one of its fixed directions and nothing else. */
 function checkDocumentRequest(input: TranslateRequest): void {
-  const src = input.sourceLang?.trim().toLowerCase();
-  if (!src || src === "auto") {
+  if (!hasSourceLang(input.sourceLang)) {
     throw invalid(`source_lang is required by ${input.model.id}`, "source_lang");
   }
+  const src = input.sourceLang.trim().toLowerCase();
   const tgt = input.targetLang.trim().toLowerCase();
   const direction = `${src}-${tgt}`;
   if (!DOCUMENT_DIRECTIONS.includes(direction)) {
@@ -237,7 +260,7 @@ export function promptFor(input: TranslateRequest): string {
 }
 
 export function speechUnavailable(speech: Speech): ApiError {
-  return new ApiError(503, "speech_unavailable", speech.error ?? "reading aloud is not available");
+  return unavailable("speech_unavailable", speech.error ?? "reading aloud is not available");
 }
 
 export async function parseSpeechRequest(
@@ -245,10 +268,7 @@ export async function parseSpeechRequest(
   speech: Speech,
   voicesDir: Config["voicesDir"],
 ): Promise<SpeechRequest> {
-  if (typeof body.text !== "string" || !body.text.trim()) {
-    throw invalid("text must be a non-empty string", "text");
-  }
-  const text = optionalString(body, "text", MAX_SPEECH_CHARS)!;
+  const text = requiredString(body, "text", MAX_SPEECH_CHARS);
   const lang = optionalString(body, "lang", 16)?.trim().toLowerCase();
   if (!lang || !isSpeechLanguage(lang)) {
     throw new ApiError(400, "invalid_request", `lang must be one of ${SPEECH_LANGUAGES.join(", ")}`, {
@@ -265,11 +285,7 @@ export async function parseSpeechRequest(
   }
   const voices = await speech.voices();
   if (voices.length === 0) {
-    throw new ApiError(
-      503,
-      "speech_unavailable",
-      `no voices: upload a sample or put a WAV recording into ${voicesDir}`,
-    );
+    throw unavailable("speech_unavailable", `no voices: upload a sample or put a WAV recording into ${voicesDir}`);
   }
   const voice = optionalString(body, "voice", 128) ?? voices[0]!.id;
   if (!voices.some((v) => v.id === voice)) {
@@ -287,7 +303,7 @@ export function parseSegmentRequest(body: Record<string, unknown>, segmenter: Se
     throw invalid(`texts must hold at most ${MAX_SEGMENT_CHARS} UTF-16 code units in all`, "texts");
   }
   if (segmenter.state === "unavailable") {
-    throw new ApiError(503, "segment_unavailable", segmenter.error ?? "sentence segmentation is not available");
+    throw unavailable("segment_unavailable", segmenter.error ?? "sentence segmentation is not available");
   }
   return texts;
 }
@@ -313,7 +329,7 @@ export function parseAlignRequest(
     throw invalid(`source and target must hold at most ${MAX_ALIGN_CHARS} UTF-16 code units in all`, "source");
   }
   if (segmenter.aligner.state === "unavailable") {
-    throw new ApiError(503, "align_unavailable", segmenter.aligner.error ?? "alignment is not available");
+    throw unavailable("align_unavailable", segmenter.aligner.error ?? "alignment is not available");
   }
   return { unit, source, target };
 }

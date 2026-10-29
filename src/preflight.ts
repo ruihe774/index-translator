@@ -7,7 +7,7 @@ import { join } from "node:path";
 
 import type { Config } from "./config";
 import type { Probe } from "./llama-probe";
-import { findModel, type ModelSpec } from "./models";
+import { defaultModelSpec, type ModelSpec } from "./models";
 
 type Env = Record<string, string | undefined>;
 
@@ -112,6 +112,6 @@ export function preflight(
     return noGpuMessage(existsSync(join(cfg.llamaDir, "libggml-cuda.so")), found.vulkanLoader, windows);
   }
   // loadConfig has made sure the default model is a known one.
-  const model = findModel(cfg.defaultModel)!;
+  const model = defaultModelSpec(cfg);
   return existsSync(join(cfg.modelsDir, model.file)) ? undefined : missingModelMessage(cfg, model, env);
 }

@@ -15,7 +15,6 @@ const HTML_CSP =
 interface Transpiled {
   mtimeMs: number;
   size: number;
-  etag: string;
   code: string;
 }
 
@@ -96,6 +95,28 @@ function etagOf(info: { mtimeMs: number; size: number }): string {
   return `W/"${info.mtimeMs}-${info.size}"`;
 }
 
+/**
+ * The answer for a file whose validator is `info`'s: a 304 when the client has it, else `body()` with the
+ * validator and `cache` headers (and `type` as the media type, when the body does not carry its own).
+ */
+async function revalidated(
+  req: Request,
+  info: { mtimeMs: number; size: number },
+  cache: string,
+  body: () => string | Blob | Promise<string | Blob>,
+  type?: string,
+): Promise<Response> {
+  const etag = etagOf(info);
+  const headers: Record<string, string> = { etag, "cache-control": cache };
+  if (req.headers.get("if-none-match") === etag) {
+    return new Response(null, { status: 304, headers });
+  }
+  if (type) {
+    headers["content-type"] = type;
+  }
+  return new Response(await body(), { headers });
+}
+
 export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
   // Resolved once so the traversal check below compares like with like, whatever form the caller used.
   const dir = resolve(publicDir);
@@ -159,17 +180,10 @@ export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
       return undefined;
     }
 
-    const etag = etagOf(info);
-    const headers = { etag, "cache-control": cacheControl(path.slice(prefix.length)) };
-    if (req.headers.get("if-none-match") === etag) {
-      return new Response(null, { status: 304, headers });
-    }
-    if (path.endsWith(".html")) {
-      return new Response(await stripWhitespace(new Response(file)).text(), {
-        headers: { ...headers, "content-type": "text/html; charset=utf-8" },
-      });
-    }
-    return new Response(file, { headers });
+    const cache = cacheControl(path.slice(prefix.length));
+    return path.endsWith(".html")
+      ? revalidated(req, info, cache, () => stripWhitespace(new Response(file)).text(), "text/html; charset=utf-8")
+      : revalidated(req, info, cache, () => file);
   }
 
   async function transpiled(path: string, req: Request): Promise<Response | undefined> {
@@ -191,18 +205,13 @@ export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
         console.error(`[static] cannot transpile ${path}:`, e);
         return new Response("Internal Server Error", { status: 500 });
       }
-      entry = { mtimeMs: info.mtimeMs, size: info.size, etag: etagOf(info), code };
+      entry = { mtimeMs: info.mtimeMs, size: info.size, code };
       cache.set(path, entry);
     }
 
     // The file is revalidated on every load, so an edit shows up on the next reload.
-    const headers = { etag: entry.etag, "cache-control": "no-cache" };
-    if (req.headers.get("if-none-match") === entry.etag) {
-      return new Response(null, { status: 304, headers });
-    }
-    return new Response(entry.code, {
-      headers: { ...headers, "content-type": "text/javascript; charset=utf-8" },
-    });
+    const { code } = entry;
+    return revalidated(req, entry, "no-cache", () => code, "text/javascript; charset=utf-8");
   }
 
   async function lookup(pathname: string, req: Request): Promise<Response> {
