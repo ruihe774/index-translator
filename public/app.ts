@@ -17,7 +17,7 @@ import { type HistoryEntry, newId, restoredAlignment } from "./history.ts";
 import { fillLanguages } from "./languages.ts";
 import { confirmLink } from "./link-dialog.ts";
 import { linkReference } from "./links.ts";
-import { createOutput, type OutputView, renderText } from "./markdown-dom.ts";
+import { clipboardHtml, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
 import { looksLikeMarkdown } from "./markdown.ts";
 import {
   adviceMessage,
@@ -346,7 +346,7 @@ new MutationObserver(() => {
 
 // ---- translating -----------------------------------------------------------------------------
 
-/** Markdown is rendered when the source looks written in it; the copied text stays the raw output. */
+/** Markdown is rendered when the source looks written in it; the copied plain text stays the raw output. */
 function clearResult(markdown: boolean) {
   sync.reset();
   boundaries.abort();
@@ -735,7 +735,23 @@ async function copyTranslation(): Promise<void> {
   if (copyBtn.getAttribute("aria-disabled") === "true") {
     return;
   }
+  // A rendered Markdown translation goes out as rich text too; the plain text stays the source Markdown.
+  const html = outputEl.classList.contains("markdown") ? clipboardHtml(outputEl) : null;
   try {
+    if (html !== null && typeof ClipboardItem !== "undefined") {
+      try {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            "text/plain": new Blob([state.translation], { type: "text/plain" }),
+            "text/html": new Blob([html], { type: "text/html" }),
+          }),
+        ]);
+        metaEl.flash("Translation copied to the clipboard.");
+        return;
+      } catch {
+        // No HTML for this browser (or the write was refused): plain text alone is what Copy promised.
+      }
+    }
     await navigator.clipboard.writeText(state.translation);
     metaEl.flash("Translation copied to the clipboard.");
   } catch {

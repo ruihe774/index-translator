@@ -198,13 +198,14 @@ test("copy puts the translation on the clipboard", async ({ app, context }) => {
   expect(await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText())).toBe("你好");
 });
 
-test("Markdown source: the output is rendered, unsafe links stay text, and copy keeps the raw Markdown", async ({
+test("Markdown source: the output is rendered, unsafe links stay text, and copy keeps the raw Markdown as plain text and the rendered tree as HTML", async ({
   app,
   context,
 }) => {
   await context.grantPermissions(["clipboard-read", "clipboard-write"]);
   const md =
-    "# 标题\n\n- **一**\n- [链接](https://example.com)\n- [坏](javascript:alert(1))\n\n```js\nlet a = 1;\n```\n\n<b>原样</b>";
+    "# 标题\n\n- **一**\n- [链接](https://example.com)\n- [坏](javascript:alert(1))\n\n```js\nlet a = 1;\n```\n\n" +
+    "| 左 | 右 |\n| :-- | --: |\n| 甲 | 乙 |\n\n<b>原样</b>";
   await stubTranslate(
     app,
     200,
@@ -223,13 +224,38 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   await expect(app.output.locator("a")).toHaveCount(1);
   await expect(app.output.locator("li").nth(2)).toHaveText("坏");
   await expect(app.output.locator("pre > code.language-js")).toHaveText("let a = 1;");
+  await expect(app.output.locator("th").nth(0)).toHaveClass("align-left");
+  await expect(app.output.locator("th").nth(1)).toHaveClass("align-right");
   await expect(app.output.locator("b")).toHaveCount(0);
   await expect(app.output.locator("p").last()).toHaveText("<b>原样</b>");
 
   await app.copy.click();
+  await expect(app.meta).toHaveText("Translation copied to the clipboard.");
   // The Windows clipboard turns \n into \r\n.
   const copied = await app.page.evaluate(() => (globalThis as any).navigator.clipboard.readText());
   expect(copied.replaceAll("\r\n", "\n")).toBe(md);
+
+  // The same copy carries the rendered tree, without the page's internal marks.
+  const copiedHtml = await app.page.evaluate(async () => {
+    for (const item of await (globalThis as any).navigator.clipboard.read()) {
+      if (item.types.includes("text/html")) {
+        return await (await item.getType("text/html")).text();
+      }
+    }
+    return "";
+  });
+  expect(copiedHtml).toContain('dir="auto"');
+  expect(copiedHtml).toContain(">标题</h3>");
+  // The browser normalizes the rendered target; there is no other, so the unsafe link stayed text.
+  expect([...copiedHtml.matchAll(/href="([^"]*)"/g)].map((m) => m[1])).toEqual(["https://example.com/"]);
+  expect(copiedHtml).toContain("<code>let a = 1;</code>");
+  // Markdown table alignment survives as the cell's `align`, while page classes do not survive at all.
+  expect(copiedHtml).toContain('<th align="left">左</th>');
+  expect(copiedHtml).toContain('<th align="right">右</th>');
+  expect(copiedHtml).not.toContain("class=");
+  expect(copiedHtml).not.toContain("data-line");
+  expect(copiedHtml).not.toContain("sr-only");
+  expect(copiedHtml).not.toContain("target=");
 });
 
 test("the engine status opens a dialog with the health JSON, not the raw page", async ({ app }) => {

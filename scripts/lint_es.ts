@@ -33,7 +33,9 @@ const config: Linter.Config[] = [
     // Marking the sentence under the pointer (`sentence-hover.ts`) is a nicety, not a feature the page needs:
     // it is switched on only where both exist (`supported()` there), and nothing else depends on it. Both
     // became Baseline in 2025 and are not yet widely available. Take them out when they are.
-    settings: { polyfills: ["Highlight", "document.caretPositionFromPoint"] },
+    // `ClipboardItem` (`copyTranslation` in app.ts) is feature-detected and Copy falls back to text alone;
+    // Firefox gained it in 127, after the oldest browser the query covers.
+    settings: { polyfills: ["Highlight", "document.caretPositionFromPoint", "ClipboardItem"] },
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     rules: {
       // Bun turns `using` into helpers imported from "bun:wrap", and drops `with { type: "json" }`.

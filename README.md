@@ -51,7 +51,7 @@ service. It runs the Index-Translate 9B models on your GPU, with no accounts, qu
 | 🔊 **Reads aloud** | Hear the source or the translation, from any paragraph, in Chinese, English, Japanese, Spanish or Arabic, with voices and speed (IndexTTS-2.5, also local). |
 | 📚 **Terminology and style** | Glossary, hard rules ("keep placeholders unchanged"), soft style guidance and a genre such as academic paper or subtitles. |
 | ✅ **Tells you what went missing** | Models can silently drop or repeat paragraphs. The app counts paragraphs, warns you and names the paragraphs that went missing, were merged or were repeated; click one side to jump to the matching paragraph on the other. |
-| ✍️ **Markdown stays Markdown** | Headings, lists, tables and code are shown formatted as they stream in, with Raw / Preview per side. Copy returns the Markdown. |
+| ✍️ **Markdown stays Markdown** | Headings, lists, tables and code are shown formatted as they stream in, with Raw / Preview per side. Copy returns the Markdown, and the formatted text as rich text when the translation is shown formatted. |
 
 Also: streaming with **Stop**, correct Chinese and Japanese typography, an interface checked against WCAG 2.2 AA
 (keyboard and screen readers), and a local REST API with streaming ([`docs/openapi.yaml`](docs/openapi.yaml)) so
@@ -219,8 +219,9 @@ If the text you enter is written in Markdown (headings, lists, code blocks, tabl
 on), the translation is shown formatted, as it arrives, and after you click **Translate** your text
 is shown formatted too. Each side has **Raw** and **Preview** buttons to switch between the
 Markdown source and the formatted view; **Raw** on your side brings back the text box for editing.
-**Copy translation** still copies the Markdown source. Links open in a new tab; images are shown as
-links and are not loaded.
+**Copy translation** copies the Markdown source as plain text and, when the translation is shown
+formatted, also puts the formatted text on the clipboard as rich text. Links open in a new tab;
+images are shown as links and are not loaded.
 
 </details>
 

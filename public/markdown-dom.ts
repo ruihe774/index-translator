@@ -287,6 +287,54 @@ function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
   };
 }
 
+/**
+ * Attributes that mean something outside the page. Everything else the rendered tree carries
+ * (`data-*`, `aria-*`, `role`, `tabindex`, classes) is the page's own: syncing, scrolling and the
+ * link check.
+ */
+const KEPT_ATTRS = new Set(["href", "title", "lang", "dir", "start", "type", "checked", "disabled", "align"]);
+
+/**
+ * The rendered output as HTML for the clipboard: the tree as shown without the page's own marks.
+ * Markdown's table alignment is a class in the page, so it becomes the cell's `align` attribute.
+ * The returned string is the serialization of a tree built here with the DOM API; nothing is parsed
+ * from it.
+ */
+export function clipboardHtml(root: HTMLElement): string {
+  const clone = root.cloneNode(true) as HTMLElement;
+  for (const el of clone.querySelectorAll<HTMLElement>("*")) {
+    if (el.classList.contains("sr-only")) {
+      // The link check's note; the link's own text stays.
+      el.remove();
+      continue;
+    }
+    const align = ["left", "center", "right"].find((a) => el.classList.contains(`align-${a}`));
+    if (align) {
+      el.setAttribute("align", align);
+    }
+    if (el.dataset.linkProblem) {
+      // The link check writes its note into `title`, replacing whatever the Markdown gave it.
+      el.removeAttribute("title");
+    }
+    // A snapshot: `attributes` is live and removing while iterating it skips entries.
+    for (const name of el.getAttributeNames()) {
+      if (!KEPT_ATTRS.has(name)) {
+        el.removeAttribute(name);
+      }
+    }
+  }
+  // The fragment needs one element to carry what applies to all of it; the pane's own id and classes stay behind.
+  const wrapper = document.createElement("div");
+  if (root.lang) {
+    wrapper.lang = root.lang;
+  }
+  if (root.dir) {
+    wrapper.dir = root.dir;
+  }
+  wrapper.append(...clone.childNodes);
+  return `<meta charset="utf-8">${wrapper.outerHTML}`;
+}
+
 /** Marks the links under a freshly rendered, complete output. */
 export function checkLinks(root: HTMLElement, ref: LinkReference) {
   for (const a of root.querySelectorAll<HTMLAnchorElement>("a[href]")) {
