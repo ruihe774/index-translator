@@ -195,7 +195,7 @@ export interface ModelOptions {
  * `ineligible` when they did but not every layer is on the GPU or the GPU is under MTP_MIN_GPU_BYTES, `no-layer` when
  * the model has no MTP layer (or its context could not be created), `on` otherwise.
  */
-export type MtpStatus = "off" | "ineligible" | "no-layer" | "on";
+type MtpStatus = "off" | "ineligible" | "no-layer" | "on";
 
 /** An image the model cannot take: not a readable image file, or the model has no encoder for one. */
 export class ImageError extends Error {}
@@ -239,7 +239,6 @@ interface Loaded {
   mmproj: string | undefined;
   /** The MTP drafter, when the model decodes with multi-token prediction. */
   mtp: Handle | null;
-  mtpStatus: MtpStatus;
 }
 
 /** One model with one context. Not thread-safe; `free()` must be called to release its memory. */
@@ -248,7 +247,6 @@ export class Model {
   readonly ctxSize: number;
   /** Tokens to hand to one decode() call: the prompt is fed in pieces so the caller can stop between them. */
   readonly promptStep: number;
-  readonly mtpStatus: MtpStatus;
 
   private readonly lib: Lib;
   private readonly model: Handle;
@@ -283,7 +281,6 @@ export class Model {
     this.threads = m.threads;
     this.mmproj = m.mmproj;
     this.mtp = m.mtp;
-    this.mtpStatus = m.mtpStatus;
     this.promptStep = m.onGpu ? BATCH_SIZE : CPU_PROMPT_STEP;
     this.ctxSize = m.lib.llama_n_ctx(m.ctx);
     this.vocab = m.lib.llama_model_get_vocab(m.model)!;
@@ -292,8 +289,7 @@ export class Model {
 
   /**
    * Loads the model in `opts.dir`, which opens the libraries on the first call. `gpuTotal` is the GPUs' memory in
-   * bytes (0 without one), which decides whether MTP is on; the outcome is `mtpStatus`, and logged unless it was not
-   * asked for.
+   * bytes (0 without one), which decides whether MTP is on; the outcome is logged unless it was not asked for.
    */
   static load(opts: ModelOptions, gpuTotal: number): Model {
     const lib = llama.open(opts.dir);
@@ -335,7 +331,6 @@ export class Model {
       threads: opts.threads,
       mmproj: opts.mmproj,
       mtp,
-      mtpStatus,
     });
   }
 

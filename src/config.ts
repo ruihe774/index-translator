@@ -32,6 +32,18 @@ function list(env: Env, name: string): string[] {
     .filter(Boolean);
 }
 
+const SPEECH_BACKENDS = ["vulkan", "cuda", "cpu"] as const;
+export type SpeechBackend = (typeof SPEECH_BACKENDS)[number];
+
+function speechBackend(env: Env): SpeechBackend {
+  const raw = env.SPEECH_BACKEND || "vulkan";
+  const backend = SPEECH_BACKENDS.find((b) => b === raw);
+  if (!backend) {
+    throw new Error(`SPEECH_BACKEND must be one of ${SPEECH_BACKENDS.join(", ")}, got "${raw}"`);
+  }
+  return backend;
+}
+
 export interface Config {
   host: string;
   port: number;
@@ -73,7 +85,7 @@ export interface Config {
   /** Reference recordings (`*.wav`), one per voice. */
   voicesDir: string;
   /** audio.cpp backend for speech: `vulkan`, `cuda` (the build of `build_audiocpp.ts --cuda`, which the AppImage with CUDA sets) or `cpu`. */
-  speechBackend: string;
+  speechBackend: SpeechBackend;
   /** Seconds without a speech request after which the speech model leaves the GPU; 0 keeps it. */
   speechIdleUnload: number;
   /** Sentence segmentation (`POST /segment`); false never loads ONNX Runtime. */
@@ -215,7 +227,7 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     speechModelDir: dir(env, "SPEECH_MODEL_DIR", join(modelsDir, "IndexTTS2.5-GGUF")),
     separationModelDir: dir(env, "SEPARATION_MODEL_DIR", join(modelsDir, "BS-RoFormer-ep368-GGUF")),
     voicesDir: dir(env, "VOICES_DIR", join(root, "voices")),
-    speechBackend: env.SPEECH_BACKEND || "vulkan",
+    speechBackend: speechBackend(env),
     speechIdleUnload: int(env, "SPEECH_IDLE_UNLOAD", 300),
     segment: env.SEGMENT !== "0",
     onnxruntimeDir: dir(env, "ONNXRUNTIME_DIR", join(root, "vendor", "onnxruntime")),

@@ -229,11 +229,13 @@ export function loadRuntime(dir: string): Runtime {
         check(f.SetInterOpNumThreads(options, 1), "SetInterOpNumThreads");
         // The arena keeps the largest batch's memory for good (a gigabyte); without it memory follows the work.
         check(f.DisableCpuMemArena(options), "DisableCpuMemArena");
-        check(f.CreateSession(env.handle, ptr(ortPath(modelPath)), options, ptr(scratch)), "CreateSession");
+        const path = ortPath(modelPath);
+        check(f.CreateSession(env.handle, ptr(path), options, ptr(scratch)), "CreateSession");
         session = pointerOf(scratch);
       } finally {
         f.ReleaseSessionOptions(options);
       }
+      let closed = false;
       return {
         run(data, rows, width, perToken) {
           if (data.length !== names.inputs.length || data.some((d) => d.length !== rows * width)) {
@@ -243,15 +245,20 @@ export function loadRuntime(dir: string): Runtime {
           }
           const dims = BigInt64Array.of(BigInt(rows), BigInt(width));
           const size = rows * width * perToken;
-          const inputs = data.map((d) => tensor(d, dims));
+          // Each tensor is released on any exit, including a later one failing to be created.
+          const inputs: Pointer[] = [];
           const outputs = slot();
           try {
+            for (const d of data) {
+              inputs.push(tensor(d, dims));
+            }
+            const inputTable = BigUint64Array.from(inputs.map(BigInt));
             check(
               f.Run(
                 session,
                 null,
                 ptr(names.inputs),
-                ptr(BigUint64Array.from(inputs.map(BigInt))),
+                ptr(inputTable),
                 names.inputs.length,
                 ptr(names.outputs),
                 names.outputs.length,
@@ -272,7 +279,10 @@ export function loadRuntime(dir: string): Runtime {
           }
         },
         close() {
-          f.ReleaseSession(session);
+          if (!closed) {
+            closed = true;
+            f.ReleaseSession(session);
+          }
         },
       };
     },
