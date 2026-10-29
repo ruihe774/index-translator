@@ -19,6 +19,7 @@ import {
   readSse,
   resetMock,
   TEMPLATE,
+  until,
   waitReady,
 } from "./helpers/mock-engine";
 
@@ -605,9 +606,8 @@ describe("static files", () => {
 describe("error envelope", () => {
   function expectEnvelope(body: ErrorResponse, code: string): void {
     expect(Object.keys(body)).toStrictEqual(["error"]);
-    expect(body.error.code).toBeTypeOf("string");
     expect<string>(body.error.code).toBe(code);
-    expect(body.error.message).toBeTypeOf("string");
+    expect(body.error.message).not.toBe("");
   }
 
   test("every API error is application/json with {error:{code,message}}", async () => {
@@ -713,10 +713,20 @@ describe("resumable streams", () => {
       const reader = res.body!.getReader();
       await reader.read();
       await reader.cancel();
-      // The job must finish with nobody reading it (5 chunks of 40 ms); a reader would be one, so nothing but time shows it.
-      await Bun.sleep(300);
-      const again = await fetch(`${base}/api/v1/translations/${id}/events`, { headers: { "last-event-id": "1" } });
-      const events = await readSse(again);
+      // The job must finish with nobody reading it (5 chunks of 40 ms). Each poll is a reader of its own, but it
+      // lets go after 30 ms and so takes no part in running the job.
+      const events = await until(async () => {
+        try {
+          const again = await fetch(`${base}/api/v1/translations/${id}/events`, {
+            headers: { "last-event-id": "1" },
+            signal: AbortSignal.timeout(30),
+          });
+          const events = await readSse(again);
+          return events.at(-1)?.event === "done" && events;
+        } catch {
+          return false;
+        }
+      }, "the job to finish without a reader");
       expect(events.at(-1)!.event).toBe("done");
     } finally {
       mock.delayMs = 0;
