@@ -6,7 +6,7 @@
 import { CString, dlopen } from "bun:ffi";
 import { existsSync } from "node:fs";
 
-import { soxrLibraryPath } from "./audiocpp-ffi";
+import { soxrLibraryPath } from "./ffi-util";
 
 // A soxr_quality_spec_t: precision (bits), phase_response (50 = linear), passband_end and stopband_begin
 // (fractions of the lower Nyquist rate), then `e` and `flags` (zero; six doubles cover the struct's padding

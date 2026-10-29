@@ -13,8 +13,8 @@
 import { join } from "node:path";
 
 import { acceptWeight } from "./accept";
-import { lazyOptional } from "./opus-stream";
-import type { Pcm } from "./wav";
+import { lazyOptional } from "./lazy-optional";
+import { floatToInt16, type Pcm } from "./wav";
 
 export const QOA_TYPE = "audio/qoa";
 
@@ -49,7 +49,7 @@ export function qoaLoader(publicDir: string): () => Promise<QoaCodec | undefined
 function toInt16(samples: Float32Array): Int16Array {
   const out = new Int16Array(samples.length);
   for (let i = 0; i < samples.length; i++) {
-    out[i] = Math.round(Math.max(-1, Math.min(1, samples[i]!)) * 0x7f_ff);
+    out[i] = floatToInt16(samples[i]!);
   }
   return out;
 }

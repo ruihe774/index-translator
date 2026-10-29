@@ -19,6 +19,12 @@ export const libName = (name: string, soVersion?: number) =>
 /** The path of library `name` inside `dir`. */
 export const libraryFile = (dir: string, name: string, soVersion?: number) => join(dir, libName(name, soVersion));
 
+/** Where scripts/build_soxr.ts puts libsoxr, beside the engine directory `audioDir`. */
+export const soxrDir = (audioDir: string) => join(audioDir, "..", "soxr");
+
+/** The file audio.cpp asks for: the library's SONAME on Linux, `soxr.dll` on Windows. */
+export const soxrLibraryPath = (dir: string) => libraryFile(dir, "soxr", 0);
+
 /** An out parameter for one pointer a library writes (`T **`). */
 export const slot = () => new BigUint64Array(1);
 

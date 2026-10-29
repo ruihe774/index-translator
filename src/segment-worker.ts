@@ -12,7 +12,7 @@ import type { AlignedPair, AlignUnit, SegmentedText } from "./api";
 import { type Dense, DIMENSIONS, embed, readDense, WordPieceTokenizer } from "./labse";
 import { loadRuntime, type Runtime, type Session } from "./onnxruntime-ffi";
 import { findBoundaries, type TokenizerJson, XlmrTokenizer } from "./sat";
-import { serve } from "./worker-rpc";
+import { abortFlag, isAborted, serve } from "./worker-rpc";
 
 /** `sat`: `model.onnx` and `tokenizer.json`; `labse`: `model.onnx`, `vocab.txt` and `dense.safetensors`. */
 export type SegmentModel = "sat" | "labse";
@@ -89,13 +89,13 @@ serve<SegmentProtocol>({
       throw new Error("the segmentation model is not loaded");
     }
     const { session, tokenizer } = sat;
-    const abort = new Int32Array(msg.abort);
+    const abort = abortFlag(msg.abort);
     const texts = findBoundaries(
       tokenizer,
       msg.texts,
       (ids, mask, rows, width) => session.run([ids, mask], rows, width, 1),
       msg.minProbability,
-      () => Atomics.load(abort, 0) !== 0,
+      () => isAborted(abort),
     );
     return texts ? { type: "boundaries", texts } : { type: "aborted" };
   },
@@ -104,7 +104,7 @@ serve<SegmentProtocol>({
       throw new Error("the alignment model is not loaded");
     }
     const { session, tokenizer, dense } = labse;
-    const abort = new Int32Array(msg.abort);
+    const abort = abortFlag(msg.abort);
     // A paragraph is read by its opening and weighed by its whole length.
     const read = msg.unit === "paragraphs" ? openings(msg.source, msg.target) : msg;
     const embeddings = embed(
@@ -113,7 +113,7 @@ serve<SegmentProtocol>({
       [...read.source, ...read.target],
       // BERT's segment ids: every token is of the first segment.
       (ids, mask, rows, width) => session.run([ids, mask, new BigInt64Array(ids.length)], rows, width, DIMENSIONS),
-      () => Atomics.load(abort, 0) !== 0,
+      () => isAborted(abort),
     );
     if (!embeddings) {
       return { type: "aborted" };

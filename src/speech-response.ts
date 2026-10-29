@@ -2,8 +2,8 @@
 // codec runs here (the heavier weight first, Opus on a tie), else the WAV.
 
 import { acceptWeight } from "./accept";
-import { soxrDir } from "./audiocpp-ffi";
 import type { Config } from "./config";
+import { soxrDir } from "./ffi-util";
 import { OPUS_TYPE, opusLoader, opusResponse } from "./opus-stream";
 import { QOA_TYPE, qoaLoader, qoaResponse } from "./qoa-stream";
 import { soxrResampler } from "./resample";

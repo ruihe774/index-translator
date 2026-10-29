@@ -9,21 +9,15 @@
 
 import { CString, dlopen, type Pointer, ptr, toArrayBuffer } from "bun:ffi";
 import { existsSync } from "node:fs";
-import { join } from "node:path";
 
-import { cstr, libraryFile, once, pointerOf, slot } from "./ffi-util";
+import { cstr, libraryFile, once, pointerOf, slot, soxrDir, soxrLibraryPath } from "./ffi-util";
 import type { Pcm } from "./wav";
+import { isAborted } from "./worker-rpc";
 
 /** The major version of the C API these declarations were written against (`audiocpp.h`, 0.2). */
 const ABI_MAJOR = 0;
 
 export const libraryPath = (dir: string) => libraryFile(dir, "audiocpp");
-
-/** Where scripts/build_soxr.ts puts libsoxr, beside the engine directory `audioDir`. */
-export const soxrDir = (audioDir: string) => join(audioDir, "..", "soxr");
-
-/** The file audio.cpp asks for: the library's SONAME on Linux, `soxr.dll` on Windows. */
-export const soxrLibraryPath = (dir: string) => libraryFile(dir, "soxr", 0);
 
 /**
  * audio.cpp resamples with libsoxr when it can open one by name, and otherwise with resamplers of
@@ -280,7 +274,7 @@ export class SpeechModel extends Loaded {
         lib.audiocpp_set_abort_flag(null);
       }
       // A run that failed while the flag was up is taken to have failed because of it.
-      if (status !== 0 && abort && Atomics.load(abort, 0) !== 0) {
+      if (status !== 0 && abort && isAborted(abort)) {
         throw new AbortedError();
       }
       check(lib, status, "audiocpp_session_run");

@@ -130,6 +130,9 @@ export function normalizeLoudness(pcm: Pcm): Pcm {
   return { ...pcm, samples: pcm.samples.map((x) => x * gain) };
 }
 
+/** A float sample (clamped to -1 to 1) as a 16-bit one, rounded. */
+export const floatToInt16 = (s: number): number => Math.round(Math.max(-1, Math.min(1, s)) * 0x7f_ff);
+
 /** A WAV file with 16-bit PCM samples. */
 export function writeWav(pcm: Pcm): ArrayBuffer {
   const bytes = pcm.samples.length * 2;
@@ -152,8 +155,7 @@ export function writeWav(pcm: Pcm): ArrayBuffer {
   ascii(36, "data");
   view.setUint32(40, bytes, true);
   for (let i = 0; i < pcm.samples.length; i++) {
-    const s = Math.max(-1, Math.min(1, pcm.samples[i]!));
-    view.setInt16(44 + i * 2, Math.round(s * 0x7f_ff), true);
+    view.setInt16(44 + i * 2, floatToInt16(pcm.samples[i]!), true);
   }
   return view.buffer;
 }
