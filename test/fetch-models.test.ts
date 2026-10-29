@@ -1,8 +1,7 @@
 // scripts/fetch_models.ts against a local server that stands in for Hugging Face, with the real curl.
 
 import { afterAll, beforeAll, beforeEach, describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { existsSync, mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
 import {
@@ -17,6 +16,7 @@ import {
   plan,
 } from "../scripts/fetch_models";
 import { MODELS } from "../src/models";
+import { tempDir } from "./helpers/harness";
 
 const curl = Bun.which("curl");
 const sha256 = (bytes: Uint8Array | string) => new Bun.CryptoHasher("sha256").update(bytes).digest("hex");
@@ -64,13 +64,11 @@ beforeEach(() => {
   if (dir) {
     rmSync(dir, { recursive: true, force: true });
   }
-  dir = mkdtempSync(join(tmpdir(), "fetch-models-"));
+  dir = tempDir("fetch-models-");
   ranges = [];
 });
 
 afterAll(() => server.stop(true));
-
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 const file = (overrides: Partial<Download> = {}): Download => ({
   url: "/file",

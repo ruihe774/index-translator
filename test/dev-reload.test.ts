@@ -1,26 +1,22 @@
 // DEV_RELOAD=1: the reload stream, the injected client script, and nothing of it without the flag.
 
 import { afterEach, beforeEach, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { type App, startApp } from "../src/app";
-import { config, launcher } from "./helpers/mock-engine";
+import { config, launcher, tempDir } from "./helpers/mock-engine";
 
 let dir: string;
 let app: App | undefined;
 
 beforeEach(async () => {
-  dir = mkdtempSync(join(tmpdir(), "dev-reload-test-"));
-  mkdirSync(dir, { recursive: true });
+  dir = tempDir("dev-reload-test-");
   await Bun.write(join(dir, "index.html"), "<!doctype html><title>t</title><body><p>hi</p></body>");
 });
 
 afterEach(async () => {
   await app?.stop();
   app = undefined;
-  rmSync(dir, { recursive: true, force: true });
 });
 
 describe("without DEV_RELOAD", () => {

@@ -7,10 +7,10 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, spyOn, te
 import { mkdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
 
-import { Engine, EngineError, type GenerationEvent, type Launcher, launchNative } from "../src/llama";
+import { Engine, EngineError, type Launcher, launchNative } from "../src/llama";
 import { chatPrompt, chatPromptParts } from "../src/llama-ffi";
 import { MODELS } from "../src/models";
-import { config, type FakeModel, fakeModel, mock, resetMock, TEMPLATE, until } from "./helpers/mock-engine";
+import { collect, config, type FakeModel, fakeModel, mock, resetMock, TEMPLATE, until } from "./helpers/mock-engine";
 
 // ---- fake launcher -------------------------------------------------------------------------
 
@@ -59,14 +59,6 @@ async function errorOf(p: Promise<unknown>): Promise<any> {
     return e;
   }
   throw new Error("expected a rejection");
-}
-
-async function collect(gen: AsyncIterable<GenerationEvent>): Promise<GenerationEvent[]> {
-  const events: GenerationEvent[] = [];
-  for await (const ev of gen) {
-    events.push(ev);
-  }
-  return events;
 }
 
 const engines: Engine[] = [];

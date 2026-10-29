@@ -2,6 +2,8 @@
 // request/SSE helpers. The mocks themselves are in mock-llama.ts, mock-speech.ts, mock-webpage.ts and
 // mock-segment.ts; mock-engine.ts re-exports all of it and has `resetAllMocks`.
 
+import { mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 
 import type { ErrorBody, ErrorResponse, Health, TranslateEvents } from "../../src/api";
@@ -49,10 +51,64 @@ export async function inFlight(app: App, n: number): Promise<void> {
 /** Waits until `GET /health` reports the translation queue as `running` with `waiting` requests behind it. */
 export async function queueIs(base: string, running: boolean, waiting: number): Promise<void> {
   await until(async () => {
-    const { queue } = await bodyOf<Health>(await fetch(`${base}/api/v1/health`));
+    const { queue } = await getHealth(base);
     return queue.running === running && queue.waiting === waiting;
   }, `the queue to have running ${running}, waiting ${waiting}`);
 }
+
+/**
+ * Lets pending promise callbacks and I/O callbacks run: `rounds` turns of the event loop. Uses
+ * `setImmediate`, which fake timers do not hold back (`Bun.sleep` and `setTimeout` are).
+ */
+export async function flush(rounds = 5): Promise<void> {
+  for (let i = 0; i < rounds; i++) {
+    await new Promise<void>((resolve) => void setImmediate(resolve));
+  }
+}
+
+/**
+ * One macrotask on the timer queue, so every pending promise callback has run. Use `flush` instead
+ * under fake timers, or when the event loop is busy: a timer is not held back there, but
+ * `setImmediate` can be slow once a server has been busy.
+ */
+export function tick(): Promise<void> {
+  return Bun.sleep(0);
+}
+
+/** Rejects with `timed out: ${what}` when `p` has not settled after `ms`. */
+export function within<T>(p: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const timeout = new Promise<never>(
+    (_, reject) => void (timer = setTimeout(() => reject(new Error(`timed out: ${what}`)), ms)),
+  );
+  return Promise.race([p, timeout]).finally(() => clearTimeout(timer));
+}
+
+/** Everything an async iterable yields, in order. */
+export async function collect<T>(it: AsyncIterable<T>): Promise<T[]> {
+  const out: T[] = [];
+  for await (const item of it) {
+    out.push(item);
+  }
+  return out;
+}
+
+const tempDirs = new Set<string>();
+process.on("exit", () => {
+  for (const dir of tempDirs) {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+/** A new empty directory under the system's temporary one, removed when the test process exits. */
+export function tempDir(prefix: string): string {
+  const dir = mkdtempSync(join(tmpdir(), prefix));
+  tempDirs.add(dir);
+  return dir;
+}
+
+/** Where the speech engine keeps uploaded voices: one directory per server process. */
+export const UPLOAD_VOICES_DIR = join(tmpdir(), `index-translator-voices-${process.pid}`);
 
 /** Waits `ms`, or until `signal` aborts, whichever is first; never rejects. A mock's way to take its time. */
 export async function delay(ms: number, signal: AbortSignal): Promise<void> {
@@ -147,6 +203,27 @@ export async function readSse(res: Response): Promise<SseEvent[]> {
  */
 export async function bodyOf<T>(res: Response): Promise<T> {
   return (await res.json()) as T;
+}
+
+/** `GET /api/v1/health` with its status. */
+export async function healthResponse(origin: string): Promise<{ status: number; body: Health }> {
+  const res = await fetch(origin + "/api/v1/health");
+  return { status: res.status, body: await bodyOf<Health>(res) };
+}
+
+/** The body of `GET /api/v1/health`. */
+export async function getHealth(origin: string): Promise<Health> {
+  return (await healthResponse(origin)).body;
+}
+
+/** The `queue` of `GET /api/v1/health`. */
+export async function queueOf(origin: string): Promise<Health["queue"]> {
+  return (await getHealth(origin)).queue;
+}
+
+/** The JSON body of `GET origin + path` as `T`. */
+export async function getJson<T>(origin: string, path: string): Promise<T> {
+  return bodyOf<T>(await fetch(origin + path));
 }
 
 /** The `error` of an error response. */

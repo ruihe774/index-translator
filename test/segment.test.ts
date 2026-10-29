@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
 import { BACKOFF_MS, MAX_TEXTS, SentenceBoundaries } from "../public/segment";
+import { flush } from "./helpers/harness";
 
 interface Call {
   texts: string[];
@@ -25,11 +26,6 @@ function setup(maxChars = 100) {
     });
   const client = new SentenceBoundaries(post, () => clock);
   client.configure({ status: "ready", max_chars: maxChars });
-  const flush = async () => {
-    for (let i = 0; i < 5; i++) {
-      await Bun.sleep(0);
-    }
-  };
   return { client, calls, flush, tick: (ms: number) => void (clock += ms) };
 }
 

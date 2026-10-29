@@ -1,12 +1,11 @@
-import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { beforeAll, describe, expect, test } from "bun:test";
+import { mkdirSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Probe } from "../src/llama-probe";
 import { MODELS } from "../src/models";
 import { fetchAdvice, launchMode, preflight, runProbe } from "../src/preflight";
-import { config } from "./helpers/mock-engine";
+import { config, tempDir } from "./helpers/mock-engine";
 
 const GPU: Probe = { gpus: ["Vulkan0: Some GPU"], cpu: true, vulkanLoader: true };
 const NO_GPU: Probe = { gpus: [], cpu: true, vulkanLoader: true };
@@ -15,13 +14,11 @@ let dir = "";
 let withModel = "";
 
 beforeAll(async () => {
-  dir = mkdtempSync(join(tmpdir(), "preflight-"));
+  dir = tempDir("preflight-");
   withModel = join(dir, "models");
   mkdirSync(withModel);
   await Bun.write(join(withModel, MODELS[0]!.file), "");
 });
-
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("preflight", () => {
   test("a GPU, a CPU backend and the default model: nothing to report", () => {

@@ -3,9 +3,8 @@
 // `satisfies Record<keyof T, true>`, so the compiler keeps each list equal to its interface; the tests
 // then check the runtime objects against the lists (types cannot say what an object really has).
 
-import { afterAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
+import { describe, expect, test } from "bun:test";
+import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 
 import { createNativeLauncher, type Running } from "../src/llama";
@@ -13,7 +12,7 @@ import { MODELS } from "../src/models";
 import { NativeSegmenter, type Segmenter } from "../src/segment";
 import { NativeSpeech, type Speech } from "../src/speech";
 import { type WebpageFetcher, webViewFetcher } from "../src/webpage";
-import { config } from "./helpers/harness";
+import { config, tempDir } from "./helpers/harness";
 import { fakeModel } from "./helpers/mock-llama";
 import { segmentLauncher } from "./helpers/mock-segment";
 import { speechLauncher } from "./helpers/mock-speech";
@@ -61,9 +60,7 @@ function echoWorker(): Worker {
   return worker as unknown as Worker;
 }
 
-const dir = await mkdtemp(join(tmpdir(), "mock-contract-"));
-
-afterAll(() => rm(dir, { recursive: true, force: true }));
+const dir = tempDir("mock-contract-");
 
 describe("the mock engines have the members of the real ones", () => {
   test("Running", async () => {

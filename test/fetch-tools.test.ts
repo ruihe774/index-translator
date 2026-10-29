@@ -2,8 +2,6 @@
 // archive readers and "download unless the copy here is right".
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
-import { mkdtemp, rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import {
@@ -15,6 +13,7 @@ import {
   unzip,
   writeStamp,
 } from "../scripts/fetch_tools";
+import { tempDir } from "./helpers/harness";
 
 /** A ustar archive, gzipped, as npm packs one: a 512-byte header and the padded content per entry. */
 function tgz(entries: { name: string; prefix?: string; type?: string; content?: string }[]): Uint8Array {
@@ -127,9 +126,7 @@ describe("unzip", () => {
 
 describe("checksums and stamps", () => {
   let dir: string;
-  beforeAll(async () => void (dir = await mkdtemp(join(tmpdir(), "fetch-tools-"))));
-
-  afterAll(() => rm(dir, { recursive: true, force: true }));
+  beforeAll(() => void (dir = tempDir("fetch-tools-")));
 
   test("sha256Hex of a known string", () => {
     expect(sha256Hex("abc")).toBe("ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad");
@@ -156,8 +153,8 @@ describe("downloadUnlessMatches", () => {
   let dir: string;
   let server: ReturnType<typeof Bun.serve>;
   let requests = 0;
-  beforeAll(async () => {
-    dir = await mkdtemp(join(tmpdir(), "fetch-tools-"));
+  beforeAll(() => {
+    dir = tempDir("fetch-tools-");
     server = Bun.serve({
       port: 0,
       fetch() {
@@ -167,10 +164,7 @@ describe("downloadUnlessMatches", () => {
     });
   });
 
-  afterAll(async () => {
-    await server.stop(true);
-    await rm(dir, { recursive: true, force: true });
-  });
+  afterAll(() => server.stop(true));
 
   test("downloads into a new directory, then leaves a matching copy alone", async () => {
     const pin = { url: `http://127.0.0.1:${server.port}/tool`, sha256: sha256Hex("the tool") };

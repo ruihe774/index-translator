@@ -16,6 +16,7 @@ import {
   dataOf,
   DOCUMENT,
   errorOf,
+  getHealth,
   inFlight,
   launcher,
   mock,
@@ -150,7 +151,7 @@ describe("POST /tokenize", () => {
     expect(body.prompt_tokens).toBe(buildDocumentPrompt("en-zh", "The fox.").length + TEMPLATE.length);
     expect(mock.launches).toHaveLength(before);
 
-    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
+    const health = await getHealth(base);
     expect(health.model).toBe(CHAT);
   });
 
@@ -177,13 +178,13 @@ describe("POST /tokenize", () => {
     const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
     await queueIs(base, true, 1);
 
-    const before = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
+    const before = await getHealth(base);
     expect(before.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     const res = await post("/api/v1/tokenize", { text: "Hi", target_lang: "zh" });
     expect(res.status).toBe(200);
 
-    const after = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
+    const after = await getHealth(base);
     expect(after.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     await Promise.all([first.then(readSse), second.then(readSse)]);
@@ -345,7 +346,7 @@ describe("model selection", () => {
     expect((await bodyOf<TranslateResponse>(res)).model).toBe(DOCUMENT);
     expect(mock.launches.slice(before)).toStrictEqual([DOCUMENT]);
 
-    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
+    const health = await getHealth(base);
     expect(health.model).toBe(DOCUMENT);
 
     // A request already on the loaded model does not reload it.
@@ -434,7 +435,7 @@ describe("queueing and cancellation", () => {
     const second = post("/api/v1/translate", { text: "two", target_lang: "en", stream: true });
     await queueIs(base, true, 1);
 
-    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
+    const health = await getHealth(base);
     expect(health.queue).toStrictEqual({ running: true, waiting: 1, max_waiting: 1 });
 
     const third = await post("/api/v1/translate", { text: "three", target_lang: "en" });
@@ -466,14 +467,14 @@ describe("queueing and cancellation", () => {
     await until(() => mock.aborted === abortedBefore + 1);
     mock.delayMs = 0;
 
-    const health = await bodyOf<Health>(await fetch(base + "/api/v1/health"));
+    const health = await getHealth(base);
     expect(health.queue.running).toBe(false);
     const next = await post("/api/v1/translate", { text: "next", target_lang: "en" });
     expect(next.status).toBe(200);
   });
 
   async function queueState(): Promise<{ running: boolean; waiting: number }> {
-    const { running, waiting } = (await bodyOf<Health>(await fetch(base + "/api/v1/health"))).queue;
+    const { running, waiting } = (await getHealth(base)).queue;
     return { running, waiting };
   }
 

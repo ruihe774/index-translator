@@ -1,12 +1,12 @@
 // src/static.ts against a temporary public directory: transpiling, revalidation, headers and paths.
 // The app-level behaviour of the real public/ directory is in api-requests.test.ts ("static files").
 
-import { afterAll, beforeAll, beforeEach, describe, expect, onTestFinished, spyOn, test } from "bun:test";
+import { beforeAll, beforeEach, describe, expect, onTestFinished, spyOn, test } from "bun:test";
 import { cpSync, mkdirSync, mkdtempSync, rmSync, utimesSync } from "node:fs";
-import { tmpdir } from "node:os";
 import { isAbsolute, join, relative, resolve } from "node:path";
 
 import { createStaticServer } from "../src/static";
+import { tempDir } from "./helpers/harness";
 
 /** The hash of the one inline `<tag>` in the real loading page, as a CSP source. */
 async function inlineHash(tag: "script" | "style"): Promise<string> {
@@ -42,7 +42,7 @@ function get(path: string, init: RequestInit = {}, publicDir?: string): Promise<
   return handler(path, new Request("http://127.0.0.1" + path, init));
 }
 
-beforeAll(() => void (dir = mkdtempSync(join(tmpdir(), "static-test-"))));
+beforeAll(() => void (dir = tempDir("static-test-")));
 
 beforeEach(async () => {
   rmSync(dir, { recursive: true, force: true });
@@ -54,8 +54,6 @@ beforeEach(async () => {
   await write("sub/index.html", "<p>sub</p>");
   serve = createStaticServer(dir);
 });
-
-afterAll(() => rmSync(dir, { recursive: true, force: true }));
 
 describe("HTML whitespace", () => {
   test("whitespace between tags is dropped, text keeps one space, literal elements are untouched", async () => {
