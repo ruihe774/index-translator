@@ -446,7 +446,8 @@ jobs:
           bun -e '
             import { dlopen } from "bun:ffi";
             import { resolve } from "node:path";
-            import { libraryVersion, soxrDir, soxrLibraryPath } from "./src/audiocpp-ffi";
+            import { libraryVersion } from "./src/audiocpp-ffi";
+            import { soxrDir, soxrLibraryPath } from "./src/ffi-util";
             libraryVersion("vendor/audio.cpp");
             const k = dlopen("kernel32.dll", {
               LoadLibraryA: { args: ["cstring"], returns: "ptr" },
