@@ -1,6 +1,18 @@
+/* The widest the page grows. A registered property so that it can transition (`main`). `rem` is not allowed in
+   `initial-value`, so `:root` sets the value. */
+@property --page-cap {
+  syntax: "<length>";
+  inherits: true;
+  initial-value: 0px;
+}
+
+:root {
+  --page-cap: 120rem;
+}
+
 .site-header,
 main {
-  inline-size: min(100% - 2 * var(--gutter), 120rem);
+  inline-size: min(100% - 2 * var(--gutter), var(--page-cap));
   margin-inline: auto;
 }
 
@@ -29,12 +41,20 @@ main {
 main {
   flex: 1;
   padding-block-end: 2rem;
+  /* The cap is what animates, not `inline-size`: the width itself also changes with the window, which must not
+     animate. `reduced-motion.css` shortens the transition to nothing. */
+  transition: --page-cap 500ms ease-out;
 
   > form {
     display: flex;
     flex-direction: column;
     gap: 1.5rem;
   }
+}
+
+/* Cue tables carry a number, a time and maybe a speaker beside the text, so subtitles get a wider page. */
+main:has(.output.subtitles) {
+  --page-cap: 160rem;
 }
 
 /* One column; two from 54rem, the one breakpoint of the page (`phone.css` is its other side). */

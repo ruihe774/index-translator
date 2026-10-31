@@ -137,3 +137,55 @@ test("reading a subtitle translation aloud reads the cues' text only", async ({ 
     .poll(async () => (await mock.state()).speech.requests.map((r) => r.text))
     .toStrictEqual(["Hola.", "¿Cómo estás?", "Bien."]);
 });
+
+test("the page is wider while a cue table is shown, and Clear gives the width back", async ({ app, mock }) => {
+  await mock.set({ chunks: OUTPUT, delayMs: 0 });
+  await app.page.setViewportSize({ width: 2800, height: 900 });
+  await app.open();
+  const main = app.page.locator("main");
+  const width = async () => (await main.boundingBox())!.width;
+  const rem = await app.page.evaluate(() => parseFloat(getComputedStyle(document.documentElement).fontSize));
+  expect(await width()).toBeCloseTo(120 * rem, 0);
+
+  await app.text.fill(SRT);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  await expect.poll(width).toBeCloseTo(160 * rem, 0);
+
+  await app.page.locator("#clear").click();
+  await expect(app.text).toBeVisible();
+  await expect.poll(width).toBeCloseTo(120 * rem, 0);
+});
+
+test("the width change animates, a window resize does not, and reduced motion turns it off", async ({ app, mock }) => {
+  await mock.set({ chunks: OUTPUT, delayMs: 0 });
+  await app.page.setViewportSize({ width: 2800, height: 900 });
+  await app.open();
+  const running = () =>
+    app.page.evaluate(
+      () =>
+        document
+          .getAnimations()
+          .filter((a) => a instanceof CSSTransition && (a.effect as KeyframeEffect).target?.tagName === "MAIN").length,
+    );
+
+  for (const width of [2400, 320, 1280, 2800]) {
+    await app.page.setViewportSize({ width, height: 900 });
+    expect(await running()).toBe(0);
+  }
+
+  await app.text.fill(SRT);
+  await app.page.evaluate(() => {
+    const main = document.querySelector("main")!;
+    (window as unknown as { seen: number }).seen = 0;
+    main.addEventListener("transitionrun", () => void (window as unknown as { seen: number }).seen++);
+  });
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  await expect.poll(() => app.page.evaluate(() => (window as unknown as { seen: number }).seen)).toBeGreaterThan(0);
+  expect(await app.page.locator("main").evaluate((m) => getComputedStyle(m).transitionDuration)).toBe("0.5s");
+
+  await app.page.emulateMedia({ reducedMotion: "reduce" });
+  const reduced = await app.page.locator("main").evaluate((m) => parseFloat(getComputedStyle(m).transitionDuration));
+  expect(reduced).toBeLessThan(0.001);
+});

@@ -263,6 +263,8 @@ function showSource() {
     renderText(sourceView, textInput.value, views.source.format);
   } else {
     sourceView.replaceChildren();
+    // `createOutput` set these for the last preview; the width of a subtitle page follows `.subtitles`.
+    sourceView.classList.remove("markdown", "subtitles");
   }
   sourceArea.hidden = !preview;
   imageArea.hidden = !image;
