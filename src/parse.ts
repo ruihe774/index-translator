@@ -116,7 +116,7 @@ export async function readBody(req: Request, max: number, tooLarge: () => ApiErr
     }
     chunks.push(chunk);
   }
-  const out = new Uint8Array(size);
+  const out = Bun.allocUnsafe(size);
   let at = 0;
   for (const chunk of chunks) {
     out.set(chunk, at);

@@ -1,6 +1,8 @@
 // WAV files in and out of the speech engine, which takes and returns float samples: voice
 // recordings are decoded here, and what it synthesizes is written as 16-bit PCM.
 
+import { allocFloat32 } from "./alloc";
+
 export interface Pcm {
   /** Interleaved, -1 to 1. */
   samples: Float32Array;
@@ -111,7 +113,7 @@ export function readWavInfo(bytes: Uint8Array): WavInfo {
 export function readWav(bytes: Uint8Array): Pcm {
   const { sampleRate, channels, frames, read, width, body } = parseWav(bytes);
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
-  const samples = new Float32Array(frames * channels);
+  const samples = allocFloat32(frames * channels);
   for (let i = 0; i < samples.length; i++) {
     samples[i] = read(view, body + i * width);
   }
@@ -161,7 +163,7 @@ export const floatToInt16 = (s: number): number => Math.round(Math.max(-1, Math.
 /** A WAV file with 16-bit PCM samples. */
 export function writeWav(pcm: Pcm): ArrayBuffer {
   const bytes = pcm.samples.length * 2;
-  const view = new DataView(new ArrayBuffer(44 + bytes));
+  const view = new DataView(Bun.allocUnsafe(44 + bytes).buffer);
   const ascii = (at: number, s: string) => {
     for (let i = 0; i < s.length; i++) {
       view.setUint8(at + i, s.charCodeAt(i));

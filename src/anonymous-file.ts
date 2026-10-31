@@ -84,7 +84,7 @@ export async function anonymousFile(bytes: Uint8Array): Promise<AnonymousFile> {
 
 /** The whole content of an anonymous file, read from its start whatever its position. Blocks. */
 export function readAnonymousFile(fd: number): Uint8Array<ArrayBuffer> {
-  const bytes = new Uint8Array(fstatSync(fd).size);
+  const bytes = Bun.allocUnsafe(fstatSync(fd).size);
   for (let at = 0; at < bytes.length;) {
     const n = readSync(fd, bytes, at, bytes.length - at, at);
     if (n === 0) {
