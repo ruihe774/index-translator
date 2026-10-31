@@ -23,5 +23,8 @@
     "cc-plugin-you-should-know@builtin": true,
     "claude-md-management@anthropic-plugin-directory": true,
     "archgram@anthropic-plugin-directory": true
+  },
+  "env": {
+    "OPEN_BROWSER": "0"
   }
 }
