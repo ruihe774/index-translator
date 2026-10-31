@@ -57,19 +57,6 @@ class FakeAudioContext {
   decodeAudioData(wav: ArrayBuffer) {
     return Promise.resolve({ wav, duration: 1 });
   }
-  createBuffer(channels: number, length: number, sampleRate: number) {
-    const data: Float32Array[] = [];
-    return {
-      channels,
-      length,
-      sampleRate,
-      duration: length / sampleRate,
-      data,
-      copyToChannel(source: Float32Array, c: number) {
-        data[c] = source;
-      },
-    };
-  }
   createBufferSource() {
     const s = new FakeSource();
     this.sources.push(s);
@@ -129,33 +116,6 @@ beforeEach(() => void ((globalThis as { AudioContext?: unknown }).AudioContext =
 afterEach(() => void ((globalThis as { AudioContext?: unknown }).AudioContext = realContext));
 
 // ---- tests -----------------------------------------------------------------------------------
-
-describe("audio that arrives decoded (QOA)", () => {
-  test("is put into a buffer of its own, one array per channel, and played like a decoded WAV", async () => {
-    const synthesize = () =>
-      Promise.resolve({
-        sampleRate: 22_050,
-        channels: 2,
-        samples: Int16Array.of(0x40_00, -0x80_00, 0, 0x7f_ff),
-      });
-    const player = new SpeechPlayer(synthesize, {
-      onState() {},
-      onSegment() {},
-      onError: (e) => {
-        throw new Error(String(e));
-      },
-    });
-    player.start([seg("a1", 0)], SETTINGS);
-    await flush();
-    expect(player.state).toBe("playing");
-    const buffer = FakeAudioContext.last.sources[0]!.buffer as ReturnType<FakeAudioContext["createBuffer"]>;
-    expect(buffer).toMatchObject({ channels: 2, length: 2, sampleRate: 22_050 });
-    expect(buffer.data.map((c) => [...c])).toStrictEqual([
-      [0.5, 0],
-      [-1, 0x7f_ff / 0x80_00],
-    ]);
-  });
-});
 
 describe("interruption by the system", () => {
   test("an interrupted context shows as paused, and Resume resumes it", async () => {

@@ -9,7 +9,6 @@
 // whose piece is no longer wanted, or that stands in the way of the piece the reader waits for, is
 // aborted: the server stops the engine and the next request starts at once.
 
-import type { SpeechAudio } from "./speech-audio.ts";
 import type { Segment } from "./speech-text.ts";
 
 /** Continuous audio from the reader's place that is secured before the jump targets are made. */
@@ -25,8 +24,8 @@ export interface SpeechSettings {
   speed: number;
 }
 
-/** The audio of one piece: a WAV file, or samples that were decoded on their way in. */
-export type Synthesize = (text: string, settings: SpeechSettings, signal: AbortSignal) => Promise<SpeechAudio>;
+/** The audio of one piece: a WAV or Ogg Opus file. */
+export type Synthesize = (text: string, settings: SpeechSettings, signal: AbortSignal) => Promise<ArrayBuffer>;
 
 /** Index of the first piece of each block, a block being the run of pieces that share a `line`. */
 export function blockStarts(segments: Segment[]): number[] {
@@ -60,7 +59,7 @@ export class SpeechBuffer {
 
   constructor(
     private readonly synthesize: Synthesize,
-    private readonly decode: (audio: SpeechAudio) => Promise<AudioBuffer>,
+    private readonly decode: (audio: ArrayBuffer) => Promise<AudioBuffer>,
   ) {}
 
   /** A new text, or new settings for the same one: nothing made so far can be used. */

@@ -61,7 +61,7 @@ for (const [dir, files] of Object.entries(optionalDirs)) {
 process.on("exit", () => rmSync(modelsDir, { recursive: true, force: true }));
 
 const app = await startApp(
-  // No engine is loaded, but speech is encoded as Opus with the libsoxr and minicelt found beside audioDir.
+  // No engine is loaded, but speech is encoded as Opus with the libsoxr and libopus found beside audioDir.
   config({
     port,
     modelsDir,

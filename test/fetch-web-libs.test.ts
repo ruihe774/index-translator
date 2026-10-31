@@ -57,7 +57,6 @@ describe("the pinned files of a commit", () => {
       }
       expect(lib.files.map((f) => f.to)).toContain("LICENSE");
     }
-    expect(files("qoa")).toStrictEqual(["src/qoa.ts", "dist/qoa.wasm", "dist/qoa-simd.wasm", "LICENSE"]);
     expect(files("pdf-inspector")).toStrictEqual(["pdf_inspector_wasm.js", "pdf_inspector_wasm_bg.wasm", "LICENSE"]);
     expect(files("undoc")).toStrictEqual(["undoc_wasm.js", "undoc_wasm_bg.wasm", "LICENSE"]);
   });

@@ -9,7 +9,6 @@
 // playback, so a change of speed or voice is heard from the start of the current piece, and all
 // audio is made again.
 
-import { type SpeechAudio, splitChannels } from "./speech-audio.ts";
 import { blockStarts, SpeechBuffer, type SpeechSettings, type Synthesize } from "./speech-buffer.ts";
 import type { Segment } from "./speech-text.ts";
 
@@ -56,16 +55,9 @@ export class SpeechPlayer {
     this.buffer = new SpeechBuffer(synthesize, (audio) => this.decode(audio));
   }
 
-  /** A WAV or Ogg Opus file is decoded by the browser; samples that arrived decoded (QOA) only need a buffer to sit in. */
-  private async decode(audio: SpeechAudio): Promise<AudioBuffer> {
-    const ctx = this.ctx!;
-    if (audio instanceof ArrayBuffer) {
-      return ctx.decodeAudioData(audio);
-    }
-    const channels = splitChannels(audio);
-    const buffer = ctx.createBuffer(audio.channels, channels[0]!.length, audio.sampleRate);
-    channels.forEach((data, c) => buffer.copyToChannel(data, c));
-    return buffer;
+  /** A WAV or Ogg Opus file, decoded by the browser. */
+  private decode(audio: ArrayBuffer): Promise<AudioBuffer> {
+    return this.ctx!.decodeAudioData(audio);
   }
 
   /**

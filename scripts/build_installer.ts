@@ -1,14 +1,15 @@
 // Pack the app into a Windows installer: dist/Index_Translator-Setup-x86_64.exe (Inno Setup).
 // It holds Bun, the web app, both engines as they are in ./vendor (llama.dll with its backends and
-// llama-shim.dll, audiocpp.dll), soxr.dll and launcher.exe (packaging/windows/launcher.c), laid out as in a
+// llama-shim.dll, audiocpp.dll), soxr.dll, opus.dll and launcher.exe (packaging/windows/launcher.c), laid out as in a
 // checkout, since the launcher finds the program by walking up to src\server.ts and takes `bun`
 // from the directory it runs in. Installs per user, no administrator rights. The models and the
 // voices are not packed; the launcher's "Download models" runs scripts\fetch_models.ts (needs curl,
 // part of Windows 10 and later).
 // Usage: bun scripts/build_installer.ts
 //
-// Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts && bun scripts/build_soxr.ts, and
-// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries and QOA codec), bun scripts/fetch_minicelt.ts (the Opus encoder), bun scripts/fetch_turndown.ts (web pages as Markdown) and
+// Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts && bun scripts/build_soxr.ts &&
+// bun scripts/build_libopus.ts (the Opus encoder), and bun scripts/fetch_web_libs.ts (the web app's PDF and Word
+// libraries), bun scripts/fetch_turndown.ts (web pages as Markdown) and
 // bun scripts/fetch_onnxruntime.ts (onnxruntime.dll, for sentence segmentation). The Bun that is packed is
 // the one running this script. Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
@@ -19,6 +20,7 @@ import { join } from "node:path";
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
+import { opusLibraryPath } from "../src/opus-ffi";
 import { output, run } from "./build_tools";
 import { downloadUnlessMatches } from "./fetch_tools";
 import { copyEngine, requireAllVendored, root, stageApp } from "./stage_app";
@@ -39,6 +41,7 @@ const packaging = join(root, "packaging", "windows");
 const llama = join(root, "vendor", "llama.cpp");
 const audio = join(root, "vendor", "audio.cpp");
 const soxr = join(root, "vendor", "soxr");
+const opus = join(root, "vendor", "opus");
 const work = join(root, "vendor", ".build", "installer");
 const stage = join(work, "stage");
 const dist = join(root, "dist");
@@ -48,6 +51,7 @@ for (const [file, script] of [
   [shimPath(llama), "build_llama.ts"],
   [audioLibrary(audio), "build_audiocpp.ts"],
   [soxrLibraryPath(soxr), "build_soxr.ts"],
+  [opusLibraryPath(opus), "build_libopus.ts"],
 ] as const) {
   if (!(await Bun.file(file).exists())) {
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
@@ -98,6 +102,7 @@ await stageApp(stage);
 await copyEngine(llama, join(stage, "vendor", "llama.cpp"));
 await copyEngine(audio, join(stage, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(stage, "vendor", "soxr"));
+await copyEngine(opus, join(stage, "vendor", "opus"));
 await cp(launcher, join(stage, "launcher.exe"));
 await cp(process.execPath, join(stage, "bun.exe"));
 
@@ -107,6 +112,7 @@ const version = [
   `llama.cpp ${(await Bun.file(join(llama, "VERSION")).text()).trim()}`,
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
+  `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
   `onnxruntime ${(await Bun.file(join(root, "vendor", "onnxruntime", "VERSION")).text()).split(" ")[0]}`,
   `bun ${Bun.version}`,
 ];

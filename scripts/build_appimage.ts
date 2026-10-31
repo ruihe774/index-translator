@@ -1,6 +1,6 @@
 // Pack the app into one file that runs on other Linux machines: dist/Index_Translator-<arch>.AppImage (x86_64 or aarch64, as the machine),
 // with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and
-// the prebuilt shim, libaudiocpp), libsoxr and ONNX Runtime. The models and the voices are not packed; the AppImage's `fetch`
+// the prebuilt shim, libaudiocpp), libsoxr, libopus and ONNX Runtime. The models and the voices are not packed; the AppImage's `fetch`
 // subcommand (scripts/fetch_models.ts) downloads them into the user's data directory.
 // Usage: bun scripts/build_appimage.ts [--cuda]
 //
@@ -10,8 +10,8 @@
 //           driver for CUDA 13 (580 or newer), not Vulkan. Without the flag the engines are the Vulkan ones, with no CUDA.
 //
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
-// since the engines are packed as built, bun scripts/build_soxr.ts, and bun scripts/fetch_web_libs.ts (the web app's PDF
-// and Word libraries and the QOA codec of the speech stream, packed with public/), bun scripts/fetch_minicelt.ts (the Opus encoder), bun scripts/fetch_turndown.ts (web pages as Markdown) and
+// since the engines are packed as built, bun scripts/build_soxr.ts, bun scripts/build_libopus.ts (the Opus encoder), and
+// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries, packed with public/), bun scripts/fetch_turndown.ts (web pages as Markdown) and
 // bun scripts/fetch_onnxruntime.ts (ONNX Runtime, for sentence segmentation). The Bun that is packed is the one running this script.
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
@@ -26,6 +26,7 @@ import { join } from "node:path";
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
+import { opusLibraryPath } from "../src/opus-ffi";
 import { output, run } from "./build_tools";
 import { downloadUnlessMatches } from "./fetch_tools";
 import { copyEngine, requireAllVendored, root, stageApp } from "./stage_app";
@@ -73,6 +74,7 @@ const packaging = join(root, "packaging", "appimage");
 const llama = join(root, "vendor", cuda ? "llama.cpp-cuda" : "llama.cpp");
 const audio = join(root, "vendor", cuda ? "audio.cpp-cuda" : "audio.cpp");
 const soxr = join(root, "vendor", "soxr");
+const opus = join(root, "vendor", "opus");
 const work = join(root, "vendor", ".build", "appimage");
 const appDir = join(work, "AppDir");
 const app = join(appDir, "usr", "share", "index-translator");
@@ -83,6 +85,7 @@ for (const [file, script] of [
   [shimPath(llama), `build_llama.ts${cuda ? " --cuda" : ""}`],
   [audioLibrary(audio), `build_audiocpp.ts${cuda ? " --cuda" : ""}`],
   [soxrLibraryPath(soxr), "build_soxr.ts"],
+  [opusLibraryPath(opus), "build_libopus.ts"],
 ] as const) {
   if (!(await Bun.file(file).exists())) {
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
@@ -109,6 +112,7 @@ await stageApp(app);
 await copyEngine(llama, join(app, "vendor", "llama.cpp"));
 await copyEngine(audio, join(app, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(app, "vendor", "soxr"));
+await copyEngine(opus, join(app, "vendor", "opus"));
 
 const commit = (await output(["git", "describe", "--tags", "--always", "--dirty"], root)) || "unknown";
 const version = [
@@ -117,6 +121,7 @@ const version = [
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
   ...(cuda ? [`CUDA ${(await Bun.file(join(llama, "CUDA_VERSION")).text()).trim()}`] : []),
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
+  `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
   `onnxruntime ${(await Bun.file(join(root, "vendor", "onnxruntime", "VERSION")).text()).split(" ")[0]}`,
   `bun ${Bun.version}`,
 ];

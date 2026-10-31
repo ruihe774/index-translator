@@ -35,8 +35,9 @@ CRLF and do not commit CRLF. Editors and `sed -i` in Git Bash keep LF; check wit
 
 ## Building the engines
 
-`bun scripts/build_llama.ts`, `bun scripts/build_audiocpp.ts` and `bun scripts/build_soxr.ts` (libsoxr, as
-`soxr.dll`; it needs only Git, CMake, Ninja and the Visual Studio tools) build for Windows with no administrator
+`bun scripts/build_llama.ts`, `bun scripts/build_audiocpp.ts`, `bun scripts/build_soxr.ts` (libsoxr, as
+`soxr.dll`) and `bun scripts/build_libopus.ts` (libopus, as `opus.dll`; these two need only Git, CMake, Ninja and the
+Visual Studio tools) build for Windows with no administrator
 rights. They need: Git, CMake and Ninja (both on the PATH; `winget install Ninja-build.Ninja` installs Ninja
 for the current user), Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload
 (found with `vswhere`; `vcvars64.bat` supplies `cl`, whose environment the scripts hand to CMake), and the Vulkan
@@ -83,7 +84,7 @@ Windows has no AppImage-style single file, so the installer unpacks the reposito
 is the shortcut's target. The launcher's commands run in the install directory, and `cmd` finds
 `bun.exe` there first, so the user needs no Bun on the `PATH`.
 
-- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`) and `build_soxr.ts`, the web app's PDF
+- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`), `build_soxr.ts` and `build_libopus.ts`, the web app's PDF
   libraries fetched (`fetch_web_libs.ts`, packed with `public\`), `fetch_onnxruntime.ts` (Microsoft's
   `onnxruntime.dll`, which runs the sentence segmentation model) and the launcher's MSVC
   tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads

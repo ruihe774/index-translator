@@ -21,10 +21,8 @@ import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.ts";
 import { parseLines } from "./markdown.ts";
 import { OPUS_TYPE, opusDecodable } from "./opus.ts";
-import { giveUpQoa, QOA_TYPE, qoaDecoder, QoaError } from "./qoa.ts";
 import { ReadGutter } from "./read-gutter.ts";
 import type { SentenceBoundaries } from "./segment.ts";
-import type { SpeechAudio } from "./speech-audio.ts";
 import { type BoundaryLookup, canSpeak, type Segment, speechSegments, speechTexts } from "./speech-text.ts";
 import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
 import { setState, type Side, state } from "./state.ts";
@@ -120,7 +118,7 @@ export interface SpeechUi {
   prefetch(): void;
 }
 
-/** One request for a piece; Opus and QOA are asked for with `Accept`, WAV is what a request without it gets. */
+/** One request for a piece; Opus is asked for with `Accept`, WAV is what a request without it gets. */
 async function requestSpeech(
   text: string,
   settings: SpeechSettings,
@@ -140,32 +138,12 @@ async function requestSpeech(
 }
 
 /**
- * The audio of a piece, in the best form this browser and the server have in common: Ogg Opus,
- * which the browser decodes itself, then QOA, decoded in a worker as it arrives, then WAV. The
- * server answers with the first it can; WAV when the browser has neither of the others (or
- * the codec failed on a stream: QOA is given up for the rest of the page's life).
+ * The audio of a piece: Ogg Opus when this browser decodes it (the server sends WAV when its encoder
+ * is missing), else WAV.
  */
-async function synthesize(text: string, settings: SpeechSettings, signal: AbortSignal): Promise<SpeechAudio> {
-  const [opus, decoder] = await Promise.all([opusDecodable(), qoaDecoder()]);
-  if (opus || decoder) {
-    try {
-      const accept = [opus && OPUS_TYPE, decoder && (opus ? `${QOA_TYPE};q=0.8` : QOA_TYPE), "audio/wav;q=0.5"];
-      const res = await requestSpeech(text, settings, signal, accept.filter(Boolean).join(", "));
-      if (decoder && res.body && res.headers.get("content-type")?.startsWith(QOA_TYPE)) {
-        return await decoder.decode(res.body, signal);
-      }
-      return await res.arrayBuffer();
-    } catch (e) {
-      if (!(e instanceof QoaError)) {
-        throw e;
-      }
-      // The codec, not the network or the engine, failed: ask again without it.
-      console.error(e);
-      giveUpQoa();
-      return synthesize(text, settings, signal);
-    }
-  }
-  return (await requestSpeech(text, settings, signal, undefined)).arrayBuffer();
+async function synthesize(text: string, settings: SpeechSettings, signal: AbortSignal): Promise<ArrayBuffer> {
+  const accept = (await opusDecodable()) ? `${OPUS_TYPE}, audio/wav;q=0.5` : undefined;
+  return (await requestSpeech(text, settings, signal, accept)).arrayBuffer();
 }
 
 export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {

@@ -46,14 +46,23 @@ jobs:
       - name: JavaScript browser support
         run: bun run lint:es
 
-      # The PDF tests run the two PDF libraries in the browser, the Word tests undoc, and the speech
-      # tests the QOA codec, in the browser and on the server; all are pinned by checksum in the script.
+      # The PDF tests run the two PDF libraries in the browser and the Word tests undoc; all are pinned by
+      # checksum in the script.
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
-      # The speech tests encode Opus on the server (minicelt, resampled with libsoxr), and the browser decodes it.
-      - name: Fetch the Opus encoder
-        run: bun scripts/fetch_minicelt.ts
+      # The speech tests encode Opus on the server (libopus, resampled with libsoxr), decode it with libopus, and the
+      # browser decodes it.
+      - name: Cache libopus
+        id: opus
+        uses: actions/cache@v6
+        with:
+          path: vendor/opus
+          key: opus-ubuntu-24.04-x64-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libopus
+        if: ${{ steps.opus.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_libopus.ts
 
       # test/webpage.test.ts opens pages in the runner's Chrome and converts them with turndown.
       - name: Fetch the web page converter
@@ -189,8 +198,16 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
-      - name: Fetch the Opus encoder
-        run: bun scripts/fetch_minicelt.ts
+      - name: Cache libopus
+        id: opus
+        uses: actions/cache@v6
+        with:
+          path: vendor/opus
+          key: opus-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libopus
+        if: ${{ steps.opus.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_libopus.ts
 
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
@@ -316,8 +333,16 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
-      - name: Fetch the Opus encoder
-        run: bun scripts/fetch_minicelt.ts
+      - name: Cache libopus
+        id: opus
+        uses: actions/cache@v6
+        with:
+          path: vendor/opus
+          key: opus-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libopus
+        if: ${{ steps.opus.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_libopus.ts
 
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
@@ -555,8 +580,16 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
-      - name: Fetch the Opus encoder
-        run: bun scripts/fetch_minicelt.ts
+      - name: Cache libopus
+        id: opus
+        uses: actions/cache@v6
+        with:
+          path: vendor/opus
+          key: opus-windows-vs2026-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libopus
+        if: ${{ steps.opus.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_libopus.ts
 
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts

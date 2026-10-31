@@ -24,9 +24,9 @@ comment saying why.
   tests `test/fixtures/sample.docx` (written by `make_sample_docx.py`) with the real libraries from
   `public/vendor/`, so run `bun scripts/fetch_web_libs.ts` once before them. One test serves
   `/vendor/` as 404 to check that the page does without the libraries.
-- `speech.spec.ts` also runs the QOA stream (the default way speech reaches the page) against the
-  real codec in `public/vendor/qoa/`, and the fallbacks to WAV (codec files not served; a stream
-  that cannot be decoded).
+- `speech.spec.ts` also runs the Ogg Opus stream against the real libopus and libsoxr in `vendor/`
+  (`bun scripts/build_libopus.ts`, `build_soxr.ts`; skipped without them) and the fallback to WAV of
+  a browser that cannot decode it.
 - `webpage.spec.ts`: a web address alone in the box, against the mock browser of `POST /webpage`,
   which answers every page with set Markdown and records the addresses (`webpage` in `/mock`); the
   mock server allows `example.com` and `*.example.com`. The real browser path is

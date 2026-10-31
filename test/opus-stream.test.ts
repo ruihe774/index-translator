@@ -1,16 +1,17 @@
-// The Ogg Opus form of the speech stream: how a client asks for it, the muxer's pages, and what the
-// server sends. That a browser decodes it is e2e/speech.spec.ts's test; Bun has no Opus decoder.
-// The tests that encode need minicelt (bun scripts/fetch_minicelt.ts) and are skipped without it.
+// The Ogg Opus form of the speech stream: how a client asks for it, the muxer's pages, what the
+// server sends, and that libopus's own decoder gets the audio back. That a browser decodes it is
+// e2e/speech.spec.ts's test. The tests that encode need libopus and libsoxr (bun scripts/build_libopus.ts,
+// build_soxr.ts) and are skipped without them.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { MINICELT } from "../scripts/fetch_minicelt";
 import { acceptWeight } from "../src/accept";
 import { type App, startApp } from "../src/app";
 import { OggOpusMuxer, type OpusPacket } from "../src/ogg-opus";
-import { miniceltPath, opusLoader, opusResponse } from "../src/opus-stream";
+import { OpusDecoder, opusDir, opusLibraryPath } from "../src/opus-ffi";
+import { opusLoader, opusResponse } from "../src/opus-stream";
 import type { Pcm } from "../src/wav";
 import {
   config,
@@ -23,7 +24,7 @@ import {
 } from "./helpers/mock-engine";
 
 const audioDir = join(import.meta.dir, "..", "vendor", "audio.cpp");
-const installed = existsSync(miniceltPath(audioDir)) && existsSync(join(audioDir, "..", "soxr", "VERSION"));
+const installed = existsSync(opusLibraryPath(opusDir(audioDir))) && existsSync(join(audioDir, "..", "soxr", "VERSION"));
 const identity = (samples: Float32Array) => samples;
 
 interface Page {
@@ -117,7 +118,7 @@ function tone(seconds: number, sampleRate: number, channels = 1): Pcm {
 describe("acceptWeight", () => {
   test.each([
     ["audio/ogg", 1],
-    ["audio/ogg, audio/qoa;q=0.8, audio/wav;q=0.5", 1],
+    ["audio/ogg, audio/wav;q=0.5", 1],
     ["audio/wav, Audio/OGG ; q=0.2", 0.2],
     ["audio/ogg;codecs=opus", 1],
     ["audio/ogg;q=0", 0],
@@ -188,17 +189,6 @@ describe("the muxer", () => {
   });
 });
 
-describe("the pinned minicelt", () => {
-  test("is the commit's wasm and its license, by checksum", () => {
-    expect(MINICELT.version).toMatch(/^[0-9a-f]{40}$/);
-    expect(MINICELT.files.map((f) => f.to)).toStrictEqual(["minicelt-wasm3.wasm", "COPYING"]);
-    for (const file of MINICELT.files) {
-      expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(file.url).toContain(`/${MINICELT.version}/`);
-    }
-  });
-});
-
 describe.skipIf(!installed)("opusResponse", () => {
   const load = opusLoader(audioDir, identity);
 
@@ -233,6 +223,27 @@ describe.skipIf(!installed)("opusResponse", () => {
         expect(data[0]! & 3).toBe(0);
       }
     }
+  });
+
+  test("decodes back to the audio, sample for sample in time", async () => {
+    const codec = (await load())!;
+    const pcm = tone(2.5, 48_000);
+    const all = pages(concat(await bodyChunks(opusResponse(codec, pcm))));
+    const preSkip = new DataView(all[0]!.packets[0]!.buffer).getUint16(10, true);
+    const decoder = new OpusDecoder(opusDir(audioDir), 48_000, 1);
+    const decoded = all.slice(2).flatMap((p) => p.packets.flatMap((d) => [...decoder.decode(d)]));
+    decoder.destroy();
+    // What the granule says is kept: the pre-skip dropped, the last packet's padding cut.
+    const kept = decoded.slice(preSkip, all.at(-1)!.granule);
+    expect(kept).toHaveLength(pcm.samples.length);
+    let signal = 0;
+    let noise = 0;
+    for (let i = 0; i < kept.length; i++) {
+      signal += pcm.samples[i]! ** 2;
+      noise += (kept[i]! - pcm.samples[i]!) ** 2;
+    }
+    // In step it measured about 40 dB; one sample early or late, 29 or 26.
+    expect(10 * Math.log10(signal / noise)).toBeGreaterThan(35);
   });
 
   test("two streams at once do not share an encoder", async () => {
@@ -296,9 +307,9 @@ describe("POST /speech", () => {
   const speak = (to: string, accept: string) =>
     postTo(to, "/api/v1/speech", { text: "Hello there.", lang: "en" }, { headers: { accept } });
 
-  test.skipIf(!installed)("audio/ogg is answered with Ogg Opus, and the heavier of two named types wins", async () => {
+  test.skipIf(!installed)("audio/ogg is answered with Ogg Opus whenever it is named", async () => {
     mockSpeech.audioSeconds = 1;
-    for (const accept of ["audio/ogg", "audio/ogg, audio/qoa;q=0.8, audio/wav;q=0.5", "audio/qoa;q=0.5, audio/ogg"]) {
+    for (const accept of ["audio/ogg", "audio/ogg, audio/wav;q=0.5", "audio/wav, audio/ogg;q=0.5"]) {
       const res = await speak(base, accept);
       expect(res.status).toBe(200);
       expect(res.headers.get("content-type")).toBe("audio/ogg; codecs=opus");
@@ -311,16 +322,14 @@ describe("POST /speech", () => {
     resetMockSpeech();
   });
 
-  test.skipIf(!installed)(
-    "QOA is chosen when it weighs more, and WAV when Opus is the only one named at 0",
-    async () => {
-      const qoa = await speak(base, "audio/ogg;q=0.4, audio/qoa");
-      expect(["audio/qoa", "audio/wav"]).toContain(qoa.headers.get("content-type") ?? "");
-      const wav = await speak(base, "audio/ogg;q=0, audio/wav");
-      expect(wav.headers.get("content-type")).toBe("audio/wav");
-      resetMockSpeech();
-    },
-  );
+  test.skipIf(!installed)("WAV when Opus is named at 0 or not at all", async () => {
+    // audio/qoa is what older pages asked for; it is no longer sent, and the spec allows WAV in its place.
+    for (const accept of ["audio/ogg;q=0, audio/wav", "audio/wav", "*/*", "audio/qoa, audio/wav;q=0.5"]) {
+      const res = await speak(base, accept);
+      expect(res.headers.get("content-type")).toBe("audio/wav");
+    }
+    resetMockSpeech();
+  });
 
   test("a server without the encoder answers audio/ogg with WAV", async () => {
     const res = await speak(bareBase, "audio/ogg");

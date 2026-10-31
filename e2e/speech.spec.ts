@@ -9,9 +9,9 @@ import type { Page } from "@playwright/test";
 
 import { expect, frames, quiet, test } from "./fixtures";
 
-// The server encodes Opus with minicelt, resampled by libsoxr (bun scripts/fetch_minicelt.ts, build_soxr.ts).
+// The server encodes Opus with libopus, resampled by libsoxr (bun scripts/build_libopus.ts, build_soxr.ts).
 const VENDOR = join(import.meta.dirname, "..", "vendor");
-const opusInstalled = existsSync(join(VENDOR, "minicelt", "VERSION")) && existsSync(join(VENDOR, "soxr", "VERSION"));
+const opusInstalled = existsSync(join(VENDOR, "opus", "VERSION")) && existsSync(join(VENDOR, "soxr", "VERSION"));
 
 /** A browser that cannot decode Ogg Opus, as far as the page's probe can tell. */
 const withoutOpus = (page: Page) =>
@@ -595,7 +595,7 @@ function watchSpeech(page: Page) {
 }
 
 test("speech arrives as Ogg Opus, decoded by the browser, and plays to its end", async ({ app, mock }) => {
-  test.skip(!opusInstalled, "run: bun scripts/fetch_minicelt.ts and bun scripts/build_soxr.ts");
+  test.skip(!opusInstalled, "run: bun scripts/build_libopus.ts and bun scripts/build_soxr.ts");
   // Several pages of a second each.
   await mock.set({ speech: { audioSeconds: 2.5 } });
   const seen = watchSpeech(app.page);
@@ -609,14 +609,14 @@ test("speech arrives as Ogg Opus, decoded by the browser, and plays to its end",
   await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   expect(seen.length).toBeGreaterThan(0);
   for (const s of seen) {
-    expect(s.accept).toMatch(/^audio\/ogg, audio\/qoa;q=0\.8, audio\/wav;q=0\.5$/);
+    expect(s.accept).toBe("audio/ogg, audio/wav;q=0.5");
     expect(s.type).toBe("audio/ogg; codecs=opus");
   }
   await expect(app.meta).toHaveText("");
 });
 
 test("the Opus the server sends decodes to the length of the utterance", async ({ app, mock }) => {
-  test.skip(!opusInstalled, "run: bun scripts/fetch_minicelt.ts and bun scripts/build_soxr.ts");
+  test.skip(!opusInstalled, "run: bun scripts/build_libopus.ts and bun scripts/build_soxr.ts");
   await mock.set({ speech: { audioSeconds: 2.5 } });
   await app.open();
   const decoded = await app.page.evaluate(async () => {
@@ -634,46 +634,8 @@ test("the Opus the server sends decodes to the length of the utterance", async (
   expect(decoded.seconds).toBeCloseTo(2.5, 2);
 });
 
-test("a browser that cannot decode Opus is sent QOA", async ({ app, mock }) => {
+test("a browser that cannot decode Opus is sent WAV", async ({ app, mock }) => {
   await withoutOpus(app.page);
-  const seen = watchSpeech(app.page);
-  await app.open();
-  await app.from.selectOption("en");
-  await app.text.fill("Hello there.");
-  await app.previewSource();
-  const listen = app.page.locator("#listen-source");
-  await app.readAloud("source");
-  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
-  expect((await mock.state()).speech.requests).toHaveLength(1);
-  expect(seen[0]!.accept).toBe("audio/qoa, audio/wav;q=0.5");
-  expect(seen[0]!.type).toBe("audio/qoa");
-  await expect(app.meta).toHaveText("");
-});
-
-test("speech arrives as a QOA stream, decoded in the worker, and plays to its end", async ({ app, mock }) => {
-  await withoutOpus(app.page);
-  // Longer than a QOA frame (5,120 samples is 0.23 s), so the stream has several.
-  await mock.set({ speech: { audioSeconds: 1.5 } });
-  const seen = watchSpeech(app.page);
-  await app.open();
-  await app.from.selectOption("en");
-  await app.text.fill("Hello there. Goodbye now.");
-  await app.previewSource();
-  const listen = app.page.locator("#listen-source");
-  await app.readAloud("source");
-  await expect(listen).toHaveAttribute("data-state", "playing");
-  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
-  expect(seen.length).toBeGreaterThan(0);
-  for (const s of seen) {
-    expect(s.accept).toContain("audio/qoa");
-    expect(s.type).toBe("audio/qoa");
-  }
-  await expect(app.meta).toHaveText("");
-});
-
-test("without the QOA codec the page reads from WAV", async ({ app, mock }) => {
-  await withoutOpus(app.page);
-  await app.page.context().route("**/vendor/qoa/**", (route) => route.abort());
   const seen = watchSpeech(app.page);
   await app.open();
   await app.from.selectOption("en");
@@ -684,38 +646,8 @@ test("without the QOA codec the page reads from WAV", async ({ app, mock }) => {
   await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
   expect((await mock.state()).speech.requests).toHaveLength(1);
   expect(seen).toHaveLength(1);
-  expect(seen[0]!.accept).not.toContain("qoa");
+  expect(seen[0]!.accept ?? "").not.toContain("audio/ogg");
   expect(seen[0]!.type).toBe("audio/wav");
-  await expect(app.meta).toHaveText("");
-});
-
-test("a QOA stream that cannot be decoded is asked for again as WAV, and QOA is given up", async ({ app, mock }) => {
-  await withoutOpus(app.page);
-  let calls = 0;
-  await app.page.route("**/api/v1/speech", (route) => {
-    if (calls++ > 0) {
-      return route.continue();
-    }
-    return route.fulfill({
-      status: 200,
-      contentType: "audio/qoa",
-      body: Buffer.from("qoaf\0\0\0\0not a frame at all"),
-    });
-  });
-  const seen = watchSpeech(app.page);
-  await app.open();
-  await app.from.selectOption("en");
-  await app.text.fill(MARKDOWN);
-  await app.previewSource();
-  const listen = app.page.locator("#listen-source");
-  await app.readAloud("source");
-  await expect(listen).toHaveAttribute("data-state", "idle", { timeout: 15_000 });
-  // The broken answer never reached the engine, so every piece was made once; the page asked for
-  // the first one again, and nothing after it named QOA.
-  expect((await mock.state()).speech.requests.map((r) => r.text)).toStrictEqual(SPOKEN);
-  expect(seen.length).toBe(SPOKEN.length + 1);
-  expect(seen[0]).toMatchObject({ type: "audio/qoa" });
-  expect(seen.slice(1).every((s) => s.type === "audio/wav" && !s.accept?.includes("qoa"))).toBe(true);
   await expect(app.meta).toHaveText("");
 });
 

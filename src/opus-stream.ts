@@ -1,18 +1,17 @@
-// The speech stream's preferred format: Ogg Opus, which every current browser decodes itself. A
-// client names it with `Accept: audio/ogg`; QOA and WAV (src/qoa-stream.ts, the WAV the engine
-// wrote) are what a client that cannot play it, or a server without the encoder, falls back to.
+// The speech stream's compressed format: Ogg Opus, which every current browser decodes itself. A
+// client names it with `Accept: audio/ogg`; the WAV the engine wrote is what a client that cannot play
+// it, or a server without the encoder, gets instead.
 //
-// The encoder is minicelt (vendor/minicelt, put there by scripts/fetch_minicelt.ts): libopus's
-// CELT encoder in WebAssembly. It takes 48 kHz mono, so the engine's 22.05 kHz audio is resampled
-// with libsoxr first (src/resample.ts); the muxer is src/ogg-opus.ts.
+// The encoder is libopus (vendor/opus, built by scripts/build_libopus.ts; src/opus-ffi.ts). It is given
+// 48 kHz mono, so the engine's 22.05 kHz audio is resampled with libsoxr first (src/resample.ts); the
+// muxer is src/ogg-opus.ts.
 //
 // The engine returns the whole utterance at once, so what is streamed is the encoded file: pages of
 // about a second, encoded as the client reads.
 
-import { join } from "node:path";
-
 import { lazyOptional } from "./lazy-optional";
 import { concat, OggOpusMuxer, type OpusPacket } from "./ogg-opus";
+import { opusDir, OpusEncoder, type OpusEncoderOptions, opusLibraryPath } from "./opus-ffi";
 import type { Resample } from "./resample";
 import type { Pcm } from "./wav";
 
@@ -22,55 +21,36 @@ export const OPUS_TYPE = "audio/ogg";
 /** Samples per frame: 20 ms at 48 kHz. */
 const FRAME = 960;
 const RATE = 48_000;
-const BITRATE = 64_000;
-const COMPLEXITY = 6;
-/** OPUS_BANDWIDTH_SUPERWIDEBAND (12 kHz): the engine's audio is 22.05 kHz, so nothing above 11 kHz is coded. */
-const BANDWIDTH = 1104;
 
-/** Where scripts/fetch_minicelt.ts puts the encoder, beside the engine directory `audioDir`. */
-export const miniceltPath = (audioDir: string) => join(audioDir, "..", "minicelt", "minicelt-wasm3.wasm");
+const ENCODER: OpusEncoderOptions = {
+  sampleRate: RATE,
+  channels: 1,
+  bitrate: 64_000,
+  // 7 and up add libopus's tonality analysis, which steers CELT's bit allocation for music; on the
+  // example voices it changed neither the size nor the segmental SNR (+0.2 dB) to speak of, and
+  // encoding took a third longer.
+  complexity: 6,
+  // OPUS_BANDWIDTH_SUPERWIDEBAND (12 kHz): the engine's audio is 22.05 kHz, so nothing above 11 kHz is coded.
+  bandwidth: 1104,
+};
 
-interface Minicelt {
-  memory: WebAssembly.Memory;
-  minicelt_init(channels: number, bitrate: number, complexity: number, vbrConstraint: number, dtx: number): number;
-  minicelt_set_bandwidth(bandwidth: number): number;
-  minicelt_input_ptr(): number;
-  minicelt_output_ptr(): number;
-  minicelt_encode(): number;
-  minicelt_lookahead(): number;
-}
-
-/** The compiled encoder; each stream instantiates it again, since the module holds one encoder's state. */
+/** Where the encoder is: libopus's directory. */
 interface OpusCodec {
-  module: WebAssembly.Module;
+  dir: string;
   resample: Resample;
 }
 
-/** A new encoder of the module, set up for speech. */
-function start(module: WebAssembly.Module): Minicelt {
-  const encoder = new WebAssembly.Instance(module).exports as unknown as Minicelt;
-  const status = encoder.minicelt_init(1, BITRATE, COMPLEXITY, 1, 0);
-  if (status < 0) {
-    throw new Error(`minicelt_init failed with ${status}`);
-  }
-  const bandwidth = encoder.minicelt_set_bandwidth(BANDWIDTH);
-  if (bandwidth < 0) {
-    throw new Error(`minicelt_set_bandwidth failed with ${bandwidth}`);
-  }
-  return encoder;
-}
-
-/** Loads the encoder on first use; undefined while it is not installed or does not run here. */
+/** Loads the encoder on first use; undefined while it is not installed or does not open here. */
 export function opusLoader(audioDir: string, resample: Resample): () => Promise<OpusCodec | undefined> {
+  const dir = opusDir(audioDir);
   return lazyOptional(
-    () => miniceltPath(audioDir),
-    async (file) => {
-      const module = await WebAssembly.compile(await Bun.file(file).arrayBuffer());
-      // Fails here, not in the first request, when the runtime lacks what the build needs (relaxed SIMD).
-      start(module);
-      return { module, resample };
+    () => opusLibraryPath(dir),
+    () => {
+      // Fails here, not in the first request, when the library does not open or refuses the settings.
+      new OpusEncoder(dir, ENCODER).destroy();
+      return Promise.resolve({ dir, resample });
     },
-    "the Opus encoder cannot be loaded, speech is sent as QOA or WAV",
+    "the Opus encoder cannot be loaded, speech is sent as WAV",
   );
 }
 
@@ -96,33 +76,33 @@ function toEncoderRate(pcm: Pcm, resample: Resample): Float32Array {
 /** The audio as an Ogg Opus stream, encoded a page at a time as the client reads. */
 export function opusResponse(codec: OpusCodec, pcm: Pcm): Response {
   const samples = toEncoderRate(pcm, codec.resample);
-  const encoder = start(codec.module);
-  const input = new Float32Array(encoder.memory.buffer, encoder.minicelt_input_ptr(), FRAME);
-  const output = new Uint8Array(encoder.memory.buffer, encoder.minicelt_output_ptr());
+  const encoder = new OpusEncoder(codec.dir, ENCODER);
   // The decoder drops the encoder's delay from the start; the audio is padded with silence until
   // what it delays is out as well, and the last packet is cut back to where the audio ends.
-  const lookahead = encoder.minicelt_lookahead();
+  const { lookahead } = encoder;
   const target = samples.length + lookahead;
   const frames = Math.ceil(target / FRAME);
   const mux = new OggOpusMuxer({
     channels: 1,
     sampleRate: pcm.sampleRate,
     preSkip: lookahead,
-    vendor: "index-translator, minicelt",
+    vendor: "index-translator, libopus",
   });
 
+  // The encoder is freed when the generator ends (at the last packet or on an error) or the client goes.
   function* packets(): Generator<OpusPacket> {
-    for (let frame = 1; frame <= frames; frame++) {
-      const from = (frame - 1) * FRAME;
-      input.fill(0);
-      input.set(samples.subarray(from, from + FRAME));
-      const length = encoder.minicelt_encode();
-      if (length < 0) {
-        throw new Error(`minicelt_encode failed with ${length}`);
+    try {
+      const input = new Float32Array(FRAME);
+      for (let frame = 1; frame <= frames; frame++) {
+        const from = (frame - 1) * FRAME;
+        input.fill(0);
+        input.set(samples.subarray(from, from + FRAME));
+        const duration = FRAME;
+        const padding = frame === frames ? frames * FRAME - target : 0;
+        yield { data: encoder.encode(input), duration, validDuration: duration - padding };
       }
-      const duration = FRAME;
-      const padding = frame === frames ? frames * FRAME - target : 0;
-      yield { data: output.slice(0, length), duration, validDuration: duration - padding };
+    } finally {
+      encoder.destroy();
     }
   }
 
@@ -151,6 +131,10 @@ export function opusResponse(codec: OpusCodec, pcm: Pcm): Response {
           return;
         }
       }
+    },
+    cancel() {
+      // Also before the first packet, when the generator has not entered its `try`.
+      encoder.destroy();
     },
   });
   return new Response(body, {

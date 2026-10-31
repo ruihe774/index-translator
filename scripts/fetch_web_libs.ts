@@ -1,11 +1,10 @@
 // Fetch the libraries the web app runs in the browser, into public/vendor/: for PDF support, pdf.js
 // (page thumbnails), an npm package downloaded from the registry by version and checksum, of which
 // only the files the page loads are unpacked, plus the license; and, each a few files of a git commit,
-// pdf-inspector's WebAssembly build (page text as Markdown), undoc's (a Word document's text as
-// Markdown) and the QOA codec of the speech stream. Nothing is
-// installed with a package manager, and the page never loads them from the network: the server
-// serves public/vendor/ like the rest of public/. Without the PDF libraries or undoc opening a PDF
-// or a Word document is refused with a message; without the codec speech arrives as WAV.
+// pdf-inspector's WebAssembly build (page text as Markdown) and undoc's (a Word document's text as
+// Markdown). Nothing is installed with a package manager, and the page never loads them from the
+// network: the server serves public/vendor/ like the rest of public/. Without the PDF libraries or
+// undoc opening a PDF or a Word document is refused with a message.
 // Usage: bun scripts/fetch_web_libs.ts
 //
 // A library whose directory already holds the pinned version is left alone. Needs nothing besides Bun.
@@ -87,8 +86,6 @@ export interface FileLibrary {
   }[];
 }
 
-const QOA_COMMIT = "3c85bd84595d56cb13bef779add463246e0908b7";
-const QOA_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${QOA_COMMIT}`;
 const UNDOC_COMMIT = "7469dcc40a7109b29e26922e284a77205535ee3b";
 const UNDOC_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${UNDOC_COMMIT}`;
 const PDF_INSPECTOR_COMMIT = "54f43e19370da8cfa7795a79dc7b0edd9848bf7d";
@@ -119,37 +116,6 @@ export const FILE_LIBRARIES: FileLibrary[] = [
         to: "LICENSE",
         url: `${PDF_INSPECTOR_RAW}/LICENSE`,
         sha256: "d31b40739ab8c626c561c6aa2900deb2af74e40d6b4522373d3e340417df4331",
-      },
-    ],
-  },
-  /**
-   * qoa-wasm (the `qoa` branch): the QOA audio codec the speech stream uses. src/qoa.ts fetches its two
-   * WebAssembly builds from `../dist/` relative to itself, so the files keep the repository's layout.
-   * The server answers `.ts` as JavaScript, so they are used as they are.
-   */
-  {
-    dir: "qoa",
-    version: QOA_COMMIT,
-    files: [
-      {
-        to: "src/qoa.ts",
-        url: `${QOA_RAW}/src/qoa.ts`,
-        sha256: "c0a681fb533b2426bfaf2fd5fbba50efa10d11bc2cf68c36330bdc98be40308d",
-      },
-      {
-        to: "dist/qoa.wasm",
-        url: `${QOA_RAW}/dist/qoa.wasm`,
-        sha256: "02fae25eecaa72631bf4557f275d09ea9b7dafc289ea83fefd0884a3200f4cc9",
-      },
-      {
-        to: "dist/qoa-simd.wasm",
-        url: `${QOA_RAW}/dist/qoa-simd.wasm`,
-        sha256: "98f669d58a70b7d93642e6e979257f781f43fc4cccf6d060506dcb1a219adc4e",
-      },
-      {
-        to: "LICENSE",
-        url: `${QOA_RAW}/LICENSE`,
-        sha256: "6b0382b16279f26ff69014300541967a356a666eb0b91b422f6862f6b7dad17e",
       },
     ],
   },

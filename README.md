@@ -145,19 +145,19 @@ Before the first start, build the engines and get the models once (about 19.2 Gi
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
 bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
+bun scripts/build_libopus.ts    # libopus, which compresses speech for the browser: built from source, seconds
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, the sentence segmentation and alignment models, example voices
 bun scripts/fetch_onnxruntime.ts  # ONNX Runtime, which runs the sentence segmentation and alignment models (29 MB), into vendor/
-bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and compress speech in the browser (13 MB), into public/vendor/
+bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files in the browser (13 MB), into public/vendor/
 bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into Markdown (27 KB), into vendor/
 ```
 
 Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
-Markdown files, and says that PDF and Word support is not installed. Reading aloud then sends its audio
-as QOA or WAV instead of the smaller Opus (`bun scripts/fetch_minicelt.ts` installs the Opus encoder; it needs
-the libsoxr that `build_soxr.ts` builds). Translating a web page by its address needs `fetch_turndown.ts`
+Markdown files, and says that PDF and Word support is not installed. Without `build_libopus.ts` reading
+aloud sends its audio as WAV, about twelve times the size of Opus. Translating a web page by its address needs `fetch_turndown.ts`
 and is off until you allow some sites (see Translate a web page, below).
 
-Reading aloud is optional. To leave it out, skip `build_audiocpp.ts` and `build_soxr.ts` and download only the
+Reading aloud is optional. To leave it out, skip `build_audiocpp.ts`, `build_soxr.ts` and `build_libopus.ts` and download only the
 translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.
 
 You need [Bun](https://bun.sh) and `curl`, and to build the engines git, CMake, a C and C++
