@@ -210,6 +210,9 @@ test("a full queue shows the busy message", async ({ app, mock, request, baseURL
 });
 
 test("the model switches back to chat for a short text after a document load", async ({ app, mock }) => {
+  // The reset forgets the launches but keeps the loaded model: an earlier test on this server may have
+  // left NativeLong loaded, and switching to it would then launch nothing. Unloaded, both swaps launch.
+  await mock.unload();
   await app.open();
   await app.from.selectOption("en");
   await app.model("Index-NativeLong-9B").click();
@@ -220,6 +223,5 @@ test("the model switches back to chat for a short text after a document load", a
   await app.model("Automatic").click();
   await app.translate.click();
   await expect(app.engine).toHaveText("Engine ready, Index-Translate-9B loaded.");
-  // The mock was reset after the startup load of the chat model, so only the swaps are recorded.
   expect((await mock.state()).launches).toStrictEqual([DOCUMENT, CHAT]);
 });
