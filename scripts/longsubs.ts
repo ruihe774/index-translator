@@ -1,16 +1,30 @@
 // Long-subtitle check against a running backend. Cuts the long-input essays into numbered cues, as a
-// subtitle file without its timestamps would be sent, translates them in a single generation, and
-// checks that every cue came back under its own number. The essays' marker numbers (unique per
-// paragraph, see test/fixtures.ts) tell whether a cue's text stayed under its number or drifted to a
-// neighbour's.
-// The request is the web app's (public/subtitles.ts: the hard constraint and genre), with the first
-// MAX_CUES cues (default the app's cap). Output is capped at twice the prompt's tokens, so a run that
+// subtitle file without its timestamps would be sent, translates them in chunks as the web app does
+// (public/subtitles.ts: `planChunks`, one request each, stitched by `translateSubtitles`), and checks
+// that every cue came back under its own number, in each chunk and once stitched. The essays' marker
+// numbers (unique per paragraph, see test/fixtures.ts) tell whether a cue's text stayed under its
+// number or drifted to a neighbour's.
+// The requests are the web app's (the hard constraint and genre), for the first MAX_CUES cues (default
+// all), in chunks of CHUNK cues overlapping by OVERLAP (default the app's `CHUNK_LIMITS`; CHUNK=100000
+// sends one request, as before chunking). Output is capped at twice the prompt's tokens, so a run that
 // loops ends early. A format with one line per cue, `[12] text`, kept text under its number worse.
-// Usage: [MODEL=…] [MAX_CUES=…] [PASSES=en-zh,zh-en] bun scripts/longsubs.ts [base-url] [output-dir]
+// Usage: [MODEL=…] [MAX_CUES=…] [CHUNK=…] [OVERLAP=…] [PASSES=en-zh,zh-en] bun scripts/longsubs.ts [base-url] [output-dir]
 
 import { join } from "node:path";
 
-import { MAX_CUES, SUBTITLE_CONSTRAINT, SUBTITLE_GENRE } from "../public/subtitles";
+import {
+  CHUNK_LIMITS,
+  chunkCuts,
+  type ChunkOutput,
+  chunkText,
+  type Cue as SrtCue,
+  parseSrt,
+  planChunks,
+  SUBTITLE_CONSTRAINT,
+  SUBTITLE_GENRE,
+  toWire as appWire,
+  translateSubtitles,
+} from "../public/subtitles";
 import type { TokenizeResponse } from "../src/api";
 import { translateStream } from "./longtext";
 
@@ -268,41 +282,7 @@ export function check(source: Cue[], output: OutputCue[]): Report {
 const list = (items: (number | string)[], max = 20) =>
   items.length === 0 ? "none" : `${items.length}: ${items.slice(0, max).join(", ")}${items.length > max ? ", …" : ""}`;
 
-async function runPass(base: string, label: string, text: string, from: string, to: string, outDir?: string) {
-  const style = STYLES[from]!;
-  const cues = toCues(text, style).slice(0, Number(Bun.env.MAX_CUES ?? MAX_CUES));
-  const wire = toWire(cues);
-  const model = Bun.env.MODEL ?? "index-translate-9b";
-  const body = {
-    model,
-    text: wire,
-    source_lang: from,
-    target_lang: to,
-    hard_constraints: [SUBTITLE_CONSTRAINT],
-    genre: SUBTITLE_GENRE,
-  };
-  const counted = await fetch(`${base}/api/v1/tokenize`, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const { prompt_tokens: promptTokens } = (await counted.json()) as TokenizeResponse;
-  const t0 = performance.now();
-  const { translation, start, done } = await translateStream(base, {
-    ...body,
-    max_output_tokens: promptTokens * 2,
-  });
-  const seconds = (performance.now() - t0) / 1000;
-  const output = parseWire(translation);
-  const r = check(cues, output);
-  const ok = r.ok && done.finish_reason === "stop";
-  const letters = wire.match(/\p{L}/gu)?.length ?? 0;
-
-  console.log(`${ok ? "PASS" : "FAIL"} ${label} (${model})`);
-  console.log(`  input: ${cues.length} cues, ${wire.length} characters (${letters} letters)`);
-  console.log(`  tokens: ${start?.prompt_tokens} prompt + ${done.usage.completion_tokens} completion`);
-  console.log(`  output: ${output.length} cues, ${translation.length} characters, finish_reason=${done.finish_reason}`);
-  console.log(`  time: ${seconds.toFixed(1)} s wall, ${done.timings.tokens_per_second} tokens/s generation`);
+function printReport(r: Report) {
   console.log(`  missing numbers: ${list(r.missing)}`);
   console.log(`  unexpected numbers: ${list(r.unexpected)}`);
   console.log(`  duplicated numbers: ${list(r.duplicated)}`);
@@ -313,11 +293,95 @@ async function runPass(base: string, label: string, text: string, from: string, 
   );
   console.log(`  text lost: ${list(r.lost)}`);
   console.log(`  not separated by a blank line: ${r.unseparated}; line count changed: ${r.lineCountChanged}`);
+}
+
+/** The stitched translation as the cues `check` reads: joined cues come back as empty numbers, as the model left them. */
+function stitchedCues(srt: SrtCue[], joined: string[]): OutputCue[] {
+  return [
+    ...srt.map((c) => ({ index: Number(c.index), lines: c.lines, unseparated: false })),
+    ...joined.map((index) => ({ index: Number(index), lines: [], unseparated: false })),
+  ].sort((a, b) => a.index - b.index);
+}
+
+async function runPass(base: string, label: string, text: string, from: string, to: string, outDir?: string) {
+  const style = STYLES[from]!;
+  const cues = toCues(text, style).slice(0, Number(Bun.env.MAX_CUES ?? Infinity));
+  const srt = toSrt(cues, style);
+  const srtCues = parseSrt(srt)!;
+  const wire = appWire(srtCues);
+  const limits = {
+    ...CHUNK_LIMITS,
+    ...(Bun.env.CHUNK && { cues: Number(Bun.env.CHUNK) }),
+    ...(Bun.env.OVERLAP && { overlap: Number(Bun.env.OVERLAP) }),
+  };
+  const chunks = planChunks(srtCues, wire, limits);
+  const model = Bun.env.MODEL ?? "index-translate-9b";
+  const name = `essays.${from}-${to}.${cues.length}`;
+  console.log(`${label} (${model}): ${cues.length} cues in ${chunks.length} chunks (${JSON.stringify(limits)})`);
+
+  const outputs: ChunkOutput[] = [];
+  let ok = true;
+  for (const [k, chunk] of chunks.entries()) {
+    const sent = chunkText(wire, chunk);
+    const body = {
+      model,
+      text: sent,
+      source_lang: from,
+      target_lang: to,
+      hard_constraints: [SUBTITLE_CONSTRAINT],
+      genre: SUBTITLE_GENRE,
+    };
+    const counted = await fetch(`${base}/api/v1/tokenize`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const { prompt_tokens: promptTokens } = (await counted.json()) as TokenizeResponse;
+    const t0 = performance.now();
+    const { translation, start, done } = await translateStream(base, {
+      ...body,
+      max_output_tokens: promptTokens * 2,
+    });
+    const seconds = (performance.now() - t0) / 1000;
+    outputs.push({ chunk, output: translation });
+    // Numbered from 1 in the chunk, as sent.
+    const own = cues.slice(chunk.start, chunk.end).map((c, i) => ({ ...c, index: i + 1 }));
+    const output = parseWire(translation);
+    const r = check(own, output);
+    ok = ok && done.finish_reason === "stop";
+    const letters = sent.match(/\p{L}/gu)?.length ?? 0;
+    console.log(
+      `${r.ok && done.finish_reason === "stop" ? "PASS" : "FAIL"} chunk ${k + 1}/${chunks.length}: cues ${chunk.start + 1}–${chunk.end} (numbers 1–${own.length} below)`,
+    );
+    console.log(`  input: ${own.length} cues, ${sent.length} characters (${letters} letters)`);
+    console.log(`  tokens: ${start?.prompt_tokens} prompt + ${done.usage.completion_tokens} completion`);
+    console.log(
+      `  output: ${output.length} cues, ${translation.length} characters, finish_reason=${done.finish_reason}`,
+    );
+    console.log(`  time: ${seconds.toFixed(1)} s wall, ${done.timings.tokens_per_second} tokens/s generation`);
+    printReport(r);
+    if (outDir) {
+      await Bun.write(join(outDir, `${name}.chunk${k + 1}.wire.txt`), sent);
+      await Bun.write(join(outDir, `${name}.chunk${k + 1}.output.txt`), translation);
+    }
+    if (done.finish_reason !== "stop") {
+      break;
+    }
+  }
+
+  const t = translateSubtitles(srtCues, wire, outputs, ok ? "complete" : "partial");
+  const r = check(cues, stitchedCues(parseSrt(t.srt) ?? [], t.joined));
+  ok = ok && r.ok;
+  console.log(`${ok ? "PASS" : "FAIL"} ${label}, stitched`);
+  const cuts = chunkCuts(srtCues, wire, outputs);
+  console.log(
+    `  cuts: ${list(cuts.map((c, k) => `${c} (overlap ${chunks[k + 1]!.start + 1}–${chunks[k]!.end}${c > chunks[k]!.end ? ", none agreed" : ""})`))}`,
+  );
+  console.log(`  joined: ${list(t.joined)}; dropped lines: ${t.dropped}; untranslated: ${list(t.untranslated)}`);
+  printReport(r);
   if (outDir) {
-    const name = `essays.${from}-${to}.${cues.length}`;
-    await Bun.write(join(outDir, `${name}.source.srt`), toSrt(cues, style));
-    await Bun.write(join(outDir, `${name}.wire.txt`), wire);
-    await Bun.write(join(outDir, `${name}.output.txt`), translation);
+    await Bun.write(join(outDir, `${name}.source.srt`), srt);
+    await Bun.write(join(outDir, `${name}.output.srt`), t.srt);
   }
   return ok;
 }

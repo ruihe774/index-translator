@@ -108,20 +108,76 @@ test("an opened .srt file is shown as a table, and a restored one is matched aga
   await expect(app.page.locator("#source-view .linked")).toHaveCount(2);
 });
 
-test("subtitles always go to Index-Translate-9B, and more than 200 cues are warned about", async ({ app, mock }) => {
+test("subtitles always go to Index-Translate-9B", async ({ app, mock }) => {
   await mock.set({ chunks: ["1\n一"] });
   await app.open();
-  const many = Array.from(
-    { length: 201 },
-    (_, i) =>
-      `${i + 1}\n00:00:${String(i % 60).padStart(2, "0")},000 --> 00:00:${String(i % 60).padStart(2, "0")},500\nLine ${i}.`,
-  ).join("\n\n");
   await app.model("Index-NativeLong-9B").click();
-  await app.text.fill(many);
-  await expect(app.advice).toContainText("these subtitles have 201 cues");
-  await expect(app.advice).toContainText("Index-NativeLong-9B does not translate subtitles");
+  await app.text.fill(SRT);
+  await expect(app.advice).toHaveText(
+    "Warning: Index-NativeLong-9B does not translate subtitles. Index-Translate-9B will be used.",
+  );
   await app.translate.click();
   await expect(app.meta).toContainText("Index-Translate-9B");
+});
+
+/** `n` cues, cue i saying "Line i.", a second each. */
+const many = (n: number) =>
+  Array.from({ length: n }, (_, k) => {
+    const s = String(k % 60).padStart(2, "0");
+    const m = String(Math.floor(k / 60)).padStart(2, "0");
+    return `${k + 1}\n00:${m}:${s},000 --> 00:${m}:${s},800\nLine ${k + 1}.`;
+  }).join("\n\n");
+
+/** A reply numbering `count` cues from 1, cue j saying `${prefix}${first + j - 1}`, one piece per cue. */
+const reply = (prefix: string, first: number, count: number) =>
+  Array.from({ length: count }, (_, k) => `${k + 1}\n${prefix}${first + k}\n\n`);
+
+test("a long file goes in overlapping parts, put together into one translation", async ({ app, mock }) => {
+  // 150 cues: cues 1–100, then 85–150 (16 overlap); the translation passes to the second part at cue 93.
+  await mock.set({ replies: [reply("甲", 1, 100), reply("乙", 85, 66)], delayMs: 5 });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.text.fill(many(150));
+  await expect(app.advice).toHaveText("");
+  await app.translate.click();
+  await expect(app.meta).toContainText(/Part 2 of 2\.$/);
+  await expect(app.meta).toContainText("generated");
+
+  const { requests } = await mock.state();
+  expect(requests).toHaveLength(2);
+  expect(requests[0]!.prompt).toContain("1\nLine 1.\n\n2\nLine 2.");
+  expect(requests[0]!.prompt).toContain("100\nLine 100.");
+  expect(requests[0]!.prompt).not.toContain("101\n");
+  expect(requests[1]!.prompt).toContain("1\nLine 85.\n\n2\nLine 86.");
+  expect(requests[1]!.prompt).toContain("66\nLine 150.");
+  for (const r of requests) {
+    expect(r.prompt).toContain("逐条翻译");
+  }
+
+  const out = rows(app.page, "#output");
+  await expect(out).toHaveCount(150);
+  await expect(out.nth(91).locator(".cue-text")).toHaveText("甲92");
+  await expect(out.nth(92).locator(".cue-text")).toHaveText("乙93");
+  await expect(out.nth(149).locator(".cue-text")).toHaveText("乙150");
+  await expect(app.notes).toHaveCount(0);
+  await expect(app.page.locator("#output-area")).toHaveClass(/synced/);
+});
+
+test("Stop in a later part keeps what came before and stops that part's job", async ({ app, mock }) => {
+  // The first part comes in one piece, the second slowly.
+  await mock.set({ replies: [[reply("甲", 1, 100).join("")], reply("乙", 85, 66)], delayMs: 100 });
+  await app.open();
+  await app.text.fill(many(150));
+  await app.translate.click();
+  await expect(app.meta).toContainText(/Part 2 of 2\.$/);
+  // Past the overlap, so the second part's text is shown.
+  await expect(rows(app.page, "#output").nth(100)).toBeVisible();
+  await app.stop.click();
+  await expect(app.meta).toHaveText("You stopped the translation. The text above is incomplete.");
+  await expect(rows(app.page, "#output").nth(91).locator(".cue-text")).toHaveText("甲92");
+  await expect(app.notes.last()).toHaveText(/^Cues \d+ to 150 were not translated\.$/);
+  await expect.poll(async () => (await mock.state()).aborted).toBe(1);
+  expect((await mock.state()).requests).toHaveLength(2);
 });
 
 test("reading a subtitle translation aloud reads the cues' text only", async ({ app, mock }) => {

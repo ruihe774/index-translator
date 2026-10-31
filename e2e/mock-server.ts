@@ -5,7 +5,7 @@
 //
 // A second, control server lets a test script what the mock engine says:
 //   GET    /mock           current knobs and the generations requested so far
-//   POST   /mock           set knobs: { chunks?, delayMs?, finish?, failWith?, failLaunch?, ready?,
+//   POST   /mock           set knobs: { chunks?, replies?, delayMs?, finish?, failWith?, failLaunch?, ready?,
 //                          speech?: { state?, delayMs?, audioSeconds?, failWith? },
 //                          webpage?: { problem?, title?, markdown?, redirectTo?, delayMs?, failWith? },
 //                          segment?: { state?, delayMs?, failWith? }, align?: { state?, pairs? } };
@@ -81,7 +81,16 @@ const app = await startApp(
 );
 await waitReady(app);
 
-const KNOBS = ["chunks", "delayMs", "finish", "failWith", "failLaunch", "imageUnavailable", "ready"] as const;
+const KNOBS = [
+  "chunks",
+  "replies",
+  "delayMs",
+  "finish",
+  "failWith",
+  "failLaunch",
+  "imageUnavailable",
+  "ready",
+] as const;
 
 const control = Bun.serve({
   port: controlPort,

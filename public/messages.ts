@@ -4,7 +4,6 @@
 import type { DoneEvent, Health } from "../src/api.ts";
 import { mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
 import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type ModelId, type Selection } from "./select-model.ts";
-import { MAX_CUES } from "./subtitles.ts";
 
 const MODEL_LABELS: Record<ModelId, string> = {
   [CHAT_MODEL]: "Index-Translate-9B",
@@ -118,22 +117,11 @@ export function imageAdviceMessage(documentChosen: boolean, from: string, to: st
 
 /**
  * The same for subtitles. They are sent to Index-Translate-9B whatever was chosen (the cue numbers rely
- * on its constraints); `documentChosen` says that the other model was. Past `MAX_CUES` cues one request
- * goes wrong, so the user is told to split the file.
+ * on its constraints); `documentChosen` says that the other model was. A long file needs no advice: it
+ * goes in several requests (`planChunks`).
  */
-export function subtitleAdviceMessage(
-  cues: number,
-  documentChosen: boolean,
-  from: string,
-  to: string,
-  languageNote: string,
-): string {
+export function subtitleAdviceMessage(documentChosen: boolean, from: string, to: string, languageNote: string): string {
   const parts: string[] = [];
-  if (cues > MAX_CUES) {
-    parts.push(
-      `Warning: these subtitles have ${number.format(cues)} cues. Beyond ${MAX_CUES} the translation may repeat earlier cues or stop early; split the file into parts of at most ${MAX_CUES} cues.`,
-    );
-  }
   if (documentChosen) {
     parts.push(
       `Warning: ${MODEL_LABELS[DOCUMENT_MODEL]} does not translate subtitles. ${MODEL_LABELS[CHAT_MODEL]} will be used.`,
@@ -278,6 +266,21 @@ export function resultNotes(done: Pick<Done, "finish_reason">, ctx: ResultContex
     );
   }
   return notes;
+}
+
+/** Two requests' `done` as one: the second's finish reason, the sums of their tokens and times. */
+export function addDone(a: Done, b: Done): Done {
+  return {
+    finish_reason: b.finish_reason,
+    usage: {
+      prompt_tokens: a.usage.prompt_tokens + b.usage.prompt_tokens,
+      completion_tokens: a.usage.completion_tokens + b.usage.completion_tokens,
+    },
+    timings: {
+      queue_ms: a.timings.queue_ms + b.timings.queue_ms,
+      generation_ms: a.timings.generation_ms + b.timings.generation_ms,
+    },
+  };
 }
 
 export function metaLine(model: ModelId, done: Done): string {

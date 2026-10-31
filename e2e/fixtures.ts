@@ -20,6 +20,8 @@ import { portsOf } from "./ports";
 
 export interface MockKnobs {
   chunks?: string[];
+  /** One generation's chunks each, played in order before `chunks` (a subtitle file in several requests). */
+  replies?: string[][];
   delayMs?: number;
   finish?: FinishReason;
   failWith?: string | null;

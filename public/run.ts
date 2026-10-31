@@ -33,6 +33,13 @@ export class Run {
     this.cancel();
   }
 
+  /** The next request of the run (a subtitle file goes in several): Stop then deletes that one's job. */
+  nextJob() {
+    this.jobId = null;
+    this.cancelUrl = null;
+    this.cancelSent = false;
+  }
+
   private cancel() {
     // The server keeps a resumable translation or a transcription running without a reader, so it is told to stop.
     if (this.cancelUrl && !this.cancelSent) {

@@ -2,8 +2,12 @@ import { describe, expect, test } from "bun:test";
 
 import { counterpart } from "../public/paragraphs";
 import {
+  type Chunk,
+  chunkCuts,
+  chunkText,
   clock,
   parseSrt,
+  planChunks,
   shownText,
   speakerColumn,
   splitSpeakers,
@@ -219,6 +223,222 @@ describe("translateSubtitles", () => {
 
   test("nothing written", () => {
     expect(translate("", "complete")).toStrictEqual({ srt: "", joined: [], dropped: 0, untranslated: ["1", "2", "3"] });
+  });
+});
+
+/**
+ * `n` cues a second apart (`gapBefore`: positions with a 3 s gap before them instead), cue i saying
+ * `text(i)`; no sentence ends unless `text` writes them.
+ */
+function manyCues(n: number, text = (i: number) => `line ${i}`, gapBefore: number[] = []) {
+  const stamp = (ms: number) => {
+    const s = Math.floor(ms / 1000);
+    return `00:${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")},${String(ms % 1000).padStart(3, "0")}`;
+  };
+  let at = 0;
+  const blocks = Array.from({ length: n }, (_, k) => {
+    at += gapBefore.includes(k) ? 3000 : 200;
+    const start = at;
+    at += 800;
+    return `${k + 1}\n${stamp(start)} --> ${stamp(at)}\n${text(k + 1)}`;
+  });
+  const cues = parseSrt(blocks.join("\n\n"))!;
+  return { cues, wire: toWire(cues) };
+}
+
+/** What a model writes for `chunk`: number i's text is `write(i)` (i of the whole file), null leaving it empty. */
+function written(chunk: Chunk, write: (i: number) => string | null): string {
+  return Array.from(
+    { length: chunk.end - chunk.start },
+    (_, k) => `${k + 1}\n${write(chunk.start + k + 1) ?? ""}`,
+  ).join("\n\n");
+}
+
+const LIMITS = { cues: 100, overlap: 16, letters: 100_000 };
+
+describe("planChunks", () => {
+  test("one chunk while it fits", () => {
+    const { cues, wire } = manyCues(100);
+    expect(planChunks(cues, wire, LIMITS)).toStrictEqual([{ start: 0, end: 100 }]);
+  });
+
+  test("the next chunk starts `overlap` cues before the end of the one before", () => {
+    const { cues, wire } = manyCues(250);
+    expect(planChunks(cues, wire, LIMITS)).toStrictEqual([
+      { start: 0, end: 100 },
+      { start: 84, end: 184 },
+      { start: 168, end: 250 },
+    ]);
+  });
+
+  test("moved earlier, by up to half the overlap, to where a sentence or a scene starts", () => {
+    const sentence = manyCues(150, (i) => (i === 81 ? "The end." : `line ${i}`));
+    expect(planChunks(sentence.cues, sentence.wire, LIMITS)[1]!.start).toBe(81);
+    const scene = manyCues(150, undefined, [79]);
+    expect(planChunks(scene.cues, scene.wire, LIMITS)[1]!.start).toBe(79);
+    const tooFar = manyCues(150, (i) => (i === 70 ? "The end." : `line ${i}`));
+    expect(planChunks(tooFar.cues, tooFar.wire, LIMITS)[1]!.start).toBe(84);
+  });
+
+  test("at most `letters` letters, the overlap at most half a chunk; every chunk reaches past the one before the last", () => {
+    const { cues, wire } = manyCues(60, (i) => "x".repeat(i % 7 === 0 ? 900 : 90));
+    const chunks = planChunks(cues, wire, { cues: 100, overlap: 16, letters: 1000 });
+    // Cue 7 has 900 letters: the first chunk ends before it, the second takes it however long it is.
+    expect(chunks.slice(0, 2)).toStrictEqual([
+      { start: 0, end: 6 },
+      { start: 3, end: 7 },
+    ]);
+    chunks.forEach((c, k) => {
+      expect(c.end).toBeGreaterThan(c.start);
+      if (k > 0) {
+        expect(c.start).toBeLessThan(chunks[k - 1]!.end);
+      }
+      if (k > 1) {
+        expect(c.start).toBeGreaterThanOrEqual(chunks[k - 2]!.end);
+      }
+    });
+    expect(chunks.at(-1)!.end).toBe(60);
+  });
+
+  test("a chunk's text is numbered from 1", () => {
+    const { wire } = manyCues(5);
+    expect(chunkText(wire, { start: 3, end: 5 })).toBe("1\nline 4\n\n2\nline 5");
+  });
+});
+
+describe("translating in chunks", () => {
+  const { cues, wire } = manyCues(150);
+  const [first, second] = planChunks(cues, wire, LIMITS) as [Chunk, Chunk];
+  /** The first chunk writes T, the second U, so the cues tell which one they came from. */
+  const outputs = (a: (i: number) => string | null, b: (i: number) => string | null, bChunk = second) => [
+    { chunk: first, output: written(first, a) },
+    { chunk: bChunk, output: written(bChunk, b) },
+  ];
+  const texts = (srt: string) => parseSrt(srt)!.map((c) => c.lines.join(" "));
+
+  test("one chunk is the same as one output", () => {
+    const whole = { start: 0, end: 150 };
+    const output = written(whole, (i) => `T${i}`);
+    expect(translateSubtitles(cues, wire, [{ chunk: whole, output }], "complete")).toStrictEqual(
+      translateSubtitles(cues, wire, output, "complete"),
+    );
+  });
+
+  test("passes to the next chunk in the middle of the overlap", () => {
+    expect(second.start).toBe(84);
+    const t = translateSubtitles(
+      cues,
+      wire,
+      outputs(
+        (i) => `T${i}`,
+        (i) => `U${i}`,
+      ),
+      "complete",
+    );
+    const out = texts(t.srt);
+    expect(out).toHaveLength(150);
+    expect(out.slice(90, 94)).toStrictEqual(["T91", "T92", "U93", "U94"]);
+    expect(subtitleNotes(t)).toStrictEqual([]);
+  });
+
+  test("prefers where a sentence starts", () => {
+    const ended = manyCues(150, (i) => (i === 95 ? "The end." : `line ${i}`));
+    const chunks = planChunks(ended.cues, ended.wire, LIMITS);
+    expect(chunks[1]!.start).toBe(84);
+    const outs = chunks.slice(0, 2).map((chunk, k) => ({ chunk, output: written(chunk, (i) => `${"TU"[k]}${i}`) }));
+    expect(chunkCuts(ended.cues, ended.wire, outs)).toStrictEqual([96]);
+  });
+
+  test("only where both chunks start a cue's text, so neither one's group of cues is cut in two", () => {
+    // The first joined 92 to 94, the second 91 to 93: of the places nearest the middle (93), 92 to 94 are
+    // inside one group or the other, 91 and 95 are not.
+    const cut = chunkCuts(
+      cues,
+      wire,
+      outputs(
+        (i) => (i === 93 || i === 94 ? null : `T${i}`),
+        (i) => (i === 92 || i === 93 ? null : `U${i}`),
+      ),
+    );
+    expect(cut).toStrictEqual([91]);
+  });
+
+  test("with no such place, the next chunk takes over after the overlap, its group before joining the cue before", () => {
+    // The second chunk wrote everything up to 102 under its first number.
+    const t = translateSubtitles(
+      cues,
+      wire,
+      outputs(
+        (i) => `T${i}`,
+        (i) => (i === 85 ? "U85" : i <= 102 ? null : `U${i}`),
+      ),
+      "complete",
+    );
+    const out = texts(t.srt);
+    expect(out[99]).toBe("T100");
+    expect(out[100]).toBe("U103");
+    expect(t.joined).toStrictEqual(["101", "102"]);
+  });
+
+  test("while the next chunk is within the overlap, the chunk before is shown; once past it, the cut", () => {
+    const within = { chunk: second, output: written({ start: 84, end: 96 }, (i) => `U${i}`) };
+    const early = translateSubtitles(
+      cues,
+      wire,
+      [
+        outputs(
+          (i) => `T${i}`,
+          () => null,
+        )[0]!,
+        within,
+      ],
+      "streaming",
+    );
+    expect(texts(early.srt)).toHaveLength(100);
+    expect(texts(early.srt)[99]).toBe("T100");
+    const past = { chunk: second, output: written({ start: 84, end: 102 }, (i) => `U${i}`) };
+    const later = translateSubtitles(
+      cues,
+      wire,
+      [
+        outputs(
+          (i) => `T${i}`,
+          () => null,
+        )[0]!,
+        past,
+      ],
+      "streaming",
+    );
+    expect(texts(later.srt).slice(91, 93)).toStrictEqual(["T92", "U93"]);
+    expect(texts(later.srt)).toHaveLength(102);
+  });
+
+  test("stopped in the next chunk: what follows is untranslated", () => {
+    const part = { chunk: second, output: written({ start: 84, end: 110 }, (i) => `U${i}`) };
+    const t = translateSubtitles(
+      cues,
+      wire,
+      [
+        outputs(
+          (i) => `T${i}`,
+          () => null,
+        )[0]!,
+        part,
+      ],
+      "partial",
+    );
+    expect(texts(t.srt)).toHaveLength(110);
+    expect(t.untranslated).toHaveLength(40);
+    expect(t.untranslated[0]).toBe("111");
+  });
+
+  test("speaker ids come back across chunks", () => {
+    const speakers = manyCues(150, (i) => `S0${i % 2}: line ${i}`);
+    const chunks = planChunks(speakers.cues, speakers.wire, LIMITS);
+    expect(chunkText(speakers.wire, chunks[1]!)).toStartWith("1\nline 85\n\n2\nline 86");
+    const outs = chunks.map((chunk) => ({ chunk, output: written(chunk, (i) => `T${i}`) }));
+    const out = texts(translateSubtitles(speakers.cues, speakers.wire, outs, "complete").srt);
+    expect(out[120]).toBe("S01: T121");
   });
 });
 

@@ -21,6 +21,7 @@ import { confirmLink } from "./link-dialog.ts";
 import { linkReference } from "./links.ts";
 import { clipboardHtml, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
 import {
+  addDone,
   adviceMessage,
   type Done,
   imageAdviceMessage,
@@ -61,8 +62,12 @@ import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
 import { appendTranslation, bindRender, setState, setTranslation, type Side, state } from "./state.ts";
 import { KEYS, store, stored } from "./storage.ts";
 import {
+  type Chunk,
+  type ChunkOutput,
+  chunkText,
   type Cue,
   parseSrt,
+  planChunks,
   type Progress,
   subtitleAlignment,
   subtitleNotes,
@@ -179,10 +184,7 @@ function refreshSelection() {
   if (cues) {
     showCount(`${number.format(cues.length)} cues, ${number.format(s.letters)} letters`);
     const documentChosen = modelChoice === DOCUMENT_MODEL;
-    setText(
-      adviceEl,
-      subtitleAdviceMessage(cues.length, documentChosen, fromSelect.value, toSelect.value, languageNote),
-    );
+    setText(adviceEl, subtitleAdviceMessage(documentChosen, fromSelect.value, toSelect.value, languageNote));
     options.disabled = false;
     return s;
   }
@@ -462,8 +464,8 @@ interface Job {
   body: Record<string, unknown>;
   /** How the source is rendered, and so the translation. */
   format: Format;
-  /** For subtitles: their cues and what was sent for them (subtitles.ts). */
-  subtitles: { cues: Cue[]; wire: Wire } | null;
+  /** For subtitles: their cues, what is sent for them and the chunks it is sent in, with each one's request (subtitles.ts). */
+  subtitles: { cues: Cue[]; wire: Wire; chunks: { chunk: Chunk; body: Record<string, unknown> }[] } | null;
 }
 
 /** The source to translate (an image, or a text that is not empty); says why not and returns null otherwise. */
@@ -501,23 +503,28 @@ function prepareJob({ image, text }: { image: File | null; text: string }): Job 
   const sel = refreshSelection();
   const format = image ? "plain" : formatOf(text);
   const cues = format === "subtitles" ? parseSrt(text) : null;
-  const subtitles = cues && { cues, wire: toWire(cues) };
-  if (subtitles && !subtitles.wire.text) {
+  const wire = cues && toWire(cues);
+  if (wire && !wire.text) {
     fail("These subtitles have no text to translate.");
     return null;
   }
-  if (!image && !subtitles && sel.reason === "manual-document-unusable") {
+  if (!image && !wire && sel.reason === "manual-document-unusable") {
     fail(selectionMessage(sel).text);
     return null;
   }
   // Only the chat model reads images and subtitles. The image itself is put in when the request is sent.
   const sourceLang = fromSelect.value === "auto" ? undefined : fromSelect.value;
   const values = readForm();
+  const parts =
+    cues && wire
+      ? planChunks(cues, wire).map((chunk) => ({
+          chunk,
+          built: buildSubtitleRequest(chunkText(wire, chunk), sel.sourceLang, values),
+        }))
+      : [];
   const built = image
     ? buildImageRequest("", sourceLang, values)
-    : subtitles
-      ? buildSubtitleRequest(subtitles.wire.text, sel.sourceLang, values)
-      : buildRequest(sel.model, sel.sourceLang, values);
+    : (parts[0]?.built ?? buildRequest(sel.model, sel.sourceLang, values));
   if ("glossaryProblem" in built) {
     $<HTMLDetailsElement>("advanced").open = true;
     showFieldError(glossaryError, glossaryInput, glossaryMessage(built.glossaryProblem));
@@ -525,6 +532,13 @@ function prepareJob({ image, text }: { image: File | null; text: string }): Job 
     return null;
   }
   showFieldError(glossaryError, glossaryInput, null);
+  // Every chunk's request has the form's options, so they are all good when the first one is.
+  const subtitles = cues &&
+    wire && {
+      cues,
+      wire,
+      chunks: parts.flatMap(({ chunk, built }) => ("body" in built ? [{ chunk, body: built.body }] : [])),
+    };
   return {
     image,
     text,
@@ -557,7 +571,7 @@ function startTranslation(job: Job): Run {
  * becomes the translation and is shown, its cues matched with the source's by number, and what it
  * joined, left out or did not reach noted.
  */
-function settleSubtitles({ text, subtitles }: Job, written: string, progress: Progress) {
+function settleSubtitles({ text, subtitles }: Job, written: ChunkOutput[], progress: Progress) {
   const t = translateSubtitles(subtitles!.cues, subtitles!.wire, written, progress);
   setTranslation(t.srt);
   output?.show(t.srt);
@@ -571,13 +585,13 @@ function settleSubtitles({ text, subtitles }: Job, written: string, progress: Pr
 }
 
 /** The translation came to its end: its notes, the block matching, the link check and the history entry. */
-function finishTranslation(job: Job, done: Done, written: string) {
+function finishTranslation(job: Job, done: Done, written: ChunkOutput[]) {
   const { image, text, sel, model, format } = job;
   const markdown = format === "markdown";
   if (job.subtitles) {
     const context = {
       source: null,
-      translation: written,
+      translation: state.translation,
       model,
       sourceLang: sel.sourceLang,
       targetLang: toSelect.value,
@@ -652,33 +666,14 @@ async function translate() {
   }
   const run = startTranslation(job);
   let finished = false;
-  /** For subtitles, what the model wrote, which `translateSubtitles` rebuilds the translation from. */
-  let written = "";
+  /** For subtitles, what the model wrote for each chunk, which `translateSubtitles` rebuilds the translation from. */
+  const written: ChunkOutput[] = [];
   try {
-    const body = JSON.stringify({
-      ...job.body,
-      ...(job.image && { image: await sourceImage.dataUrl() }),
-      resumable: true,
-    });
-    run.controller.signal.throwIfAborted();
-    const done = await streamTranslation(run, body, job.model, {
-      status: (text) => metaEl.show(text),
-      text: (piece) => {
-        if (!job.subtitles) {
-          appendTranslation(piece);
-          output!.append(piece);
-          return;
-        }
-        written += piece;
-        const { srt } = translateSubtitles(job.subtitles.cues, job.subtitles.wire, written, "streaming");
-        setTranslation(srt);
-        output!.show(srt);
-      },
-    });
+    const done = job.subtitles ? await streamSubtitles(run, job, job.subtitles, written) : await streamText(run, job);
     finishTranslation(job, done, written);
     finished = true;
   } catch (e) {
-    if (job.subtitles && written) {
+    if (job.subtitles && written.some((w) => w.output)) {
       settleSubtitles(job, written, "partial");
     }
     if (run.stopped) {
@@ -689,6 +684,53 @@ async function translate() {
   } finally {
     endTranslation(finished);
   }
+}
+
+/** Translates a text or an image in one request, appending each piece as it comes. */
+async function streamText(run: Run, job: Job) {
+  const body = JSON.stringify({
+    ...job.body,
+    ...(job.image && { image: await sourceImage.dataUrl() }),
+    resumable: true,
+  });
+  run.controller.signal.throwIfAborted();
+  return streamTranslation(run, body, job.model, {
+    status: (text) => metaEl.show(text),
+    text: (piece) => {
+      appendTranslation(piece);
+      output!.append(piece);
+    },
+  });
+}
+
+/**
+ * Translates subtitles one chunk after another, each its own request (and job, which Stop deletes),
+ * rebuilding the whole translation from `written` on every delta. A chunk that does not finish with
+ * `stop` ends the run there: its `done` is answered, with the usage and times of every chunk so far.
+ */
+async function streamSubtitles(run: Run, job: Job, subtitles: NonNullable<Job["subtitles"]>, written: ChunkOutput[]) {
+  const { cues, wire, chunks } = subtitles;
+  let total: Done | null = null;
+  for (const [k, { chunk, body }] of chunks.entries()) {
+    run.nextJob();
+    run.controller.signal.throwIfAborted();
+    const part = { chunk, output: "" };
+    written.push(part);
+    const done = await streamTranslation(run, JSON.stringify({ ...body, resumable: true }), job.model, {
+      status: (text) => metaEl.show(chunks.length > 1 ? `${text} Part ${k + 1} of ${chunks.length}.` : text),
+      text: (piece) => {
+        part.output += piece;
+        const { srt } = translateSubtitles(cues, wire, written, "streaming");
+        setTranslation(srt);
+        output!.show(srt);
+      },
+    });
+    total = total ? addDone(total, done) : done;
+    if (done.finish_reason !== "stop") {
+      break;
+    }
+  }
+  return total!;
 }
 
 /**

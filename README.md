@@ -308,9 +308,11 @@ time of its cue. **Raw** shows the subtitle file itself, which is what **Copy tr
   of them. Those cues become one cue of the translation, from the first one's start to the last one's
   end, and the note under the translation says which ones. Its text may also drift a cue or two from
   its time, so check the timing of a long file before you use it.
-- Up to 200 cues per translation (about 10 to 15 minutes of dialogue). With more, the model may
-  start repeating earlier cues or stop early, and the app warns before you translate: split the file
-  into parts of at most 200 cues.
+- A long file is translated in parts of about 100 cues, one after another, and the status line says
+  which part is being translated. Each part starts a few cues before the previous one ended, so the
+  model sees what came before; the translation switches from one part to the next within those cues,
+  where both agree on where a cue starts. A name may still be translated differently in different
+  parts: put it in the glossary to keep it the same.
 - Clicking or hovering a cue finds its counterpart on the other side, as for paragraphs. The History
   keeps subtitle translations like any other text, and reading aloud reads the cues' text only.
 - Styling tags (`<i>`, `<b>`, `<u>`) are shown as such; position tags such as `{\an8}` are kept in the

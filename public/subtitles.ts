@@ -20,17 +20,39 @@
 // `transcription.ts`), the table shows the labels in a column of their own (`speakerColumn`). Labels that
 // are only ids (`S01`) are taken off before sending, like the timestamps, and put back on the cues of the
 // translation; a name (`JOHN:`) stays in the text, for the model to write in the other language.
+//
+// Long files go in chunks (`planChunks`): one request each, numbered 1..m again, each starting a few cues
+// before the one before it ends. Where two chunks overlap the translation passes from the first to the
+// second (`cutAt`), so the end of a chunk, where the model drifts and stops early, is replaced by the next
+// one's translation, which saw the cues before as context.
 
 import type { Alignment, BlockGroup } from "./paragraphs.ts";
 
 /**
- * Most cues one request translates reliably. Measured with `scripts/longsubs.ts` (the long-input essays
- * cut into cues, with `SUBTITLE_CONSTRAINT`): runs of 266 and 335 cues began repeating earlier cues at
- * about the 200th to 250th cue they wrote; 200 cues ended normally in both directions (en→zh, zh→en).
- * Even then the text drifts: en→zh folded short fragments into the cue before without leaving a number
- * empty, so by the end text sat up to 3 numbers early and the last 2 numbers were never written.
+ * How a long file is cut into requests: at most `cues` cues and `letters` letters of text each (the chat
+ * model loses paragraphs beyond about 11–16K letters), the next one starting `overlap` cues before this
+ * one ends. One request of 266 or 335 cues began repeating earlier cues at about the 200th to 250th cue
+ * it wrote (`scripts/longsubs.ts`); 200 ended normally, but en→zh text drifted up to 3 numbers early by
+ * the end and the last 2 numbers were never written.
+ *
+ * Measured with `scripts/longsubs.ts` on the essays (335 cues en→zh, 266 zh→en), cues of text drifted to
+ * another number after stitching (en→zh / zh→en): 100 cues, overlap 16: 13 / 3; 60, 16: 15 / 2; 60, 8: 23 / 0
+ * (and a cut where the chunks agreed nowhere); 150, 16: 26 / 24. Chunks of 150 or more also lost text in
+ * zh→en. Chunks of 100 or less and an overlap of 16 are no different from each other, so the larger is
+ * used. A chunk still ends early (its last 1–5 numbers unwritten) and the overlap covers that; drift of 1–3
+ * numbers in en→zh remains at every size and hits the same cues, so it comes from those cues, not from
+ * the length of the run.
  */
-export const MAX_CUES = 200;
+export const CHUNK_LIMITS: ChunkLimits = { cues: 100, overlap: 16, letters: 8000 };
+
+export interface ChunkLimits {
+  cues: number;
+  overlap: number;
+  letters: number;
+}
+
+/** A gap between cues at least this long is taken for a change of scene: a good place to start a chunk. */
+const SCENE_GAP_MS = 2000;
 
 /**
  * Sent as the first hard constraint of every subtitle translation. Without it the chat model translated
@@ -184,6 +206,8 @@ export function speakerColumn(cues: Cue[]): boolean {
 /** What is sent for the cues, and which cue each number stands for. */
 export interface Wire {
   text: string;
+  /** `lines[k]` are the lines sent for number k + 1. */
+  lines: string[][];
   /** `sent[k]` is the position in the cues of the one sent as number k + 1. Cues with no text are not sent. */
   sent: number[];
   /**
@@ -199,8 +223,80 @@ export function toWire(cues: Cue[]): Wire {
   const strip =
     speakerColumn(cues) && split.every((x) => x.speakers.every((label) => label === null || SPEAKER_ID.test(label)));
   const lines = (n: number) => (strip ? split[n]!.lines : cues[sent[n]!]!.lines);
-  const text = sent.map((_, n) => `${n + 1}\n${lines(n).join("\n")}`).join("\n\n");
-  return strip ? { text, sent, speakers: split.map((x) => x.speakers) } : { text, sent };
+  const wireLines = sent.map((_, n) => lines(n));
+  const text = numbered(wireLines);
+  return strip
+    ? { text, lines: wireLines, sent, speakers: split.map((x) => x.speakers) }
+    : { text, lines: wireLines, sent };
+}
+
+function numbered(lines: string[][]): string {
+  return lines.map((l, n) => `${n + 1}\n${l.join("\n")}`).join("\n\n");
+}
+
+/** The sent cues `start` to `end - 1` (positions in `Wire.sent`): one request's part. */
+export interface Chunk {
+  start: number;
+  end: number;
+}
+
+/** What is sent for a chunk: its cues numbered from 1 again. */
+export function chunkText(wire: Wire, chunk: Chunk): string {
+  return numbered(wire.lines.slice(chunk.start, chunk.end));
+}
+
+/** A sentence ends at the end of the text, perhaps before closing quotes or brackets. */
+const SENTENCE_END = /[.!?。！？…][\s"'”’»)\]」』）]*$/u;
+
+/**
+ * Whether the sent cue at position `k` starts something: the cue before ends a sentence, or a gap of a
+ * scene change lies between them.
+ */
+function startsAfresh(cues: Cue[], wire: Wire, k: number): boolean {
+  if (k <= 0 || k >= wire.sent.length) {
+    return true;
+  }
+  const before = cues[wire.sent[k - 1]!]!;
+  return SENTENCE_END.test(shownText(wire.lines[k - 1]!)) || cues[wire.sent[k]!]!.start - before.end >= SCENE_GAP_MS;
+}
+
+/**
+ * The requests a translation of the sent cues takes, in order. Each holds at most `limits.cues` cues and
+ * `limits.letters` letters (but always reaches past the end of the one before the last, so no two cuts
+ * fall in one overlap); the next starts `limits.overlap` cues before it ends (at most half of it), moved
+ * up to half the overlap earlier to where a sentence or a scene starts, so a chunk seldom opens
+ * mid-sentence.
+ */
+export function planChunks(cues: Cue[], wire: Wire, limits: ChunkLimits = CHUNK_LIMITS): Chunk[] {
+  const n = wire.sent.length;
+  const letters = wire.lines.map((l) => l.join("\n").length);
+  const chunks: Chunk[] = [];
+  let start = 0;
+  for (;;) {
+    const floor = chunks.at(-1)?.end ?? 0;
+    let end = start;
+    let sum = 0;
+    while (end < n && end - start < limits.cues && (end <= floor || sum + letters[end]! <= limits.letters)) {
+      sum += letters[end]!;
+      end++;
+    }
+    // Always one cue, however long.
+    end = Math.max(end, start + 1);
+    chunks.push({ start, end });
+    if (end >= n) {
+      return chunks;
+    }
+    const overlap = Math.min(limits.overlap, Math.floor((end - start) / 2));
+    const nominal = Math.max(end - overlap, floor, start + 1);
+    const earliest = Math.max(nominal - Math.floor(overlap / 2), floor, start + 1);
+    start = nominal;
+    for (let k = nominal; k >= earliest; k--) {
+      if (startsAfresh(cues, wire, k)) {
+        start = k;
+        break;
+      }
+    }
+  }
 }
 
 /**
@@ -289,14 +385,100 @@ function block(index: string, timing: string, lines: string[]): string {
   return [index, timing, ...lines].join("\n");
 }
 
+/** What the model wrote for a chunk. */
+export interface ChunkOutput {
+  chunk: Chunk;
+  output: string;
+}
+
 /**
- * The translation of `cues` (sent as `wire`) as SubRip text, from the model's `output` so far. Called
- * again as the output grows: everything before the entry being written stays as it was, except that an
- * entry left empty joins the cue before once the next number shows it is empty.
+ * Where the translation passes from the chunk before (`before`, its entries numbered as in the whole
+ * file) to the next one (`after`), which starts at number `first` while the one before ends at `last`:
+ * the first number taken from `after`. It must start an entry with text in both (or be `last + 1`, after
+ * the end of the one before), so neither chunk's group of cues is cut in two; of those, one where a
+ * sentence or a scene starts and near the middle of the overlap, away from the drift at the end of the
+ * chunk before and from the start of the next, which saw the least context. With none, the next chunk's
+ * first group from `last + 1` on (the cues between join the cue before). While `after` is still within
+ * the overlap (`settled` false), its text there is not used yet, so the rows change once, when it is.
  */
-export function translateSubtitles(cues: Cue[], wire: Wire, output: string, progress: Progress): SubtitleTranslation {
+function cutAt(
+  cues: Cue[],
+  wire: Wire,
+  before: Entry[],
+  after: Entry[],
+  first: number,
+  last: number,
+  settled: boolean,
+): number {
+  const afterStarts = after.filter((e) => e.lines.length > 0).map((e) => e.n);
+  if (!settled) {
+    return last + 1;
+  }
+  const beforeStarts = new Set(before.filter((e) => e.lines.length > 0).map((e) => e.n));
+  const middle = (first + last + 1) / 2;
+  // A start of a sentence or a scene is worth a quarter of the overlap's length in distance from the middle.
+  const bonus = (last + 1 - first) / 4;
+  let best: { n: number; score: number } | null = null;
+  for (const n of afterStarts) {
+    if (n <= first || n > last + 1 || (n <= last && !beforeStarts.has(n))) {
+      continue;
+    }
+    const score = (startsAfresh(cues, wire, n - 1) ? bonus : 0) - Math.abs(n - middle);
+    if (!best || score > best.score) {
+      best = { n, score };
+    }
+  }
+  return best?.n ?? afterStarts.find((n) => n > last) ?? last + 1;
+}
+
+/** The entries of the whole translation, numbered as in the whole file, from the chunks' outputs. */
+function stitch(
+  cues: Cue[],
+  wire: Wire,
+  outputs: ChunkOutput[],
+  progress: Progress,
+): { entries: Entry[]; dropped: number; cuts: number[] } {
+  let entries: Entry[] = [];
+  let dropped = 0;
+  const cuts: number[] = [];
+  outputs.forEach(({ chunk, output }, k) => {
+    const read = readEntries(output, chunk.end - chunk.start);
+    dropped += read.dropped;
+    const own = read.entries.map((e) => ({ n: e.n + chunk.start, lines: e.lines }));
+    if (k === 0) {
+      entries = own;
+      return;
+    }
+    const last = outputs[k - 1]!.chunk.end;
+    const settled = k < outputs.length - 1 || progress !== "streaming" || own.some((e) => e.n > last + 1);
+    const cut = cutAt(cues, wire, entries, own, chunk.start + 1, last, settled);
+    cuts.push(cut);
+    entries = [...entries.filter((e) => e.n < cut), ...own.filter((e) => e.n >= cut)];
+  });
+  return { entries, dropped, cuts };
+}
+
+/** Where each chunk after the first took over, as a number of the whole file (for `scripts/longsubs.ts`). */
+export function chunkCuts(cues: Cue[], wire: Wire, outputs: ChunkOutput[]): number[] {
+  return stitch(cues, wire, outputs, "complete").cuts;
+}
+
+/**
+ * The translation of `cues` (sent as `wire`) as SubRip text, from the model's `output` so far: one text
+ * for a translation in one request, or what each chunk's request wrote, in order (`progress` is the last
+ * one's; those before it finished). Called again as the output grows: everything before the entry being
+ * written stays as it was, except that an entry left empty joins the cue before once the next number
+ * shows it is empty, and that the overlap of two chunks changes once the second has passed it.
+ */
+export function translateSubtitles(
+  cues: Cue[],
+  wire: Wire,
+  output: string | ChunkOutput[],
+  progress: Progress,
+): SubtitleTranslation {
   const { sent } = wire;
-  const { entries, dropped } = readEntries(output, sent.length);
+  const outputs = typeof output === "string" ? [{ chunk: { start: 0, end: sent.length }, output }] : output;
+  const { entries, dropped } = stitch(cues, wire, outputs, progress);
   const starts = entries.filter((e) => e.lines.length > 0);
   // How far the last entry with text reaches. While streaming, an entry with no text yet may still get
   // some: it is not joined, so the row before does not stretch and shrink back with every new number.

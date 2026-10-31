@@ -31,6 +31,8 @@ export const mock = {
   /** While false, a launch waits instead of finishing, as a slow model load would. */
   ready: true,
   chunks: [...DEFAULT_CHUNKS],
+  /** One generation's chunks each, taken in order before `chunks` is played (a run of several requests). */
+  replies: [] as string[][],
   delayMs: 0,
   finish: "stop" as FinishReason,
   failWith: undefined as string | undefined,
@@ -51,6 +53,7 @@ export const mock = {
 export function resetMock(): void {
   mock.ready = true;
   mock.chunks = [...DEFAULT_CHUNKS];
+  mock.replies = [];
   mock.delayMs = 0;
   mock.finish = "stop";
   mock.failWith = undefined;
@@ -140,7 +143,8 @@ export function fakeModel(hooks: FakeHooks = {}): FakeModel {
     async *generate(prompt, maxTokens, client, image): AsyncGenerator<GenerationEvent> {
       const signal = client ? AbortSignal.any([client, gone.signal]) : gone.signal;
       hooks.onStart?.(prompt, maxTokens, image);
-      const { chunks, delayMs, finish: finishReason, failWith } = mock;
+      const { delayMs, finish: finishReason, failWith } = mock;
+      const chunks = mock.replies.shift() ?? mock.chunks;
       let played = false;
       try {
         await alive(hooks.gate?.(), signal);

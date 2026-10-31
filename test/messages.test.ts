@@ -114,13 +114,13 @@ describe("imageAdviceMessage", () => {
 });
 
 describe("subtitleAdviceMessage", () => {
-  test("nothing to say up to 200 cues with the chat model or Automatic", () => {
-    expect(subtitleAdviceMessage(200, false, "auto", "en", "")).toBe("");
+  test("nothing to say with the chat model or Automatic", () => {
+    expect(subtitleAdviceMessage(false, "auto", "en", "")).toBe("");
   });
 
-  test("more cues, and the document model chosen", () => {
-    expect(subtitleAdviceMessage(1201, true, "en", "zh", "")).toBe(
-      "Warning: these subtitles have 1,201 cues. Beyond 200 the translation may repeat earlier cues or stop early; split the file into parts of at most 200 cues. Warning: Index-NativeLong-9B does not translate subtitles. Index-Translate-9B will be used.",
+  test("the document model chosen", () => {
+    expect(subtitleAdviceMessage(true, "en", "zh", "")).toBe(
+      "Warning: Index-NativeLong-9B does not translate subtitles. Index-Translate-9B will be used.",
     );
   });
 });
