@@ -94,12 +94,17 @@ describe("the spec against the server", () => {
         "POST /tokenize",
         "POST /translate",
         "POST /voices",
+        "DELETE /voices/{id}",
         "POST /webpage",
       ].sort(),
     );
     for (const [op, status] of Object.entries(answers)) {
-      // A job that does not exist answers 404 from its own route, as an error with a message.
-      const served = ![404, 405].includes(status) || op.includes("/translations/") || op.includes("/transcriptions/");
+      // A job or an uploaded voice that does not exist answers 404 from its own route, as an error with a message.
+      const served =
+        ![404, 405].includes(status) ||
+        op.includes("/translations/") ||
+        op.includes("/transcriptions/") ||
+        op.startsWith("DELETE /voices/");
       expect({ op, served }).toStrictEqual({ op, served: true });
     }
   });

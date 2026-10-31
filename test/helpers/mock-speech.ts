@@ -100,6 +100,9 @@ export function resetMockSpeech(): void {
   mockSpeech.transcriptions.length = 0;
 }
 
+/** Counts uploads, so a deleted voice's id is never given again. */
+let uploads = 0;
+
 export const speechLauncher: SpeechLauncher = () => ({
   get state() {
     return mockSpeech.state;
@@ -117,9 +120,14 @@ export const speechLauncher: SpeechLauncher = () => ({
     if (mockSpeech.separationFailWith) {
       throw new SeparationError(mockSpeech.separationFailWith);
     }
-    const voice = { id: `upload-${mockSpeech.voices.length}`, name };
+    const voice = { id: `upload-${++uploads}`, name };
     mockSpeech.voices.push(voice);
     return voice;
+  },
+  removeVoice(id) {
+    const found = id.startsWith("upload-") && mockSpeech.voices.some((v) => v.id === id);
+    mockSpeech.voices = mockSpeech.voices.filter((v) => v.id !== id || !found);
+    return Promise.resolve(found);
   },
   async synthesize(req, signal, done) {
     if (signal.aborted) {

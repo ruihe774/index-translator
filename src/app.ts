@@ -221,6 +221,14 @@ export async function startApp(
     }
   }
 
+  /** `DELETE /voices/{id}`: forgets an uploaded voice (not an installed one). */
+  async function deleteVoice(id: string): Promise<Response> {
+    if (!(await speech.removeVoice(id))) {
+      throw new ApiError(404, "not_found", "no such uploaded voice");
+    }
+    return new Response(null, { status: 204 });
+  }
+
   /**
    * `POST /transcriptions`: checks the recording before anything is queued, then runs it as a job in
    * the speech line, which it holds until it ends.
@@ -455,6 +463,10 @@ export async function startApp(
     const rest = url.pathname.slice(API.length);
     const methods = routes[rest];
     if (!methods) {
+      const voice = /^\/voices\/([^/]+)$/.exec(rest);
+      if (voice) {
+        return req.method === "DELETE" ? deleteVoice(voice[1]!) : methodNotAllowed("DELETE");
+      }
       const res = jobs.route(rest, req, url) ?? transcriptions.route(rest, req, url);
       if (res) {
         return res;

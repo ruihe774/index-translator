@@ -27,6 +27,7 @@ const SPEECH = {
   error: true,
   voices: true,
   addVoice: true,
+  removeVoice: true,
   synthesize: true,
   transcribeProblem: true,
   canSeparate: true,

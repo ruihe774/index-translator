@@ -47,6 +47,9 @@ const TRANSCRIBE_FAMILY = "moss_transcribe_diarize";
 /** CPU threads for the parts of the model that do not run on the GPU. */
 const THREADS = 4;
 
+/** What an uploaded voice's id starts with; the rest is a UUID. */
+export const UPLOAD_PREFIX = "upload-";
+
 /** Largest uploaded voice sample, and how many uploads are kept until the server stops. */
 export const MAX_SAMPLE_BYTES = 8 * 1024 * 1024;
 export const MAX_UPLOADED_VOICES = 16;
@@ -104,6 +107,8 @@ export interface Speech {
    * and with SeparationError if the separation failed.
    */
   addVoice(name: string, wav: ArrayBuffer): Promise<Voice>;
+  /** Forgets an uploaded voice; false when `id` is not one (an installed voice cannot be removed). */
+  removeVoice(id: string): Promise<boolean>;
   /**
    * One utterance as a WAV file. Rejects with SpeechError, or the signal's reason when aborted,
    * which happens at once; the engine is told to stop and does so within its current step.
@@ -252,7 +257,8 @@ export class NativeSpeech implements Speech {
   private exclusive: Promise<void> | null = null;
 
   /** Uploaded voices: id to an anonymous file (gone with the process). Ids never become paths. */
-  private readonly uploads = new Map<string, { name: string; file: AnonymousFile }>();
+  /** `users`: utterances reading the file now; a deleted voice's file is closed when the last is done. */
+  private readonly uploads = new Map<string, { name: string; file: AnonymousFile; users: number; deleted: boolean }>();
 
   constructor(
     private readonly cfg: Config,
@@ -336,9 +342,23 @@ export class NativeSpeech implements Speech {
     if (this.uploads.size >= MAX_UPLOADED_VOICES) {
       throw tooMany();
     }
-    const id = `upload-${crypto.randomUUID()}`;
-    this.uploads.set(id, { name, file: await anonymousFile(new Uint8Array(voice)) });
+    const id = `${UPLOAD_PREFIX}${crypto.randomUUID()}`;
+    this.uploads.set(id, { name, file: await anonymousFile(new Uint8Array(voice)), users: 0, deleted: false });
     return { id, name };
+  }
+
+  async removeVoice(id: string): Promise<boolean> {
+    const upload = this.uploads.get(id);
+    if (!upload) {
+      return false;
+    }
+    // Gone from the list at once; an utterance that already took the file reads it to its end.
+    this.uploads.delete(id);
+    upload.deleted = true;
+    if (upload.users === 0) {
+      await upload.file.close();
+    }
+    return true;
   }
 
   /** The Mel-Band RoFormer GGUF in `SEPARATION_MODEL_DIR`, if the speech engine and the model are installed. */
@@ -503,16 +523,27 @@ export class NativeSpeech implements Speech {
     // Gone while the model was loading: the utterance is never sent.
     signal.throwIfAborted();
     started();
-    const reply = await this.worker.call("synthesize", {
-      text: req.text,
-      lang: req.lang,
-      voice: (() => {
-        const upload = this.uploads.get(req.voice);
-        return upload ? { fd: upload.file.fd } : { path: join(this.cfg.voicesDir, `${req.voice}.wav`) };
-      })(),
-      speed: req.speed,
-      abort,
-    });
+    const upload = this.uploads.get(req.voice);
+    if (!upload && req.voice.startsWith(UPLOAD_PREFIX)) {
+      throw new SpeechError("the voice was deleted");
+    }
+    if (upload) {
+      upload.users++;
+    }
+    let reply;
+    try {
+      reply = await this.worker.call("synthesize", {
+        text: req.text,
+        lang: req.lang,
+        voice: upload ? { fd: upload.file.fd } : { path: join(this.cfg.voicesDir, `${req.voice}.wav`) },
+        speed: req.speed,
+        abort,
+      });
+    } finally {
+      if (upload && --upload.users === 0 && upload.deleted) {
+        await upload.file.close();
+      }
+    }
     // Nobody receives this: the caller was answered with the signal's reason when it aborted.
     if (reply.type === "aborted") {
       throw new SpeechError("the utterance was stopped");

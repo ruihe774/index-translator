@@ -277,6 +277,30 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/Error"
+  /voices/{id}:
+    delete:
+      tags: [speech]
+      operationId: deleteVoice
+      summary: Forget an uploaded voice
+      description: |
+        Removes a voice made by `POST /voices`, which frees its stored recording; it no longer
+        appears in `GET /voices`. A reading that already started with it finishes. A voice that
+        came installed with the server cannot be removed (`404`, like an unknown id).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Forgotten.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /segment:
     post:
       tags: [segment]

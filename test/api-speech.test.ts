@@ -584,6 +584,41 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     }
   });
 
+  test("a removed voice is gone at once, and its file is closed when no utterance reads it any more", async () => {
+    const { workers, speech } = await setup();
+    const log = quiet();
+    try {
+      await say(speech);
+      const before = openAnonymousFiles();
+      const voice = await speech.addVoice("Mine", wav());
+      // An installed voice is not an upload: nothing to remove.
+      await expect(speech.removeVoice("voice_01")).resolves.toBe(false);
+      workers[0].manual = true;
+      const reading = speech.synthesize({ ...request, voice: voice.id }, new AbortController().signal, () => {});
+      await until(() => workers[0].posted.length >= 3);
+      await expect(speech.removeVoice(voice.id)).resolves.toBe(true);
+      await expect(speech.voices()).resolves.toStrictEqual([]);
+      // The running utterance still has its file.
+      expect(openAnonymousFiles()).toBe(before + 1);
+      workers[0].answer(workers[0].posted[2]);
+      await reading;
+      expect(openAnonymousFiles()).toBe(before);
+      // Gone: removing it again is false, and an utterance with its id is refused, not read from a path.
+      await expect(speech.removeVoice(voice.id)).resolves.toBe(false);
+      workers[0].manual = false;
+      await expect(
+        speech.synthesize({ ...request, voice: voice.id }, new AbortController().signal, () => {}),
+      ).rejects.toThrow("the voice was deleted");
+      // With no utterance running the file is closed at once.
+      const other = await speech.addVoice("Other", wav());
+      await speech.removeVoice(other.id);
+      expect(openAnonymousFiles()).toBe(before);
+    } finally {
+      log.mockRestore();
+      await speech.stop();
+    }
+  });
+
   test("at most 16 uploads are kept", async () => {
     const { speech } = await setup();
     try {
@@ -771,6 +806,25 @@ describe("POST /voices", () => {
     const res = await upload(sample());
     expect(res.status).toBe(201);
     expect(((await res.json()) as { name: string }).name).toBe("My voice");
+  });
+
+  test("DELETE /voices/{id} forgets an uploaded voice, and only that", async () => {
+    const { id } = (await (await upload(sample())).json()) as { id: string };
+    const ids = async () => (await bodyOf<VoiceList>(await fetch(base + "/api/v1/voices"))).voices.map((v) => v.id);
+    await expect(ids()).resolves.toContain(id);
+    const gone = await fetch(`${base}/api/v1/voices/${id}`, { method: "DELETE" });
+    expect(gone.status).toBe(204);
+    await expect(ids()).resolves.not.toContain(id);
+    const again = await fetch(`${base}/api/v1/voices/${id}`, { method: "DELETE" });
+    expect(again.status).toBe(404);
+    await expect(errorOf(again)).resolves.toMatchObject({ code: "not_found", message: "no such uploaded voice" });
+    // An installed voice stays.
+    const installed = mockSpeech.voices.find((v) => !v.id.startsWith("upload-"))!;
+    expect((await fetch(`${base}/api/v1/voices/${installed.id}`, { method: "DELETE" })).status).toBe(404);
+    await expect(ids()).resolves.toContain(installed.id);
+    const wrong = await fetch(`${base}/api/v1/voices/${id}`);
+    expect(wrong.status).toBe(405);
+    expect(wrong.headers.get("allow")).toBe("DELETE");
   });
 
   test("a separation that fails in the engine is a 502, not a bad request, and keeps no voice", async () => {
