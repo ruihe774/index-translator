@@ -14,17 +14,18 @@ function over(rows: Row[], pick: (m: Metrics) => number | undefined): number | u
 
 const ms = (v: number | undefined) => (v === undefined ? "-" : `${Math.round(v)}`);
 
-/** One line per scenario, profile and protocol: medians over the repeats and the spread of the visible time. */
+/** One line per scenario, profile, protocol and worker: medians over the repeats and the spread of the visible time. */
 export function table(rows: Row[]): string {
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
-    const key = [row.scenario, row.profile, row.protocol].join("\t");
+    const key = [row.scenario, row.profile, row.protocol, row.worker].join("\t");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
   const header = [
     "scenario",
     "profile",
     "proto",
+    "worker",
     "n",
     "visible ms",
     "(min-max)",

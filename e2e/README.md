@@ -52,7 +52,10 @@ HTTP/1.1 (`http://app.test:3201`) or HTTP/2 over a throwaway certificate (`https
 `tailscale serve` is the latter. A proxy is used rather than DevTools' network emulation because that does not slow
 the service worker's own downloads (the prefetch of every file), which is most of a first visit.
 
-Options: `--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s with 40 ms, 5 Mbit/s with 100 ms),
+Options: `--worker prefetch,lazy` (the service worker as it is, or the ablation without its bulk prefetch: the
+proxy serves `sw.ts` with the `saveData` test it already has turned on, so the cache fills only with what the page
+asks for; with `lazy` the page's first visit caches nothing, as the worker does not control it yet),
+`--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s with 40 ms, 5 Mbit/s with 100 ms),
 `--protocol h1,h2`, `--scenario <names>`, `--repeats 3`. Results: a table of medians on stdout and every run in
 `perf-results/<time>.json`.
 
@@ -61,7 +64,8 @@ Options: `--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s wit
 | `cold`      | first, no service worker, empty HTTP cache                                    |
 | `warm-http` | next visit, no service worker: the HTTP cache only                            |
 | `first-sw`  | first, with the service worker, which downloads every file                    |
-| `warm-sw`   | next visit, answered from the worker's cache (checked: the page is controlled) |
+| `warm-sw`   | next visit, answered by the worker (checked: the page is controlled) |
+| `again-sw`  | the visit after that: the first with a complete cache, whichever `--worker` it is |
 | `sw-update` | next visit after every ETag outside `/vendor/` changed (the proxy rewrites them) |
 
 `visible` is the time until `visibility-gate.ts` sets the body's opacity to 1; `synced` is when the worker's cache

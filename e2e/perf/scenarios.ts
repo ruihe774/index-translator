@@ -62,13 +62,13 @@ async function whenSynced(page: Page): Promise<number> {
   }, VISIT_TIMEOUT_MS);
 }
 
-/** Opens `url` and measures it; with `worker`, also waits for the service worker to be up to date. */
-async function visit(page: Page, proxy: Proxy, url: string, worker: boolean): Promise<Metrics> {
+/** Opens `url` and measures it; with `sync`, also waits for the service worker's cache to be up to date. */
+async function visit(page: Page, proxy: Proxy, url: string, sync: boolean): Promise<Metrics> {
   proxy.mark();
   await page.goto(url, { waitUntil: "commit" });
   const visibleMs = await whenVisible(page);
   const metrics: Metrics = { visibleMs, requests: 0, bytes: 0 };
-  if (worker) {
+  if (sync) {
     metrics.syncMs = await whenSynced(page);
   } else {
     await page.waitForLoadState("networkidle");
@@ -93,19 +93,29 @@ export async function plainChain(browser: Browser, proxy: Proxy, url: string): P
   }
 }
 
-/** With the service worker: `first-sw`, `warm-sw`, then `sw-update` after the server's files changed. */
-export async function workerChain(browser: Browser, proxy: Proxy, url: string): Promise<Results> {
+/**
+ * With the service worker: `first-sw`, `warm-sw`, `again-sw`, then `sw-update` after the server's files changed. A worker that
+ * prefetches is waited for until its cache is complete; one that does not (`lazy`) never is, so the visit ends when
+ * the page's own requests have.
+ */
+export async function workerChain(browser: Browser, proxy: Proxy, url: string, prefetch: boolean): Promise<Results> {
   const context = await browser.newContext({ serviceWorkers: "allow", locale: "en-US" });
   try {
     const page = await context.newPage();
-    const first = await visit(page, proxy, url, true);
-    const warm = await visit(page, proxy, url, true);
+    const first = await visit(page, proxy, url, prefetch);
+    const warm = await visit(page, proxy, url, prefetch);
+    const again = await visit(page, proxy, url, prefetch);
     // A visit that the worker did not answer would measure the network and call it the cache.
     if (!(await page.evaluate(() => navigator.serviceWorker.controller !== null))) {
       throw new Error("the second visit was not controlled by the service worker");
     }
     proxy.release();
-    return { "first-sw": first, "warm-sw": warm, "sw-update": await visit(page, proxy, url, true) };
+    return {
+      "first-sw": first,
+      "warm-sw": warm,
+      "again-sw": again,
+      "sw-update": await visit(page, proxy, url, prefetch),
+    };
   } finally {
     await context.close();
   }

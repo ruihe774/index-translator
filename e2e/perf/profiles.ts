@@ -21,13 +21,24 @@ export const PROTOCOLS = ["h1", "h2"] as const;
 export type Protocol = (typeof PROTOCOLS)[number];
 
 /**
+ * What the service worker does after it has the list of files. `prefetch` is the app as it is: it requests every
+ * missing or outdated file at low priority at once. `lazy` is the ablation: the proxy serves `sw.ts` with the
+ * prefetch switched off (through the condition the worker already has for `saveData`), so its cache only fills with
+ * what the page asks for. `none` marks the scenarios without a worker.
+ */
+export const WORKERS = ["prefetch", "lazy"] as const;
+export type WorkerVariant = (typeof WORKERS)[number];
+
+/**
  * - `cold`: first visit, no service worker, empty HTTP cache.
  * - `warm-http`: the next visit of the same context, no service worker: the HTTP cache only.
  * - `first-sw`: first visit with the service worker, which installs and downloads every file.
- * - `warm-sw`: the next visit, answered by the worker from its cache.
+ * - `warm-sw`: the next visit, answered by the worker from its cache. With `lazy` it is the visit that fills the cache,
+ *   since the first one ran before the worker controlled the page.
+ * - `again-sw`: the visit after that: the first with a complete cache whichever worker it is.
  * - `sw-update`: the next visit after the server's files changed (every ETag outside `/vendor/`).
  */
-export const SCENARIOS = ["cold", "warm-http", "first-sw", "warm-sw", "sw-update"] as const;
+export const SCENARIOS = ["cold", "warm-http", "first-sw", "warm-sw", "again-sw", "sw-update"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
 export interface Metrics {
@@ -35,7 +46,7 @@ export interface Metrics {
   visibleMs: number;
   fcpMs?: number;
   lcpMs?: number;
-  /** Service worker only: until its cache holds every file at the version the server lists. */
+  /** Service worker with `prefetch` only: until its cache holds every file at the version the server lists. */
   syncMs?: number;
   /** Requests the proxy saw, until the page (and the worker's downloads) went quiet. */
   requests: number;
@@ -47,6 +58,8 @@ export interface Row {
   scenario: Scenario;
   profile: string;
   protocol: Protocol;
+  /** `none` for the scenarios without a service worker. */
+  worker: WorkerVariant | "none";
   repeat: number;
   metrics: Metrics;
 }

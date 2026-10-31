@@ -6,7 +6,7 @@
 // Not modelled: TCP (slow start, loss, connection setup), request priorities.
 
 import type { Cert } from "./cert";
-import type { Profile } from "./profiles";
+import type { Profile, WorkerVariant } from "./profiles";
 
 export interface Logged {
   path: string;
@@ -23,6 +23,8 @@ const HOP_BY_HOP = ["transfer-encoding", "connection", "keep-alive"];
 const sleep = (ms: number) => (ms > 0 ? Bun.sleep(ms) : undefined);
 
 /** What a file's ETag becomes after `bump()`; the manifest and the files are changed alike, so they still agree. */
+/** The worker's own test of whether to download everything; see `WORKERS` in profiles.ts. */
+const PREFETCH_CONDITION = "navigator.connection?.saveData !== true";
 const BUMPED = "-bumped";
 const bumped = (etag: string) => etag.replace(/"$/, `${BUMPED}"`);
 /** Files that stay as they are: the vendored libraries do not change from one release to the next. */
@@ -33,6 +35,7 @@ export function startProxy(options: { port: number; upstream: string; tls?: Cert
   let link: Profile = { name: "loopback", mbit: 0, rttMs: 0 };
   let nextFree = 0;
   let released = false;
+  let worker: WorkerVariant = "prefetch";
   const log: Logged[] = [];
 
   const take = async (bytes: number) => {
@@ -80,6 +83,17 @@ export function startProxy(options: { port: number; upstream: string; tls?: Cert
         headers.delete(name);
       }
       let source: ReadableStream<Uint8Array> | null = up.body;
+      if (worker === "lazy" && pathname === "/sw.ts" && up.ok) {
+        if (headers.has("content-encoding")) {
+          throw new Error("sw.ts is compressed: the ablation patches its text");
+        }
+        const text = await up.text();
+        if (!text.includes(PREFETCH_CONDITION)) {
+          throw new Error("sw.ts no longer holds the prefetch condition: the ablation would change nothing");
+        }
+        source = new Response(text.replace(PREFETCH_CONDITION, "false")).body;
+        headers.delete("content-length");
+      }
       if (released && pathname === MANIFEST && up.ok) {
         const manifest = (await up.json()) as Record<string, string>;
         for (const [path, etag] of Object.entries(manifest)) {
@@ -121,9 +135,10 @@ export function startProxy(options: { port: number; upstream: string; tls?: Cert
   return {
     /** The requests seen since the last `mark` or `use`. */
     log,
-    /** Sets the link and forgets the log and what was released. */
-    use(profile: Profile) {
+    /** Sets the link and the worker variant, and forgets the log and what was released. */
+    use(profile: Profile, variant: WorkerVariant = "prefetch") {
       link = profile;
+      worker = variant;
       nextFree = 0;
       released = false;
       log.length = 0;
