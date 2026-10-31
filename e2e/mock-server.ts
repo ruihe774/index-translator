@@ -51,6 +51,7 @@ const optionalDirs = {
   separationModelDir: ["separation.gguf"],
   segmentModelDir: ["model.onnx", "tokenizer.json"],
   alignModelDir: ["model.onnx", "vocab.txt", "dense.safetensors"],
+  transcribeModelDir: ["moss-transcribe-diarize.gguf"],
 };
 for (const [dir, files] of Object.entries(optionalDirs)) {
   mkdirSync(join(modelsDir, dir));
