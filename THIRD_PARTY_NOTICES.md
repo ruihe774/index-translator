@@ -12,9 +12,10 @@ names them and says where the full texts are. The AppImage carries this file in
 | [ggml](https://github.com/ggml-org/ggml), part of llama.cpp | Tensor library under llama.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | libmtmd (`libmtmd.so`), part of llama.cpp (`tools/mtmd`) | Image input: the image encoder of Index-Translate-9B | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | stb_image, miniaudio and hash functions (SHA-1, SHA-256, xxHash), in llama.cpp's source tree (`vendor/`) | Compiled into `libmtmd.so`; stb_image decodes the image | Each under its own license: public domain or MIT (stb_image, Sean Barrett), public domain or MIT-0 (miniaudio, David Reid), public domain (SHA-1, SHA-256), BSD 2-Clause (xxHash, Copyright (c) 2012-2021 Yann Collet); the texts are in llama.cpp's repository at the pinned commit | `vendor/stb/stb_image.h`, `vendor/miniaudio/miniaudio.h`, `vendor/hash/*/` there |
-| [audio.cpp](https://github.com/0xShug0/audio.cpp) (`libaudiocpp.so`), pinned in `scripts/build_audiocpp.ts` | Reading aloud (IndexTTS-2.5) and voice separation (BS-RoFormer) | Apache-2.0, Copyright 2026 ShugoAI LLC | `vendor/audio.cpp/LICENSE` |
+| [audio.cpp](https://github.com/0xShug0/audio.cpp) (`libaudiocpp.so`), pinned in `scripts/build_audiocpp.ts` | Reading aloud (IndexTTS-2.5), voice separation (BS-RoFormer) and transcription (MOSS-Transcribe-Diarize, Silero VAD) | Apache-2.0, Copyright 2026 ShugoAI LLC | `vendor/audio.cpp/LICENSE` |
 | ggml, audio.cpp's fork, linked statically into `libaudiocpp.so` | Tensor library under audio.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/audio.cpp/LICENSE.ggml` |
 | cJSON, SentencePiece and the Abseil subset that comes with SentencePiece, in audio.cpp's source tree (`external/`) | Compiled into `libaudiocpp.so` | Each under its own license (MIT, Apache-2.0, Apache-2.0); the files are in audio.cpp's repository at the pinned commit | `external/*/LICENSE` there |
+| [Silero VAD](https://github.com/snakers4/silero-vad)'s weights (`silero_vad_16k.safetensors`), as audio.cpp bundles them (`assets/framework/models/silero_vad`), copied unchanged beside `libaudiocpp.so` | Transcription: finding the speech in a recording | MIT, Copyright (c) 2020-present Silero Team | `vendor/audio.cpp/LICENSE.silero_vad` |
 | [libsoxr](https://sourceforge.net/projects/soxr/) (the SoX Resampler Library, `libsoxr.so.0`; `soxr.dll` in the Windows installer), version and commit pinned in `scripts/build_soxr.ts`, built unchanged | Resampling for audio.cpp (the voice samples) and for the Opus encoder (the speech) | LGPL-2.1 or later, Copyright (c) 2007-18 robs; the PFFFT code in it is under a BSD-like license (Copyright (c) 2013 Julien Pommier, and 2004 University Corporation for Atmospheric Research for the FFTPACK parts), stated in its source file; it is a separate shared library that can be replaced by another build of the same version, and its source is the repository at the pinned commit (the same files as the release tarball `soxr-0.1.3-Source.tar.xz`) | `vendor/soxr/LICENCE` and `vendor/soxr/COPYING.LGPL` |
 | minicelt (the `miniopus` branch of this app's repository, a Rust port of the CELT encoder of [libopus](https://opus-codec.org) built for WebAssembly, pinned by commit in `scripts/fetch_minicelt.ts`) | Encoding the speech stream as Opus; libsoxr also resamples the audio it takes | BSD-3-Clause, as a derivative of libopus (Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon), with the royalty-free patent licenses named in the text | `vendor/minicelt/COPYING` |
 | [turndown](https://github.com/mixmark-io/turndown) (its browser build, `dist/turndown.js` of the npm package), pinned in `scripts/fetch_turndown.ts` | Runs inside a web page the server opens: the page's HTML as Markdown | MIT, Copyright (c) 2017 Dom Christie | `vendor/turndown/LICENSE` |
@@ -28,9 +29,10 @@ names them and says where the full texts are. The AppImage carries this file in
 | [undoc](https://github.com/iyulab/undoc), its WebAssembly build with only the docx format (the `undoc` branch of this app's repository, built by wasm-pack from [iyulab/undoc@3a9dbbb](https://github.com/iyulab/undoc/commit/3a9dbbb911b30e944323402d30278e0629444885), pinned by commit in `scripts/fetch_web_libs.ts`) | Runs in the browser: the text of a Word (.docx) document as Markdown | MIT, Copyright (c) 2025 iyulab; the binary links Rust crates, each under MIT or under MIT or Apache-2.0 at the user's choice (among them zip, quick-xml, cfb, serde_json and wasm-bindgen), whose texts come with each crate | `public/vendor/undoc/LICENSE` |
 | qoa-wasm (the `qoa` branch of this app's repository, pinned by commit in `scripts/fetch_web_libs.ts`): an encoder and decoder for [QOA](https://qoaformat.org), the audio format designed by Dominic Szablewski | Runs on the server (encoding) and in the browser (decoding): the speech stream | Public domain (the Unlicense) | `public/vendor/qoa/LICENSE` |
 
-`libaudiocpp.so` is built from audio.cpp's source with one change of ours,
-`scripts/patches/audiocpp-abort.patch` in this app's repository: a function that lets the app stop
-an utterance that is being generated.
+`libaudiocpp.so` is built from audio.cpp's source with two changes of ours, in this app's repository:
+`scripts/patches/audiocpp-abort.patch`, a function that lets the app stop an utterance that is being
+generated, and `scripts/patches/audiocpp-custom-output.patch`, a function that reads a model's own
+output (the audio tagger's scores).
 
 The AppImage is packed with [appimagetool](https://github.com/AppImage/appimagetool) and the
 [type2-runtime](https://github.com/AppImage/type2-runtime), whose code is embedded at the start of the
@@ -98,6 +100,22 @@ about to download and asks for `yes` first (the same text as here, in short).
   is undocumented there.
 - <https://huggingface.co/audio-cpp/audio.cpp-gguf/tree/main/BS-RoFormer-ep368-GGUF>,
   <https://github.com/0xShug0/audio.cpp/blob/main/docs/model_licenses.md>
+
+### MOSS-Transcribe-Diarize (`moss-transcribe-diarize`)
+
+- Transcription model with speakers and times (`POST /transcriptions`, a preview), by OpenMOSS-Team,
+  audio.cpp's GGUF conversion (`audio-cpp/audio.cpp-gguf`, `MOSS-Transcribe-Diarize-GGUF`, Q4_K), which
+  carries the Apache-2.0 `LICENSE` of the original.
+- License: Apache-2.0.
+- <https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize>,
+  <https://huggingface.co/audio-cpp/audio.cpp-gguf/tree/main/MOSS-Transcribe-Diarize-GGUF>
+- Downloaded with it: CED-tiny (Consistent Ensemble Distillation, mispeech), an AudioSet audio
+  tagger that tells whether a recording has music to take out first, as audio.cpp's GGUF conversion
+  (`CED-GGUF`, F32). License: Apache-2.0 (the checkpoint; CED's training code, which is not used,
+  is GPL-3.0). The file embeds AudioSet's class labels, from the AudioSet ontology (Google,
+  CC BY-SA 4.0).
+- <https://huggingface.co/mispeech/ced-tiny>, <https://huggingface.co/audio-cpp/audio.cpp-gguf/tree/main/CED-GGUF>,
+  <https://research.google.com/audioset/>
 
 ### SaT 3L-SM (`sat-3l-sm`)
 

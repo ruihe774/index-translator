@@ -7,18 +7,21 @@
 // whose voice the model imitates. A recording that is uploaded first goes through BS-RoFormer
 // (when its model is installed), which takes the voice out of music and background noise; the
 // speech model is unloaded while that runs, so the two never share the GPU.
+//
+// The same thread transcribes recordings (a preview): MOSS-Transcribe-Diarize, after the separation
+// model when asked and Silero VAD. That too frees the speech model and has the GPU to itself.
 
 import { existsSync } from "node:fs";
-import { rm } from "node:fs/promises";
-import { tmpdir } from "node:os";
 import { basename, join } from "node:path";
 
+import { type AnonymousFile, anonymousFile } from "./anonymous-file";
 import type { SpeechLanguage, SpeechStatus, Voice } from "./api";
 import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
 import { fetchAdvice } from "./preflight";
-import type { SpeechProtocol } from "./speech-worker";
-import { type Pcm, readWav } from "./wav";
+import type { SpeechProtocol, Transcribed, TranscribeSegment, TranscribeStage } from "./speech-worker";
+import { MUSIC_MODEL_FILE } from "./transcript";
+import { type Pcm, readWav, readWavInfo, type WavInfo } from "./wav";
 import { abortable, LazyModel, messageOf, startWorker, WorkerClient } from "./worker-rpc";
 
 /** The languages IndexTTS-2.5 speaks. Any other text comes out as noise, so it is refused. */
@@ -39,6 +42,8 @@ export const MAX_SPEED = 2;
 const FAMILY = "index_tts2";
 /** audio.cpp's name for the BS-RoFormer family, which separates the vocals of a recording from the rest. */
 const SEPARATION_FAMILY = "bs_roformer";
+/** audio.cpp's name for MOSS-Transcribe-Diarize, which transcribes with speakers and times. */
+const TRANSCRIBE_FAMILY = "moss_transcribe_diarize";
 /** CPU threads for the parts of the model that do not run on the GPU. */
 const THREADS = 4;
 
@@ -58,6 +63,14 @@ export const MAX_SAMPLE_SECONDS = 15;
 export const SAMPLE_RATE = 44_100;
 /** BS-RoFormer takes mono or stereo; a mono sample is duplicated by audio.cpp. */
 const MAX_SAMPLE_CHANNELS = 2;
+
+/** Longest recording `POST /transcriptions` takes: VRAM beside the translation model was measured up to here. */
+export const MAX_TRANSCRIBE_SECONDS = 30 * 60;
+/** Its largest body: 30 minutes of 16-bit mono at 44.1 kHz. */
+export const MAX_TRANSCRIBE_BYTES = 160 * 1024 * 1024;
+/** Sample rates it takes; the server resamples. */
+export const MIN_TRANSCRIBE_RATE = 16_000;
+export const MAX_TRANSCRIBE_RATE = 48_000;
 
 export class SpeechError extends Error {}
 
@@ -99,6 +112,20 @@ export interface Speech {
    * queue slot until then, so the next utterance is never started beside one still being stopped.
    */
   synthesize(req: SpeechRequest, signal: AbortSignal, done: () => void): Promise<ArrayBuffer>;
+  /** Why transcription cannot run, or undefined when it can be tried. */
+  transcribeProblem(): string | undefined;
+  /** Whether the separation model is installed for transcription (`separate: "on"` needs it). */
+  canSeparate(): boolean;
+  /**
+   * Transcribes a recording `validateRecording` accepted, calling `onProgress` with each stage and
+   * segment. Resolves with the summary, or with undefined when `abort` (one Int32, made non-zero by
+   * the caller) stopped it; rejects with SpeechError. The caller holds the speech line meanwhile.
+   */
+  transcribe(
+    req: TranscribeRequest,
+    abort: SharedArrayBuffer,
+    onProgress: (p: TranscribeProgress) => void,
+  ): Promise<Transcribed | undefined>;
   stop(): Promise<void>;
 }
 
@@ -128,45 +155,104 @@ export function validateSample(wav: ArrayBuffer): Pcm {
   return pcm;
 }
 
+/**
+ * Checks the format and duration of an uploaded recording to transcribe from its header (the audio is
+ * decoded only by the worker) and answers its duration in seconds. Throws SpeechError.
+ */
+export function validateRecording(wav: Uint8Array): number {
+  let info: WavInfo;
+  try {
+    info = readWavInfo(wav);
+  } catch (e) {
+    throw new SpeechError(`the recording cannot be used: ${messageOf(e)}`);
+  }
+  if (info.sampleRate < MIN_TRANSCRIBE_RATE || info.sampleRate > MAX_TRANSCRIBE_RATE) {
+    throw new SpeechError(
+      `the sample rate of ${info.sampleRate} Hz is not supported (${MIN_TRANSCRIBE_RATE} to ${MAX_TRANSCRIBE_RATE} Hz)`,
+    );
+  }
+  if (info.channels > MAX_SAMPLE_CHANNELS) {
+    throw new SpeechError(`the recording has ${info.channels} channels (at most ${MAX_SAMPLE_CHANNELS})`);
+  }
+  const seconds = info.frames / info.sampleRate;
+  if (seconds > MAX_TRANSCRIBE_SECONDS) {
+    throw new SpeechError(`the recording is too long (${Math.round(seconds)} s; at most ${MAX_TRANSCRIBE_SECONDS} s)`);
+  }
+  return seconds;
+}
+
+/**
+ * `auto` separates when the separation model is installed and CED hears music in the recording (with
+ * the separation model but not CED, always).
+ */
+export type SeparateMode = "auto" | "on" | "off";
+
+export interface TranscribeRequest {
+  /** The recording, in an anonymous file the caller closes when the transcription has ended. */
+  fd: number;
+  separate: SeparateMode;
+}
+
+/** What a transcription posts while it runs. */
+export type TranscribeProgress = TranscribeStage | TranscribeSegment;
+export type { Transcribed };
+
 /** Starts the thread that owns libaudiocpp; replaceable in tests. */
 type SpeechWorkerFactory = () => Worker;
 
 const defaultWorker: SpeechWorkerFactory = () => startWorker("speech-worker.ts");
 
-/** The `fetch_models.ts` ids of the speech and separation models that are not installed; none while speech is off. */
+/** The `fetch_models.ts` id of MOSS-Transcribe-Diarize. */
+export const TRANSCRIBE_MODEL_ID = "moss-transcribe-diarize";
+
+/**
+ * The `fetch_models.ts` ids of the speech, separation and transcription models that are not installed;
+ * the first two only while speech is on, the last only while transcription is.
+ */
 export function missingSpeechModels(cfg: Config): string[] {
-  if (!cfg.speech) {
-    return [];
-  }
   const missing: string[] = [];
-  if (!existsSync(cfg.speechModelDir)) {
+  if (cfg.speech && !existsSync(cfg.speechModelDir)) {
     missing.push("index-tts-2.5");
   }
-  if (!findSeparationModel(cfg)) {
+  if (cfg.speech && !findSeparationModel(cfg)) {
     missing.push("bs-roformer");
+  }
+  if (cfg.transcribe && !findTranscribeModel(cfg)) {
+    missing.push(TRANSCRIBE_MODEL_ID);
   }
   return missing;
 }
 
 /** The first BS-RoFormer GGUF in `SEPARATION_MODEL_DIR`, if there is one. */
 function findSeparationModel(cfg: Config): string | undefined {
-  const dir = cfg.separationModelDir;
+  return findGguf(cfg.separationModelDir);
+}
+
+/** The first GGUF in `dir` whose name matches `pattern`, if there is one. */
+function findGguf(dir: string, pattern = "*.gguf"): string | undefined {
   const file = existsSync(dir)
-    ? (new Bun.Glob("*.gguf").scanSync({ cwd: dir, onlyFiles: true }).next().value as string | undefined)
+    ? (new Bun.Glob(pattern).scanSync({ cwd: dir, onlyFiles: true }).next().value as string | undefined)
     : undefined;
   return file ? join(dir, file) : undefined;
 }
+
+/** MOSS-Transcribe-Diarize's GGUF in `TRANSCRIBE_MODEL_DIR`, if there is one (CED's is beside it). */
+const findTranscribeModel = (cfg: Config) => findGguf(cfg.transcribeModelDir, "moss-*.gguf");
+
+const MUSIC_FAMILY = "ced";
 
 export class NativeSpeech implements Speech {
   /** The thread that owns libaudiocpp, started by the first request. */
   private readonly worker: WorkerClient<SpeechProtocol>;
   private readonly model: LazyModel;
-  /** Set while a sample is being separated, which needs the GPU to itself; settles when it is over. */
-  private separating: Promise<void> | null = null;
+  /**
+   * Set while a sample is being separated or a recording transcribed, which needs the GPU to itself;
+   * settles when it is over.
+   */
+  private exclusive: Promise<void> | null = null;
 
-  /** Uploaded voices: id to file. Ids never become paths. */
-  private readonly uploads = new Map<string, { name: string; path: string }>();
-  private readonly uploadDir = join(tmpdir(), `index-translator-voices-${process.pid}`);
+  /** Uploaded voices: id to an anonymous file (gone with the process). Ids never become paths. */
+  private readonly uploads = new Map<string, { name: string; file: AnonymousFile }>();
 
   constructor(
     private readonly cfg: Config,
@@ -251,10 +337,7 @@ export class NativeSpeech implements Speech {
       throw tooMany();
     }
     const id = `upload-${crypto.randomUUID()}`;
-    const path = join(this.uploadDir, `${id}.wav`);
-    // Bun.write creates the upload directory too.
-    await Bun.write(path, voice);
-    this.uploads.set(id, { name, path });
+    this.uploads.set(id, { name, file: await anonymousFile(new Uint8Array(voice)) });
     return { id, name };
   }
 
@@ -270,25 +353,39 @@ export class NativeSpeech implements Speech {
     return this.separationModel() !== undefined;
   }
 
+  canSeparate(): boolean {
+    return findSeparationModel(this.cfg) !== undefined;
+  }
+
   /**
-   * The voice of a WAV recording without music and noise, as a WAV file. The speech model is freed
-   * for it and loaded again by the next utterance. Separations run one at a time, and utterances
-   * not yet sent to the worker wait until it is over.
+   * Runs `fn` with the GPU to itself: the speech model is freed for it (by the worker) and loaded again
+   * by the next utterance. One such job runs at a time, and utterances not yet sent to the worker wait
+   * until it is over.
    */
-  private async separate(wav: ArrayBuffer): Promise<ArrayBuffer> {
-    while (this.separating) {
-      await this.separating;
+  private async alone<T>(fn: () => Promise<T>): Promise<T> {
+    while (this.exclusive) {
+      await this.exclusive;
     }
     let finished!: () => void;
-    this.separating = new Promise<void>((resolve) => void (finished = resolve));
+    this.exclusive = new Promise<void>((resolve) => void (finished = resolve));
     try {
       // A load in progress ends first, or it would report a model that is gone.
       await this.model.settled();
+      this.model.unloaded();
+      return await fn();
+    } finally {
+      this.exclusive = null;
+      finished();
+    }
+  }
+
+  /** The voice of a WAV recording without music and noise, as a WAV file. */
+  private separate(wav: ArrayBuffer): Promise<ArrayBuffer> {
+    return this.alone(async () => {
       const modelPath = this.separationModel();
       if (!modelPath) {
         throw new SeparationError("the separation model is gone");
       }
-      this.model.unloaded();
       const started = performance.now();
       const reply = await this.worker
         .call("separate", {
@@ -306,10 +403,83 @@ export class NativeSpeech implements Speech {
         });
       console.error(`[speech] voice separated (${Math.round(performance.now() - started)} ms)`);
       return reply.wav;
-    } finally {
-      this.separating = null;
-      finished();
+    });
+  }
+
+  transcribeProblem(): string | undefined {
+    if (!this.cfg.transcribe) {
+      return "transcription is turned off (TRANSCRIBE=0)";
     }
+    // Reading aloud may be off or its model missing: transcription needs only the engine and its own model.
+    if (!existsSync(libraryPath(this.cfg.audioDir))) {
+      return "the speech engine is not installed; run bun scripts/build_audiocpp.ts";
+    }
+    if (!findTranscribeModel(this.cfg)) {
+      return `the transcription model is not installed; ${fetchAdvice([TRANSCRIBE_MODEL_ID])}`;
+    }
+    return undefined;
+  }
+
+  transcribe(
+    req: TranscribeRequest,
+    abort: SharedArrayBuffer,
+    onProgress: (p: TranscribeProgress) => void,
+  ): Promise<Transcribed | undefined> {
+    return this.alone(async () => {
+      const problem = this.transcribeProblem();
+      const modelPath = findTranscribeModel(this.cfg);
+      if (problem || !modelPath) {
+        throw new SpeechError(problem ?? "the transcription model is gone");
+      }
+      const options = (path: string, family: string) => ({
+        dir: this.cfg.audioDir,
+        modelPath: path,
+        family,
+        backend: this.cfg.speechBackend,
+        threads: THREADS,
+      });
+      const separation = req.separate === "off" ? undefined : findSeparationModel(this.cfg);
+      const musicModel = join(this.cfg.transcribeModelDir, MUSIC_MODEL_FILE);
+      if (req.separate === "on" && !separation) {
+        throw new SeparationError("the separation model is gone");
+      }
+      const started = performance.now();
+      const reply = await new Promise<Transcribed | undefined>((resolve, reject) => {
+        const { close } = this.worker.stream(
+          "transcribe",
+          {
+            models: {
+              transcriber: options(modelPath, TRANSCRIBE_FAMILY),
+              separator: separation ? options(separation, SEPARATION_FAMILY) : undefined,
+              // Without CED, `auto` separates whenever the separation model is installed.
+              musicDetector:
+                req.separate === "auto" && existsSync(musicModel)
+                  ? { ...options(musicModel, MUSIC_FAMILY), backend: "cpu" }
+                  : undefined,
+            },
+            fd: req.fd,
+            abort,
+          },
+          (r) => {
+            if (r.type === "stage" || r.type === "segment") {
+              onProgress(r);
+              return;
+            }
+            close();
+            if (r.type === "error") {
+              reject(new SpeechError(`the transcription failed: ${r.message}`));
+            } else {
+              resolve(r.type === "aborted" ? undefined : r);
+            }
+          },
+        );
+      });
+      const ms = Math.round(performance.now() - started);
+      console.error(
+        `[speech] ${reply ? `recording of ${Math.round(reply.duration)} s transcribed` : "transcription stopped"} (${ms} ms)`,
+      );
+      return reply;
+    });
   }
 
   /**
@@ -323,20 +493,23 @@ export class NativeSpeech implements Speech {
     abort: SharedArrayBuffer,
     started: () => void,
   ): Promise<ArrayBuffer> {
-    // The model is checked again after every wait: a separation that starts in between frees it.
+    // The model is checked again after every wait: a separation or transcription that starts in between frees it.
     do {
-      while (this.separating) {
-        await this.separating;
+      while (this.exclusive) {
+        await this.exclusive;
       }
       await this.model.ready();
-    } while (this.separating || !this.model.loaded);
+    } while (this.exclusive || !this.model.loaded);
     // Gone while the model was loading: the utterance is never sent.
     signal.throwIfAborted();
     started();
     const reply = await this.worker.call("synthesize", {
       text: req.text,
       lang: req.lang,
-      voicePath: this.uploads.get(req.voice)?.path ?? join(this.cfg.voicesDir, `${req.voice}.wav`),
+      voice: (() => {
+        const upload = this.uploads.get(req.voice);
+        return upload ? { fd: upload.file.fd } : { path: join(this.cfg.voicesDir, `${req.voice}.wav`) };
+      })(),
       speed: req.speed,
       abort,
     });
@@ -386,7 +559,7 @@ export class NativeSpeech implements Speech {
       this.worker.terminate();
     }
     this.model.unloaded();
-    await rm(this.uploadDir, { recursive: true, force: true });
+    await Promise.all([...this.uploads.values()].map((u) => u.file.close()));
     this.uploads.clear();
   }
 }

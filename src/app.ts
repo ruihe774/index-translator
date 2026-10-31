@@ -14,13 +14,23 @@ import {
   parseHostRule,
   parseOriginRule,
 } from "./access";
-import type { Alignment, Language, Segmentation, Voice, VoiceList, Webpage } from "./api";
+import { anonymousFile } from "./anonymous-file";
+import type {
+  Alignment,
+  Language,
+  Segmentation,
+  TranscriptionEvents,
+  TranslateEvents,
+  Voice,
+  VoiceList,
+  Webpage,
+} from "./api";
 import type { Config } from "./config";
 import { createDevReload, DEV_PREFIX } from "./dev-reload";
 import { createStatus } from "./health";
-import { ApiError, cancelled, errorResponse, invalid, json, methodNotAllowed } from "./http";
+import { ApiError, cancelled, errorResponse, invalid, json, methodNotAllowed, unavailable } from "./http";
 import { prepareImage } from "./image";
-import { createJobs } from "./jobs";
+import { createJobs, type Emit, emitTranslation, TRANSCRIPTION_JOBS, TRANSLATION_JOBS } from "./jobs";
 import { Engine, type Launcher, launchNative } from "./llama";
 import { defaultModelSpec } from "./models";
 import {
@@ -29,36 +39,42 @@ import {
   parseAlignRequest,
   parseBody,
   parseSegmentRequest,
+  parseSeparate,
   parseSpeechRequest,
   parseTranslateRequest,
   parseWebpageUrl,
   present,
+  readBody,
   speechUnavailable,
 } from "./parse";
 import { LANGUAGES } from "./prompt";
 import { watchPublic } from "./public-watch";
+import type { Ticket } from "./queue";
 import { nativeSegmenter, type Segmenter, type SegmentLauncher } from "./segment";
 import {
   MAX_SAMPLE_BYTES,
   MAX_SAMPLE_SECONDS,
   MAX_SPEECH_CHARS,
   MAX_SPEED,
+  MAX_TRANSCRIBE_BYTES,
   MAX_UPLOADED_VOICES,
   MAX_VOICE_NAME_CHARS,
   MIN_SAMPLE_SECONDS,
   MIN_SPEED,
   nativeSpeech,
   SAMPLE_RATE,
+  type SeparateMode,
   SeparationError,
   type Speech,
   SPEECH_LANGUAGES,
   SpeechError,
   type SpeechLauncher,
   type SpeechRequest,
+  validateRecording,
 } from "./speech";
 import { createSpeechResponder } from "./speech-response";
 import { createStaticServer } from "./static";
-import { enterLine, makeLine, withTicket } from "./tickets";
+import { enterLine, granted, makeLine, withTicket } from "./tickets";
 import { createTranslator } from "./translate";
 import {
   limitFetches,
@@ -157,7 +173,8 @@ export async function startApp(
   };
   const defaultModel = defaultModelSpec(cfg);
   const translator = createTranslator(cfg, engine, lines.translations);
-  const jobs = createJobs();
+  const jobs = createJobs<TranslateEvents>(TRANSLATION_JOBS);
+  const transcriptions = createJobs<TranscriptionEvents>(TRANSCRIPTION_JOBS);
   const speechResponse = createSpeechResponder(cfg);
 
   // Load the default model before the first request arrives; requests that come earlier wait in line.
@@ -182,16 +199,13 @@ export async function startApp(
     if (mediaType(req) !== "audio/wav") {
       throw new ApiError(415, "unsupported_media_type", "request body must be audio/wav");
     }
-    const declared = Number(req.headers.get("content-length"));
-    if (declared > MAX_SAMPLE_BYTES) {
-      throw new ApiError(413, "body_too_large", "the sample is too large");
-    }
-    const wav = await req.arrayBuffer();
+    const { buffer: wav } = await readBody(
+      req,
+      MAX_SAMPLE_BYTES,
+      () => new ApiError(413, "body_too_large", "the sample is too large"),
+    );
     if (wav.byteLength === 0) {
       throw invalid("the body must be a WAV recording", "body");
-    }
-    if (wav.byteLength > MAX_SAMPLE_BYTES) {
-      throw new ApiError(413, "body_too_large", "the sample is too large");
     }
     const name =
       (url.searchParams.get("name") ?? "").replaceAll(/\s+/g, " ").trim().slice(0, MAX_VOICE_NAME_CHARS) ||
@@ -204,6 +218,93 @@ export async function startApp(
         throw invalid(e.message, "body");
       }
       throw e;
+    }
+  }
+
+  /**
+   * `POST /transcriptions`: checks the recording before anything is queued, then runs it as a job in
+   * the speech line, which it holds until it ends.
+   */
+  async function startTranscription(req: Request, url: URL): Promise<Response> {
+    const problem = speech.transcribeProblem();
+    if (problem) {
+      throw unavailable("transcribe_unavailable", problem);
+    }
+    if (mediaType(req) !== "audio/wav") {
+      throw new ApiError(415, "unsupported_media_type", "request body must be audio/wav");
+    }
+    const separate = parseSeparate(url.searchParams.get("separate"), speech.canSeparate());
+    const wav = await readBody(
+      req,
+      MAX_TRANSCRIBE_BYTES,
+      () => new ApiError(413, "body_too_large", "the recording is too large"),
+    );
+    if (wav.length === 0) {
+      throw invalid("the body must be a WAV recording", "body");
+    }
+    let duration: number;
+    try {
+      duration = validateRecording(wav);
+    } catch (e) {
+      throw e instanceof SpeechError ? invalid(e.message, "body") : e;
+    }
+    // A waiting transcription holds only a descriptor: a full line of uploads in memory would be gigabytes.
+    const file = await anonymousFile(wav);
+    try {
+      return transcriptions.startJob(
+        true,
+        (onPosition) => enterLine(lines.speech, onPosition),
+        async (ticket, signal, emit) => {
+          try {
+            await runTranscription({ fd: file.fd, separate, duration }, ticket, signal, emit);
+          } finally {
+            await file.close();
+          }
+        },
+        req.signal,
+      );
+    } catch (e) {
+      // Refused before it started (a full line): nothing else will close the file.
+      await file.close();
+      throw e;
+    }
+  }
+
+  /** One transcription, once it is its turn in the speech line. */
+  async function runTranscription(
+    job: { fd: number; separate: SeparateMode; duration: number },
+    ticket: Ticket,
+    signal: AbortSignal,
+    emit: Emit<TranscriptionEvents>,
+  ): Promise<void> {
+    await granted(ticket, signal);
+    emit("start", { duration: job.duration });
+    // The worker reads no messages while it transcribes: it is stopped through shared memory.
+    const flag = new Int32Array(new SharedArrayBuffer(4));
+    const stop = () => void Atomics.store(flag, 0, 1);
+    signal.addEventListener("abort", stop);
+    const speakers = new Set<string>();
+    try {
+      const done = await speech.transcribe({ fd: job.fd, separate: job.separate }, flag.buffer, (p) => {
+        if (p.type === "stage") {
+          emit("stage", { stage: p.stage });
+        } else {
+          speakers.add(p.segment.speaker);
+          emit("segment", p.segment);
+        }
+      });
+      if (!done) {
+        throw cancelled();
+      }
+      emit("done", {
+        duration: done.duration,
+        speakers: [...speakers],
+        separated: done.separated,
+        trimmed: done.trimmed,
+        truncated: done.truncated,
+      });
+    } finally {
+      signal.removeEventListener("abort", stop);
     }
   }
 
@@ -265,6 +366,10 @@ export async function startApp(
         noTimeout: true,
         handler: async ({ req }) => speak(await parseSpeechRequest(await parseBody(req), speech, cfg.voicesDir), req),
       },
+    },
+    "/transcriptions": {
+      // A long recording takes a while to upload and check before the stream starts.
+      POST: { noTimeout: true, handler: ({ req, url }) => startTranscription(req, url) },
     },
     "/segment": {
       // The first request loads the model.
@@ -328,7 +433,7 @@ export async function startApp(
             ? jobs.startJob(
                 input.resumable,
                 (onPosition) => enterLine(lines.translations, onPosition),
-                (ticket, signal) => translator.run(input, ticket, signal),
+                (ticket, signal, emit) => emitTranslation(translator.run(input, ticket, signal), emit),
                 req.signal,
               )
             : translator.translateJson(input, req.signal);
@@ -343,7 +448,7 @@ export async function startApp(
     const rest = url.pathname.slice(API.length);
     const methods = routes[rest];
     if (!methods) {
-      const res = jobs.translationRoute(rest, req, url);
+      const res = jobs.route(rest, req, url) ?? transcriptions.route(rest, req, url);
       if (res) {
         return res;
       }

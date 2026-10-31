@@ -1,15 +1,17 @@
 // Download the pinned models and verify their checksums: the two Index-Translate GGUF models with
 // the chat model's image encoder (its mmproj GGUF), and
 // the IndexTTS-2.5 GGUF for reading aloud and the BS-RoFormer GGUF that separates an uploaded voice
-// sample from music and noise into MODELS_DIR (./models), the SaT sentence segmentation model (ONNX
+// sample from music and noise into MODELS_DIR (./models), MOSS-Transcribe-Diarize for transcription, the
+// SaT sentence segmentation model (ONNX
 // with its tokenizer) into MODELS_DIR/sat-3l-sm, the LaBSE sentence embedding model (ONNX with its
 // vocabulary and pooling layer) into MODELS_DIR/labse, and the example voices into VOICES_DIR
-// (./voices). About 18.5 GiB in all. In the AppImage this is its `fetch` subcommand.
+// (./voices). About 19.2 GiB in all. In the AppImage this is its `fetch` subcommand.
 // Usage: bun scripts/fetch_models.ts [--model index-translate-9b ...] [--models-dir DIR] [--voices-dir DIR]
 //
 //   --model  one of index-translate-9b, index-nailong-9b, index-tts-2.5 (the speech model and the
-//            voices), bs-roformer (the voice separation model), sat-3l-sm (sentence segmentation),
-//            labse (sentence alignment); repeatable; all of them when not given
+//            voices), bs-roformer (the voice separation model), moss-transcribe-diarize
+//            (transcription), sat-3l-sm (sentence segmentation), labse (sentence alignment);
+//            repeatable; all of them when not given
 //
 // The directories are the server's settings (src/config.ts), given the same way: as environment
 // variables or as flags. Files are downloaded with curl, so an interrupted download continues
@@ -26,6 +28,7 @@ import { dirname, join } from "node:path";
 
 import { loadConfig } from "../src/config";
 import { MODELS } from "../src/models";
+import { MUSIC_MODEL_FILE } from "../src/transcript";
 import { fileSha256 } from "./fetch_tools";
 
 export interface Download {
@@ -76,6 +79,23 @@ const SEPARATION_URL = resolveUrl(
   `BS-RoFormer-ep368-GGUF/${SEPARATION_FILE}`,
 );
 const SEPARATION_SHA256 = "9a55a8cad369d00f6e0fb208bb0cd87e30e25430772b8491e20a4eace6423ad2";
+
+/** MOSS-Transcribe-Diarize as converted for audio.cpp (Q4_K, 758 MB), for `POST /transcriptions`. */
+const TRANSCRIPTION = "moss-transcribe-diarize";
+const TRANSCRIPTION_FILE = "moss-transcribe-diarize-q4_k.gguf";
+const TRANSCRIPTION_URL = resolveUrl(
+  "audio-cpp/audio.cpp-gguf",
+  "874fcb41ececda20bcbc0782d6b4ea7f7d069ea8",
+  `MOSS-Transcribe-Diarize-GGUF/${TRANSCRIPTION_FILE}`,
+);
+const TRANSCRIPTION_SHA256 = "4e3020379ff592bbb22a4e3d47a7cd6709951cc5d451c561b69df955b5f0a220";
+/** CED-tiny (F32, 22 MB), downloaded with it: whether a recording has music to take out first. */
+const MUSIC_URL = resolveUrl(
+  "audio-cpp/audio.cpp-gguf",
+  "874fcb41ececda20bcbc0782d6b4ea7f7d069ea8",
+  `CED-GGUF/${MUSIC_MODEL_FILE}`,
+);
+const MUSIC_SHA256 = "27159e7cd8fe3c363e2c0e7f50426ba2e167308974e5e2707e7de71eb91992c6";
 
 /**
  * SaT 3L-SM (segment-any-text/sat-3l-sm, MIT) as an 8-bit ONNX export with the XLM-RoBERTa tokenizer
@@ -168,6 +188,14 @@ export const NOTICES: Record<string, string> = {
     "  License: Apache-2.0 per audio.cpp's model license list (checkpoint source undocumented there)",
     "  https://github.com/0xShug0/audio.cpp/blob/main/docs/model_licenses.md",
   ].join("\n"),
+  [TRANSCRIPTION]: [
+    "MOSS-Transcribe-Diarize (OpenMOSS-Team), GGUF Q4_K converted by audio.cpp",
+    "  License: Apache-2.0",
+    "  https://huggingface.co/OpenMOSS-Team/MOSS-Transcribe-Diarize",
+    "CED-tiny (mispeech), GGUF F32 converted by audio.cpp, with AudioSet's class labels",
+    "  License: Apache-2.0 (the labels: AudioSet ontology, Google, CC BY-SA 4.0)",
+    "  https://huggingface.co/mispeech/ced-tiny",
+  ].join("\n"),
   [SEGMENTATION]: [
     "SaT 3L-SM (segment-any-text), 8-bit ONNX export by jiangzhuo9357, with the tokenizer of xlm-roberta-base",
     "  License: MIT (the weights, wtpsplit's code, and the XLM-RoBERTa tokenizer)",
@@ -180,7 +208,7 @@ export const NOTICES: Record<string, string> = {
   ].join("\n"),
 };
 
-export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH, SEPARATION, SEGMENTATION, ALIGNMENT];
+export const MODEL_IDS = [...Object.keys(TRANSLATION), SPEECH, SEPARATION, TRANSCRIPTION, SEGMENTATION, ALIGNMENT];
 
 /** An error whose message is all the user needs: it is printed without a stack trace. */
 export class FetchError extends Error {}
@@ -214,7 +242,7 @@ export function parseArgs(argv: readonly string[]): { ids: string[]; rest: strin
 /** What the chosen models consist of, and where each file goes. */
 export function plan(
   ids: readonly string[],
-  dirs: { models: string; speechModel: string; separationModel: string; voices: string },
+  dirs: { models: string; speechModel: string; separationModel: string; transcribeModel: string; voices: string },
 ): Download[] {
   const files: Download[] = [];
   for (const id of ids) {
@@ -235,6 +263,11 @@ export function plan(
         sha256: SEPARATION_SHA256,
         dest: join(dirs.separationModel, SEPARATION_FILE),
       });
+    } else if (id === TRANSCRIPTION) {
+      files.push(
+        { url: TRANSCRIPTION_URL, sha256: TRANSCRIPTION_SHA256, dest: join(dirs.transcribeModel, TRANSCRIPTION_FILE) },
+        { url: MUSIC_URL, sha256: MUSIC_SHA256, dest: join(dirs.transcribeModel, MUSIC_MODEL_FILE) },
+      );
     } else if (id === SEGMENTATION) {
       for (const [name, sha256] of Object.entries(SEGMENTATION_FILES)) {
         files.push({
@@ -383,6 +416,7 @@ export async function fetchModels(
     models: cfg.modelsDir,
     speechModel: cfg.speechModelDir,
     separationModel: cfg.separationModelDir,
+    transcribeModel: cfg.transcribeModelDir,
     voices: cfg.voicesDir,
   };
   await acceptNotices(ids, dirs, log, ask);

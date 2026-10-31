@@ -39,11 +39,15 @@ function sampleReader(format: number, bits: number): Reader | undefined {
   return undefined;
 }
 
-/**
- * Decodes a RIFF/WAVE file with integer PCM (8, 16, 24 or 32 bits) or float (32 or 64 bits)
- * samples. Throws an Error that says what is wrong with the file.
- */
-export function readWav(bytes: Uint8Array): Pcm {
+/** What a WAV file holds, from its header: the audio is `frames` × `channels` samples from byte `body`. */
+export interface WavInfo {
+  sampleRate: number;
+  channels: number;
+  frames: number;
+}
+
+/** The header of a WAV file and how to read its samples. Throws an Error that says what is wrong with the file. */
+function parseWav(bytes: Uint8Array): WavInfo & { read: Reader; width: number; body: number } {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
   const tag = (at: number) => String.fromCharCode(...bytes.subarray(at, at + 4));
   if (bytes.length < 12 || tag(0) !== "RIFF" || tag(8) !== "WAVE") {
@@ -83,19 +87,35 @@ export function readWav(bytes: Uint8Array): Pcm {
       }
       // A recorder that could not seek back leaves the size at zero or all ones: take what is there.
       const end = Math.min(body + size, bytes.length);
-      const count = Math.floor((end - body) / width / channels) * channels;
-      if (count < 1) {
+      const frames = Math.floor((end - body) / width / channels);
+      if (frames < 1) {
         throw new Error("the WAV file has no audio");
       }
-      const samples = new Float32Array(count);
-      for (let i = 0; i < count; i++) {
-        samples[i] = read(view, body + i * width);
-      }
-      return { samples, sampleRate, channels };
+      return { sampleRate, channels, frames, read, width, body };
     }
     at = body + size + (size & 1);
   }
   throw new Error("the WAV file has no audio");
+}
+
+/** The format and length of a WAV file without decoding its audio. Throws as `readWav` does. */
+export function readWavInfo(bytes: Uint8Array): WavInfo {
+  const { sampleRate, channels, frames } = parseWav(bytes);
+  return { sampleRate, channels, frames };
+}
+
+/**
+ * Decodes a RIFF/WAVE file with integer PCM (8, 16, 24 or 32 bits) or float (32 or 64 bits)
+ * samples. Throws an Error that says what is wrong with the file.
+ */
+export function readWav(bytes: Uint8Array): Pcm {
+  const { sampleRate, channels, frames, read, width, body } = parseWav(bytes);
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const samples = new Float32Array(frames * channels);
+  for (let i = 0; i < samples.length; i++) {
+    samples[i] = read(view, body + i * width);
+  }
+  return { samples, sampleRate, channels };
 }
 
 /** RMS the voice is brought to, over its non-silent samples (-20 dBFS). */
@@ -104,21 +124,26 @@ const TARGET_RMS = 0.1;
 const SILENCE_GATE = 0.01;
 const PEAK_LIMIT = 0.98;
 
+/** With `relative`, the gate is this far under the recording's peak instead (-40 dB). */
+const RELATIVE_GATE = 0.01;
+
 /**
  * Simple loudness normalization: scales the samples so that the RMS of those above the silence
  * gate is TARGET_RMS, but never so far that the peak passes PEAK_LIMIT. Not a standard (no
  * K-weighting, no integration windows); a recording with no sound above the gate is unchanged.
+ * `relative` puts the gate 40 dB under the recording's peak, so one recorded far under -40 dBFS is
+ * brought up too (for speech recognition; a voice sample that quiet is noise).
  */
-export function normalizeLoudness(pcm: Pcm): Pcm {
-  let sum = 0;
-  let count = 0;
+export function normalizeLoudness(pcm: Pcm, relative = false): Pcm {
   let peak = 0;
   for (const x of pcm.samples) {
-    const a = Math.abs(x);
-    if (a > peak) {
-      peak = a;
-    }
-    if (a > SILENCE_GATE) {
+    peak = Math.max(peak, Math.abs(x));
+  }
+  const gate = relative ? peak * RELATIVE_GATE : SILENCE_GATE;
+  let sum = 0;
+  let count = 0;
+  for (const x of pcm.samples) {
+    if (Math.abs(x) > gate) {
       sum += x * x;
       count++;
     }

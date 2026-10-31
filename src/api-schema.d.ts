@@ -279,6 +279,97 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/transcriptions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Transcribe a recording, with speakers and times (preview)
+         * @description The body is a WAV recording (`audio/wav`; integer PCM of 8, 16, 24 or 32 bits or float of 32
+         *     or 64 bits), mono or stereo, at 16 to 48 kHz, of at most 30 minutes and
+         *     `transcribe.max_bytes` (see `GET /health`). A recording that is not usable is refused at once
+         *     with `400`, before anything is queued.
+         *
+         *     What happens to it, in order:
+         *
+         *     1. When it is separated (`separate`; by default, when an audio tagger hears music in it), the
+         *        voice separation model takes out music and background noise. This takes a while (about a
+         *        third of the recording's length with BS-RoFormer on a recent GPU) and cannot be stopped
+         *        midway.
+         *     2. Its loudness is evened out, and Silero VAD finds the speech. When more than 30% of it is
+         *        silence, the silences are cut out (keeping a short pause between stretches of speech).
+         *     3. MOSS-Transcribe-Diarize transcribes it. Each segment is sent as soon as the model has
+         *        written it, with its times mapped back onto the uploaded recording.
+         *
+         *     The answer is always an event stream and the transcription is always resumable: it does
+         *     not stop when the connection drops, and is never cancelled for lack of a reader. It ends
+         *     with `done` or `error`; afterwards its events are kept for 30 minutes (and only the latest
+         *     16 transcriptions), see `GET /transcriptions/{id}/events`.
+         *
+         *     The speech model is unloaded while a transcription runs, so the GPU holds only the
+         *     transcription's models beside the translation model; utterances requested meanwhile wait.
+         */
+        post: operations["transcribe"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transcriptions/{id}/events": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Read a transcription's events again
+         * @description The events of a transcription, as `GET /translations/{id}/events` answers those of a
+         *     translation: after the event numbered by `Last-Event-ID` (or `after`), or all of them; a
+         *     running transcription is followed live until its last event, a finished one is replayed and
+         *     the stream closes; a new reader takes it over from the one before.
+         *
+         *     Unlike a translation, a transcription nobody reads is never cancelled. A finished one is
+         *     kept for 30 minutes after it ended (at most the latest 16), then `404` (`not_found`).
+         */
+        get: operations["readTranscription"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transcriptions/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Cancel a transcription, or forget a finished one
+         * @description A running or waiting transcription is cancelled: it stops before the next segment (a
+         *     separation or the model's first pass over the audio runs to its end first), an attached
+         *     reader receives the `error` event with code `cancelled`, and it is forgotten. A finished one
+         *     is forgotten at once. Either way its id then answers `404`.
+         */
+        delete: operations["deleteTranscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/tokenize": {
         parameters: {
             query?: never;
@@ -714,7 +805,8 @@ export interface components {
                 /**
                  * @description Models of features that are turned on but lack their model: `index-tts-2.5` (reading
                  *     aloud), `bs-roformer` (voice separation, only with speech on), `sat-3l-sm`
-                 *     (`POST /segment`), `labse` (`POST /align`). A feature turned off is not listed.
+                 *     (`POST /segment`), `labse` (`POST /align`), `moss-transcribe-diarize`
+                 *     (`POST /transcriptions`). A feature turned off is not listed.
                  * @example [
                  *       "labse"
                  *     ]
@@ -761,6 +853,28 @@ export interface components {
                  * @example 20000
                  */
                 max_chars: number;
+            };
+            /**
+             * @description `POST /transcriptions` (a preview). `available` when the speech engine and the
+             *     transcription model are installed; it does not affect `status`.
+             */
+            transcribe?: {
+                /** @enum {string} */
+                status: "available" | "unavailable";
+                /** @description Why transcription is `unavailable`. */
+                error?: string;
+                /** @description Whether the voice separation model is installed (`separate`). */
+                separation: boolean;
+                /** @example 1800 */
+                max_seconds: number;
+                /** @example 167772160 */
+                max_bytes: number;
+                sample_rate: {
+                    /** @example 16000 */
+                    min: number;
+                    /** @example 48000 */
+                    max: number;
+                };
             };
             /**
              * @description `POST /webpage`. `available` when domains are allowed and the Markdown converter is
@@ -948,14 +1062,17 @@ export interface components {
                  *     (see `ErrorEvent`): a client that closed its connection never sees a response.
                  * @enum {string}
                  */
-                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "segment_error" | "segment_unavailable" | "align_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
+                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "transcribe_unavailable" | "segment_error" | "segment_unavailable" | "align_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
                 /** @description For people, not for programs; its wording can change. Go by `code`. */
                 message: string;
                 details?: components["schemas"]["ErrorDetails"];
             } & unknown;
         };
         QueuedEvent: {
-            /** @description Number of translations ahead of this one, including the running one. */
+            /**
+             * @description Number of requests ahead of this one in its queue, including the running one: translations
+             *     for a translation; speech requests, voice uploads and transcriptions for a transcription.
+             */
             position: number;
         };
         StartEvent: {
@@ -990,6 +1107,59 @@ export interface components {
             message: string;
             details?: components["schemas"]["ErrorDetails"];
         } & unknown;
+        TranscriptionStartEvent: {
+            /** @description Seconds of the uploaded recording; segment times run from 0 to this. */
+            duration: number;
+        };
+        TranscriptionStageEvent: {
+            /**
+             * @description What the transcription is doing from now on: `separating` (only when it separates; no
+             *     segments come during it), then `transcribing` (finding the speech, then the model,
+             *     whose segments follow).
+             * @enum {string}
+             */
+            stage: "separating" | "transcribing";
+        };
+        TranscriptSegment: {
+            /** @description Seconds from the start of the uploaded recording. */
+            start: number;
+            /** @description Seconds from the start of the uploaded recording; not before `start`. */
+            end: number;
+            /**
+             * @description The model's label, `S01`, `S02`, ... in order of appearance: the same label is the same
+             *     voice within this transcription, nothing more.
+             * @example S01
+             */
+            speaker: string;
+            /** @description What was said, as the model wrote it (with punctuation; no leading or trailing whitespace). */
+            text: string;
+        };
+        TranscriptionDoneEvent: {
+            /** @description Seconds of the uploaded recording. */
+            duration: number;
+            /** @description The `speaker` labels of the segments, in order of first appearance. */
+            speakers: string[];
+            /** @description Music was taken out first. */
+            separated: boolean;
+            /** @description Long silences were cut out before the model heard the recording (times are still the original ones). */
+            trimmed: boolean;
+            /**
+             * @description The model was stopped before it finished: it only repeated itself (it can on music) or
+             *     used up its output budget. The segments before that stand, but the end of the recording
+             *     may be missing.
+             */
+            truncated: boolean;
+        };
+        TranscriptionErrorEvent: {
+            /**
+             * @description `speech_error`: the engine failed (a model could not be loaded, the separation or the
+             *     transcription failed); the segments sent before it stand. `cancelled`: by
+             *     `DELETE /transcriptions/{id}`; there is no `done`.
+             * @enum {string}
+             */
+            code: "speech_error" | "internal_error" | "cancelled";
+            message: string;
+        };
     };
     responses: {
         /**
@@ -1118,7 +1288,10 @@ export interface components {
                 "application/json": components["schemas"]["Error"];
             };
         };
-        /** @description No such translation; it never existed, was not resumable, or has expired (`not_found`). */
+        /**
+         * @description No such translation or transcription; it never existed, was not resumable, has expired or
+         *     was deleted (`not_found`).
+         */
         NotFound: {
             headers: {
                 [name: string]: unknown;
@@ -1166,6 +1339,11 @@ export type StartEvent = components['schemas']['StartEvent'];
 export type DeltaEvent = components['schemas']['DeltaEvent'];
 export type DoneEvent = components['schemas']['DoneEvent'];
 export type ErrorEvent = components['schemas']['ErrorEvent'];
+export type TranscriptionStartEvent = components['schemas']['TranscriptionStartEvent'];
+export type TranscriptionStageEvent = components['schemas']['TranscriptionStageEvent'];
+export type TranscriptSegment = components['schemas']['TranscriptSegment'];
+export type TranscriptionDoneEvent = components['schemas']['TranscriptionDoneEvent'];
+export type TranscriptionErrorEvent = components['schemas']['TranscriptionErrorEvent'];
 export type ResponseInvalidRequest = components['responses']['InvalidRequest'];
 export type ResponseTooLarge = components['responses']['TooLarge'];
 export type ResponseQueueFull = components['responses']['QueueFull'];
@@ -1635,6 +1813,143 @@ export interface operations {
         requestBody?: never;
         responses: {
             /** @description Cancelled (or already finished or cancelled). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    transcribe: {
+        parameters: {
+            query?: {
+                /**
+                 * @description Whether to take the voice out of music first. `auto` does so when the separation model
+                 *     is installed (`transcribe.separation` in `GET /health`) and CED, an audio tagger, hears
+                 *     music in at least a fifth of up to 30 ten-second stretches spread over the recording
+                 *     (speech alone, meetings and lectures, is not separated); `true` always separates and is
+                 *     refused with `400` without the model. Without separation the model may write nothing at
+                 *     all for a song, and with it a few short interjections may be lost.
+                 */
+                separate?: "auto" | "true" | "false";
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "audio/wav": string;
+            };
+        };
+        responses: {
+            /** @description The transcription as an event stream. */
+            200: {
+                headers: {
+                    /** @description The id for `GET /transcriptions/{id}/events` and `DELETE /transcriptions/{id}`. */
+                    "X-Transcription-Id"?: string;
+                    [name: string]: unknown;
+                };
+                content: {
+                    /**
+                     * @example id: 1
+                     *     event: start
+                     *     data: {"duration":12.5}
+                     *
+                     *     id: 2
+                     *     event: stage
+                     *     data: {"stage":"separating"}
+                     *
+                     *     id: 3
+                     *     event: stage
+                     *     data: {"stage":"transcribing"}
+                     *
+                     *     id: 4
+                     *     event: segment
+                     *     data: {"start":0.42,"end":3.1,"speaker":"S01","text":"Good morning, everyone."}
+                     *
+                     *     id: 5
+                     *     event: done
+                     *     data: {"duration":12.5,"speakers":["S01"],"separated":true,"trimmed":false,"truncated":false}
+                     */
+                    "text/event-stream": string;
+                };
+            };
+            400: components["responses"]["InvalidRequest"];
+            403: components["responses"]["Forbidden"];
+            /** @description The recording exceeds `transcribe.max_bytes` (`body_too_large`). */
+            413: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+            415: components["responses"]["UnsupportedMediaType"];
+            429: components["responses"]["QueueFull"];
+            500: components["responses"]["InternalError"];
+            /**
+             * @description Transcription is not available (`transcribe_unavailable`): it is turned off, or the
+             *     speech engine or the transcription model is not installed; the message says which.
+             */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Error"];
+                };
+            };
+        };
+    };
+    readTranscription: {
+        parameters: {
+            query?: {
+                /** @description Same as `Last-Event-ID`. */
+                after?: number;
+            };
+            header?: {
+                "Last-Event-ID"?: number;
+            };
+            path: {
+                /** @description The `X-Transcription-Id` response header of the `POST /transcriptions` that started it. */
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description The events after the given one; the same format as `POST /transcriptions`. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "text/event-stream": string;
+                };
+            };
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            500: components["responses"]["InternalError"];
+        };
+    };
+    deleteTranscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Cancelled or forgotten. */
             204: {
                 headers: {
                     [name: string]: unknown;

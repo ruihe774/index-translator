@@ -80,7 +80,7 @@ use the x86-64 name. Then:
 
 ```bash
 chmod +x Index_Translator-x86_64.AppImage
-./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 18.5 GiB
+./Index_Translator-x86_64.AppImage fetch   # once: the models and example voices, about 19.2 GiB
 ./Index_Translator-x86_64.AppImage         # start; the app opens in your browser
 ```
 
@@ -112,7 +112,7 @@ it). It needs 64-bit Windows 10 or 11. Then:
    signed, so Windows SmartScreen may warn you: choose **More info**, then **Run anyway**.
 2. Start **Index Translator** from the Start menu (or let the installer start it). A small window
    with four links opens.
-3. Once, click **Download models**: it fetches the models and example voices (about 18.5 GiB) in a
+3. Once, click **Download models**: it fetches the models and example voices (about 19.2 GiB) in a
    console window, shows each model's license and waits for you to type `yes`. **Do not close the
    console window until it says it is done**: closing it stops the download (running it again
    continues where it stopped).
@@ -139,7 +139,7 @@ bun src/server.ts
 
 Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`.
 
-Before the first start, build the engines and get the models once (about 18.5 GiB):
+Before the first start, build the engines and get the models once (about 19.2 GiB):
 
 ```bash
 bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
@@ -412,6 +412,32 @@ Known limits: numbers written in digits are read correctly in Chinese, English, 
 Japanese, but not reliably in Arabic, and unusual formats (for example `$1,200`) may be read
 oddly in any language.
 
+## Transcribe a recording (preview)
+
+The server can turn a recording into text, with who speaks when: `POST /api/v1/transcriptions`
+takes a WAV file (16 to 48 kHz, mono or stereo, up to 30 minutes) and streams the transcript
+segment by segment, each with its start and end time and a speaker label (`S01`, `S02`, …). The
+page has no button for it yet; see [`docs/openapi.yaml`](docs/openapi.yaml).
+
+```bash
+curl -N -H 'content-type: audio/wav' --data-binary @meeting.wav http://127.0.0.1:3000/api/v1/transcriptions
+```
+
+- **Model:** MOSS-Transcribe-Diarize (0.7 GiB, `fetch --model moss-transcribe-diarize`). It writes
+  the language it hears; Chinese, English and Japanese were tried.
+- **Music:** when the voice separation model is installed and a small audio tagger (CED) hears music
+  in the recording, the music is taken out first; `?separate=true` or `false` decides yourself.
+  Without it a song may come out empty. Separation takes about a third of the recording's length;
+  a meeting or a lecture is not separated.
+- **Long silences** are cut out before the model hears them; the times still refer to the original
+  recording.
+- **GPU memory:** up to about 6 GiB beside the translation model for 30 minutes (less for shorter
+  recordings). The speech model leaves the GPU while a transcription runs, and reading aloud waits
+  for it to finish.
+- **Leaving the page:** a transcription does not stop when the connection drops. Its events can be
+  read again for 30 minutes after it ends (`GET /api/v1/transcriptions/{id}/events`), and
+  `DELETE` cancels it.
+
 ## Check long translations
 
 
@@ -480,6 +506,7 @@ closed); flags work as above.
 | `MODELS_DIR` | `models/`; AppImage: `~/.local/share/index-translator/models`; Windows installer: `models\` in the install folder | Folder with the models; `fetch` downloads into it |
 | `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices`; Windows installer: `voices\` in the install folder | Folder with the voice recordings (`.wav`) |
 | `SPEECH_IDLE_UNLOAD` | `300` | Seconds without listening after which the speech model leaves the GPU; `0` keeps it loaded |
+| `TRANSCRIBE` | on | `0` turns transcription (`POST /api/v1/transcriptions`, a preview) off |
 | `SEGMENT` | on | `0` turns the sentence segmentation model off; reading aloud then finds sentences by the browser's rules |
 | `SEGMENT_THREADS` | the fast cores, at most 8 | CPU threads for the sentence segmentation and alignment models, chosen like `LLAMA_THREADS` |
 | `SEGMENT_IDLE_UNLOAD` | `300` | Seconds without use after which the sentence segmentation model (about 0.4 GiB of memory) or the alignment model (about 0.5 GiB) is freed; `0` keeps them loaded |

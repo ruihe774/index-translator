@@ -1,0 +1,67 @@
+diff --git a/include/audiocpp.h b/include/audiocpp.h
+index fc69d2b..74cccf5 100644
+--- a/include/audiocpp.h
++++ b/include/audiocpp.h
+@@ -442,6 +442,17 @@ AUDIOCPP_API audiocpp_status audiocpp_result_speaker_turn(const audiocpp_result
+                                                           float * out_confidence,
+                                                           const char ** out_text);
+ 
++/* Added by index-translator (scripts/patches/audiocpp-custom-output.patch); not
++ * part of audio.cpp's C API.
++ *
++ * The family-specific output of a result (CED's classification scores, for
++ * one): its schema name and its data as JSON text. AUDIOCPP_ERR_NOT_AVAILABLE
++ * when the result has none. Both strings are borrowed until the result is
++ * freed. */
++AUDIOCPP_API audiocpp_status audiocpp_result_custom_output(const audiocpp_result * result,
++                                                           const char ** out_schema,
++                                                           const char ** out_json);
++
+ AUDIOCPP_API size_t          audiocpp_result_word_count(const audiocpp_result * result);
+ AUDIOCPP_API audiocpp_status audiocpp_result_word(const audiocpp_result * result,
+                                                   size_t index,
+diff --git a/src/capi/audiocpp.cpp b/src/capi/audiocpp.cpp
+index ad1a9ab..5b166c0 100644
+--- a/src/capi/audiocpp.cpp
++++ b/src/capi/audiocpp.cpp
+@@ -18,6 +18,7 @@
+ 
+ #include "engine/framework/core/backend.h"
+ #include "engine/framework/core/module.h"
++#include "engine/framework/io/json.h"
+ #include "engine/framework/runtime/abort.h"
+ #include "engine/framework/runtime/errors.h"
+ #include "engine/framework/runtime/model.h"
+@@ -249,6 +250,8 @@ struct audiocpp_request {
+ 
+ struct audiocpp_result {
+     rt::TaskResult result;
++    /* custom_schema_output's data as JSON text, made by audiocpp_result_custom_output. */
++    mutable std::string custom_json;
+     /* An event exposes its contents through a result view that it owns. The
+      * view has the same type as an owned result and there is a public free for
+      * that type, so freeing one has to be a no-op rather than a double free. */
+@@ -960,6 +963,23 @@ audiocpp_status audiocpp_result_audio(const audiocpp_result * result,
+     return AUDIOCPP_OK;
+ }
+ 
++audiocpp_status audiocpp_result_custom_output(const audiocpp_result * result,
++                                              const char ** out_schema,
++                                              const char ** out_json) {
++    if (result == nullptr) {
++        return fail(AUDIOCPP_ERR_INVALID_ARGUMENT, "result must be non-null");
++    }
++    if (!result->result.custom_schema_output.has_value()) {
++        return fail(AUDIOCPP_ERR_NOT_AVAILABLE, "result carries no custom output");
++    }
++    return guard([&] {
++        result->custom_json = engine::io::json::stringify(result->result.custom_schema_output->data);
++        assign_out(out_schema, result->result.custom_schema_output->schema);
++        assign_out(out_json, result->custom_json);
++        return AUDIOCPP_OK;
++    });
++}
++
+ audiocpp_status audiocpp_result_text(const audiocpp_result * result,
+                                      const char ** out_text,
+                                      const char ** out_language) {

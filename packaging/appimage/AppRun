@@ -44,7 +44,7 @@ Index Translator: a local text translator that runs on your GPU.
 
 Usage:
   $self [--setting value ...]   start the translator and open it in the browser
-  $self fetch [--model id ...]  download the models and the example voices (about 18.5 GiB)
+  $self fetch [--model id ...]  download the models and the example voices (about 19.2 GiB)
   $self notices                 print the third-party notices (licenses of what is bundled)
   $self --version
 
@@ -69,7 +69,7 @@ esac
 cat >&2 <<EOF
 Index Translator bundles third-party software: llama.cpp and ggml (MIT, with stb_image, miniaudio
 and xxHash), audio.cpp (Apache-2.0,
-with cJSON, SentencePiece and Abseil), libsoxr (LGPL-2.1 or later)$cuda_notice, minicelt (BSD-3-Clause, from libopus), turndown (MIT), ONNX Runtime (MIT, with the notices of its own components in ThirdPartyNotices.txt), Bun (MIT, with JavaScriptCore under the LGPL and other
+with cJSON, SentencePiece and Abseil, and Silero VAD's weights under MIT), libsoxr (LGPL-2.1 or later)$cuda_notice, minicelt (BSD-3-Clause, from libopus), turndown (MIT), ONNX Runtime (MIT, with the notices of its own components in ThirdPartyNotices.txt), Bun (MIT, with JavaScriptCore under the LGPL and other
 components) and, in the browser, pdf-inspector (MIT) and pdf.js (Apache-2.0, with fonts and
 decoders under their own licenses) for PDF files, undoc (MIT) for Word files and the QOA codec (public domain) for speech. Models are not bundled; \`fetch\` shows their licenses before it downloads them.
 Full notices: $self notices

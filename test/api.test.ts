@@ -51,7 +51,7 @@ describe("metadata endpoints", () => {
       limits: { context_tokens: 1000, max_input_tokens: 400 },
       missing_models: {
         required: ["index-translate-9b", "index-nailong-9b"],
-        optional: ["index-tts-2.5", "bs-roformer", "sat-3l-sm", "labse"],
+        optional: ["index-tts-2.5", "bs-roformer", "moss-transcribe-diarize", "sat-3l-sm", "labse"],
       },
       started_from: "source",
       queue: { running: false, waiting: 0, max_waiting: 1 },
@@ -66,6 +66,14 @@ describe("metadata endpoints", () => {
         status: "unavailable",
         error: "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts",
         max_chars: 20_000,
+      },
+      transcribe: {
+        status: "unavailable",
+        error: "the speech engine is not installed; run bun scripts/build_audiocpp.ts",
+        separation: false,
+        max_seconds: 1800,
+        max_bytes: 160 * 1024 * 1024,
+        sample_rate: { min: 16_000, max: 48_000 },
       },
       webpage: { status: "unavailable", error: "no domains are allowed; list them in ALLOWED_WEBPAGE_DOMAINS" },
     });

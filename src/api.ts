@@ -48,6 +48,18 @@ export type DeltaEvent = Schemas["DeltaEvent"];
 export type DoneEvent = Schemas["DoneEvent"];
 export type ErrorEvent = Schemas["ErrorEvent"];
 
+export type TranscriptSegment = Schemas["TranscriptSegment"];
+
+/** The data of each Server-Sent Event of `POST /transcriptions`, by event name. */
+export interface TranscriptionEvents {
+  queued: QueuedEvent;
+  start: Schemas["TranscriptionStartEvent"];
+  stage: Schemas["TranscriptionStageEvent"];
+  segment: TranscriptSegment;
+  done: Schemas["TranscriptionDoneEvent"];
+  error: Schemas["TranscriptionErrorEvent"];
+}
+
 /** The data of each Server-Sent Event of `POST /translate`, by event name. */
 export interface TranslateEvents {
   queued: QueuedEvent;

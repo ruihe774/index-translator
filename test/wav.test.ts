@@ -29,6 +29,16 @@ describe("normalizeLoudness", () => {
     const silent: Pcm = { samples: new Float32Array(100), sampleRate: 8000, channels: 1 };
     expect(normalizeLoudness(silent)).toBe(silent);
   });
+
+  test("a recording under the gate is left alone, unless the gate is relative to its peak", () => {
+    // Peaks at -46 dBFS, as some FLEURS recordings do: all of it is under the -40 dBFS gate.
+    const quiet = tone(0.005);
+    expect(normalizeLoudness(quiet)).toBe(quiet);
+    expect(rms(normalizeLoudness(quiet, true))).toBeCloseTo(0.1, 1);
+    // Its pauses still do not count.
+    const out = normalizeLoudness(tone(0.005, 8000), true);
+    expect(rms({ ...out, samples: out.samples.slice(0, 8000) })).toBeCloseTo(0.1, 1);
+  });
 });
 
 interface Format {

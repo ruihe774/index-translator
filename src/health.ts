@@ -12,7 +12,14 @@ import { defaultModelSpec, MODELS } from "./models";
 import { launchMode } from "./preflight";
 import type { SlotQueue } from "./queue";
 import { MAX_ALIGN_CHARS, MAX_SEGMENT_CHARS, missingSegmentModels, type Segmenter } from "./segment";
-import { missingSpeechModels, type Speech } from "./speech";
+import {
+  MAX_TRANSCRIBE_BYTES,
+  MAX_TRANSCRIBE_RATE,
+  MAX_TRANSCRIBE_SECONDS,
+  MIN_TRANSCRIBE_RATE,
+  missingSpeechModels,
+  type Speech,
+} from "./speech";
 import { limits } from "./translate";
 
 /** How long the list of missing model files is reused: the page polls `/health`, and the files change rarely. */
@@ -50,6 +57,17 @@ export function createStatus(d: HealthDeps) {
     return missing.value;
   }
 
+  function transcribeStatus(): Health["transcribe"] {
+    const problem = speech.transcribeProblem();
+    return {
+      ...(problem ? { status: "unavailable", error: problem } : { status: "available" }),
+      separation: speech.canSeparate(),
+      max_seconds: MAX_TRANSCRIBE_SECONDS,
+      max_bytes: MAX_TRANSCRIBE_BYTES,
+      sample_rate: { min: MIN_TRANSCRIBE_RATE, max: MAX_TRANSCRIBE_RATE },
+    };
+  }
+
   async function health(): Promise<Response> {
     const [memory, webpageStatus] = await Promise.all([engine.gpuMemory(), d.webpageProblem()]);
     return json<Health>(
@@ -65,6 +83,7 @@ export function createStatus(d: HealthDeps) {
         speech: { status: speech.state, error: speech.error },
         segment: { status: segmenter.state, error: segmenter.error, max_chars: MAX_SEGMENT_CHARS },
         align: { status: segmenter.aligner.state, error: segmenter.aligner.error, max_chars: MAX_ALIGN_CHARS },
+        transcribe: transcribeStatus(),
         webpage: webpageStatus ? { status: "unavailable", error: webpageStatus } : { status: "available" },
       },
       engine.state === "ready" ? 200 : 503,

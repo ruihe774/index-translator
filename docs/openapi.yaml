@@ -51,6 +51,13 @@ info:
     the same size. Closing the connection cancels the utterance; what that does depends on how
     far it got, see `POST /speech`.
 
+    **Transcription (preview).** `POST /transcriptions` turns a recording into text with speakers
+    and times, with MOSS-Transcribe-Diarize on the speech engine. Music can first be taken out by
+    the voice separation model, and long silences are cut out before the model hears them. A
+    transcription takes minutes, so it is a job that runs on whoever reads it: its events are kept
+    and can be read again at any time (`GET /transcriptions/{id}/events`) until it expires. It
+    shares the queue of the speech requests and, while it runs, reading aloud waits.
+
     **Sentence boundaries.** `POST /segment` tells where sentences are likely to end in a text,
     with SaT (Segment any Text), a small model that runs on the processor beside the others.
     It answers probabilities, not pieces: the web app combines them with its own length limits to
@@ -77,6 +84,7 @@ servers:
 tags:
   - name: translation
   - name: speech
+  - name: transcription
   - name: segment
   - name: webpage
   - name: service
@@ -685,6 +693,198 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /transcriptions:
+    post:
+      tags: [transcription]
+      operationId: transcribe
+      summary: Transcribe a recording, with speakers and times (preview)
+      description: |
+        The body is a WAV recording (`audio/wav`; integer PCM of 8, 16, 24 or 32 bits or float of 32
+        or 64 bits), mono or stereo, at 16 to 48 kHz, of at most 30 minutes and
+        `transcribe.max_bytes` (see `GET /health`). A recording that is not usable is refused at once
+        with `400`, before anything is queued.
+
+        What happens to it, in order:
+
+        1. When it is separated (`separate`; by default, when an audio tagger hears music in it), the
+           voice separation model takes out music and background noise. This takes a while (about a
+           third of the recording's length with BS-RoFormer on a recent GPU) and cannot be stopped
+           midway.
+        2. Its loudness is evened out, and Silero VAD finds the speech. When more than 30% of it is
+           silence, the silences are cut out (keeping a short pause between stretches of speech).
+        3. MOSS-Transcribe-Diarize transcribes it. Each segment is sent as soon as the model has
+           written it, with its times mapped back onto the uploaded recording.
+
+        The answer is always an event stream and the transcription is always resumable: it does
+        not stop when the connection drops, and is never cancelled for lack of a reader. It ends
+        with `done` or `error`; afterwards its events are kept for 30 minutes (and only the latest
+        16 transcriptions), see `GET /transcriptions/{id}/events`.
+
+        The speech model is unloaded while a transcription runs, so the GPU holds only the
+        transcription's models beside the translation model; utterances requested meanwhile wait.
+      parameters:
+        - name: separate
+          in: query
+          schema:
+            type: string
+            enum: [auto, "true", "false"]
+            default: auto
+          description: |
+            Whether to take the voice out of music first. `auto` does so when the separation model
+            is installed (`transcribe.separation` in `GET /health`) and CED, an audio tagger, hears
+            music in at least a fifth of up to 30 ten-second stretches spread over the recording
+            (speech alone, meetings and lectures, is not separated); `true` always separates and is
+            refused with `400` without the model. Without separation the model may write nothing at
+            all for a song, and with it a few short interjections may be lost.
+      requestBody:
+        required: true
+        content:
+          audio/wav:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "200":
+          description: The transcription as an event stream.
+          headers:
+            X-Transcription-Id:
+              description: The id for `GET /transcriptions/{id}/events` and `DELETE /transcriptions/{id}`.
+              schema:
+                type: string
+                format: uuid
+          content:
+            text/event-stream:
+              schema:
+                type: string
+                description: |
+                  A stream of events in the format of `POST /translate` (every event has an `id:`
+                  line counting up from 1). Events arrive in this order:
+
+                  | Event | Occurs | Data schema |
+                  |---|---|---|
+                  | `queued` | zero or more times, while waiting | `QueuedEvent` |
+                  | `start` | once, when the transcription begins | `TranscriptionStartEvent` |
+                  | `stage` | once or twice | `TranscriptionStageEvent` |
+                  | `segment` | zero or more times | `TranscriptSegment` |
+                  | `done` | once, on success; last event | `TranscriptionDoneEvent` |
+                  | `error` | once, on failure or cancellation; last event | `TranscriptionErrorEvent` |
+
+                  The transcript is the `segment` events in order. Comment lines (starting with
+                  `:`) are keep-alives and must be ignored.
+              example: |
+                id: 1
+                event: start
+                data: {"duration":12.5}
+
+                id: 2
+                event: stage
+                data: {"stage":"separating"}
+
+                id: 3
+                event: stage
+                data: {"stage":"transcribing"}
+
+                id: 4
+                event: segment
+                data: {"start":0.42,"end":3.1,"speaker":"S01","text":"Good morning, everyone."}
+
+                id: 5
+                event: done
+                data: {"duration":12.5,"speakers":["S01"],"separated":true,"trimmed":false,"truncated":false}
+
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "413":
+          description: The recording exceeds `transcribe.max_bytes` (`body_too_large`).
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "429":
+          $ref: "#/components/responses/QueueFull"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          description: |
+            Transcription is not available (`transcribe_unavailable`): it is turned off, or the
+            speech engine or the transcription model is not installed; the message says which.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Error"
+  /transcriptions/{id}/events:
+    get:
+      tags: [transcription]
+      operationId: readTranscription
+      summary: Read a transcription's events again
+      description: |
+        The events of a transcription, as `GET /translations/{id}/events` answers those of a
+        translation: after the event numbered by `Last-Event-ID` (or `after`), or all of them; a
+        running transcription is followed live until its last event, a finished one is replayed and
+        the stream closes; a new reader takes it over from the one before.
+
+        Unlike a translation, a transcription nobody reads is never cancelled. A finished one is
+        kept for 30 minutes after it ended (at most the latest 16), then `404` (`not_found`).
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+          description: The `X-Transcription-Id` response header of the `POST /transcriptions` that started it.
+        - name: after
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+          description: Same as `Last-Event-ID`.
+        - name: Last-Event-ID
+          in: header
+          schema:
+            type: integer
+            minimum: 0
+      responses:
+        "200":
+          description: The events after the given one; the same format as `POST /transcriptions`.
+          content:
+            text/event-stream:
+              schema:
+                type: string
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
+  /transcriptions/{id}:
+    delete:
+      tags: [transcription]
+      operationId: deleteTranscription
+      summary: Cancel a transcription, or forget a finished one
+      description: |
+        A running or waiting transcription is cancelled: it stops before the next segment (a
+        separation or the model's first pass over the audio runs to its end first), an attached
+        reader receives the `error` event with code `cancelled`, and it is forgotten. A finished one
+        is forgotten at once. Either way its id then answers `404`.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "204":
+          description: Cancelled or forgotten.
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "500":
+          $ref: "#/components/responses/InternalError"
   /tokenize:
     post:
       tags: [translation]
@@ -1028,7 +1228,9 @@ components:
           schema:
             $ref: "#/components/schemas/Error"
     NotFound:
-      description: No such translation; it never existed, was not resumable, or has expired (`not_found`).
+      description: |
+        No such translation or transcription; it never existed, was not resumable, has expired or
+        was deleted (`not_found`).
       content:
         application/json:
           schema:
@@ -1439,7 +1641,8 @@ components:
               description: |
                 Models of features that are turned on but lack their model: `index-tts-2.5` (reading
                 aloud), `bs-roformer` (voice separation, only with speech on), `sat-3l-sm`
-                (`POST /segment`), `labse` (`POST /align`). A feature turned off is not listed.
+                (`POST /segment`), `labse` (`POST /align`), `moss-transcribe-diarize`
+                (`POST /transcriptions`). A feature turned off is not listed.
               items:
                 type: string
               examples: [["labse"]]
@@ -1499,6 +1702,38 @@ components:
               type: integer
               description: Most UTF-16 code units one `POST /align` of sentences may hold in all of them (paragraphs are not limited by it).
               examples: [20000]
+        transcribe:
+          type: object
+          description: |
+            `POST /transcriptions` (a preview). `available` when the speech engine and the
+            transcription model are installed; it does not affect `status`.
+          required: [status, separation, max_seconds, max_bytes, sample_rate]
+          properties:
+            status:
+              type: string
+              enum: [available, unavailable]
+            error:
+              type: string
+              description: Why transcription is `unavailable`.
+            separation:
+              type: boolean
+              description: Whether the voice separation model is installed (`separate`).
+            max_seconds:
+              type: integer
+              examples: [1800]
+            max_bytes:
+              type: integer
+              examples: [167772160]
+            sample_rate:
+              type: object
+              required: [min, max]
+              properties:
+                min:
+                  type: integer
+                  examples: [16000]
+                max:
+                  type: integer
+                  examples: [48000]
         webpage:
           type: object
           description: |
@@ -1825,6 +2060,7 @@ components:
                 - engine_unavailable
                 - speech_error
                 - speech_unavailable
+                - transcribe_unavailable
                 - segment_error
                 - segment_unavailable
                 - align_unavailable
@@ -1853,7 +2089,9 @@ components:
         position:
           type: integer
           minimum: 1
-          description: Number of translations ahead of this one, including the running one.
+          description: |
+            Number of requests ahead of this one in its queue, including the running one: translations
+            for a translation; speech requests, voice uploads and transcriptions for a transcription.
     StartEvent:
       type: object
       required: [model, prompt_tokens, max_output_tokens, queue_ms]
@@ -1918,3 +2156,77 @@ components:
           type: string
         details:
           $ref: "#/components/schemas/ErrorDetails"
+    TranscriptionStartEvent:
+      type: object
+      required: [duration]
+      properties:
+        duration:
+          type: number
+          description: Seconds of the uploaded recording; segment times run from 0 to this.
+    TranscriptionStageEvent:
+      type: object
+      required: [stage]
+      properties:
+        stage:
+          type: string
+          enum: [separating, transcribing]
+          description: |
+            What the transcription is doing from now on: `separating` (only when it separates; no
+            segments come during it), then `transcribing` (finding the speech, then the model,
+            whose segments follow).
+    TranscriptSegment:
+      type: object
+      required: [start, end, speaker, text]
+      properties:
+        start:
+          type: number
+          description: Seconds from the start of the uploaded recording.
+        end:
+          type: number
+          description: Seconds from the start of the uploaded recording; not before `start`.
+        speaker:
+          type: string
+          description: |
+            The model's label, `S01`, `S02`, ... in order of appearance: the same label is the same
+            voice within this transcription, nothing more.
+          examples: [S01]
+        text:
+          type: string
+          description: What was said, as the model wrote it (with punctuation; no leading or trailing whitespace).
+    TranscriptionDoneEvent:
+      type: object
+      required: [duration, speakers, separated, trimmed, truncated]
+      properties:
+        duration:
+          type: number
+          description: Seconds of the uploaded recording.
+        speakers:
+          type: array
+          description: The `speaker` labels of the segments, in order of first appearance.
+          items:
+            type: string
+        separated:
+          type: boolean
+          description: Music was taken out first.
+        trimmed:
+          type: boolean
+          description: Long silences were cut out before the model heard the recording (times are still the original ones).
+        truncated:
+          type: boolean
+          description: |
+            The model was stopped before it finished: it only repeated itself (it can on music) or
+            used up its output budget. The segments before that stand, but the end of the recording
+            may be missing.
+    TranscriptionErrorEvent:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum: [speech_error, internal_error, cancelled]
+          description: |
+            `speech_error`: the engine failed (a model could not be loaded, the separation or the
+            transcription failed); the segments sent before it stand. `cancelled`: by
+            `DELETE /transcriptions/{id}`; there is no `done`.
+        message:
+          type: string

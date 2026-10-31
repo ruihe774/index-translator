@@ -88,6 +88,10 @@ export interface Config {
   speechBackend: SpeechBackend;
   /** Seconds without a speech request after which the speech model leaves the GPU; 0 keeps it. */
   speechIdleUnload: number;
+  /** Transcription (`POST /transcriptions`, a preview), on the speech engine. */
+  transcribe: boolean;
+  /** Directory holding the MOSS-Transcribe-Diarize GGUF. */
+  transcribeModelDir: string;
   /** Sentence segmentation (`POST /segment`); false never loads ONNX Runtime. */
   segment: boolean;
   /** Directory with the ONNX Runtime library, as scripts/fetch_onnxruntime.ts leaves it. */
@@ -128,6 +132,8 @@ export const SETTING_NAMES = [
   "VOICES_DIR",
   "SPEECH_BACKEND",
   "SPEECH_IDLE_UNLOAD",
+  "TRANSCRIBE",
+  "TRANSCRIBE_MODEL_DIR",
   "SEGMENT",
   "ONNXRUNTIME_DIR",
   "SEGMENT_MODEL_DIR",
@@ -229,6 +235,8 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     voicesDir: dir(env, "VOICES_DIR", join(root, "voices")),
     speechBackend: speechBackend(env),
     speechIdleUnload: int(env, "SPEECH_IDLE_UNLOAD", 300),
+    transcribe: env.TRANSCRIBE !== "0",
+    transcribeModelDir: dir(env, "TRANSCRIBE_MODEL_DIR", join(modelsDir, "MOSS-Transcribe-Diarize-GGUF")),
     segment: env.SEGMENT !== "0",
     onnxruntimeDir: dir(env, "ONNXRUNTIME_DIR", join(root, "vendor", "onnxruntime")),
     segmentModelDir: dir(env, "SEGMENT_MODEL_DIR", join(modelsDir, "sat-3l-sm")),
@@ -265,6 +273,8 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   VOICES_DIR: "directory with the voice recordings, one .wav each (default voices/)",
   SPEECH_BACKEND: "speech backend: vulkan (default), cuda (for an engine built with --cuda) or cpu",
   SPEECH_IDLE_UNLOAD: "seconds without speech before the model is freed; 0 never (default 300)",
+  TRANSCRIBE: "0 turns transcription (a preview) off (default on)",
+  TRANSCRIBE_MODEL_DIR: "directory with the transcription model (default MODELS_DIR/MOSS-Transcribe-Diarize-GGUF)",
   SEGMENT: "0 turns sentence segmentation for reading aloud off (default on)",
   ONNXRUNTIME_DIR: "directory with the ONNX Runtime library (default vendor/onnxruntime)",
   SEGMENT_MODEL_DIR: "directory with the sentence segmentation model (default MODELS_DIR/sat-3l-sm)",

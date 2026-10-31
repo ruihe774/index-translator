@@ -1,6 +1,8 @@
 // libaudiocpp (audio.cpp's C API, include/audiocpp.h) through bun:ffi: the synchronous calls the
-// speech worker needs to load a text-to-speech model and synthesize with it, or to load a source
-// separation model and take the vocals out of a recording. Every call here blocks its thread, so
+// speech worker needs to load a text-to-speech model and synthesize with it, to load a source
+// separation model and take the vocals out of a recording, and to find the speech in a recording
+// (Silero VAD), hear whether it has music (CED) and transcribe it (MOSS-Transcribe-Diarize). Every call
+// here blocks its thread, so
 // this module is only used from src/speech-worker.ts.
 //
 // The library must be the build of scripts/build_audiocpp.ts, which has its own ggml linked in and
@@ -69,6 +71,16 @@ function bind(dir: string) {
     audiocpp_result_audio: { args: ["ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
     audiocpp_result_named_audio_count: { args: ["ptr"], returns: "usize" },
     audiocpp_result_named_audio: { args: ["ptr", "usize", "ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
+    audiocpp_result_text: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
+    // Ours, not upstream's: scripts/patches/audiocpp-custom-output.patch.
+    audiocpp_result_custom_output: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
+    audiocpp_result_segment_count: { args: ["ptr"], returns: "usize" },
+    audiocpp_result_segment: { args: ["ptr", "usize", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
+    audiocpp_stream_start: { args: ["ptr", "ptr"], returns: "i32" },
+    audiocpp_stream_next_event: { args: ["ptr", "ptr"], returns: "i32" },
+    audiocpp_stream_reset: { args: ["ptr"], returns: "i32" },
+    audiocpp_event_free: { args: ["ptr"], returns: "void" },
+    audiocpp_event_as_result: { args: ["ptr"], returns: "ptr" },
   }).symbols;
   const abi = lib.audiocpp_abi_version();
   if (abi >> 16 !== ABI_MAJOR) {
@@ -179,8 +191,8 @@ class Loaded {
     protected session: Pointer,
   ) {}
 
-  /** Loads the model and creates its session for `task` (`tts`, `sep`, ...). */
-  protected static open(opts: SpeechModelOptions, task: string): [Lib, Pointer, Pointer, Pointer] {
+  /** Loads the model and creates its session for `task` (`tts`, `sep`, ...) in `mode` (`offline` or `streaming`). */
+  protected static open(opts: SpeechModelOptions, task: string, mode = "offline"): [Lib, Pointer, Pointer, Pointer] {
     const lib = audiocpp.open(opts.dir);
     const out = slot();
     check(lib, lib.audiocpp_registry_create(null, out), "audiocpp_registry_create");
@@ -202,7 +214,7 @@ class Loaded {
       fields.setInt32(12, opts.threads, true);
       check(
         lib,
-        lib.audiocpp_session_create(model, cstr(task), cstr("offline"), backend, null, out),
+        lib.audiocpp_session_create(model, cstr(task), cstr(mode), backend, null, out),
         "audiocpp_session_create",
       );
       session = pointerOf(out);
@@ -334,5 +346,150 @@ export class VoiceSeparator extends Loaded {
       }
       throw new Error("audio.cpp returned no vocals stem");
     });
+  }
+}
+
+/** The file of Silero VAD's weights, which `build_audiocpp.ts` copies next to the library. */
+export const SILERO_WEIGHTS = "silero_vad_16k.safetensors";
+
+/** Silero VAD with one offline session. Same rules as `SpeechModel`. */
+export class VoiceActivity extends Loaded {
+  static load(opts: SpeechModelOptions): VoiceActivity {
+    return new VoiceActivity(...Loaded.open(opts, "vad"));
+  }
+
+  /** The stretches of speech in a mono recording, as [start, end) sample indexes, in order. */
+  speech(pcm: Pcm): [number, number][] {
+    const { lib } = this;
+    const result = withRequest(lib, (request) => {
+      check(
+        lib,
+        lib.audiocpp_request_set_audio(request, pcm.samples, pcm.samples.length, pcm.sampleRate, 1),
+        "audiocpp_request_set_audio",
+      );
+      const out = slot();
+      check(lib, lib.audiocpp_session_run(this.session, request, out), "audiocpp_session_run");
+      return pointerOf(out);
+    });
+
+    return withResult(lib, result, () => {
+      const count = Number(lib.audiocpp_result_segment_count(result));
+      const start = new BigInt64Array(1);
+      const end = new BigInt64Array(1);
+      const spans: [number, number][] = [];
+      for (let i = 0; i < count; i++) {
+        check(lib, lib.audiocpp_result_segment(result, i, start, end, null, null), "audiocpp_result_segment");
+        spans.push([Number(start[0]), Number(end[0])]);
+      }
+      return spans;
+    });
+  }
+}
+
+/** An audio tagger (CED) with one offline session, asked only how much a recording sounds like music. Same rules as `SpeechModel`. */
+export class MusicDetector extends Loaded {
+  static load(opts: SpeechModelOptions): MusicDetector {
+    return new MusicDetector(...Loaded.open(opts, "cls"));
+  }
+
+  /** The probability (0 to 1) of AudioSet's "Music" in a short mono recording. */
+  music(pcm: Pcm): number {
+    const { lib } = this;
+    const result = withRequest(lib, (request) => {
+      check(
+        lib,
+        lib.audiocpp_request_set_audio(request, pcm.samples, pcm.samples.length, pcm.sampleRate, 1),
+        "audiocpp_request_set_audio",
+      );
+      // Every category, so "Music" is there however low it scores.
+      check(lib, lib.audiocpp_request_set_option(request, cstr("top_k"), cstr("527")), "audiocpp_request_set_option");
+      const out = slot();
+      check(lib, lib.audiocpp_session_run(this.session, request, out), "audiocpp_session_run");
+      return pointerOf(out);
+    });
+
+    return withResult(lib, result, () => {
+      const json = slot();
+      check(lib, lib.audiocpp_result_custom_output(result, null, json), "audiocpp_result_custom_output");
+      const { scores } = JSON.parse(new CString(pointerOf(json))) as { scores: { label: string; score: number }[] };
+      return scores.find((s) => s.label === "Music")?.score ?? 0;
+    });
+  }
+}
+
+/** How a transcription ended: the model finished, or it was stopped before that (it would have gone on). */
+export type TranscriptEnd = "finished" | "max_tokens" | "stopped";
+
+/**
+ * A speech recognition model whose text is read while it is written (MOSS-Transcribe-Diarize), with
+ * one streaming session. Same rules as `SpeechModel`.
+ */
+export class Transcriber extends Loaded {
+  static load(opts: SpeechModelOptions): Transcriber {
+    return new Transcriber(...Loaded.open(opts, "asr", "streaming"));
+  }
+
+  /**
+   * Transcribes a mono recording, handing each piece of text to `onText` as the model writes it; the
+   * pieces joined are the whole transcript. Blocks until the model is done, `onText` answers false
+   * (`stopped`), or the model has written `options.max_tokens` tokens (`max_tokens`: audio.cpp fails
+   * the run then, but the text handed over so far stands). Another thread making `abort[0]` non-zero
+   * stops it between two pieces with `AbortedError`; the long prefill of the audio is not stopped.
+   */
+  transcribe(
+    pcm: Pcm,
+    options: Record<string, string>,
+    onText: (text: string) => boolean,
+    abort: Int32Array,
+  ): TranscriptEnd {
+    const { lib, session } = this;
+    withRequest(lib, (request) => {
+      check(
+        lib,
+        lib.audiocpp_request_set_audio(request, pcm.samples, pcm.samples.length, pcm.sampleRate, 1),
+        "audiocpp_request_set_audio",
+      );
+      for (const [key, value] of Object.entries(options)) {
+        check(lib, lib.audiocpp_request_set_option(request, cstr(key), cstr(value)), "audiocpp_request_set_option");
+      }
+      check(lib, lib.audiocpp_stream_start(session, request), "audiocpp_stream_start");
+    });
+    try {
+      const out = slot();
+      const text = slot();
+      for (;;) {
+        if (isAborted(abort)) {
+          throw new AbortedError();
+        }
+        const status = lib.audiocpp_stream_next_event(session, out);
+        if (status !== 0) {
+          const detail = lib.audiocpp_last_error();
+          // The one failure that leaves a usable transcript: the model went on past its budget.
+          if (detail && new CString(detail).includes("reached max_tokens")) {
+            return "max_tokens";
+          }
+          check(lib, status, "audiocpp_stream_next_event");
+        }
+        const event = out[0] ? pointerOf(out) : null;
+        if (!event) {
+          return "finished";
+        }
+        let piece = "";
+        try {
+          const result = lib.audiocpp_event_as_result(event);
+          if (result && lib.audiocpp_result_text(result, text, null) === 0 && text[0]) {
+            piece = new CString(pointerOf(text));
+          }
+        } finally {
+          lib.audiocpp_event_free(event);
+        }
+        if (piece && !onText(piece)) {
+          return "stopped";
+        }
+      }
+    } finally {
+      // Frees the model's cache of this recording, however the stream ended.
+      lib.audiocpp_stream_reset(session);
+    }
   }
 }

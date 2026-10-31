@@ -1,5 +1,5 @@
 diff --git a/include/audiocpp.h b/include/audiocpp.h
-index 76cfe6b..7257a52 100644
+index e85ad9f..fc69d2b 100644
 --- a/include/audiocpp.h
 +++ b/include/audiocpp.h
 @@ -84,6 +84,18 @@ typedef enum audiocpp_status {
@@ -56,18 +56,18 @@ index 0000000..bdf1631
 +
 +#endif
 diff --git a/src/capi/audiocpp.cpp b/src/capi/audiocpp.cpp
-index 1582084..3c33187 100644
+index 6915460..ad1a9ab 100644
 --- a/src/capi/audiocpp.cpp
 +++ b/src/capi/audiocpp.cpp
-@@ -17,6 +17,7 @@
+@@ -18,6 +18,7 @@
  
  #include "engine/framework/core/backend.h"
  #include "engine/framework/core/module.h"
 +#include "engine/framework/runtime/abort.h"
+ #include "engine/framework/runtime/errors.h"
  #include "engine/framework/runtime/model.h"
  #include "engine/framework/runtime/registry.h"
- #include "engine/framework/runtime/session.h"
-@@ -255,6 +256,10 @@ const char * audiocpp_build_version(void) {
+@@ -311,6 +312,10 @@ const char * audiocpp_build_version(void) {
  #endif
  }
  

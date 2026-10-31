@@ -34,6 +34,8 @@ describe("loadConfig defaults", () => {
       voicesDir: join(root, "voices"),
       speechBackend: "vulkan",
       speechIdleUnload: 300,
+      transcribe: true,
+      transcribeModelDir: join(root, "models", "MOSS-Transcribe-Diarize-GGUF"),
       segment: true,
       onnxruntimeDir: join(root, "vendor", "onnxruntime"),
       segmentModelDir: join(root, "models", "sat-3l-sm"),

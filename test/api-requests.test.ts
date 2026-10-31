@@ -333,8 +333,8 @@ describe("request body size", () => {
     await health.text();
   });
 
-  test("a chunked body over Bun's 16 MiB backstop is refused with 413 and the server stays healthy", async () => {
-    // Past the backstop the runtime answers before the handler runs, so there is no JSON envelope.
+  test("a chunked JSON body far over its limit is refused with 413 and the server stays healthy", async () => {
+    // The server's own backstop is the largest route's (a transcription), so the route stops reading at its limit.
     const res = await postChunked("/api/v1/tokenize", paddedTo(20 * MiB));
     expect(res.status).toBe(413);
     await res.text();
@@ -344,13 +344,11 @@ describe("request body size", () => {
     await health.text();
   });
 
-  test.failing("a chunked body over 4 MiB is refused even when its extra bytes are whitespace", async () => {
-    // Bug: the 4 MiB limit is checked only against Content-Length (src/app.ts parseBody). A streamed
-    // 5 MiB body that is valid JSON with trailing whitespace is accepted (200), so the documented
-    // 413 body_too_large is not enforced for chunked requests. Only the 16 MiB runtime backstop applies.
+  test("a chunked body over 4 MiB is refused even when its extra bytes are whitespace", async () => {
+    // A chunked body declares no length: the limit is counted while it is read (readBody).
     const res = await postChunked("/api/v1/tokenize", paddedTo(5 * MiB));
     expect(res.status).toBe(413);
-    await res.text();
+    expect(((await res.json()) as ErrorResponse).error.code).toBe("body_too_large");
   });
 });
 

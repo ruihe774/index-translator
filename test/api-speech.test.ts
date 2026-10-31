@@ -4,9 +4,9 @@
 // lists voices.
 
 import { afterAll, afterEach, beforeAll, describe, expect, spyOn, test } from "bun:test";
-import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { openAnonymousFiles, readAnonymousFile } from "../src/anonymous-file";
 import type { Voice, VoiceList } from "../src/api";
 import { type App, startApp } from "../src/app";
 import { libraryPath } from "../src/audiocpp-ffi";
@@ -34,7 +34,6 @@ import {
   speechLauncher,
   tempDir,
   until,
-  UPLOAD_VOICES_DIR,
   waitReady,
 } from "./helpers/mock-engine";
 
@@ -411,6 +410,12 @@ describe("NativeSpeech state machine with a scripted worker", () => {
   /** What the worker answers a separation with: recognizably not the uploaded sample. */
   const separated = () => silentWav(2, 44_100);
   const quiet = () => spyOn(console, "error").mockImplementation(() => {});
+  /** The recording an uploaded voice is kept as: what the worker is given to read for an utterance in it. */
+  async function kept(speech: NativeSpeech, workers: any[], voice: string): Promise<Uint8Array> {
+    await speech.synthesize({ ...request, voice }, new AbortController().signal, () => {});
+    const message = workers.at(-1).posted.findLast((m: any) => m.type === "synthesize");
+    return readAnonymousFile(message.voice.fd as number);
+  }
 
   /** `separation`: the separation model is installed (a .gguf file in its directory). */
   async function setup(overrides: object = {}, separation = false) {
@@ -558,20 +563,20 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     }
   });
 
-  test("stop() unloads, ends the worker and deletes the uploads", async () => {
+  test("stop() unloads, ends the worker and closes the uploads", async () => {
     const { workers, speech } = await setup();
     const log = quiet();
     try {
       await say(speech);
+      const before = openAnonymousFiles();
       const voice = await speech.addVoice("Mine", wav());
       expect((await speech.voices()).map((v) => v.id)).toContain(voice.id);
-      const uploadDir = UPLOAD_VOICES_DIR;
-      expect(existsSync(join(uploadDir, `${voice.id}.wav`))).toBe(true);
+      expect(openAnonymousFiles()).toBe(before + 1);
 
       await speech.stop();
       expect(kinds(workers[0]).at(-1)).toBe("unload");
       expect(workers[0].terminated).toBe(true);
-      expect(existsSync(uploadDir)).toBe(false);
+      expect(openAnonymousFiles()).toBe(before);
       await expect(speech.voices()).resolves.toStrictEqual([]);
       expect(speech.state).toBe("stopped");
     } finally {
@@ -608,8 +613,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
       try {
         const voice = await speech.addVoice("Mine", wav());
         expect(workers).toHaveLength(0);
-        const kept = await Bun.file(join(UPLOAD_VOICES_DIR, `${voice.id}.wav`)).bytes();
-        expect(kept).toStrictEqual(new Uint8Array(wav()));
+        await expect(kept(speech, workers, voice.id)).resolves.toStrictEqual(new Uint8Array(wav()));
         expect(dir).toBeTruthy();
       } finally {
         await speech.stop();
@@ -634,10 +638,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         // The recording as uploaded goes to the worker, which does the rest on the speech thread.
         expect(new Uint8Array(separation.wav)).toStrictEqual(new Uint8Array(wav()));
         expect(speech.state).toBe("stopped");
-        const kept = await Bun.file(join(UPLOAD_VOICES_DIR, `${voice.id}.wav`)).bytes();
-        expect(kept).toStrictEqual(new Uint8Array(separated()));
-
-        await say(speech);
+        await expect(kept(speech, workers, voice.id)).resolves.toStrictEqual(new Uint8Array(separated()));
         expect(speech.state).toBe("ready");
         expect(kinds(workers[0])).toStrictEqual(["load", "synthesize", "separate", "load", "synthesize"]);
       } finally {

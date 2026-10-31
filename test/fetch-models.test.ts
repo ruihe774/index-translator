@@ -109,7 +109,7 @@ describe("parseArgs", () => {
 });
 
 describe("plan", () => {
-  const dirs = { models: "/m", speechModel: "/s", separationModel: "/b", voices: "/v" };
+  const dirs = { models: "/m", speechModel: "/s", separationModel: "/b", transcribeModel: "/t", voices: "/v" };
 
   test("every model the server knows has a pinned download named like its file", () => {
     for (const model of MODELS) {
@@ -277,6 +277,7 @@ describe("notices", () => {
     models: join(dir, "m"),
     speechModel: join(dir, "s"),
     separationModel: join(dir, "b"),
+    transcribeModel: join(dir, "t"),
     voices: join(dir, "v"),
   });
 

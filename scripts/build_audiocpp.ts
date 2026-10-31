@@ -28,7 +28,7 @@ import { basename, join, resolve } from "node:path";
 
 import { $ } from "bun";
 
-import { libraryPath, libraryVersion } from "../src/audiocpp-ffi";
+import { libraryPath, libraryVersion, SILERO_WEIGHTS } from "../src/audiocpp-ffi";
 import {
   BUILD_TOOLS,
   bundleCuda,
@@ -46,20 +46,28 @@ import {
   windows,
 } from "./build_tools";
 
-const TAG = "v0.9.2";
-/** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
-const COMMIT = "0097d365a00b52a6991ad7618f0a04e8d2935e47";
+/**
+ * A commit on main after v0.9.2, not a release: transcription is a preview. Written to VERSION and
+ * the build log as `main-<short id>`.
+ */
+const TAG = "main-3a0dd44";
+/** Fetched by this id, so the source is what was reviewed. */
+const COMMIT = "3a0dd44293fc706f5c375ec96d3e6fd9c54b6c45";
 const REPO = "https://github.com/0xShug0/audio.cpp.git";
 /**
  * audio.cpp's CMake names of the model families to compile in; all of them take about ten times as long.
- * `roformer` holds BS-RoFormer (used) and Mel-Band RoFormer, which share their code.
+ * `roformer` holds BS-RoFormer (used) and Mel-Band RoFormer, which share their code. Silero VAD is part
+ * of the core and always built. CED tells a transcription whether there is music to take out.
  */
-const MODELS = ["index_tts2", "roformer"];
+const MODELS = ["index_tts2", "roformer", "moss_transcribe_diarize", "ced"];
 /**
- * Our one change to audio.cpp: `audiocpp_set_abort_flag`, a flag that stops a running IndexTTS-2
- * utterance (upstream has no way to). Applied to the checkout before it is built.
+ * Our changes to audio.cpp, applied in this order to the checkout before it is built (upstream has
+ * neither): `audiocpp_set_abort_flag`, a flag that stops a running IndexTTS-2 utterance, and
+ * `audiocpp_result_custom_output`, which reads a result's family-specific output (CED's scores).
  */
-const PATCH = join(import.meta.dir, "patches", "audiocpp-abort.patch");
+const PATCHES = ["audiocpp-abort.patch", "audiocpp-custom-output.patch"].map((name) =>
+  join(import.meta.dir, "patches", name),
+);
 
 const flags = new Set(Bun.argv.slice(2));
 for (const flag of flags) {
@@ -92,10 +100,15 @@ if (!keep) {
   await rm(work, { recursive: true, force: true });
 }
 await checkout(REPO, COMMIT, source);
-// A tree kept by --keep has the patch already: taking it out again would then work.
-const reverse = await $`git apply --reverse --check --ignore-whitespace ${PATCH}`.cwd(source).quiet().nothrow();
+// A tree kept by --keep has the patches already: taking the last one out again would then work.
+const reverse = await $`git apply --reverse --check --ignore-whitespace ${PATCHES.at(-1)!}`
+  .cwd(source)
+  .quiet()
+  .nothrow();
 if (reverse.exitCode !== 0) {
-  await run(["git", "apply", "--ignore-whitespace", PATCH], source);
+  for (const patch of PATCHES) {
+    await run(["git", "apply", "--ignore-whitespace", patch], source);
+  }
 }
 
 const started = performance.now();
@@ -161,6 +174,10 @@ await cp(libraryPath(join(build, "bin")), libraryPath(dest), { dereference: true
 await cp(join(source, "include", "audiocpp.h"), join(dest, "include", "audiocpp.h"));
 await cp(join(source, "LICENSE"), join(dest, "LICENSE"));
 await cp(join(source, "external", "ggml", "LICENSE"), join(dest, "LICENSE.ggml"));
+// Silero VAD's weights ship with audio.cpp's source, not in a GGUF; the library is given their path. Their
+// license (MIT) is not in audio.cpp's tree, so ours is a copy of the one in snakers4/silero-vad.
+await cp(join(source, "assets", "framework", "models", "silero_vad", SILERO_WEIGHTS), join(dest, SILERO_WEIGHTS));
+await cp(join(import.meta.dir, "licenses", "LICENSE.silero_vad"), join(dest, "LICENSE.silero_vad"));
 await Bun.write(join(dest, "VERSION"), `${TAG}\n`);
 if (cudaToolkit) {
   await bundleCuda(cudaToolkit, dest, [basename(libraryPath(dest))], [CUDA_FFT]);

@@ -28,6 +28,9 @@ const SPEECH = {
   voices: true,
   addVoice: true,
   synthesize: true,
+  transcribeProblem: true,
+  canSeparate: true,
+  transcribe: true,
   stop: true,
 } satisfies Record<keyof Speech, true>;
 const SEGMENTER = {

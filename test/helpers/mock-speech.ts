@@ -1,12 +1,16 @@
 // Stands in for the audio.cpp speech engine: answers every utterance with silence. Module state, like
 // mock-llama.ts's `mock`: restore it with resetMockSpeech().
 
+import { readAnonymousFile } from "../../src/anonymous-file";
+import type { TranscriptSegment } from "../../src/api";
 import {
   SeparationError,
   SpeechError,
   type SpeechLauncher,
   type SpeechRequest,
   type SpeechState,
+  type TranscribeRequest,
+  validateRecording,
   validateSample,
   type Voice,
 } from "../../src/speech";
@@ -60,6 +64,18 @@ export const mockSpeech = {
   ignoreAbort: false,
   /** Utterances the engine is working on right now, whoever still waits for them. */
   running: 0,
+  /** Why transcription is unavailable, if it is. */
+  transcribeProblem: undefined as string | undefined,
+  /** The separation model is installed. */
+  canSeparate: true,
+  /** What each transcription answers, one segment every `segmentDelayMs`. */
+  segments: [] as TranscriptSegment[],
+  segmentDelayMs: 0,
+  /** Makes a transcription fail after its segments. */
+  transcribeFailWith: undefined as string | undefined,
+  truncated: false,
+  /** Every transcription asked for. */
+  transcriptions: [] as TranscribeRequest[],
 };
 
 export function resetMockSpeech(): void {
@@ -75,6 +91,13 @@ export function resetMockSpeech(): void {
   mockSpeech.aborted = 0;
   mockSpeech.ignoreAbort = false;
   mockSpeech.running = 0;
+  mockSpeech.transcribeProblem = undefined;
+  mockSpeech.canSeparate = true;
+  mockSpeech.segments = [];
+  mockSpeech.segmentDelayMs = 0;
+  mockSpeech.transcribeFailWith = undefined;
+  mockSpeech.truncated = false;
+  mockSpeech.transcriptions.length = 0;
 }
 
 export const speechLauncher: SpeechLauncher = () => ({
@@ -132,6 +155,38 @@ export const speechLauncher: SpeechLauncher = () => ({
       signal.addEventListener("abort", () => reject(signal.reason as Error), { once: true });
       work.then(resolve, reject);
     });
+  },
+  transcribeProblem: () => mockSpeech.transcribeProblem,
+  canSeparate: () => mockSpeech.canSeparate,
+  // Like the worker: the stages, then the segments, stopping between two when `abort` is set.
+  async transcribe(req, abort, onProgress) {
+    mockSpeech.transcriptions.push(req);
+    // The file is there while it runs, as the worker reads it.
+    const duration = validateRecording(readAnonymousFile(req.fd));
+    const flag = new Int32Array(abort);
+    // As if the recording had music: `auto` separates when the model is installed.
+    const separated = req.separate !== "off" && mockSpeech.canSeparate;
+    if (separated) {
+      onProgress({ type: "stage", stage: "separating" });
+    }
+    onProgress({ type: "stage", stage: "transcribing" });
+    for (const segment of mockSpeech.segments) {
+      await Bun.sleep(mockSpeech.segmentDelayMs);
+      if (Atomics.load(flag, 0) !== 0) {
+        return;
+      }
+      onProgress({ type: "segment", segment });
+    }
+    if (mockSpeech.transcribeFailWith) {
+      throw new SpeechError(mockSpeech.transcribeFailWith);
+    }
+    return {
+      type: "transcribed",
+      duration,
+      separated,
+      trimmed: false,
+      truncated: mockSpeech.truncated,
+    };
   },
   async stop() {},
 });

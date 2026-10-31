@@ -107,9 +107,6 @@ export function tempDir(prefix: string): string {
   return dir;
 }
 
-/** Where the speech engine keeps uploaded voices: one directory per server process. */
-export const UPLOAD_VOICES_DIR = join(tmpdir(), `index-translator-voices-${process.pid}`);
-
 /** Waits `ms`, or until `signal` aborts, whichever is first; never rejects. A mock's way to take its time. */
 export async function delay(ms: number, signal: AbortSignal): Promise<void> {
   if (ms && !signal.aborted) {
@@ -148,6 +145,8 @@ export function config(overrides: Partial<Config> = {}): Config {
     voicesDir: "/nonexistent/voices",
     speechBackend: "cpu",
     speechIdleUnload: 0,
+    transcribe: true,
+    transcribeModelDir: "/nonexistent/MOSS-Transcribe-Diarize-GGUF",
     segment: true,
     onnxruntimeDir: "/nonexistent/onnxruntime",
     segmentModelDir: "/nonexistent/sat-3l-sm",

@@ -84,6 +84,9 @@ describe("the spec against the server", () => {
         "GET /openapi.yaml",
         "GET /translations/{id}/events",
         "DELETE /translations/{id}",
+        "GET /transcriptions/{id}/events",
+        "DELETE /transcriptions/{id}",
+        "POST /transcriptions",
         "GET /voices",
         "POST /align",
         "POST /segment",
@@ -95,8 +98,8 @@ describe("the spec against the server", () => {
       ].sort(),
     );
     for (const [op, status] of Object.entries(answers)) {
-      // A translation that does not exist answers 404 from its own route, as an error with a message.
-      const served = ![404, 405].includes(status) || op.includes("/translations/");
+      // A job that does not exist answers 404 from its own route, as an error with a message.
+      const served = ![404, 405].includes(status) || op.includes("/translations/") || op.includes("/transcriptions/");
       expect({ op, served }).toStrictEqual({ op, served: true });
     }
   });

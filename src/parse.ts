@@ -20,7 +20,9 @@ import {
   MAX_SAMPLE_BYTES,
   MAX_SPEECH_CHARS,
   MAX_SPEED,
+  MAX_TRANSCRIBE_BYTES,
   MIN_SPEED,
+  type SeparateMode,
   type Speech,
   SPEECH_LANGUAGES,
   type SpeechRequest,
@@ -29,8 +31,8 @@ import {
 export const MAX_BODY_BYTES = 4 * 1024 * 1024;
 /** Longest `image` string: the largest image in base64, with room for a data URL's head. */
 const MAX_IMAGE_CHARS = Math.ceil(MAX_IMAGE_BYTES / 3) * 4 + 64;
-/** The largest body any route reads: a JSON body with an image, or a voice sample. A backstop for the server. */
-export const MAX_REQUEST_BYTES = Math.max(MAX_BODY_BYTES + MAX_IMAGE_CHARS, MAX_SAMPLE_BYTES);
+/** The largest body any route reads: a JSON body with an image, a voice sample or a recording. A backstop for the server. */
+export const MAX_REQUEST_BYTES = Math.max(MAX_BODY_BYTES + MAX_IMAGE_CHARS, MAX_SAMPLE_BYTES, MAX_TRANSCRIBE_BYTES);
 
 /** A field the client sent: JSON `null` counts as not sent. */
 export function present<T>(v: T): v is NonNullable<T> {
@@ -94,6 +96,35 @@ export function mediaType(req: Request): string {
   return (req.headers.get("content-type") ?? "").split(";")[0]!.trim().toLowerCase();
 }
 
+/**
+ * The body, read until it passes `max` bytes, when it throws `tooLarge()`: the server's own limit
+ * (MAX_REQUEST_BYTES) is that of the largest route, and a chunked body declares no length up front.
+ */
+export async function readBody(req: Request, max: number, tooLarge: () => ApiError): Promise<Uint8Array<ArrayBuffer>> {
+  if (Number(req.headers.get("content-length") ?? 0) > max) {
+    throw tooLarge();
+  }
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  const reader = req.body?.getReader();
+  for (let r = await reader?.read(); r && !r.done; r = await reader!.read()) {
+    const chunk = r.value as Uint8Array;
+    size += chunk.length;
+    if (size > max) {
+      void reader!.cancel().catch(() => {});
+      throw tooLarge();
+    }
+    chunks.push(chunk);
+  }
+  const out = new Uint8Array(size);
+  let at = 0;
+  for (const chunk of chunks) {
+    out.set(chunk, at);
+    at += chunk.length;
+  }
+  return out;
+}
+
 /** `withImage`: the body may carry an `image`, which does not count towards MAX_BODY_BYTES. */
 export async function parseBody(req: Request, withImage = false): Promise<Record<string, unknown>> {
   // Browsers send a cross-site form POST as text/plain without a preflight, so only JSON is accepted.
@@ -101,13 +132,11 @@ export async function parseBody(req: Request, withImage = false): Promise<Record
     throw new ApiError(415, "unsupported_media_type", "request body must be application/json");
   }
   const tooLarge = () => new ApiError(413, "body_too_large", `request body exceeds ${MAX_BODY_BYTES} bytes`);
-  const length = Number(req.headers.get("content-length") ?? 0);
-  if (length > MAX_BODY_BYTES + (withImage ? MAX_IMAGE_CHARS : 0)) {
-    throw tooLarge();
-  }
+  const bytes = await readBody(req, MAX_BODY_BYTES + (withImage ? MAX_IMAGE_CHARS : 0), tooLarge);
+  const { length } = bytes;
   let body: unknown;
   try {
-    body = await req.json();
+    body = JSON.parse(new TextDecoder().decode(bytes));
   } catch {
     throw invalid("request body must be valid JSON");
   }
@@ -257,6 +286,23 @@ export function promptFor(input: TranslateRequest): string {
   return input.model.kind === "document"
     ? buildDocumentPrompt(documentDirection(input), input.text)
     : buildPrompt(input);
+}
+
+/** `separate` of `POST /transcriptions`: `auto` (the default), `true` or `false`; `true` needs the separation model. */
+export function parseSeparate(value: string | null, installed: boolean): SeparateMode {
+  if (value === null || value === "auto") {
+    return "auto";
+  }
+  if (value === "false") {
+    return "off";
+  }
+  if (value !== "true") {
+    throw invalid("separate must be auto, true or false", "separate");
+  }
+  if (!installed) {
+    throw invalid("separate is true but the voice separation model is not installed", "separate");
+  }
+  return "on";
 }
 
 export function speechUnavailable(speech: Speech): ApiError {
