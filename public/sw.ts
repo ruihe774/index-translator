@@ -54,9 +54,11 @@ async function download(path: string, priority: "low" | "auto"): Promise<Respons
   const res = await fetch(path, { cache: "no-cache", priority });
   // A full, ordinary answer only: never an error page or a response marked no-store.
   if (res.status === 200 && !res.headers.get("cache-control")?.includes("no-store")) {
+    // Cloned now: once the response is handed to the page its body is taken, and a later clone() throws.
+    const copy = res.clone();
     const stored = caches
       .open(CACHE)
-      .then((cache) => cache.put(path, res.clone()))
+      .then((cache) => cache.put(path, copy))
       .catch(() => {});
     // The page's own request does not wait for the copy; the prefetch does, so it outlasts the worker's idle stop.
     if (priority === "low") {
