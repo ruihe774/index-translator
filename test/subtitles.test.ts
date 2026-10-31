@@ -5,6 +5,8 @@ import {
   clock,
   parseSrt,
   shownText,
+  speakerColumn,
+  splitSpeakers,
   styledRuns,
   subtitleAlignment,
   subtitleNotes,
@@ -70,6 +72,73 @@ function translate(output: string, progress: "streaming" | "complete" | "partial
   const cues = parseSrt(srt)!;
   return translateSubtitles(cues, toWire(cues), output, progress);
 }
+
+describe("speakers", () => {
+  const cue = (n: number, ...lines: string[]) => `${n}\n00:00:0${n},000 --> 00:00:0${n},900\n${lines.join("\n")}`;
+  const srt = (...cues: string[]) => `${cues.join("\n\n")}\n`;
+
+  test("a column when every cue starts with a label that comes back, or with ids", () => {
+    const column = (text: string) => speakerColumn(parseSrt(text)!);
+    expect(column(srt(cue(1, "S01: Hello."), cue(2, "S02: Hi.")))).toBe(true);
+    expect(column(srt(cue(1, "S01: Hello.")))).toBe(true);
+    expect(column(srt(cue(1, "JOHN: Hello."), cue(2, "MARY: Hi."), cue(3, "JOHN: Bye.")))).toBe(true);
+    expect(column(srt(cue(1, "张三：你好。"), cue(2, "张三：再见。")))).toBe(true);
+    // Two different words before a colon are not speakers; nor are a time, a link or one cue without.
+    expect(column(srt(cue(1, "Note: one."), cue(2, "Warning: two.")))).toBe(false);
+    expect(column(srt(cue(1, "10:30 it starts"), cue(2, "10:30 again")))).toBe(false);
+    expect(column(srt(cue(1, "https://example.com"), cue(2, "https://example.com")))).toBe(false);
+    expect(column(srt(cue(1, "S01: Hello."), cue(2, "Hi.")))).toBe(false);
+    // A transcript may hear more than 12 voices; more than 12 names are not speakers.
+    const many = (label: (n: number) => string) =>
+      srt(
+        ...[...Array.from({ length: 14 }, (_, k) => label(k)), label(0)].map(
+          (l, k) => `${k + 1}\n00:00:${String(k + 10).padStart(2, "0")},000 --> 00:00:${k + 10},500\n${l}: line`,
+        ),
+      );
+    expect(parseSrt(many((k) => `S${k}`))).toHaveLength(15);
+    expect(column(many((k) => `S${String(k + 1).padStart(2, "0")}`))).toBe(true);
+    expect(column(many((k) => `Name${k}`))).toBe(false);
+  });
+
+  test("splitSpeakers takes the label off every line that has one", () => {
+    expect(splitSpeakers(["S01: Hello.", "still S01", "S02: Hi."])).toStrictEqual({
+      speakers: ["S01", null, "S02"],
+      lines: ["Hello.", "still S01", "Hi."],
+    });
+  });
+
+  test("ids are not sent and come back on the translation", () => {
+    const source = srt(cue(1, "S01: Hello."), cue(2, "S02: How are you?"), cue(3, "S02: Fine."));
+    const cues = parseSrt(source)!;
+    const wire = toWire(cues);
+    expect(wire.text).toBe("1\nHello.\n\n2\nHow are you?\n\n3\nFine.");
+    const t = translateSubtitles(cues, wire, "1\n你好。\n\n2\n你好吗？\n\n3\n很好。", "complete");
+    expect(parseSrt(t.srt)!.map((c) => c.lines)).toStrictEqual([["S01: 你好。"], ["S02: 你好吗？"], ["S02: 很好。"]]);
+  });
+
+  test("joined cues of different speakers name them all", () => {
+    const cues = parseSrt(srt(cue(1, "S01: Hello,"), cue(2, "S02: hi.")))!;
+    const t = translateSubtitles(cues, toWire(cues), "1\n你好，你好。\n\n2\n", "complete");
+    expect(parseSrt(t.srt)!.map((c) => c.lines)).toStrictEqual([["S01 / S02: 你好，你好。"]]);
+    // Such a translation, translated again, keeps them.
+    const again = parseSrt(t.srt)!;
+    expect(toWire(again).text).toBe("1\n你好，你好。");
+  });
+
+  test("a cue with a label on each line, translated line for line, keeps them on their lines", () => {
+    const cues = parseSrt(srt(cue(1, "S01: Hello.", "S02: Hi.")))!;
+    expect(toWire(cues).text).toBe("1\nHello.\nHi.");
+    const t = translateSubtitles(cues, toWire(cues), "1\n你好。\n嗨。", "complete");
+    expect(parseSrt(t.srt)![0]!.lines).toStrictEqual(["S01: 你好。", "S02: 嗨。"]);
+  });
+
+  test("names stay in the text for the model", () => {
+    const cues = parseSrt(srt(cue(1, "JOHN: Hello."), cue(2, "JOHN: Bye.")))!;
+    const wire = toWire(cues);
+    expect(wire.text).toBe("1\nJOHN: Hello.\n\n2\nJOHN: Bye.");
+    expect(wire.speakers).toBeUndefined();
+  });
+});
 
 describe("translateSubtitles", () => {
   test("puts each number's text under the source's index and timing, the tag back in front", () => {

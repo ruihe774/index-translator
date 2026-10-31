@@ -287,7 +287,7 @@ test.describe("text and Markdown", () => {
     await app.text.fill("kept");
     await pick(app.page, "report.doc", "ÐÏ");
     await expect(note(app.page)).toHaveText(
-      "report.doc was not opened: only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files and JPEG, PNG and WebP images can be.",
+      "report.doc was not opened: only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files, JPEG, PNG and WebP images, and WAV, Ogg, WebM and MKV recordings can be.",
     );
     await expect(note(app.page)).toHaveClass(/error/);
     await pick(app.page, "gbk.txt", Buffer.from([0xc4, 0xe3, 0xba, 0xc3]));
@@ -564,7 +564,8 @@ test.describe("PDF", () => {
     const input = app.page.locator("#open-file");
     await expect(input).toHaveAttribute(
       "accept",
-      ".txt,.md,.markdown,.srt,text/plain,text/markdown,application/x-subrip,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp",
+      // Recordings are offered: the mock server can transcribe them.
+      ".txt,.md,.markdown,.srt,text/plain,text/markdown,application/x-subrip,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp,.wav,.ogg,.oga,.opus,.webm,.mkv,.mka,audio/wav,audio/ogg,audio/webm,video/webm,video/x-matroska,audio/x-matroska",
     );
     await expect(app.page.getByRole("button", { name: "Open a file" })).toHaveAttribute(
       "title",

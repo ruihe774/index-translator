@@ -20,7 +20,7 @@
 import type { SegmentedText } from "../src/api.ts";
 import type { Format } from "./format.ts";
 import { type Block, type Inline, parseLines } from "./markdown.ts";
-import { parseSrt, shownText } from "./subtitles.ts";
+import { parseSrt, shownText, speakerColumn, splitSpeakers } from "./subtitles.ts";
 
 /** The languages IndexTTS-2.5 speaks; the same list as SPEECH_LANGUAGES in src/speech.ts. */
 export const SPEECH_LANGS = ["zh", "en", "ja", "es", "ar"] as const;
@@ -595,8 +595,11 @@ function blockUtterances(b: Block, lang: string): Utterance[] {
  * into the next cue, so the pause after a cue is a block's only where it ends a sentence.
  */
 function cueBlocks(text: string): { line: number; utterances: Utterance[] }[] {
-  return (parseSrt(text) ?? []).map((cue) => {
-    const shown = shownText(cue.lines);
+  const cues = parseSrt(text) ?? [];
+  // Speaker labels are in a column of their own, not read.
+  const speakers = speakerColumn(cues);
+  return cues.map((cue) => {
+    const shown = shownText(speakers ? splitSpeakers(cue.lines).lines : cue.lines);
     const pause = SENTENCE_END.test(shown) ? PAUSE_BLOCK : PAUSE_SENTENCE;
     return { line: cue.line, utterances: [{ text: shown, pause, derived: shownAs(shown) }] };
   });

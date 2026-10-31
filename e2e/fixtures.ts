@@ -5,7 +5,15 @@ import { expect, test as base } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
 import { CoverageReport } from "monocart-coverage-reports";
 
-import type { AlignedPair, AlignUnit, FinishReason, SegmentStatus, SpeechStatus, Voice } from "../src/api";
+import type {
+  AlignedPair,
+  AlignUnit,
+  FinishReason,
+  SegmentStatus,
+  SpeechStatus,
+  TranscriptSegment,
+  Voice,
+} from "../src/api";
 import { COVERAGE, mappedModule, REPORT } from "./coverage";
 import { portsOf } from "./ports";
 
@@ -24,6 +32,13 @@ export interface MockKnobs {
     audioSeconds?: number;
     failWith?: string;
     voices?: Voice[];
+    /** Transcription: unavailable with this reason; what it answers, one segment every `segmentDelayMs`. */
+    transcribeProblem?: string;
+    canSeparate?: boolean;
+    segments?: TranscriptSegment[];
+    segmentDelayMs?: number;
+    transcribeFailWith?: string;
+    truncated?: boolean;
   };
   /**
    * The mock browser of `POST /webpage` (the server allows `example.com` and `*.example.com`):
@@ -53,7 +68,11 @@ export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs"
   aborted: number;
   launches: string[];
   /** `requests` are the utterances asked of the speech engine, in order. */
-  speech: { requests: { text: string; lang: string; voice: string; speed: number }[] };
+  speech: {
+    requests: { text: string; lang: string; voice: string; speed: number }[];
+    /** The transcriptions asked for: how each was to be separated (`auto`, `on`, `off`). */
+    transcriptions: { separate: string }[];
+  };
   /** `requests` are the addresses asked of the mock browser, in order. */
   webpage: { requests: string[]; aborted: number };
   /** `requests` are the texts asked of the mock sentence model, one list per request. */

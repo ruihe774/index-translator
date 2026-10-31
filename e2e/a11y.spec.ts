@@ -2,6 +2,8 @@
 // Accessibility checks that need a rendered page: axe-core, reflow, text spacing, keyboard order.
 // The acceptance record is A11Y-ACCEPTANCE.md.
 
+import { join } from "node:path";
+
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 
@@ -964,3 +966,60 @@ for (const scheme of ["light", "dark"] as const) {
     expect(await overflow(app.page)).toBeLessThanOrEqual(0);
   });
 }
+
+// A recording to transcribe: the dialog with its track choice, and the transcript with its Speaker column.
+const TRANSCRIBE_DIALOG = (page: Page) => page.getByRole("dialog", { name: "Transcribe this recording?" });
+const TRANSCRIPT = [
+  { start: 0.2, end: 1.1, speaker: "S01", text: "Hello there." },
+  { start: 1.3, end: 2, speaker: "S02", text: "How are you?" },
+];
+
+function pickMedia(page: Page, name: string) {
+  return page.locator("#open-file").setInputFiles(join(import.meta.dirname, "..", "test", "fixtures", "media", name));
+}
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`the transcription dialog and a transcript pass axe in ${scheme} mode`, async ({ app, mock }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await mock.set({ speech: { segments: TRANSCRIPT } });
+    await app.open();
+    await pickMedia(app.page, "tracks.mkv");
+    const dialog = TRANSCRIBE_DIALOG(app.page);
+    await expect(dialog).toBeVisible();
+    await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+    await settle(app.page);
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    await dialog.getByRole("button", { name: "Transcribe" }).click();
+    await expect(app.page.locator("#file-note")).toContainText("tracks.mkv: transcribed, 2 cues");
+    await expect(app.page.locator("#source-view table th[scope=col]")).toHaveCount(4);
+    await settle(app.page);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+  });
+}
+
+test("the transcription dialog is keyboard operable, fits 320 px, and its tracks are 24 px", async ({ app }) => {
+  await app.page.setViewportSize({ width: 320, height: 640 });
+  await app.open();
+  await pickMedia(app.page, "tracks.mkv");
+  const dialog = TRANSCRIBE_DIALOG(app.page);
+  await expect(dialog).toBeVisible();
+  const box = (await dialog.boundingBox())!;
+  expect(box.x).toBeGreaterThanOrEqual(0);
+  expect(box.x + box.width).toBeLessThanOrEqual(320);
+  for (const track of await dialog.locator(".transcribe-track").all()) {
+    expect((await track.boundingBox())!.height).toBeGreaterThanOrEqual(24);
+  }
+  // From Cancel, Shift+Tab reaches the music choice, then the checked track; arrows move between the usable ones.
+  await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await app.page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByLabel("Take out music first")).toBeFocused();
+  await app.page.keyboard.press("Shift+Tab");
+  await expect(dialog.getByRole("radio", { name: /^Japanese/ })).toBeFocused();
+  await app.page.keyboard.press("ArrowUp");
+  await expect(dialog.getByRole("radio", { name: /^Commentary/ })).toBeChecked();
+  await app.page.keyboard.press("Escape");
+  await expect(dialog).toBeHidden();
+});

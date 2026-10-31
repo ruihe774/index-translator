@@ -226,14 +226,15 @@ images are shown as links and are not loaded.
 </details>
 
 <details>
-<summary><b>Open a file</b>: text, Markdown, subtitles, PDF, Word</summary>
+<summary><b>Open a file</b>: text, Markdown, subtitles, PDF, Word, recordings</summary>
 
 
 **Open**, next to the **From** language, takes the text from a file on your computer; dropping or pasting a
 file anywhere on the page does the same. A text, PDF or Word file is read by your browser and stays
 there: nothing is uploaded, and the server only receives the text you then send with
 **Translate**. An image is different: it is what gets translated, so **Translate** sends the image
-itself to the server (see Translate an image, below). Opening a file replaces what
+itself to the server (see Translate an image, below). So is a recording or a video: after you confirm,
+its audio is sent to the server to be transcribed (see Transcribe a recording, below). Opening a file replaces what
 is in the box and removes the translation of the old text; it never starts a translation.
 
 - **Plain text, Markdown and subtitles** (`.txt`, `.md`, `.markdown`, `.srt`, UTF-8, up to 2 MB) go
@@ -250,6 +251,8 @@ is in the box and removes the translation of the old text; it never starts a tra
   password-protected documents are not opened.
 - **Images** (`.jpg`, `.jpeg`, `.png`, `.webp`, up to 8 MB): the picture takes the place of the
   text box. See Translate an image, below.
+- **Recordings and videos** (`.wav`, `.ogg`, `.opus`, `.webm`, `.mkv`): transcribed into the box as
+  subtitles. See Transcribe a recording, below.
 
 What to expect from a PDF: the text comes from the PDF's text layer. A scanned page has none, and
 the app says so instead of filling the box (it does no character recognition). Where the PDF does
@@ -440,11 +443,38 @@ oddly in any language.
 
 ## Transcribe a recording (preview)
 
-The server can turn a recording into text, with who speaks when: `POST /api/v1/transcriptions`
-takes a WAV file (16 to 48 kHz) or an Ogg Opus file (`audio/ogg`, with `build_libopus.ts`), mono or
-stereo, up to 30 minutes, and streams the transcript
-segment by segment, each with its start and end time and a speaker label (`S01`, `S02`, …). The
-page has no button for it yet; see [`docs/openapi.yaml`](docs/openapi.yaml).
+The server can turn a recording into text, with who speaks when, and the page can then translate it
+as subtitles.
+
+Open, drop or paste a recording or a video: a WAV file (16 to 48 kHz, mono or stereo), an Ogg Opus
+file, or a WebM or MKV file whose audio is Opus (what browsers record, and what YouTube serves as
+WebM). A dialog says how long it is and asks before anything is sent. A video with several audio tracks
+lists them (language, name, codec), with the player's default chosen; a track that cannot be sent is
+listed with the reason. When the voice separation model is installed, **Take out music first** chooses
+whether music is taken out before transcribing (by default when music is heard).
+
+**Transcribe** sends the audio to the server and writes the transcript into the box as it comes,
+as a table of subtitles: one cue per stretch of speech, with its time in the video and its speaker
+(`S01`, `S02`, …, in a column of their own). **Translate** waits until the transcription has finished,
+and **Stop** ends it early, keeping what was written. The server stops at its next chance: while it
+takes the music out, or reads the recording before the first cue, that can take a while, and the
+page says "Stopping…" until it has; pressing **Stop** again stops waiting. Then **Translate** translates it like any
+subtitles (see Translate subtitles, above): the speaker labels are not sent to the model and are put
+back on the translated cues.
+
+- **Nothing is re-encoded:** a WAV or Ogg Opus file is sent as it is, and the Opus track of a WebM or
+  MKV file is copied into an Ogg file in your browser. Other codecs (AAC, Vorbis, AC-3, …), Opus with
+  more than two channels (5.1), and tracks stored compressed inside the file cannot be transcribed yet.
+  A server without libopus (`build_libopus.ts`) takes WAV files only.
+- **Long files:** only the first 30 minutes are transcribed. Where a video's audio starts late or
+  skips (a recording that dropped audio), silence is put in its place, so the cue times match the
+  video.
+- **Many cues:** a transcript of more than 200 cues gets the same warning as long subtitles: the
+  model may repeat earlier cues or stop early.
+
+`POST /api/v1/transcriptions` takes a WAV file (16 to 48 kHz) or an Ogg Opus file (`audio/ogg`, with
+`build_libopus.ts`), mono or stereo, up to 30 minutes, and streams the transcript segment by segment,
+each with its start and end time and a speaker label; see [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ```bash
 curl -N -H 'content-type: audio/wav' --data-binary @meeting.wav http://127.0.0.1:3000/api/v1/transcriptions
@@ -463,7 +493,7 @@ curl -N -H 'content-type: audio/wav' --data-binary @meeting.wav http://127.0.0.1
   for it to finish.
 - **Leaving the page:** a transcription does not stop when the connection drops. Its events can be
   read again for 30 minutes after it ends (`GET /api/v1/transcriptions/{id}/events`), and
-  `DELETE` cancels it.
+  `DELETE` cancels it. The page reconnects by itself when it comes back.
 
 ## Check long translations
 

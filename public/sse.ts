@@ -1,7 +1,7 @@
 // A small Server-Sent Events reader: turns a byte stream into { event, data } records.
 // Pure apart from the stream it is given; no DOM access, so it can be unit tested.
 
-import type { TranslateEvents } from "../src/api.ts";
+import type { TranscriptionEvents, TranslateEvents } from "../src/api.ts";
 
 export interface SseEvent<E extends string = string, D = unknown> {
   event: E;
@@ -14,6 +14,11 @@ export interface SseEvent<E extends string = string, D = unknown> {
 export type TranslateSseEvent = {
   [E in keyof TranslateEvents]: SseEvent<E, TranslateEvents[E]>;
 }[keyof TranslateEvents];
+
+/** An event of the stream of `POST /transcriptions`. */
+export type TranscriptionSseEvent = {
+  [E in keyof TranscriptionEvents]: SseEvent<E, TranscriptionEvents[E]>;
+}[keyof TranscriptionEvents];
 
 /**
  * Yields each event in an SSE response body, in order. The reader is cancelled when the

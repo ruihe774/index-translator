@@ -15,6 +15,11 @@
 // cues under the first of them and leaves the next empty, or skips a number; such cues are joined with
 // the one before (one cue of the translation, from the first one's start to the last one's end). A
 // number that does not follow the last one taken, or one past the end, is left out with its text.
+//
+// Speakers: when every cue starts with a label and a colon (`S01: …`, as transcripts are written,
+// `transcription.ts`), the table shows the labels in a column of their own (`speakerColumn`). Labels that
+// are only ids (`S01`) are taken off before sending, like the timestamps, and put back on the cues of the
+// translation; a name (`JOHN:`) stays in the text, for the model to write in the other language.
 
 import type { Alignment, BlockGroup } from "./paragraphs.ts";
 
@@ -113,17 +118,109 @@ export function parseSrt(text: string): Cue[] | null {
   return cues;
 }
 
+/** A speaker label at the start of a line: up to 24 characters before a colon (or a full-width one), then text. */
+const LABEL = /^([^\s:：<{][^:：]{0,23}?)\s*[:：]\s*(\S.*)$/u;
+/** A label that only tells speakers apart, as a transcription writes them: taken off before sending. */
+const SPEAKER_ID = /^S\d+(?: \/ S\d+)*$/;
+/**
+ * More labels than this in one text are not speakers, unless all are ids: a transcript of a film counts
+ * more voices (one of 442 cues had 24, the 13th by its 113th cue).
+ */
+const MAX_SPEAKERS = 12;
+
+/** A line's speaker label and the rest; null when the line does not start with one. */
+function labelOf(line: string): { speaker: string; text: string } | null {
+  const m = LABEL.exec(line);
+  if (!m) {
+    return null;
+  }
+  const speaker = m[1]!.trim();
+  // Not a time (10:30), a link (https://…) or a styling tag.
+  if (/^\d+$/.test(speaker) || m[2]!.startsWith("//") || speaker.includes("<")) {
+    return null;
+  }
+  return { speaker, text: m[2]! };
+}
+
+/** A cue's lines with the labels taken off: `speakers[i]` is line i's label, or null when it has none. */
+export function splitSpeakers(lines: string[]): {
+  speakers: (string | null)[];
+  lines: string[];
+} {
+  const split = lines.map((l) => labelOf(l));
+  return {
+    speakers: split.map((x) => x?.speaker ?? null),
+    lines: split.map((x, i) => x?.text ?? lines[i]!),
+  };
+}
+
+/**
+ * Whether the cues' speakers are shown in a column: every cue with text starts with a label, and either
+ * all labels are ids (a transcript, which has its column from its first cue, however many voices it
+ * hears) or there are at most MAX_SPEAKERS of them and one comes back (so two cues that happen to start
+ * "Note:" and "Warning:" do not).
+ */
+export function speakerColumn(cues: Cue[]): boolean {
+  const labels: string[] = [];
+  for (const cue of cues) {
+    if (cue.lines.length === 0) {
+      continue;
+    }
+    const first = labelOf(cue.lines[0]!);
+    if (!first) {
+      return false;
+    }
+    labels.push(first.speaker);
+  }
+  const distinct = new Set(labels);
+  if (labels.length === 0) {
+    return false;
+  }
+  return (
+    [...distinct].every((l) => SPEAKER_ID.test(l)) || (distinct.size <= MAX_SPEAKERS && distinct.size < labels.length)
+  );
+}
+
 /** What is sent for the cues, and which cue each number stands for. */
 export interface Wire {
   text: string;
   /** `sent[k]` is the position in the cues of the one sent as number k + 1. Cues with no text are not sent. */
   sent: number[];
+  /**
+   * When the speaker ids were taken off: `speakers[k]` are the labels of the lines of the cue sent as
+   * number k + 1 (null for a line without one).
+   */
+  speakers?: (string | null)[][];
 }
 
 export function toWire(cues: Cue[]): Wire {
   const sent = cues.flatMap((c, k) => (c.lines.length > 0 ? [k] : []));
-  const text = sent.map((k, n) => `${n + 1}\n${cues[k]!.lines.join("\n")}`).join("\n\n");
-  return { text, sent };
+  const split = sent.map((k) => splitSpeakers(cues[k]!.lines));
+  const strip =
+    speakerColumn(cues) && split.every((x) => x.speakers.every((label) => label === null || SPEAKER_ID.test(label)));
+  const lines = (n: number) => (strip ? split[n]!.lines : cues[sent[n]!]!.lines);
+  const text = sent.map((_, n) => `${n + 1}\n${lines(n).join("\n")}`).join("\n\n");
+  return strip ? { text, sent, speakers: split.map((x) => x.speakers) } : { text, sent };
+}
+
+/**
+ * The translated `lines` of the sent cues `fromN` to `toN` (1-based) with their speaker ids put back. One
+ * source line with a label: on the first line. A cue whose lines each had one, translated line for line:
+ * on the same lines. Otherwise (cues joined, lines merged) the labels of all of them, ` / ` between, on
+ * the first line: which words are whose cannot be told.
+ */
+function withSpeakers(speakers: (string | null)[][], fromN: number, toN: number, lines: string[]): string[] {
+  const group = speakers.slice(fromN - 1, toN);
+  const labelled = group.flat().filter((l) => l !== null);
+  const distinct = [...new Set(labelled.flatMap((l) => l.split(" / ")))];
+  if (distinct.length === 0 || lines.length === 0) {
+    return lines;
+  }
+  const [only] = group;
+  if (group.length === 1 && labelled.length > 1 && only!.length === lines.length) {
+    return lines.map((line, i) => (only![i] ? `${only![i]}: ${line}` : line));
+  }
+  return [`${distinct.join(" / ")}: ${lines[0]}`, ...lines.slice(1)];
 }
 
 /**
@@ -226,7 +323,7 @@ export function translateSubtitles(cues: Cue[], wire: Wire, output: string, prog
       }
     }
     const first = cues[from]!;
-    const lines = [...entry.lines];
+    const lines = wire.speakers ? withSpeakers(wire.speakers, fromN, toN, entry.lines) : [...entry.lines];
     if (first.tag) {
       lines[0] = first.tag + lines[0]!;
     }

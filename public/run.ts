@@ -1,4 +1,4 @@
-// One run of the page's long jobs (a translation, a page fetch): what Stop acts on. The state holds
+// One run of the page's long jobs (a translation, a page fetch, a transcription): what Stop acts on. The state holds
 // the current one (`state.running`), so the Stop button needs one permanent listener.
 
 import { API, ApiFailure, failureOf } from "./api.ts";
@@ -8,17 +8,36 @@ import type { ModelId } from "./select-model.ts";
 
 export class Run {
   readonly controller = new AbortController();
-  /** Set once the server has accepted a resumable translation. */
-  translationId: string | null = null;
+  /** Set once the server has accepted a resumable translation (or a transcription): what reconnecting reads. */
+  jobId: string | null = null;
+  /** What Stop deletes: a resumable translation or a transcription, once the server has accepted it. */
+  cancelUrl: string | null = null;
   stopped = false;
+  /**
+   * Set for a job whose server may take a while to stop (a transcription finishes the step it is in):
+   * the first Stop only tells the server and calls this, and the events are read on until the job's
+   * `cancelled`; a second Stop gives up waiting.
+   */
+  onStopping: (() => void) | null = null;
+  private cancelSent = false;
 
   /** The user pressed Stop. */
   stop() {
+    const waiting = this.onStopping !== null && this.cancelUrl !== null && !this.stopped;
     this.stopped = true;
-    this.controller.abort();
-    // The server keeps a resumable translation running without a reader, so it is told to stop.
-    if (this.translationId) {
-      void fetch(`${API}/translations/${this.translationId}`, { method: "DELETE", keepalive: true }).catch(() => {
+    if (waiting) {
+      this.onStopping?.();
+    } else {
+      this.controller.abort();
+    }
+    this.cancel();
+  }
+
+  private cancel() {
+    // The server keeps a resumable translation or a transcription running without a reader, so it is told to stop.
+    if (this.cancelUrl && !this.cancelSent) {
+      this.cancelSent = true;
+      void fetch(this.cancelUrl, { method: "DELETE", keepalive: true }).catch(() => {
         // best effort: the server also ends a translation nobody reads after its grace period
       });
     }
@@ -46,8 +65,8 @@ export async function streamTranslation(run: Run, body: string, model: ModelId, 
     onReconnecting: () => hooks.status("Connection lost. Reconnecting…"),
     onReconnected: () => hooks.status(translating(model)),
     connect: async (lastId, connection) => {
-      const res = run.translationId
-        ? await fetch(`${API}/translations/${run.translationId}/events`, {
+      const res = run.jobId
+        ? await fetch(`${API}/translations/${run.jobId}/events`, {
             headers: { "last-event-id": String(lastId) },
             signal: connection,
           })
@@ -60,7 +79,8 @@ export async function streamTranslation(run: Run, body: string, model: ModelId, 
       if (!res.ok || !res.body) {
         throw await failureOf(res);
       }
-      run.translationId ??= res.headers.get(TRANSLATION_ID_HEADER);
+      run.jobId ??= res.headers.get(TRANSLATION_ID_HEADER);
+      run.cancelUrl ??= run.jobId && `${API}/translations/${run.jobId}`;
       return res;
     },
   });

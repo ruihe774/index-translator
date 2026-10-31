@@ -6,10 +6,11 @@
 // Text, PDF and Word files never leave the browser: a text file is decoded here, a PDF or a Word
 // document by the libraries in public/vendor/, and the server only ever sees the text that is
 // sent for translation. An image
-// is the exception: it takes the place of the text, and Translate sends the file itself.
+// is the exception: it takes the place of the text, and Translate sends the file itself. So is a recording
+// or a video (`media`): after a dialog its audio is sent to be transcribed (transcribe-flow.ts).
 
 /** Plain text, Markdown and SubRip subtitles are the same to the page: which one a text is, is read from it. */
-export type FileKind = "text" | "pdf" | "docx" | "image";
+export type FileKind = "text" | "pdf" | "docx" | "image" | "media";
 
 const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
@@ -18,6 +19,8 @@ export const ACCEPT_TEXT = ".txt,.md,.markdown,.srt,text/plain,text/markdown,app
 export const ACCEPT_PDF = ".pdf,application/pdf";
 export const ACCEPT_DOCX = `.docx,${DOCX_TYPE}`;
 export const ACCEPT_IMAGE = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
+export const ACCEPT_MEDIA =
+  ".wav,.ogg,.oga,.opus,.webm,.mkv,.mka,audio/wav,audio/ogg,audio/webm,video/webm,video/x-matroska,audio/x-matroska";
 
 /** A text far beyond what a model takes is refused instead of freezing the text box. */
 export const MAX_TEXT_BYTES = 2 * 2 ** 20;
@@ -32,6 +35,21 @@ const TEXT_EXTENSIONS = ["txt", "text", "md", "markdown", "srt"];
 const TEXT_TYPES = ["text/plain", "text/markdown", "text/x-markdown", "application/x-subrip"];
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
+const MEDIA_EXTENSIONS = ["wav", "ogg", "oga", "opus", "webm", "mkv", "mka"];
+const MEDIA_TYPES = [
+  "audio/wav",
+  "audio/x-wav",
+  "audio/wave",
+  "audio/vnd.wave",
+  "audio/ogg",
+  "audio/opus",
+  "audio/webm",
+  "video/webm",
+  "audio/x-matroska",
+  "video/x-matroska",
+  "audio/matroska",
+  "video/matroska",
+];
 
 /** The kind of a picked file, by its name's extension, else by its media type; `null` when neither is taken. */
 export function fileKind(name: string, type: string): FileKind | null {
@@ -49,6 +67,9 @@ export function fileKind(name: string, type: string): FileKind | null {
   if (IMAGE_EXTENSIONS.includes(extension)) {
     return "image";
   }
+  if (MEDIA_EXTENSIONS.includes(extension)) {
+    return "media";
+  }
   const media = type.split(";")[0]!.trim().toLowerCase();
   if (media === "application/pdf") {
     return "pdf";
@@ -61,6 +82,9 @@ export function fileKind(name: string, type: string): FileKind | null {
   }
   if (IMAGE_TYPES.includes(media)) {
     return "image";
+  }
+  if (MEDIA_TYPES.includes(media)) {
+    return "media";
   }
   return null;
 }
@@ -89,9 +113,16 @@ export function megabytes(bytes: number): string {
 /** Why a picked file is not opened; `null` when it can be. */
 export function refusal(name: string, kind: FileKind | null, size: number): string | null {
   if (kind === null) {
-    return `${name} was not opened: only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files and JPEG, PNG and WebP images can be.`;
+    return `${name} was not opened: only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files, JPEG, PNG and WebP images, and WAV, Ogg, WebM and MKV recordings can be.`;
   }
-  const limit = { text: MAX_TEXT_BYTES, pdf: MAX_PDF_BYTES, docx: MAX_DOCX_BYTES, image: MAX_IMAGE_BYTES }[kind];
+  // A recording is read as a stream, so it has no limit here (media-file.ts has the server's).
+  const limit = {
+    text: MAX_TEXT_BYTES,
+    pdf: MAX_PDF_BYTES,
+    docx: MAX_DOCX_BYTES,
+    image: MAX_IMAGE_BYTES,
+    media: Number.POSITIVE_INFINITY,
+  }[kind];
   if (size > limit) {
     return `${name} was not opened: it is larger than ${megabytes(limit)}.`;
   }

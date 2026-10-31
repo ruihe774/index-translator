@@ -26,6 +26,10 @@ describe("fileKind", () => {
     expect(fileKind("photo.jpeg", "")).toBe("image");
     expect(fileKind("shot.png", "")).toBe("image");
     expect(fileKind("shot.webp", "")).toBe("image");
+    expect(fileKind("talk.WAV", "")).toBe("media");
+    expect(fileKind("talk.opus", "")).toBe("media");
+    expect(fileKind("clip.webm", "")).toBe("media");
+    expect(fileKind("film.mkv", "")).toBe("media");
   });
 
   test("falls back to the media type when the extension says nothing", () => {
@@ -38,6 +42,8 @@ describe("fileKind", () => {
     );
     expect(fileKind("image", "image/png")).toBe("image");
     expect(fileKind("blob", "image/webp")).toBe("image");
+    expect(fileKind("recording", "audio/ogg")).toBe("media");
+    expect(fileKind("video", "video/x-matroska")).toBe("media");
   });
 
   test("takes nothing else", () => {
@@ -46,6 +52,8 @@ describe("fileKind", () => {
     expect(fileKind("page.html", "text/html")).toBeNull();
     expect(fileKind("photo.gif", "image/gif")).toBeNull();
     expect(fileKind("scan.heic", "image/heic")).toBeNull();
+    expect(fileKind("song.mp3", "audio/mpeg")).toBeNull();
+    expect(fileKind("film.mp4", "video/mp4")).toBeNull();
     expect(fileKind("noextension", "")).toBeNull();
   });
 });
@@ -69,7 +77,7 @@ describe("decodeText", () => {
 describe("refusal", () => {
   test("names the file and the reason", () => {
     expect(refusal("a.doc", null, 10)).toContain(
-      "only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files and JPEG, PNG and WebP images",
+      "only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files, JPEG, PNG and WebP images, and WAV, Ogg, WebM and MKV recordings",
     );
     expect(refusal("a.docx", "docx", MAX_DOCX_BYTES + 1)).toContain("larger than 64 MB");
     expect(refusal("a.docx", "docx", MAX_DOCX_BYTES)).toBeNull();
@@ -77,6 +85,7 @@ describe("refusal", () => {
     expect(refusal("a.png", "image", MAX_IMAGE_BYTES)).toBeNull();
     expect(refusal("a.png", "image", 0)).toContain("empty");
     expect(refusal("a.txt", "text", 0)).toContain("empty");
+    expect(refusal("film.mkv", "media", 40 * 2 ** 30)).toBeNull();
     expect(refusal("a.txt", "text", MAX_TEXT_BYTES + 1)).toContain("larger than 2 MB");
     expect(refusal("a.pdf", "pdf", MAX_PDF_BYTES + 1)).toContain("larger than 256 MB");
   });

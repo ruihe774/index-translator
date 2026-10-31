@@ -1,12 +1,14 @@
 // The Open button: a text or Markdown file goes into the source box, a PDF is shown as a strip of
 // page thumbnails (elements/pdf-pages.ts) and the page that is clicked goes into the box as
 // Markdown, a Word document (.docx) goes into the box whole as Markdown, and an image (JPEG, PNG,
-// WebP) takes the place of the box. While a PDF is open the button reads Close and puts it away.
+// WebP) takes the place of the box, and a recording or a video (WAV, Ogg, WebM, MKV) is transcribed into
+// it after a dialog (transcribe-flow.ts). While a PDF is open the button reads Close and puts it away.
 // Nothing is translated by opening. The page (app.ts) supplies how a text or an image is put in
 // the box; open-file.ts holds the rules and the wording, pdf.ts and docx.ts the libraries.
 //
 // Opening happens in this browser: no request carries the file or says that one was opened. Only
-// Translate sends something, and for an image that is the file.
+// Translate sends something, and for an image that is the file; a recording's audio is sent once the
+// dialog is confirmed.
 
 import { DocxError, docxInstalled, readDocx } from "./docx.ts";
 import type { PdfPages } from "./elements/pdf-pages.ts";
@@ -14,6 +16,7 @@ import { formatOf } from "./format.ts";
 import {
   ACCEPT_DOCX,
   ACCEPT_IMAGE,
+  ACCEPT_MEDIA,
   ACCEPT_PDF,
   ACCEPT_TEXT,
   decodeText,
@@ -24,6 +27,7 @@ import {
 } from "./open-file.ts";
 import { openPdf, PdfError, pdfInstalled } from "./pdf.ts";
 import type { PdfDocument } from "./pdf.ts";
+import type { TranscribeFlow } from "./transcribe-flow.ts";
 
 export interface OpenUiDeps {
   button: HTMLElement;
@@ -44,6 +48,8 @@ export interface OpenUiDeps {
    * translation. The file is what Translate then sends; the picture becomes the page's to close.
    */
   loadImage: (file: File, picture: ImageBitmap) => void;
+  /** Reads a recording, asks in a dialog and transcribes it into the box (transcribe-flow.ts). */
+  transcribe: TranscribeFlow["open"];
 }
 
 export interface OpenUi {
@@ -51,6 +57,10 @@ export interface OpenUi {
   setBusy(busy: boolean): void;
   /** The box no longer holds the page that is marked in the strip. */
   deselect(): void;
+  /** Says `text` in the line about what was opened (how a transcription of it ended). */
+  tell(text: string, error: boolean): void;
+  /** Whether recordings are offered (the server can transcribe): the picker lists them only then. */
+  setMedia(on: boolean): void;
   /**
    * Clear emptied the box: the line about what was opened goes too, unless a PDF is open (it stays
    * open until Close, and its pages are still listed).
@@ -167,6 +177,16 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     say(note.text, note.failed ? "error" : "plain");
   }
 
+  async function openMedia(file: File, mine: number) {
+    say(`Reading ${file.name}…`);
+    const result = await d.transcribe(file, () => reading(false, mine));
+    reading(false, mine);
+    if (mine !== turn) {
+      return;
+    }
+    say(result?.text ?? "", result?.error ? "error" : "plain");
+  }
+
   async function openDocument(file: File, mine: number) {
     say(`Opening ${file.name}…`);
     let doc: PdfDocument;
@@ -208,7 +228,9 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
           ? openWord(file, mine)
           : kind === "image"
             ? openImage(file, mine)
-            : openText(file, mine));
+            : kind === "media"
+              ? openMedia(file, mine)
+              : openText(file, mine));
     }
   }
 
@@ -334,15 +356,26 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   d.pages.addEventListener("page", (e) => void takePage((e as CustomEvent<number>).detail));
 
   // Without a library the picker does not offer its files, and one that is picked anyway is refused
-  // by openPdf or readDocx.
-  d.input.accept = `${ACCEPT_TEXT},${ACCEPT_PDF},${ACCEPT_DOCX},${ACCEPT_IMAGE}`;
+  // by openPdf or readDocx; recordings are offered while the server can transcribe them, and one that
+  // is picked otherwise is refused by the transcription's dialog.
+  const offered = { pdf: true, docx: true, media: false };
+  const setAccept = () => {
+    d.input.accept = [
+      ACCEPT_TEXT,
+      ...(offered.pdf ? [ACCEPT_PDF] : []),
+      ...(offered.docx ? [ACCEPT_DOCX] : []),
+      ACCEPT_IMAGE,
+      ...(offered.media ? [ACCEPT_MEDIA] : []),
+    ].join(",");
+  };
+  setAccept();
   void Promise.all([pdfInstalled(), docxInstalled()]).then(([pdfOk, docxOk]) => {
     if (pdfOk && docxOk) {
       return;
     }
-    d.input.accept = [ACCEPT_TEXT, ...(pdfOk ? [ACCEPT_PDF] : []), ...(docxOk ? [ACCEPT_DOCX] : []), ACCEPT_IMAGE].join(
-      ",",
-    );
+    offered.pdf = pdfOk;
+    offered.docx = docxOk;
+    setAccept();
     d.button.title = NOT_INSTALLED[pdfOk ? "docx" : docxOk ? "pdf" : "both"];
   });
 
@@ -354,6 +387,15 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     },
     deselect() {
       d.pages.selected = null;
+    },
+    tell(text, error) {
+      say(text, error ? "error" : "plain");
+    },
+    setMedia(on) {
+      if (offered.media !== on) {
+        offered.media = on;
+        setAccept();
+      }
     },
     clearNote() {
       if (pdf === null) {

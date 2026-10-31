@@ -1,5 +1,5 @@
-// The page's confirm dialog: before a link in the output is opened, and before Translate fetches the
-// web page whose address is in the source box. A modal <dialog> keeps focus inside and returns it
+// The page's confirm dialog: before a link in the output is opened, before Translate fetches the
+// web page whose address is in the source box, and before an opened recording is sent to be transcribed. A modal <dialog> keeps focus inside and returns it
 // to what had it; Cancel comes first and has the initial focus.
 
 import { linkPrompt } from "./links.ts";
@@ -25,6 +25,8 @@ export interface DialogPrompt {
   preformatted?: boolean;
   /** The name of the button that only closes the dialog; "Cancel" unless the dialog asks nothing. */
   closeLabel?: string;
+  /** Form controls to fill in before choosing, shown above the buttons; the caller reads them afterwards. */
+  fields?: HTMLElement;
 }
 
 interface Parts {
@@ -33,6 +35,7 @@ interface Parts {
   message: HTMLElement;
   hint: HTMLElement;
   target: HTMLElement;
+  fields: HTMLElement;
   row: HTMLElement;
 }
 
@@ -53,12 +56,14 @@ function build(): Parts {
   hint.className = "link-dialog-hint";
   const target = document.createElement("p");
   target.className = "link-dialog-target";
+  const fields = document.createElement("div");
+  fields.className = "link-dialog-fields";
   const row = document.createElement("div");
   row.className = "link-dialog-buttons";
-  dialog.append(title, message, hint, target, row);
+  dialog.append(title, message, hint, target, fields, row);
   document.body.append(dialog);
   focusableWhenScrolling(target, "Details");
-  return { dialog, title, message, hint, target, row };
+  return { dialog, title, message, hint, target, fields, row };
 }
 
 function button(value: string, label: string, primary: boolean): HTMLButtonElement {
@@ -75,7 +80,7 @@ function button(value: string, label: string, primary: boolean): HTMLButtonEleme
 /** Asks `prompt`; resolves the value of the choice taken, or "cancel" (Cancel, Escape). */
 export function ask(prompt: DialogPrompt): Promise<string> {
   parts ??= build();
-  const { dialog, title, message, hint, target, row } = parts;
+  const { dialog, title, message, hint, target, fields, row } = parts;
   dialog.classList.toggle("warn", prompt.warn === true);
   title.textContent = prompt.title;
   message.textContent = prompt.message;
@@ -94,6 +99,8 @@ export function ask(prompt: DialogPrompt): Promise<string> {
   target.textContent = prompt.target;
   target.hidden = prompt.target === "";
   target.classList.toggle("preformatted", prompt.preformatted === true);
+  fields.replaceChildren(...(prompt.fields ? [prompt.fields] : []));
+  fields.hidden = !prompt.fields;
   const cancel = button("cancel", prompt.closeLabel ?? "Cancel", false);
   cancel.autofocus = true;
   const choices = prompt.choices.map((c, i) => button(c.value, c.label, i === prompt.choices.length - 1));

@@ -71,6 +71,7 @@ import {
   type Wire,
 } from "./subtitles.ts";
 import { initSyncState } from "./sync-state.ts";
+import { initTranscribeFlow } from "./transcribe-flow.ts";
 import { initWebpageFlow } from "./webpage-flow.ts";
 import { webpageLink } from "./webpage-link.ts";
 
@@ -154,12 +155,21 @@ function sourceLangOf(): string | undefined {
   return fromSelect.value === "auto" ? detectSource(textInput.value) : fromSelect.value;
 }
 
+/** What `#count` says of the source, and before it how a transcription into the box is going. */
+let countText = "";
+let transcribeProgress = "";
+
+function showCount(text = countText) {
+  countText = text;
+  setText(countEl, [transcribeProgress, countText].filter(Boolean).join(" · "));
+}
+
 function refreshSelection() {
   const s = currentSelection();
   setLang(textInput, sourceLangOf());
   if (sourceImage.file) {
     const { width, height } = sourceImage.size;
-    setText(countEl, `${sourceImage.file.name}, ${number.format(width)} × ${number.format(height)} pixels`);
+    showCount(`${sourceImage.file.name}, ${number.format(width)} × ${number.format(height)} pixels`);
     const documentChosen = modelChoice === DOCUMENT_MODEL;
     setText(adviceEl, imageAdviceMessage(documentChosen, fromSelect.value, toSelect.value, languageNote));
     options.disabled = false;
@@ -167,7 +177,7 @@ function refreshSelection() {
   }
   const cues = parseSrt(textInput.value);
   if (cues) {
-    setText(countEl, `${number.format(cues.length)} cues, ${number.format(s.letters)} letters`);
+    showCount(`${number.format(cues.length)} cues, ${number.format(s.letters)} letters`);
     const documentChosen = modelChoice === DOCUMENT_MODEL;
     setText(
       adviceEl,
@@ -178,7 +188,8 @@ function refreshSelection() {
   }
   // While a page is fetched the count says so instead (webpage-flow.ts).
   if (!webpage.fetching) {
-    setText(countEl, `${number.format(s.letters)} letters`);
+    // An empty box being transcribed into says only how that goes.
+    showCount(transcribing && !s.letters ? "" : `${number.format(s.letters)} letters`);
   }
   setText(adviceEl, adviceMessage(s, fromSelect.value, toSelect.value, languageNote));
   const documentModel = s.model === DOCUMENT_MODEL && s.reason !== "manual-document-unusable";
@@ -217,6 +228,10 @@ const views = {
 };
 
 let output: OutputView | null = null;
+/** While a transcription runs, the source's preview, which grows with it (as the output does with a translation). */
+let transcript: OutputView | null = null;
+/** A transcription is writing into the source box. */
+let transcribing = false;
 
 /** Sets one side's view state in one place. */
 function setView(side: keyof typeof views, format: Format, view: View) {
@@ -240,7 +255,11 @@ function showSource() {
   const preview = !image && views.source.view === "preview" && textInput.value.length > 0;
   showSwitch(sourceSwitch, "source");
   setLang(sourceView, sourceLangOf());
-  if (preview) {
+  transcript = null;
+  if (preview && transcribing) {
+    transcript = createOutput(sourceView, views.source.format);
+    transcript.show(textInput.value);
+  } else if (preview) {
     renderText(sourceView, textInput.value, views.source.format);
   } else {
     sourceView.replaceChildren();
@@ -365,6 +384,8 @@ const engine = initEngineStatus({
   el: $("engine"),
   onHealth: (health) => {
     webpage.available = health.webpage?.status === "available";
+    transcriber.configure(health.transcribe);
+    openUi.setMedia(health.transcribe?.status === "available");
     boundaries.configure(health.segment);
     aligner.configure(health.align);
   },
@@ -385,6 +406,17 @@ new MutationObserver(() => {
     outputArea.scrollTop = outputArea.scrollHeight;
   }
 }).observe(outputEl, { childList: true, subtree: true, characterData: true });
+
+/** The same for the source while a transcription writes into it. */
+let followingSource = true;
+for (const type of ["wheel", "touchmove", "pointerdown", "keydown"]) {
+  sourceArea.addEventListener(type, () => void (followingSource = false), { passive: true });
+}
+new MutationObserver(() => {
+  if (transcribing && followingSource) {
+    sourceArea.scrollTop = sourceArea.scrollHeight;
+  }
+}).observe(sourceView, { childList: true, subtree: true, characterData: true });
 
 // ---- translating -----------------------------------------------------------------------------
 
@@ -707,6 +739,49 @@ const openUi = initOpenUi({
   area: $("source-field"),
   load: loadSource,
   loadImage,
+  transcribe: (file, read) => transcriber.open(file, read),
+});
+
+// ---- transcribing a recording ----------------------------------------------------------------
+//
+// transcribe-flow.ts: an opened recording or video, transcribed by the server into the source box as
+// subtitles, which Translate then translates.
+
+const transcriber = initTranscribeFlow({
+  stopButton: stopBtn,
+  translateButton: translateBtn,
+  progress(text) {
+    transcribeProgress = text;
+    showCount();
+  },
+  announce: (text) => void ($("source-status").textContent = text),
+  outcome: (text, error) => openUi.tell(text, error),
+  stopReading: () => speech.stop(),
+  begin() {
+    loadSource("");
+    openUi.deselect();
+    transcribing = true;
+    followingSource = true;
+    textInput.readOnly = true;
+    showSourceAs("subtitles", "preview");
+  },
+  show(srt) {
+    textInput.value = srt;
+    if (transcript) {
+      transcript.show(srt);
+      refreshControls();
+    } else {
+      showSource();
+    }
+    refreshSoon();
+  },
+  end() {
+    transcribing = false;
+    textInput.readOnly = false;
+    const text = textInput.value;
+    showSourceAs(formatOf(text), text ? "preview" : "raw");
+    refreshSelection();
+  },
 });
 
 // ---- history ---------------------------------------------------------------------------------

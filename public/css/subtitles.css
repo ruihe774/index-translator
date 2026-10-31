@@ -33,6 +33,19 @@
     white-space: nowrap;
   }
 
+  /* Numbers line up on their last digit, in a column at least three digits wide, so it does not widen as
+     a growing transcript passes 9 and 99. Not `inline-size`: the text column's 100% squeezes the others
+     to their content, which a minimum withstands. */
+  th:first-child,
+  .cue-index {
+    text-align: end;
+  }
+
+  .cue-index {
+    box-sizing: content-box;
+    min-inline-size: 3ch;
+  }
+
   .cue-text {
     inline-size: 100%;
     padding-inline-end: 0;

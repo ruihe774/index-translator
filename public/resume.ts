@@ -4,7 +4,7 @@
 // visibility as options and has no DOM access itself (unit tested); `pageVisible` and `onPageWake`
 // are the real ones, touching the DOM only when called.
 
-import { sseEvents, type TranslateSseEvent } from "./sse.ts";
+import { type SseEvent, sseEvents, type TranslateSseEvent } from "./sse.ts";
 
 export interface ResumeOptions {
   /** Opens the stream: the first call (`lastId` 0) starts the translation, later ones read it again from after `lastId`. */
@@ -19,12 +19,16 @@ export interface ResumeOptions {
   onReconnected?: () => void;
   /** Delays between failed attempts; the stream gives up after the last one. */
   delays?: number[];
+  /** The response header that makes the stream resumable; `x-translation-id` by default. */
+  idHeader?: string;
 }
 
 const RETRY_DELAYS = [0, 500, 1000, 2000, 4000];
 
 /** `x-translation-id` is what makes a stream resumable; without it a failure is final. */
 export const TRANSLATION_ID_HEADER = "x-translation-id";
+/** The same for a transcription, which is always resumable. */
+export const TRANSCRIPTION_ID_HEADER = "x-transcription-id";
 
 /** `ResumeOptions.visible` for the page: whether it is on screen. */
 export function pageVisible(): boolean {
@@ -87,12 +91,12 @@ function whenVisible(o: ResumeOptions): Promise<void> {
 }
 
 /**
- * The events of one translation, in order and each once, however many connections it takes. Ends
+ * The events of one translation (or, as `T`, of a transcription), in order and each once, however many connections it takes. Ends
  * after a `done` or `error` event. A connection that fails, ends early, or is still open when the
  * page comes back is replaced by a new one that starts after the last event seen. Errors from the
  * first connection (a refused request) and from a server that does not support resuming are thrown.
  */
-export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<TranslateSseEvent> {
+export async function* resumableEvents<T extends SseEvent = TranslateSseEvent>(o: ResumeOptions): AsyncGenerator<T> {
   const delays = o.delays ?? RETRY_DELAYS;
   let lastId = 0;
   let resumable = false;
@@ -105,7 +109,7 @@ export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<Transla
     const signal = AbortSignal.any([o.signal, link.signal]);
     try {
       const res = await o.connect(lastId, signal);
-      if (lastId === 0 && res.headers.has(TRANSLATION_ID_HEADER)) {
+      if (lastId === 0 && res.headers.has(o.idHeader ?? TRANSLATION_ID_HEADER)) {
         resumable = true;
       }
       if (!res.body) {
@@ -115,7 +119,7 @@ export async function* resumableEvents(o: ResumeOptions): AsyncGenerator<Transla
         reconnecting = false;
         o.onReconnected?.();
       }
-      for await (const ev of sseEvents<TranslateSseEvent>(res.body)) {
+      for await (const ev of sseEvents<T>(res.body)) {
         failures = 0;
         const n = Number(ev.id);
         if (Number.isInteger(n) && n > lastId) {
