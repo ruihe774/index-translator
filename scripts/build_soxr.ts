@@ -43,7 +43,7 @@ const work = join(root, "vendor", ".build", "soxr");
 const source = join(work, "src");
 const build = join(work, "build");
 
-requireTools([...BUILD_TOOLS, ...COMPILERS], TOOLS_HINT);
+await requireTools([...BUILD_TOOLS, ...COMPILERS], TOOLS_HINT);
 // On Windows Ninja finds `cl` through the environment of a Developer Command Prompt.
 const buildEnv = windows ? (await msvc()).env : undefined;
 

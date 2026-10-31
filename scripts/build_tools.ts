@@ -44,9 +44,16 @@ export async function checkout(repo: string, commit: string, dir: string): Promi
   await run(["git", "-c", "advice.detachedHead=false", "checkout", "--quiet", "FETCH_HEAD"], dir);
 }
 
-/** Throws, with `hint`, unless every one of `tools` is on the PATH. */
-export function requireTools(tools: string[], hint: string): void {
-  const missing = tools.filter((tool) => !Bun.which(tool));
+/**
+ * Throws, with `hint`, unless every one of `tools` is on the PATH. On Windows that is the PATH of a Developer
+ * Command Prompt (`msvc()`), which has the CMake and Ninja that come with Visual Studio.
+ */
+export async function requireTools(tools: string[], hint: string): Promise<void> {
+  const path =
+    windows && tools.length > 0
+      ? Object.entries((await msvc()).env).find(([key]) => key.toUpperCase() === "PATH")?.[1]
+      : undefined;
+  const missing = tools.filter((tool) => !Bun.which(tool, { PATH: path }));
   if (missing.length > 0) {
     throw new Error(`${missing.join(", ")} not found; ${hint}`);
   }

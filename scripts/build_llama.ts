@@ -206,7 +206,7 @@ if (flags.has("--shim")) {
   if (flags.size > (cuda ? 2 : 1)) {
     throw new Error("--shim is used alone, or with --cuda");
   }
-  requireTools(windows ? [] : ["cc", "c++"], TOOLS_HINT);
+  await requireTools(windows ? [] : ["cc", "c++"], TOOLS_HINT);
   for (const header of HEADERS) {
     const name = header.slice(header.lastIndexOf("/") + 1);
     if (!(await Bun.file(join(dest, "include", name)).exists())) {
@@ -219,7 +219,7 @@ if (flags.has("--shim")) {
   process.exit(0);
 }
 
-requireTools([...BUILD_TOOLS, ...COMPILERS, ...(cuda ? [] : ["glslc"])], TOOLS_HINT);
+await requireTools([...BUILD_TOOLS, ...COMPILERS, ...(cuda ? [] : ["glslc"])], TOOLS_HINT);
 const cudaToolkit = cuda ? await findCuda() : undefined;
 // On Windows Ninja finds `cl` through the environment of a Developer Command Prompt.
 const buildEnv = windows ? (await msvc()).env : undefined;

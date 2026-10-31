@@ -38,8 +38,8 @@ CRLF and do not commit CRLF. Editors and `sed -i` in Git Bash keep LF; check wit
 `bun scripts/build_llama.ts`, `bun scripts/build_audiocpp.ts`, `bun scripts/build_soxr.ts` (libsoxr, as
 `soxr.dll`) and `bun scripts/build_libopus.ts` (libopus, as `opus.dll`; these two need only Git, CMake, Ninja and the
 Visual Studio tools) build for Windows with no administrator
-rights. They need: Git, CMake and Ninja (both on the PATH; `winget install Ninja-build.Ninja` installs Ninja
-for the current user), Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload
+rights. They need: Git, CMake and Ninja (on the PATH, or the ones Visual Studio ships, which the scripts find through
+`vcvars64.bat`; `winget install Ninja-build.Ninja` installs Ninja for the current user), Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload
 (found with `vswhere`; `vcvars64.bat` supplies `cl`, whose environment the scripts hand to CMake), and the Vulkan
 SDK (`glslc`, headers, `vulkan-1.lib`; sets `VULKAN_SDK`). As on Linux, CMake's Ninja generator is used
 (single-configuration, `CMAKE_BUILD_TYPE=Release`); a build tree kept with `--keep` from before this (Visual

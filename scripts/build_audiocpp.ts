@@ -92,7 +92,7 @@ const work = join(root, "vendor", ".build", directory);
 const source = join(work, "src");
 const build = join(work, "build");
 
-requireTools([...BUILD_TOOLS, ...COMPILERS, ...(cuda ? [] : ["glslc"])], TOOLS_HINT);
+await requireTools([...BUILD_TOOLS, ...COMPILERS, ...(cuda ? [] : ["glslc"])], TOOLS_HINT);
 const cudaToolkit = cuda ? await findCuda() : undefined;
 // On Windows Ninja finds `cl` through the environment of a Developer Command Prompt.
 const buildEnv = windows ? (await msvc()).env : undefined;
