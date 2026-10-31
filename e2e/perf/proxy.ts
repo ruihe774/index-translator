@@ -110,23 +110,23 @@ export function startProxy(options: { port: number; upstream: string; tls?: Cert
           headers.set("etag", bumped(etag));
         }
       }
-      const reader = source?.getReader();
+      // Read in full first, at the speed of loopback: a body pulled at the pace of the throttle would leave the app's
+      // connection idle for longer than its timeout when the link is slow and the queue long.
+      const data = source ? new Uint8Array(await new Response(source).arrayBuffer()) : new Uint8Array();
+      let offset = 0;
       const body = new ReadableStream<Uint8Array>({
         async pull(controller) {
-          const read = await reader?.read();
-          if (!read || read.done) {
+          if (offset >= data.length) {
             entry.end = performance.now();
             controller.close();
             return;
           }
-          for (let i = 0; i < read.value.length; i += SLICE) {
-            const slice = read.value.subarray(i, i + SLICE);
-            await take(slice.length);
-            entry.bytes += slice.length;
-            controller.enqueue(slice);
-          }
+          const slice = data.subarray(offset, offset + SLICE);
+          offset += slice.length;
+          await take(slice.length);
+          entry.bytes += slice.length;
+          controller.enqueue(slice);
         },
-        cancel: () => reader?.cancel(),
       });
       return new Response(body, { status: up.status, headers });
     },
