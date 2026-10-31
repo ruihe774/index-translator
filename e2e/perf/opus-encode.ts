@@ -1,6 +1,6 @@
 // Benchmark: WebCodecs Opus encoding of a long recording in the page, as `OggOpusEncoder` (audio-upload.ts)
-// does it for a re-encoded upload (transcode.ts). Measures whether `opus.complexity` in the AudioEncoder
-// config speeds it up, and by how much.
+// does it for a re-encoded upload (transcode.ts). Measures what `opus.complexity` and `opus.application`
+// cost and buy.
 //
 //   SECONDS=1800 REPEATS=3 bun e2e/perf/opus-encode.ts
 //
@@ -27,12 +27,17 @@ const voices = ["voice_01", "voice_03", "voice_05", "voice_06", "voice_09", "voi
   readFileSync(join(root, "voices", `${name}.wav`)).toString("base64"),
 );
 
+/** `opus` dictionary members to force; anything unset keeps the value the config already has. */
+interface OpusKnobs {
+  complexity?: number;
+  application?: "lowdelay";
+}
 interface Run {
   label: string;
   channels: 1 | 2;
   bitrate: number;
-  /** A complexity to force, `null` for no `opus` dictionary at all, or unset for the page's own config. */
-  complexity?: number | null;
+  /** Knobs to force, `null` for no `opus` dictionary at all, or unset for the page's own config. */
+  opus?: OpusKnobs | null;
 }
 interface Result {
   run: Run;
@@ -43,18 +48,33 @@ interface Result {
   supported: boolean;
 }
 
-// The page's config (complexity 6), the browser's own default, and a sweep of the complexities the WebCodecs
-// spec allows. Mono at 64 kbps and stereo at 128 kbps are the two bitrates transcode.ts uses.
+// The page's config (complexity 6, application audio), whether CELT-only lowdelay adds to it, and the
+// browser's own default (maximum complexity) with lowdelay. Mono at 64 kbps and stereo at 128 kbps are
+// transcode.ts's.
 const runs: Run[] = [
   { label: "page config (6)", channels: 2, bitrate: 128_000 },
-  { label: "browser default", channels: 2, bitrate: 128_000, complexity: null },
-  { label: "complexity 0", channels: 2, bitrate: 128_000, complexity: 0 },
-  { label: "complexity 2", channels: 2, bitrate: 128_000, complexity: 2 },
-  { label: "complexity 4", channels: 2, bitrate: 128_000, complexity: 4 },
-  { label: "complexity 8", channels: 2, bitrate: 128_000, complexity: 8 },
-  { label: "complexity 10", channels: 2, bitrate: 128_000, complexity: 10 },
+  {
+    label: "6 + lowdelay",
+    channels: 2,
+    bitrate: 128_000,
+    opus: { complexity: 6, application: "lowdelay" },
+  },
+  { label: "browser default", channels: 2, bitrate: 128_000, opus: null },
+  {
+    label: "10 + lowdelay",
+    channels: 2,
+    bitrate: 128_000,
+    opus: { complexity: 10, application: "lowdelay" },
+  },
+  { label: "4 + lowdelay", channels: 2, bitrate: 128_000, opus: { complexity: 4, application: "lowdelay" } },
+  { label: "2 + lowdelay", channels: 2, bitrate: 128_000, opus: { complexity: 2, application: "lowdelay" } },
   { label: "page config (6) mono", channels: 1, bitrate: 64_000 },
-  { label: "browser default mono", channels: 1, bitrate: 64_000, complexity: null },
+  {
+    label: "6 + lowdelay mono",
+    channels: 1,
+    bitrate: 64_000,
+    opus: { complexity: 6, application: "lowdelay" },
+  },
 ];
 
 const app = Bun.spawn(["bun", "e2e/mock-server.ts"], {
@@ -112,17 +132,17 @@ try {
       };
       const planes = { 1: planesOf(1), 2: planesOf(2) };
 
-      // Inject `opus` into whatever config the page's encoder builds (`configure` is where it goes): a number
-      // forces that complexity, `null` drops the dictionary (the browser default), unset keeps the page's.
+      // Inject `opus` into whatever config the page's encoder builds (`configure` is where it goes): knobs
+      // force those members, `null` drops the dictionary (the browser default), unset keeps the page's.
       // eslint-disable-next-line @typescript-eslint/unbound-method -- called with the encoder as `this` below
       const { configure: original } = AudioEncoder.prototype;
-      let extra: number | null | undefined;
+      let extra: OpusKnobs | null | undefined;
       AudioEncoder.prototype.configure = function configure(this: AudioEncoder, config: AudioEncoderConfig) {
         const { opus, ...rest } = config;
         if (extra === null) {
           return original.call(this, rest);
         }
-        return original.call(this, { ...rest, opus: extra === undefined ? opus : { ...opus, complexity: extra } });
+        return original.call(this, { ...rest, opus: extra === undefined ? opus : { ...opus, ...extra } });
       };
       // The Ogg muxer picks a random stream serial; a fixed one makes outputs comparable byte for byte.
       const { random } = Math;
@@ -157,16 +177,16 @@ try {
         // Rotate the order each repeat, so a drift of the machine does not land on one config.
         const order = runs.slice(repeat % runs.length).concat(runs.slice(0, repeat % runs.length));
         for (const run of order) {
-          extra = run.complexity;
+          extra = run.opus;
           const config: AudioEncoderConfig = {
             codec: "opus",
             sampleRate: 48_000,
             numberOfChannels: run.channels,
             bitrate: run.bitrate,
           };
-          if (run.complexity !== null) {
+          if (run.opus !== null) {
             // The page's config is complexity 6 (audio-upload.ts); the explicit runs take that as the base.
-            config.opus = { ...config.opus, complexity: run.complexity ?? 6 };
+            config.opus = { ...config.opus, complexity: 6, ...run.opus };
           }
           const supported = (await AudioEncoder.isConfigSupported(config)).supported === true;
           // Warm up the encoder thread and the JIT on a short run before the measured one.
