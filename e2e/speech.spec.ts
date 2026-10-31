@@ -814,6 +814,41 @@ test.describe("recording a voice sample", () => {
     await expect(app.page.getByLabel("Voice for reading aloud").locator("option:checked")).toContainText("Recording");
   });
 
+  // The mock server has libopus, so `upload_types` lists Ogg Opus; the server decodes it for real before the
+  // mock engine checks the WAV it became.
+  for (const encoder of [true, false]) {
+    test(`the sample is sent as ${encoder ? "Ogg Opus by AudioEncoder" : "WAV without AudioEncoder"}`, async ({
+      app,
+    }) => {
+      if (!encoder) {
+        await app.page.addInitScript(() => {
+          Object.defineProperty(window, "AudioEncoder", { value: undefined });
+        });
+      }
+      const uploads: { type: string | null; magic: string }[] = [];
+      app.page.on("request", (r) => {
+        if (r.method() === "POST" && new URL(r.url()).pathname === "/api/v1/voices") {
+          const body = r.postDataBuffer();
+          uploads.push({
+            type: r.headers()["content-type"] ?? null,
+            magic: body?.subarray(0, 4).toString("latin1") ?? "",
+          });
+        }
+      });
+      await app.open();
+      await app.page.getByText("Reading aloud", { exact: true }).click();
+      const record = app.page.locator("#voice-record");
+      await record.click();
+      await expect(record).toHaveText("Stop recording");
+      await quiet(app.page, 1500);
+      await record.click();
+      await expect(app.page.locator("#clone-status")).toContainText(/Voice "Recording .*" added/);
+      expect(uploads).toStrictEqual([
+        encoder ? { type: "audio/ogg", magic: "OggS" } : { type: "audio/wav", magic: "RIFF" },
+      ]);
+    });
+  }
+
   test("a second click during the permission prompt opens no second stream, and every track ends", async ({ app }) => {
     await app.page.addInitScript(() => {
       const real = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);

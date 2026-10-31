@@ -9,6 +9,7 @@ import { json } from "./http";
 import { IMAGE_FORMATS, MAX_IMAGE_BYTES, MAX_IMAGE_PIXELS } from "./image";
 import type { Engine } from "./llama";
 import { defaultModelSpec, MODELS } from "./models";
+import { uploadTypes } from "./opus-file";
 import { launchMode } from "./preflight";
 import type { SlotQueue } from "./queue";
 import { MAX_ALIGN_CHARS, MAX_SEGMENT_CHARS, missingSegmentModels, type Segmenter } from "./segment";
@@ -65,6 +66,7 @@ export function createStatus(d: HealthDeps) {
       max_seconds: MAX_TRANSCRIBE_SECONDS,
       max_bytes: MAX_TRANSCRIBE_BYTES,
       sample_rate: { min: MIN_TRANSCRIBE_RATE, max: MAX_TRANSCRIBE_RATE },
+      upload_types: uploadTypes(cfg.audioDir),
     };
   }
 

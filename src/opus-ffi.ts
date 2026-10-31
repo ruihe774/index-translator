@@ -1,7 +1,9 @@
 // libopus (include/opus.h) through bun:ffi: the encoder of the speech stream (src/opus-stream.ts) and the
-// decoder the tests read that stream back with. The library is the build of scripts/build_libopus.ts, beside
-// the engine directory, opened by its full path so an Opus installed on the system is never used. Both run on
-// the main thread: encoding a minute of speech takes about a tenth of a second.
+// decoder of uploaded Ogg Opus recordings (src/opus-file.ts), which the tests also read that stream back with.
+// The library is the build of scripts/build_libopus.ts, beside the engine directory, opened by its full path so
+// an Opus installed on the system is never used. The encoder and a voice sample's decoder run on the main
+// thread (encoding a minute of speech takes about a tenth of a second); a recording to transcribe, up to 30
+// minutes, is decoded on the speech worker.
 
 import { CString, dlopen } from "bun:ffi";
 import { existsSync } from "node:fs";

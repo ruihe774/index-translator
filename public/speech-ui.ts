@@ -26,7 +26,7 @@ import type { SentenceBoundaries } from "./segment.ts";
 import { type BoundaryLookup, canSpeak, type Segment, speechSegments, speechTexts } from "./speech-text.ts";
 import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
 import { setState, type Side, state } from "./state.ts";
-import { audioToWav, uploadVoice } from "./voice-sample.ts";
+import { audioToSample, uploadVoice } from "./voice-sample.ts";
 
 const SIDES: Side[] = ["source", "output"];
 const SIDE_NAME: Record<Side, string> = { source: "source text", output: "translation" };
@@ -150,6 +150,8 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
   const { controls, voiceSettings, settingsPanel, meta, panes } = deps;
   let voicesCheck: Promise<void> | null = null;
   let voicesCheckedAt = 0;
+  /** What `POST /voices` takes (`upload_types`), from the last voice list; WAV until one has arrived. */
+  let uploadTypes: readonly string[] = ["audio/wav"];
   let scrolledTo: string | null = null;
   /** The side whose Read aloud is pressed and whose gutter is shown. */
   let open: Side | null = null;
@@ -428,7 +430,8 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     voicesCheck ??= (async () => {
       try {
         const res = await fetch(`${API}/voices`);
-        const body = (await res.json()) as Pick<VoiceList, "status" | "error" | "voices">;
+        const body = (await res.json()) as Pick<VoiceList, "status" | "error" | "voices" | "upload_types">;
+        uploadTypes = body.upload_types;
         if (body.status === "unavailable") {
           state.speechProblem = `Reading aloud is not available: ${body.error ?? "it is not installed"}.`;
         } else {
@@ -476,7 +479,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     // The server may first take the voice out of music and noise, which takes a few seconds.
     voiceSettings.status = "Processing the sample…";
     try {
-      const voice = await uploadVoice(API, name, await audioToWav(audio));
+      const voice = await uploadVoice(API, name, await audioToSample(audio, uploadTypes));
       voiceSettings.addVoice(voice);
       player.update({ voice: voice.id });
       setState({ speechProblem: "" });

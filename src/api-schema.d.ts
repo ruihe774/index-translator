@@ -64,10 +64,13 @@ export interface paths {
         put?: never;
         /**
          * Upload a voice sample for cloning
-         * @description The body is a WAV recording (`audio/wav`, at most `max_sample_bytes`) of the voice to
-         *     imitate. It must last between `sample_seconds.min` and `sample_seconds.max` seconds, have the
-         *     sample rate `sample_rate` (44.1 kHz; the server does not resample), and be mono or stereo
-         *     (`400` otherwise). It becomes a voice in `GET /voices`
+         * @description The body is a recording (at most `max_sample_bytes`) of the voice to imitate, in one of
+         *     `upload_types`: a WAV file (`audio/wav`), or an Ogg Opus file (`audio/ogg`) when the server
+         *     has libopus. It must last between `sample_seconds.min` and `sample_seconds.max` seconds and be
+         *     mono or stereo (`400` otherwise). A WAV file must have the sample rate `sample_rate` (44.1 kHz;
+         *     the server does not resample it). Ogg Opus is decoded at 48 kHz and resampled by the server; it
+         *     must be one logical stream (no chained or multiplexed Ogg) with channel mapping family 0, as
+         *     Opus encoders write it. It becomes a voice in `GET /voices`
          *     until the server stops; nothing is persisted. At most `max_voices` uploads exist at once:
          *     once that many are stored, the next upload is refused with `400` (`invalid_request`,
          *     `details.field` `body`) and nothing is evicted.
@@ -310,9 +313,10 @@ export interface paths {
         put?: never;
         /**
          * Transcribe a recording, with speakers and times (preview)
-         * @description The body is a WAV recording (`audio/wav`; integer PCM of 8, 16, 24 or 32 bits or float of 32
-         *     or 64 bits), mono or stereo, at 16 to 48 kHz, of at most 30 minutes and
-         *     `transcribe.max_bytes` (see `GET /health`). A recording that is not usable is refused at once
+         * @description The body is a recording in one of `transcribe.upload_types` (see `GET /health`): a WAV file
+         *     (`audio/wav`; integer PCM of 8, 16, 24 or 32 bits or float of 32 or 64 bits) at 16 to 48 kHz,
+         *     or an Ogg Opus file (`audio/ogg`, when the server has libopus; one logical stream, channel
+         *     mapping family 0), mono or stereo, of at most 30 minutes and `transcribe.max_bytes`. A recording that is not usable is refused at once
          *     with `400`, before anything is queued.
          *
          *     What happens to it, in order:
@@ -895,6 +899,15 @@ export interface components {
                     /** @example 48000 */
                     max: number;
                 };
+                /**
+                 * @description The media types a recording may be uploaded as: always `audio/wav`, and `audio/ogg`
+                 *     (Ogg Opus) when the server has libopus.
+                 * @example [
+                 *       "audio/wav",
+                 *       "audio/ogg"
+                 *     ]
+                 */
+                upload_types: string[];
             };
             /**
              * @description `POST /webpage`. `available` when domains are allowed and the Markdown converter is
@@ -1041,13 +1054,22 @@ export interface components {
                 max: number;
             };
             /**
-             * @description Sample rate a `POST /voices` recording must have, in Hz. `min` and `max` are equal: the
-             *     voice separation model takes one rate only.
+             * @description Sample rate a `POST /voices` WAV recording must have, in Hz. `min` and `max` are equal: the
+             *     voice separation model takes one rate only. Ogg Opus is resampled by the server.
              */
             sample_rate: {
                 min: number;
                 max: number;
             };
+            /**
+             * @description The media types a `POST /voices` recording may be uploaded as: always `audio/wav`, and
+             *     `audio/ogg` (Ogg Opus) when the server has libopus.
+             * @example [
+             *       "audio/wav",
+             *       "audio/ogg"
+             *     ]
+             */
+            upload_types: string[];
             /** @description Empty when speech is unavailable or the voices directory holds no WAV file. */
             voices: components["schemas"]["Voice"][];
         };
@@ -1298,6 +1320,18 @@ export interface components {
             };
         };
         /**
+         * @description The body is not declared as one of the upload types the server takes (`unsupported_media_type`):
+         *     `audio/wav`, or `audio/ogg` when the server has libopus.
+         */
+        UnsupportedRecordingType: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
+        /**
          * @description A browser page from another origin called the API (`forbidden_origin`), or the request's
          *     Host header is not loopback, `HOST` or in `ALLOWED_HOSTS` (`forbidden_host`).
          */
@@ -1372,6 +1406,7 @@ export type ResponseEngineError = components['responses']['EngineError'];
 export type ResponseInternalError = components['responses']['InternalError'];
 export type ResponseMethodNotAllowed = components['responses']['MethodNotAllowed'];
 export type ResponseUnsupportedMediaType = components['responses']['UnsupportedMediaType'];
+export type ResponseUnsupportedRecordingType = components['responses']['UnsupportedRecordingType'];
 export type ResponseForbidden = components['responses']['Forbidden'];
 export type ResponseNotFound = components['responses']['NotFound'];
 export type $defs = Record<string, never>;
@@ -1413,7 +1448,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            415: components["responses"]["UnsupportedMediaType"];
+            415: components["responses"]["UnsupportedRecordingType"];
             429: components["responses"]["QueueFull"];
             500: components["responses"]["InternalError"];
             /** @description The speech engine failed to load its model or to synthesize the text (`speech_error`). */
@@ -1478,6 +1513,7 @@ export interface operations {
         requestBody: {
             content: {
                 "audio/wav": string;
+                "audio/ogg": string;
             };
         };
         responses: {
@@ -1501,7 +1537,7 @@ export interface operations {
                     "application/json": components["schemas"]["Error"];
                 };
             };
-            415: components["responses"]["UnsupportedMediaType"];
+            415: components["responses"]["UnsupportedRecordingType"];
             500: components["responses"]["InternalError"];
             /** @description The engine failed to separate the voice from the recording (`speech_error`). */
             502: {
@@ -1888,6 +1924,7 @@ export interface operations {
         requestBody: {
             content: {
                 "audio/wav": string;
+                "audio/ogg": string;
             };
         };
         responses: {

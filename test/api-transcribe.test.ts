@@ -102,7 +102,7 @@ describe("POST /transcriptions", () => {
 
   test("a recording the engine cannot use is refused before it is queued", async () => {
     const cases: [Uint8Array | string, RegExp][] = [
-      ["", /must be a WAV recording/],
+      ["", /must be a WAV or Ogg Opus recording/],
       ["not a wav", /not a WAV file/],
       [recording(1, 8000), /sample rate of 8000 Hz/],
       [recording(1, 96_000), /sample rate of 96000 Hz/],

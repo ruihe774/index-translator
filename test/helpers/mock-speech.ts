@@ -3,6 +3,7 @@
 
 import { readAnonymousFile } from "../../src/anonymous-file";
 import type { TranscriptSegment } from "../../src/api";
+import { OPUS_TYPE } from "../../src/opus-stream";
 import {
   SeparationError,
   SpeechError,
@@ -170,7 +171,8 @@ export const speechLauncher: SpeechLauncher = () => ({
   async transcribe(req, abort, onProgress) {
     mockSpeech.transcriptions.push(req);
     // The file is there while it runs, as the worker reads it.
-    const duration = validateRecording(readAnonymousFile(req.fd));
+    const recording = readAnonymousFile(req.fd);
+    const duration = validateRecording(recording, recording[0] === 0x4f ? OPUS_TYPE : "audio/wav");
     const flag = new Int32Array(abort);
     // As if the recording had music: `auto` separates when the model is installed.
     const separated = req.separate !== "off" && mockSpeech.canSeparate;

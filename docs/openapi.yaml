@@ -173,7 +173,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "415":
-          $ref: "#/components/responses/UnsupportedMediaType"
+          $ref: "#/components/responses/UnsupportedRecordingType"
         "429":
           $ref: "#/components/responses/QueueFull"
         "500":
@@ -213,10 +213,13 @@ paths:
       operationId: addVoice
       summary: Upload a voice sample for cloning
       description: |
-        The body is a WAV recording (`audio/wav`, at most `max_sample_bytes`) of the voice to
-        imitate. It must last between `sample_seconds.min` and `sample_seconds.max` seconds, have the
-        sample rate `sample_rate` (44.1 kHz; the server does not resample), and be mono or stereo
-        (`400` otherwise). It becomes a voice in `GET /voices`
+        The body is a recording (at most `max_sample_bytes`) of the voice to imitate, in one of
+        `upload_types`: a WAV file (`audio/wav`), or an Ogg Opus file (`audio/ogg`) when the server
+        has libopus. It must last between `sample_seconds.min` and `sample_seconds.max` seconds and be
+        mono or stereo (`400` otherwise). A WAV file must have the sample rate `sample_rate` (44.1 kHz;
+        the server does not resample it). Ogg Opus is decoded at 48 kHz and resampled by the server; it
+        must be one logical stream (no chained or multiplexed Ogg) with channel mapping family 0, as
+        Opus encoders write it. It becomes a voice in `GET /voices`
         until the server stops; nothing is persisted. At most `max_voices` uploads exist at once:
         once that many are stored, the next upload is refused with `400` (`invalid_request`,
         `details.field` `body`) and nothing is evicted.
@@ -242,6 +245,10 @@ paths:
             schema:
               type: string
               format: binary
+          audio/ogg:
+            schema:
+              type: string
+              format: binary
       responses:
         "201":
           description: The new voice.
@@ -260,7 +267,7 @@ paths:
               schema:
                 $ref: "#/components/schemas/Error"
         "415":
-          $ref: "#/components/responses/UnsupportedMediaType"
+          $ref: "#/components/responses/UnsupportedRecordingType"
         "500":
           $ref: "#/components/responses/InternalError"
         "502":
@@ -721,9 +728,10 @@ paths:
       operationId: transcribe
       summary: Transcribe a recording, with speakers and times (preview)
       description: |
-        The body is a WAV recording (`audio/wav`; integer PCM of 8, 16, 24 or 32 bits or float of 32
-        or 64 bits), mono or stereo, at 16 to 48 kHz, of at most 30 minutes and
-        `transcribe.max_bytes` (see `GET /health`). A recording that is not usable is refused at once
+        The body is a recording in one of `transcribe.upload_types` (see `GET /health`): a WAV file
+        (`audio/wav`; integer PCM of 8, 16, 24 or 32 bits or float of 32 or 64 bits) at 16 to 48 kHz,
+        or an Ogg Opus file (`audio/ogg`, when the server has libopus; one logical stream, channel
+        mapping family 0), mono or stereo, of at most 30 minutes and `transcribe.max_bytes`. A recording that is not usable is refused at once
         with `400`, before anything is queued.
 
         What happens to it, in order:
@@ -762,6 +770,10 @@ paths:
         required: true
         content:
           audio/wav:
+            schema:
+              type: string
+              format: binary
+          audio/ogg:
             schema:
               type: string
               format: binary
@@ -1237,6 +1249,14 @@ components:
             $ref: "#/components/schemas/Error"
     UnsupportedMediaType:
       description: "The body is not declared as `Content-Type: application/json` (`unsupported_media_type`)."
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    UnsupportedRecordingType:
+      description: |
+        The body is not declared as one of the upload types the server takes (`unsupported_media_type`):
+        `audio/wav`, or `audio/ogg` when the server has libopus.
       content:
         application/json:
           schema:
@@ -1729,7 +1749,7 @@ components:
           description: |
             `POST /transcriptions` (a preview). `available` when the speech engine and the
             transcription model are installed; it does not affect `status`.
-          required: [status, separation, max_seconds, max_bytes, sample_rate]
+          required: [status, separation, max_seconds, max_bytes, sample_rate, upload_types]
           properties:
             status:
               type: string
@@ -1756,6 +1776,14 @@ components:
                 max:
                   type: integer
                   examples: [48000]
+            upload_types:
+              type: array
+              description: |
+                The media types a recording may be uploaded as: always `audio/wav`, and `audio/ogg`
+                (Ogg Opus) when the server has libopus.
+              items:
+                type: string
+              examples: [["audio/wav", "audio/ogg"]]
         webpage:
           type: object
           description: |
@@ -1955,6 +1983,7 @@ components:
         - max_sample_bytes
         - sample_seconds
         - sample_rate
+        - upload_types
         - max_voices
         - max_name_chars
         - voices
@@ -2002,14 +2031,22 @@ components:
         sample_rate:
           type: object
           description: |
-            Sample rate a `POST /voices` recording must have, in Hz. `min` and `max` are equal: the
-            voice separation model takes one rate only.
+            Sample rate a `POST /voices` WAV recording must have, in Hz. `min` and `max` are equal: the
+            voice separation model takes one rate only. Ogg Opus is resampled by the server.
           required: [min, max]
           properties:
             min:
               type: integer
             max:
               type: integer
+        upload_types:
+          type: array
+          description: |
+            The media types a `POST /voices` recording may be uploaded as: always `audio/wav`, and
+            `audio/ogg` (Ogg Opus) when the server has libopus.
+          items:
+            type: string
+          examples: [["audio/wav", "audio/ogg"]]
         voices:
           type: array
           description: Empty when speech is unavailable or the voices directory holds no WAV file.

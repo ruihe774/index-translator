@@ -19,6 +19,7 @@ import {
   VoiceSeparator,
 } from "./audiocpp-ffi";
 import { soxrDir } from "./ffi-util";
+import { readRecording } from "./opus-file";
 import { soxrResampler } from "./resample";
 import {
   cutAudio,
@@ -210,7 +211,7 @@ serve<SpeechProtocol>({
     }
     const { dir, threads } = models.transcriber;
     const resample = soxrResampler(soxrDir(dir));
-    const pcm = readWav(readAnonymousFile(fd));
+    const pcm = readRecording(readAnonymousFile(fd), dir);
     const duration = pcm.samples.length / pcm.channels / pcm.sampleRate;
     const at16k = (p: Pcm) => resample(mono(p), 1, p.sampleRate, TRANSCRIBE_RATE);
     let heard = at16k(pcm);

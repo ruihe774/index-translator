@@ -4,13 +4,13 @@
 //
 // The encoder is libopus (vendor/opus, built by scripts/build_libopus.ts; src/opus-ffi.ts). It is given
 // 48 kHz mono, so the engine's 22.05 kHz audio is resampled with libsoxr first (src/resample.ts); the
-// muxer is src/ogg-opus.ts.
+// muxer is public/ogg-opus.ts, which the page shares.
 //
 // The engine returns the whole utterance at once, so what is streamed is the encoded file: pages of
 // about a second, encoded as the client reads.
 
+import { concat, OggOpusMuxer, type OpusPacket } from "../public/ogg-opus";
 import { lazyOptional } from "./lazy-optional";
-import { concat, OggOpusMuxer, type OpusPacket } from "./ogg-opus";
 import { opusDir, OpusEncoder, type OpusEncoderOptions, opusLibraryPath } from "./opus-ffi";
 import type { Resample } from "./resample";
 import type { Pcm } from "./wav";

@@ -11,5 +11,5 @@
     "noUncheckedIndexedAccess": true,
     "types": ["bun"]
   },
-  "include": ["src", "test", "scripts", "public/select-model.ts"]
+  "include": ["src", "test", "scripts", "public/select-model.ts", "public/ogg-opus.ts"]
 }

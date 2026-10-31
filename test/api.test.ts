@@ -74,6 +74,8 @@ describe("metadata endpoints", () => {
         max_seconds: 1800,
         max_bytes: 160 * 1024 * 1024,
         sample_rate: { min: 16_000, max: 48_000 },
+        // No libopus beside the test config's audio directory: WAV only.
+        upload_types: ["audio/wav"],
       },
       webpage: { status: "unavailable", error: "no domains are allowed; list them in ALLOWED_WEBPAGE_DOMAINS" },
     });

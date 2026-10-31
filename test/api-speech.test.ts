@@ -202,6 +202,7 @@ describe("GET /voices and health", () => {
       max_sample_bytes: 8 * 1024 * 1024,
       sample_seconds: { min: 1, max: 15 },
       sample_rate: { min: 44_100, max: 44_100 },
+      upload_types: ["audio/wav"],
       voices: mockSpeech.voices,
     });
   });

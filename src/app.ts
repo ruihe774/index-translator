@@ -27,12 +27,15 @@ import type {
 } from "./api";
 import type { Config } from "./config";
 import { createDevReload, DEV_PREFIX } from "./dev-reload";
+import { soxrDir } from "./ffi-util";
 import { createStatus } from "./health";
 import { ApiError, cancelled, errorResponse, invalid, json, methodNotAllowed, unavailable } from "./http";
 import { prepareImage } from "./image";
 import { createJobs, type Emit, emitTranslation, TRANSCRIPTION_JOBS, TRANSLATION_JOBS } from "./jobs";
 import { Engine, type Launcher, launchNative } from "./llama";
 import { defaultModelSpec } from "./models";
+import { uploadTypes } from "./opus-file";
+import { OPUS_TYPE } from "./opus-stream";
 import {
   MAX_REQUEST_BYTES,
   mediaType,
@@ -50,6 +53,7 @@ import {
 import { LANGUAGES } from "./prompt";
 import { watchPublic } from "./public-watch";
 import type { Ticket } from "./queue";
+import { soxrResampler } from "./resample";
 import { nativeSegmenter, type Segmenter, type SegmentLauncher } from "./segment";
 import {
   MAX_SAMPLE_BYTES,
@@ -62,6 +66,7 @@ import {
   MIN_SAMPLE_SECONDS,
   MIN_SPEED,
   nativeSpeech,
+  opusSampleToWav,
   SAMPLE_RATE,
   type SeparateMode,
   SeparationError,
@@ -192,25 +197,38 @@ export async function startApp(
 
   const status = createStatus({ cfg, engine, speech, segmenter, queue: lines.translations.queue, webpageProblem });
 
+  /** Resamples an Ogg Opus voice sample, which is decoded at 48 kHz, to the rate the separator takes. */
+  const resample = soxrResampler(soxrDir(cfg.audioDir));
+
+  /** The media type of an upload, which must be one of `uploadTypes` (Ogg Opus only with libopus installed). */
+  function uploadType(req: Request): string {
+    const types = uploadTypes(cfg.audioDir);
+    const type = mediaType(req);
+    if (!types.includes(type)) {
+      throw new ApiError(415, "unsupported_media_type", `request body must be ${types.join(" or ")}`);
+    }
+    return type;
+  }
+
   async function uploadVoice(req: Request, url: URL): Promise<Response> {
     if (speech.state === "unavailable") {
       throw speechUnavailable(speech);
     }
-    if (mediaType(req) !== "audio/wav") {
-      throw new ApiError(415, "unsupported_media_type", "request body must be audio/wav");
-    }
-    const { buffer: wav } = await readBody(
+    const type = uploadType(req);
+    const body = await readBody(
       req,
       MAX_SAMPLE_BYTES,
       () => new ApiError(413, "body_too_large", "the sample is too large"),
     );
-    if (wav.byteLength === 0) {
-      throw invalid("the body must be a WAV recording", "body");
+    if (body.length === 0) {
+      throw invalid("the body must be a WAV or Ogg Opus recording", "body");
     }
     const name =
       (url.searchParams.get("name") ?? "").replaceAll(/\s+/g, " ").trim().slice(0, MAX_VOICE_NAME_CHARS) ||
       "Uploaded voice";
     try {
+      // Kept and separated as WAV, whatever it was uploaded as.
+      const wav = type === OPUS_TYPE ? opusSampleToWav(body, cfg.audioDir, resample) : body.buffer;
       return json<Voice>(await speech.addVoice(name, wav), 201);
     } catch (e) {
       // Not the client's doing: the sample was fine, the engine could not separate it. Mapped by toApiError.
@@ -238,26 +256,24 @@ export async function startApp(
     if (problem) {
       throw unavailable("transcribe_unavailable", problem);
     }
-    if (mediaType(req) !== "audio/wav") {
-      throw new ApiError(415, "unsupported_media_type", "request body must be audio/wav");
-    }
+    const type = uploadType(req);
     const separate = parseSeparate(url.searchParams.get("separate"), speech.canSeparate());
-    const wav = await readBody(
+    const recording = await readBody(
       req,
       MAX_TRANSCRIBE_BYTES,
       () => new ApiError(413, "body_too_large", "the recording is too large"),
     );
-    if (wav.length === 0) {
-      throw invalid("the body must be a WAV recording", "body");
+    if (recording.length === 0) {
+      throw invalid("the body must be a WAV or Ogg Opus recording", "body");
     }
     let duration: number;
     try {
-      duration = validateRecording(wav);
+      duration = validateRecording(recording, type);
     } catch (e) {
       throw e instanceof SpeechError ? invalid(e.message, "body") : e;
     }
     // A waiting transcription holds only a descriptor: a full line of uploads in memory would be gigabytes.
-    const file = await anonymousFile(wav);
+    const file = await anonymousFile(recording);
     try {
       return transcriptions.startJob(
         true,
@@ -371,6 +387,7 @@ export async function startApp(
           max_sample_bytes: MAX_SAMPLE_BYTES,
           sample_seconds: { min: MIN_SAMPLE_SECONDS, max: MAX_SAMPLE_SECONDS },
           sample_rate: { min: SAMPLE_RATE, max: SAMPLE_RATE },
+          upload_types: uploadTypes(cfg.audioDir),
           voices: speech.state === "unavailable" ? [] : await speech.voices(),
         }),
       POST: ({ req, url }) => uploadVoice(req, url),

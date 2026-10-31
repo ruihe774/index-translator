@@ -35,7 +35,11 @@ const config: Linter.Config[] = [
     // became Baseline in 2025 and are not yet widely available. Take them out when they are.
     // `ClipboardItem` (`copyTranslation` in app.ts) is feature-detected and Copy falls back to text alone;
     // Firefox gained it in 127, after the oldest browser the query covers.
-    settings: { polyfills: ["Highlight", "document.caretPositionFromPoint", "ClipboardItem"] },
+    // WebCodecs' `AudioEncoder` and `AudioData` (`audio-upload.ts`) encode uploads as Opus where they exist and
+    // Opus is supported (`opusEncodable`); elsewhere the upload is WAV, as before. Safari has them from 26.
+    settings: {
+      polyfills: ["Highlight", "document.caretPositionFromPoint", "ClipboardItem", "AudioEncoder", "AudioData"],
+    },
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     rules: {
       // Bun turns `using` into helpers imported from "bun:wrap", and drops `with { type: "json" }`.

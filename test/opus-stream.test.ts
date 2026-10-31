@@ -7,9 +7,9 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
+import { OggOpusMuxer, type OpusPacket } from "../public/ogg-opus";
 import { acceptWeight } from "../src/accept";
 import { type App, startApp } from "../src/app";
-import { OggOpusMuxer, type OpusPacket } from "../src/ogg-opus";
 import { OpusDecoder, opusDir, opusLibraryPath } from "../src/opus-ffi";
 import { opusLoader, opusResponse } from "../src/opus-stream";
 import type { Pcm } from "../src/wav";

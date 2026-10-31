@@ -18,10 +18,13 @@ import { type AnonymousFile, anonymousFile } from "./anonymous-file";
 import type { SpeechLanguage, SpeechStatus, Voice } from "./api";
 import { libraryPath } from "./audiocpp-ffi";
 import type { Config } from "./config";
+import { opusDir } from "./opus-ffi";
+import { readOggOpus, readOggOpusInfo, readRecordingInfo } from "./opus-file";
 import { fetchAdvice } from "./preflight";
+import type { Resample } from "./resample";
 import type { SpeechProtocol, Transcribed, TranscribeSegment, TranscribeStage } from "./speech-worker";
 import { MUSIC_MODEL_FILE } from "./transcript";
-import { type Pcm, readWav, readWavInfo, type WavInfo } from "./wav";
+import { type Pcm, readWav, type WavInfo, writeWav } from "./wav";
 import { abortable, LazyModel, messageOf, startWorker, WorkerClient } from "./worker-rpc";
 
 /** The languages IndexTTS-2.5 speaks. Any other text comes out as noise, so it is refused. */
@@ -62,7 +65,7 @@ export const MAX_VOICE_NAME_CHARS = 60;
  */
 export const MIN_SAMPLE_SECONDS = 1;
 export const MAX_SAMPLE_SECONDS = 15;
-/** The one rate Mel-Band RoFormer accepts; the client resamples, so the server never does. */
+/** The one rate Mel-Band RoFormer accepts; the client resamples a WAV, the server an Ogg Opus sample. */
 export const SAMPLE_RATE = 44_100;
 /** Mel-Band RoFormer takes mono or stereo; a mono sample is duplicated by audio.cpp. */
 const MAX_SAMPLE_CHANNELS = 2;
@@ -161,13 +164,37 @@ export function validateSample(wav: ArrayBuffer): Pcm {
 }
 
 /**
- * Checks the format and duration of an uploaded recording to transcribe from its header (the audio is
- * decoded only by the worker) and answers its duration in seconds. Throws SpeechError.
+ * An uploaded Ogg Opus sample as the WAV `validateSample` takes: decoded with the libopus beside `audioDir`
+ * at 48 kHz, the rate Opus codes at, and resampled to SAMPLE_RATE. One longer than a sample may be is refused
+ * from its header, before it is decoded. Throws SpeechError.
  */
-export function validateRecording(wav: Uint8Array): number {
+export function opusSampleToWav(bytes: Uint8Array, audioDir: string, resample: Resample): ArrayBuffer {
+  let pcm: Pcm;
+  try {
+    const info = readOggOpusInfo(bytes);
+    const seconds = info.frames / info.sampleRate;
+    if (seconds > MAX_SAMPLE_SECONDS) {
+      throw new SpeechError(`the sample is too long (${seconds.toFixed(1)} s; at most ${MAX_SAMPLE_SECONDS} s)`);
+    }
+    pcm = readOggOpus(bytes, opusDir(audioDir));
+  } catch (e) {
+    throw e instanceof SpeechError ? e : new SpeechError(`the sample cannot be used: ${messageOf(e)}`);
+  }
+  // Cut to the decoded length at the new rate: the resampler may give a sample or two more.
+  const frames = Math.round((pcm.samples.length / pcm.channels) * (SAMPLE_RATE / pcm.sampleRate));
+  const samples = resample(pcm.samples, pcm.channels, pcm.sampleRate, SAMPLE_RATE).subarray(0, frames * pcm.channels);
+  return writeWav({ samples, sampleRate: SAMPLE_RATE, channels: pcm.channels });
+}
+
+/**
+ * Checks the format and duration of an uploaded recording to transcribe, WAV or Ogg Opus (`type`, one of
+ * `uploadTypes`), from its header (the audio is decoded only by the worker) and answers its duration in
+ * seconds. Throws SpeechError.
+ */
+export function validateRecording(bytes: Uint8Array, type: string): number {
   let info: WavInfo;
   try {
-    info = readWavInfo(wav);
+    info = readRecordingInfo(bytes, type);
   } catch (e) {
     throw new SpeechError(`the recording cannot be used: ${messageOf(e)}`);
   }
