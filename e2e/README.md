@@ -41,3 +41,34 @@ state outside its `mock` fixture would break that. `bun test` ignores this direc
 
 Coverage: `bun run e2e:coverage` (`E2E_COVERAGE=1`) writes `coverage/e2e-web/` (the page, `lcov-report/` for HTML) and
 `coverage/e2e-server/<n>/lcov.info` (one per mock server). It always starts its own servers.
+
+## Page load measurements (`bun run e2e:perf`)
+
+`e2e/perf/run.ts` measures how long the page takes to show itself on a slow link. It is a script, not a spec: it
+asserts nothing, since the numbers depend on the machine (compare runs of the same one), and it is not part of
+`bun run e2e`. It starts the mock server on `PERF_PORT` (3200) and drives Chromium through a throttling reverse
+proxy (`proxy.ts`): every request waits one round trip, and all responses share one bandwidth. The browser speaks
+HTTP/1.1 (`http://app.test:3201`) or HTTP/2 over a throwaway certificate (`https://app.test:3202`, needs `openssl`);
+`tailscale serve` is the latter. A proxy is used rather than DevTools' network emulation because that does not slow
+the service worker's own downloads (the prefetch of every file), which is most of a first visit.
+
+Options: `--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s with 40 ms, 5 Mbit/s with 100 ms),
+`--protocol h1,h2`, `--scenario <names>`, `--repeats 3`. Results: a table of medians on stdout and every run in
+`perf-results/<time>.json`.
+
+| scenario    | visit                                                                         |
+| ----------- | ----------------------------------------------------------------------------- |
+| `cold`      | first, no service worker, empty HTTP cache                                    |
+| `warm-http` | next visit, no service worker: the HTTP cache only                            |
+| `first-sw`  | first, with the service worker, which downloads every file                    |
+| `warm-sw`   | next visit, answered from the worker's cache (checked: the page is controlled) |
+| `sw-update` | next visit after every ETag outside `/vendor/` changed (the proxy rewrites them) |
+
+`visible` is the time until `visibility-gate.ts` sets the body's opacity to 1; `synced` is when the worker's cache
+holds every file at the listed version; `reqs` and `MB` are what the proxy saw until the page and the worker went
+quiet. Run `bun scripts/fetch_web_libs.ts` first, or the page is lighter than the real one.
+
+The service worker needs a secure context, which `http://app.test` is not: the browser is started with
+`--unsafely-treat-insecure-origin-as-secure`, which Playwright's default headless shell ignores, so the script uses
+the `chromium` channel (the full browser, new headless). `CHROMIUM_PATH` must be a full Chromium as well. Not
+modelled: TCP behaviour (slow start, loss, connection setup) and request priorities.

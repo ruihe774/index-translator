@@ -8,6 +8,7 @@
     "test": "bun test",
     "test:coverage": "bun test --coverage --coverage-reporter=text --coverage-reporter=lcov --coverage-dir=coverage/unit",
     "e2e": "playwright test -c e2e/playwright.config.ts",
+    "e2e:perf": "bun e2e/perf/run.ts",
     "e2e:coverage": "E2E_COVERAGE=1 playwright test -c e2e/playwright.config.ts",
     "lint:css": "bun scripts/lint_css.ts",
     "lint:es": "bun scripts/lint_es.ts",
