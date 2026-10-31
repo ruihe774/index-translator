@@ -36,9 +36,10 @@ export type WorkerVariant = (typeof WORKERS)[number];
  * - `warm-sw`: the next visit, answered by the worker from its cache. With `lazy` it is the visit that fills the cache,
  *   since the first one ran before the worker controlled the page.
  * - `again-sw`: the visit after that: the first with a complete cache whichever worker it is.
- * - `sw-update`: the next visit after the server's files changed (every ETag outside `/vendor/`).
+ * - `sw-update`: the next visit after the server's files changed (every ETag outside `/vendor/`: a full update).
+ * - `sw-patch`: after that update has settled, the next visit once only a few files (`PATCH_FILES`) have changed.
  */
-export const SCENARIOS = ["cold", "warm-http", "first-sw", "warm-sw", "again-sw", "sw-update"] as const;
+export const SCENARIOS = ["cold", "warm-http", "first-sw", "warm-sw", "again-sw", "sw-update", "sw-patch"] as const;
 export type Scenario = (typeof SCENARIOS)[number];
 
 export interface Metrics {

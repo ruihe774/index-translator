@@ -8,6 +8,9 @@ import type { Proxy } from "./proxy";
 
 const VISIT_TIMEOUT_MS = 180_000;
 
+/** The files a small release changes: ones the page loads at start, so they are on the way to showing it. */
+const PATCH_FILES = ["/app.ts", "/render.ts", "/state.ts", "/messages.ts", "/css/layout.css"];
+
 type Results = Partial<Record<Scenario, Metrics>>;
 
 /** The time, on the page's clock (zero at the start of the navigation), at which the page showed itself. */
@@ -94,7 +97,8 @@ export async function plainChain(browser: Browser, proxy: Proxy, url: string): P
 }
 
 /**
- * With the service worker: `first-sw`, `warm-sw`, `again-sw`, then `sw-update` after the server's files changed. A worker that
+ * With the service worker: `first-sw`, `warm-sw`, `again-sw`, `sw-update` after all the server's files changed and, once that has settled,
+ * `sw-patch` after only `PATCH_FILES` did. A worker that
  * prefetches is waited for until its cache is complete; one that does not (`lazy`) never is, so the visit ends when
  * the page's own requests have.
  */
@@ -110,11 +114,16 @@ export async function workerChain(browser: Browser, proxy: Proxy, url: string, p
       throw new Error("the second visit was not controlled by the service worker");
     }
     proxy.release();
+    const update = await visit(page, proxy, url, prefetch);
+    // A visit to settle: a lazy worker brings a file up to date only when the page asks for it.
+    await visit(page, proxy, url, prefetch);
+    proxy.release(PATCH_FILES);
     return {
       "first-sw": first,
       "warm-sw": warm,
       "again-sw": again,
-      "sw-update": await visit(page, proxy, url, prefetch),
+      "sw-update": update,
+      "sw-patch": await visit(page, proxy, url, prefetch),
     };
   } finally {
     await context.close();

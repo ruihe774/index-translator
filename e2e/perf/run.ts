@@ -124,7 +124,7 @@ try {
           proxy[protocol].use(profile);
           record(await plainChain(browser, proxy[protocol], url), "none");
         }
-        if (wants(["first-sw", "warm-sw", "again-sw", "sw-update"])) {
+        if (wants(["first-sw", "warm-sw", "again-sw", "sw-update", "sw-patch"])) {
           for (const worker of workers) {
             proxy[protocol].use(profile, worker);
             record(await workerChain(browser, proxy[protocol], url, worker === "prefetch"), worker);

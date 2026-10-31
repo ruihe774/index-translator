@@ -66,7 +66,8 @@ asks for; with `lazy` the page's first visit caches nothing, as the worker does 
 | `first-sw`  | first, with the service worker, which downloads every file                    |
 | `warm-sw`   | next visit, answered by the worker (checked: the page is controlled) |
 | `again-sw`  | the visit after that: the first with a complete cache, whichever `--worker` it is |
-| `sw-update` | next visit after every ETag outside `/vendor/` changed (the proxy rewrites them) |
+| `sw-update` | next visit after every ETag outside `/vendor/` changed (the proxy rewrites them): a full update |
+| `sw-patch`  | after that has settled, the next visit once only five files the page loads at start changed |
 
 `visible` is the time until `visibility-gate.ts` sets the body's opacity to 1; `synced` is when the worker's cache
 holds every file at the listed version; `reqs` and `MB` are what the proxy saw until the page and the worker went
