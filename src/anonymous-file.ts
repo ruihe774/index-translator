@@ -1,8 +1,9 @@
 // Uploads kept in anonymous files: created in a temporary directory and unlinked at once, so only the
 // open descriptor reaches the data, and the system frees it when the descriptor is closed or the process
 // ends, a crash included (an engine can take the process down). A descriptor belongs to the process, so
-// the speech worker reads what the server thread wrote. POSIX only: Windows does not unlink an open file
-// the same way, and is not handled yet.
+// the speech worker reads what the server thread wrote. On Windows this holds too: Bun opens files with
+// FILE_SHARE_DELETE and unlinks with POSIX semantics (NTFS and ReFS), so the name goes at once and the
+// data with the last handle, and its descriptors are the process's as well.
 
 import { fstatSync, readSync } from "node:fs";
 import { type FileHandle, open, unlink } from "node:fs/promises";
@@ -21,10 +22,12 @@ const DISK_TEMP = "/var/tmp";
 /**
  * Where the files go, in order of preference: `TMPDIR` when it is set, /var/tmp, which is on disk where
  * /tmp is often a tmpfs in RAM (Fedora, Arch) that a queue of large uploads would fill, and the system's
- * temporary directory. The files have no name, so that /var/tmp outlives a reboot does not matter.
+ * temporary directory. The files have no name, so that /var/tmp outlives a reboot does not matter. On
+ * Windows /var/tmp would be a folder on the current drive, so only `TMPDIR` and the system's.
  */
 function directories(): string[] {
-  return [...new Set([process.env.TMPDIR, DISK_TEMP, tmpdir()].filter((d): d is string => !!d))];
+  const disk = process.platform === "win32" ? undefined : DISK_TEMP;
+  return [...new Set([process.env.TMPDIR, disk, tmpdir()].filter((d): d is string => !!d))];
 }
 
 /** A new anonymous file in `dir` holding `bytes`; rejects when it cannot be made or written there. */

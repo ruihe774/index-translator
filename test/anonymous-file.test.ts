@@ -2,14 +2,17 @@
 
 import { afterEach, describe, expect, test } from "bun:test";
 import { chmodSync, readdirSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 import { anonymousFile, openAnonymousFiles, readAnonymousFile } from "../src/anonymous-file";
 import { tempDir } from "./helpers/harness";
 
-// No TMPDIR is set for the tests, so the files go to /var/tmp.
+const windows = process.platform === "win32";
+// No TMPDIR is set for the tests, so the files go to /var/tmp, or on Windows the system's temporary directory.
 // eslint-disable-next-line bun/no-literal-temp-dir -- the directory src/anonymous-file.ts writes to
-const ours = () => readdirSync("/var/tmp").filter((name) => name.startsWith("index-translator-"));
+const fallback = windows ? tmpdir() : "/var/tmp";
+const ours = () => readdirSync(fallback).filter((name) => name.startsWith("index-translator-"));
 
 test("the bytes are read back by descriptor, and no file name is left behind", async () => {
   const before = { names: ours(), open: openAnonymousFiles() };
@@ -46,9 +49,9 @@ describe("a directory that cannot be written is passed over", () => {
         return dir;
       },
     ],
-  ])("a TMPDIR that is %s falls back to /var/tmp", async (_, make) => {
-    // Root writes anywhere, so the read-only case would not be one.
-    if (process.getuid?.() === 0) {
+  ])("a TMPDIR that is %s falls back to the next directory", async (kind, make) => {
+    // Root writes anywhere, and Windows ignores a folder's mode, so the read-only case would not be one.
+    if (process.getuid?.() === 0 || (windows && kind === "not ours to write")) {
       return;
     }
     process.env.TMPDIR = make();
