@@ -15,7 +15,7 @@
 // - DiscardPadding (a BlockGroup's, in nanoseconds) is given on the block's last frame.
 // - Chained segments (EBML header + Segment pairs back to back) each emit their own `tracks` event.
 // - A ContentEncodings element (compression, encryption) is not undone: a track that has one is marked
-//   `encoded` and its packets are not what its codec reads.
+//   with its `encoding` and its packets are not what its codec reads.
 // - A stream that ends exactly at an element boundary finishes normally; one that ends inside an
 //   element throws MatroskaTruncatedError; malformed data throws a plain Error.
 // - When the consumer stops iterating early, or an error is thrown, the source is closed (a
@@ -38,12 +38,14 @@ export interface TrackInfo {
   isDefault: boolean;
   /** FlagEnabled: a disabled track is not played. */
   enabled: boolean;
-  /** The track has a ContentEncodings element: its blocks are compressed or encrypted. */
-  encoded: boolean;
+  /** The track has a ContentEncoding: its blocks are compressed or encrypted (encryption wins); null without. */
+  encoding: "compressed" | "encrypted" | null;
   width?: number;
   height?: number;
   sampleRate?: number;
   channels?: number;
+  /** Bits per sample (BitDepth), for PCM. */
+  bitDepth?: number;
 }
 
 export type DemuxEvent =
@@ -112,10 +114,14 @@ const ID = {
   CodecDelay: 0x56_aa,
   DefaultDuration: 0x23_e3_83,
   ContentEncodings: 0x6d_80,
+  ContentEncoding: 0x62_40,
+  ContentEncodingType: 0x50_33,
+  ContentEncryption: 0x50_35,
   PixelWidth: 0xb0,
   PixelHeight: 0xba,
   SamplingFrequency: 0xb5,
   Channels: 0x9f,
+  BitDepth: 0x62_64,
   Timecode: 0xe7,
   SimpleBlock: 0xa3,
   Block: 0xa1,
@@ -130,7 +136,17 @@ const DEFAULT_MAX_ELEMENT_SIZE = 64 * 2 ** 20;
 // Masters descended into without buffering. Everything else is a leaf: read if known, skipped
 // otherwise. A BlockGroup is read whole (its size is always known), so its children may come in any
 // order.
-const MASTERS = new Set<number>([ID.Segment, ID.Info, ID.Tracks, ID.TrackEntry, ID.Video, ID.Audio, ID.Cluster]);
+const MASTERS = new Set<number>([
+  ID.Segment,
+  ID.Info,
+  ID.Tracks,
+  ID.TrackEntry,
+  ID.Video,
+  ID.Audio,
+  ID.ContentEncodings,
+  ID.ContentEncoding,
+  ID.Cluster,
+]);
 const TRACK_FIELDS = new Set<number>([
   ID.TrackNumber,
   ID.TrackType,
@@ -147,6 +163,8 @@ const TRACK_FIELDS = new Set<number>([
   ID.PixelHeight,
   ID.SamplingFrequency,
   ID.Channels,
+  ID.BitDepth,
+  ID.ContentEncodingType,
 ]);
 const LEAVES_READ = new Set<number>([
   ...TRACK_FIELDS,
@@ -434,6 +452,17 @@ function setTrackField(t: TrackInfo, id: number, p: Uint8Array): void {
       t.sampleRate = readFloat(p, 8000);
       break;
     }
+    case ID.BitDepth: {
+      t.bitDepth = readUint(p, 0) || undefined;
+      break;
+    }
+    case ID.ContentEncodingType: {
+      // 0 is compression, 1 encryption.
+      if (readUint(p, 0) === 1) {
+        t.encoding = "encrypted";
+      }
+      break;
+    }
     case ID.Channels: {
       t.channels = readUint(p, 1);
       break;
@@ -449,7 +478,7 @@ const newTrack = (): TrackInfo => ({
   language: "eng",
   isDefault: true,
   enabled: true,
-  encoded: false,
+  encoding: null,
 });
 
 interface ParsedBlock {
@@ -675,6 +704,9 @@ export async function* demux(
         } else if (id.value === ID.TrackEntry) {
           current = newTrack();
           tracks.push(current);
+        } else if (id.value === ID.ContentEncoding && current) {
+          // Compression unless its type or a ContentEncryption says otherwise.
+          current.encoding ??= "compressed";
         } else if (id.value === ID.Cluster && !tracksEmitted) {
           yield tracksEvent();
         }
@@ -685,8 +717,8 @@ export async function* demux(
       if (size.unknown) {
         throw corrupt(`an unknown size on element 0x${hex}`);
       }
-      if (id.value === ID.ContentEncodings && current) {
-        current.encoded = true;
+      if (id.value === ID.ContentEncryption && current) {
+        current.encoding = "encrypted";
       }
       // A block of a track not asked for is skipped after reading its track number.
       if (wanted && id.value === ID.SimpleBlock && size.value > 0) {

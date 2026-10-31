@@ -1,14 +1,15 @@
 // Recordings and videos opened to be transcribed: the dialog (track, music), the transcript growing in
 // the source as subtitles with a Speaker column while Translate waits, Stop, and the translation of the
-// transcript with its speakers put back. The files are test/fixtures/media/ (make_media.ts beside them);
-// the mock speech engine answers `segments`.
+// transcript with its speakers put back; then what is re-encoded in the browser (other codecs, 5.1, a gap,
+// a server without libopus), checked on the body sent. The files are test/fixtures/media/ (make_media.ts
+// beside them); the mock speech engine answers `segments`.
 
 import { readFileSync } from "node:fs";
 import { join } from "node:path";
 
 import type { Page } from "@playwright/test";
 
-import { expect, test, THINK } from "./fixtures";
+import { expect, type Mock, test, THINK } from "./fixtures";
 
 const MEDIA = join(import.meta.dirname, "..", "test", "fixtures", "media");
 
@@ -38,12 +39,9 @@ test("a video's audio track is transcribed into the source as subtitles, then tr
   await expect(d).toHaveAccessibleDescription(/tracks\.mkv, 0:03 long\. Its audio is sent to this server/);
   const tracks = d.getByRole("group", { name: "Audio track" }).getByRole("radio");
   await expect(tracks).toHaveCount(3);
-  // The default Opus track is chosen; AAC is listed but cannot be.
+  // The default Opus track is chosen; AAC can be too (re-encoded).
   await expect(d.getByRole("radio", { name: "Japanese · Opus · mono · default" })).toBeChecked();
-  await expect(d.getByRole("radio", { name: /^French · AAC/ })).toBeDisabled();
-  await expect(d.getByRole("radio", { name: /^French · AAC/ })).toHaveAccessibleDescription(
-    "AAC audio is not supported yet: only Opus tracks can be transcribed.",
-  );
+  await expect(d.getByRole("radio", { name: /^French · AAC/ })).toBeEnabled();
   await d.getByRole("radio", { name: "Commentary (English) · Opus · stereo" }).check();
   await d.getByLabel("Take out music first").selectOption("false");
   await d.getByRole("button", { name: "Transcribe" }).click();
@@ -131,9 +129,9 @@ test("Cancel sends nothing; a recording that cannot be sent is not asked about",
   await expect(app.text).toHaveValue("kept");
   await expect(note(app.page)).toBeHidden();
 
-  await pick(app.page, "surround.mkv");
+  await pick(app.page, "compressed.mkv");
   await expect(note(app.page)).toHaveText(
-    "surround.mkv cannot be transcribed. It has 6 channels: only mono and stereo tracks can be transcribed.",
+    "compressed.mkv cannot be transcribed. It is compressed inside the file, which is not supported.",
   );
   await expect(dialog(app.page)).toBeHidden();
   expect(api).toStrictEqual([]);
@@ -160,4 +158,112 @@ test("without transcription on the server, a recording is refused when opened", 
   await expect(note(app.page)).toHaveText(
     "tone.webm was not opened. Transcribing recordings is not available on this server: the transcription model is not installed.",
   );
+});
+
+/** What the server read of each recording sent to it, in order. */
+async function sent(mock: Mock) {
+  return (await mock.state()).speech.transcriptions.map((t) => t.recording!);
+}
+
+/** Opens `name`, picks the track named `track` when given, and transcribes it to the end. */
+async function transcribe(page: Page, name: string, track?: string | RegExp) {
+  await pick(page, name);
+  const d = dialog(page);
+  if (track) {
+    await d.getByRole("radio", { name: track }).check();
+  }
+  await d.getByRole("button", { name: "Transcribe" }).click();
+  await expect(note(page)).toContainText(`${name}: transcribed`);
+}
+
+test.describe("re-encoded in the browser", () => {
+  test.beforeEach(async ({ mock }) => {
+    await mock.set({ speech: { segments: SEGMENTS.slice(0, 1) } });
+  });
+
+  test("AAC with a gap: decoded, the gap filled, sent as Ogg Opus", async ({ app, mock }) => {
+    await app.open();
+    await transcribe(app.page, "gap.mka");
+    // A second of tone, half a second missing, a second of tone: the times stay the file's.
+    const [r] = await sent(mock);
+    expect(r).toMatchObject({ type: "audio/ogg", channels: 1 });
+    expect(r!.seconds).toBeGreaterThan(2.45);
+    expect(r!.seconds).toBeLessThan(2.6);
+  });
+
+  test("5.1 Opus is mixed down to stereo", async ({ app, mock }) => {
+    await app.open();
+    await transcribe(app.page, "surround.mkv");
+    const [r] = await sent(mock);
+    expect(r).toMatchObject({ type: "audio/ogg", channels: 2 });
+    expect(r!.seconds).toBeCloseTo(2, 1);
+  });
+
+  test("a codec this browser cannot decode is listed with the reason", async ({ app }) => {
+    await app.open();
+    await pick(app.page, "codecs.mkv");
+    const d = dialog(app.page);
+    await expect(d.getByRole("radio", { name: "Vorbis (English) · Vorbis · stereo · default" })).toBeChecked();
+    const ac3 = d.getByRole("radio", { name: /^AC-3/ });
+    await expect(ac3).toBeDisabled();
+    await expect(ac3).toHaveAccessibleDescription("This browser cannot decode AC-3 audio.");
+  });
+
+  for (const [track, channels] of [
+    ["Vorbis", 2],
+    ["FLAC", 1],
+    ["MP3", 1],
+    ["PCM", 1],
+  ] as const) {
+    test(`a ${track} track is sent as Ogg Opus`, async ({ app, mock }) => {
+      await app.open();
+      await transcribe(app.page, "codecs.mkv", new RegExp(`^${track} \\(English\\)`));
+      const [r] = await sent(mock);
+      expect(r).toMatchObject({ type: "audio/ogg", channels });
+      expect(r!.seconds).toBeCloseTo(2, 1);
+    });
+  }
+
+  test("without libopus on the server, Opus is decoded and sent as a mono 44.1 kHz WAV", async ({ app, mock }) => {
+    await app.page.route("**/api/v1/health", async (route) => {
+      const res = await route.fetch();
+      const health = (await res.json()) as { transcribe?: { upload_types: string[] } };
+      if (health.transcribe) {
+        health.transcribe.upload_types = ["audio/wav"];
+      }
+      await route.fulfill({ response: res, json: health });
+    });
+    await app.open();
+    await transcribe(app.page, "tone.ogg");
+    await transcribe(app.page, "tracks.mkv", /^Commentary/);
+    const [ogg, mkv] = await sent(mock);
+    expect(ogg).toMatchObject({ type: "audio/wav", channels: 1, sampleRate: 44_100 });
+    expect(ogg!.seconds).toBeCloseTo(2, 1);
+    expect(mkv).toMatchObject({ type: "audio/wav", channels: 1, sampleRate: 44_100 });
+    expect(mkv!.seconds).toBeCloseTo(3, 1);
+  });
+
+  test("without the codecs' dequeue event, the waits fall back to a task", async ({ app, mock }) => {
+    await app.page.addInitScript(() => {
+      for (const codec of [AudioDecoder, AudioEncoder]) {
+        delete (codec.prototype as { ondequeue?: unknown }).ondequeue;
+      }
+    });
+    await app.open();
+    await transcribe(app.page, "surround.mkv");
+    const [r] = await sent(mock);
+    expect(r).toMatchObject({ type: "audio/ogg", channels: 2 });
+    expect(r!.seconds).toBeCloseTo(2, 1);
+  });
+
+  test("without AudioEncoder, a re-encoded track goes as WAV", async ({ app, mock }) => {
+    await app.page.addInitScript(() => {
+      Object.defineProperty(window, "AudioEncoder", { value: undefined });
+    });
+    await app.open();
+    await transcribe(app.page, "surround.mkv");
+    const [r] = await sent(mock);
+    expect(r).toMatchObject({ type: "audio/wav", channels: 1, sampleRate: 44_100 });
+    expect(r!.seconds).toBeCloseTo(2, 1);
+  });
 });

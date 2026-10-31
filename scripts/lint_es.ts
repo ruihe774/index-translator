@@ -37,8 +37,19 @@ const config: Linter.Config[] = [
     // Firefox gained it in 127, after the oldest browser the query covers.
     // WebCodecs' `AudioEncoder` and `AudioData` (`audio-upload.ts`) encode uploads as Opus where they exist and
     // Opus is supported (`opusEncodable`); elsewhere the upload is WAV, as before. Safari has them from 26.
+    // `AudioDecoder` and `EncodedAudioChunk` (`transcode.ts`) re-encode a recording to transcribe only where
+    // `browserDecodes` says the browser has them and decodes the track; elsewhere the track is refused with that
+    // reason. Firefox has them from 130, Safari from 26.
     settings: {
-      polyfills: ["Highlight", "document.caretPositionFromPoint", "ClipboardItem", "AudioEncoder", "AudioData"],
+      polyfills: [
+        "Highlight",
+        "document.caretPositionFromPoint",
+        "ClipboardItem",
+        "AudioEncoder",
+        "AudioData",
+        "AudioDecoder",
+        "EncodedAudioChunk",
+      ],
     },
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     rules: {

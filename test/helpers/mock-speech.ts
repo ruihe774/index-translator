@@ -1,6 +1,7 @@
 // Stands in for the audio.cpp speech engine: answers every utterance with silence. Module state, like
 // mock-llama.ts's `mock`: restore it with resetMockSpeech().
 
+import { demuxOggOpus } from "../../public/ogg-opus";
 import { readAnonymousFile } from "../../src/anonymous-file";
 import type { TranscriptSegment } from "../../src/api";
 import { OPUS_TYPE } from "../../src/opus-stream";
@@ -15,7 +16,17 @@ import {
   validateSample,
   type Voice,
 } from "../../src/speech";
+import { readWavInfo } from "../../src/wav";
 import { delay } from "./harness";
+
+/** What a transcription's recording was, as the server read it. */
+export interface UploadedRecording {
+  type: string;
+  channels: number;
+  /** 48 kHz for Ogg Opus. */
+  sampleRate: number;
+  seconds: number;
+}
 
 /** A tenth of a second of silence: 22.05 kHz, mono, 16-bit PCM, as the speech engine answers. */
 export function silentWav(seconds = 0.1, rate = 22_050): ArrayBuffer {
@@ -75,8 +86,8 @@ export const mockSpeech = {
   /** Makes a transcription fail after its segments. */
   transcribeFailWith: undefined as string | undefined,
   truncated: false,
-  /** Every transcription asked for. */
-  transcriptions: [] as TranscribeRequest[],
+  /** Every transcription asked for, with what its recording was. */
+  transcriptions: [] as (TranscribeRequest & { recording?: UploadedRecording })[],
 };
 
 export function resetMockSpeech(): void {
@@ -169,10 +180,15 @@ export const speechLauncher: SpeechLauncher = () => ({
   canSeparate: () => mockSpeech.canSeparate,
   // Like the worker: the stages, then the segments, stopping between two when `abort` is set.
   async transcribe(req, abort, onProgress) {
-    mockSpeech.transcriptions.push(req);
+    const asked: (typeof mockSpeech.transcriptions)[number] = { ...req };
+    mockSpeech.transcriptions.push(asked);
     // The file is there while it runs, as the worker reads it.
     const recording = readAnonymousFile(req.fd);
-    const duration = validateRecording(recording, recording[0] === 0x4f ? OPUS_TYPE : "audio/wav");
+    const type = recording[0] === 0x4f ? OPUS_TYPE : "audio/wav";
+    const duration = validateRecording(recording, type);
+    const { channels, sampleRate } =
+      type === OPUS_TYPE ? { ...demuxOggOpus(recording).head, sampleRate: 48_000 } : readWavInfo(recording);
+    asked.recording = { type, channels, sampleRate, seconds: duration };
     const flag = new Int32Array(abort);
     // As if the recording had music: `auto` separates when the model is installed.
     const separated = req.separate !== "off" && mockSpeech.canSeparate;

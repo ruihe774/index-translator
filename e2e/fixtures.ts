@@ -14,6 +14,7 @@ import type {
   TranscriptSegment,
   Voice,
 } from "../src/api";
+import type { UploadedRecording } from "../test/helpers/mock-speech";
 import { COVERAGE, mappedModule, REPORT } from "./coverage";
 import { portsOf } from "./ports";
 
@@ -70,8 +71,11 @@ export interface MockState extends Required<Pick<MockKnobs, "chunks" | "delayMs"
   /** `requests` are the utterances asked of the speech engine, in order. */
   speech: {
     requests: { text: string; lang: string; voice: string; speed: number }[];
-    /** The transcriptions asked for: how each was to be separated (`auto`, `on`, `off`). */
-    transcriptions: { separate: string }[];
+    /**
+     * The transcriptions asked for: how each was to be separated (`auto`, `on`, `off`), and what the server
+     * read of its recording.
+     */
+    transcriptions: { separate: string; recording?: UploadedRecording }[];
   };
   /** `requests` are the addresses asked of the mock browser, in order. */
   webpage: { requests: string[]; aborted: number };

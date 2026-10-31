@@ -1,9 +1,9 @@
 // A recording or video as the source: opened (open-ui.ts), confirmed in a dialog, sent to
 // `POST /transcriptions`, and its transcript written into the source box as subtitles while the server
 // writes it. Translate then translates it as any subtitles. The file is read here (media-file.ts): a WAV
-// or Ogg Opus file is sent as it is, an Opus track of a WebM or MKV file remuxed into Ogg Opus; nothing
-// is decoded. Like a page fetch, a transcription is a Run: Translate waits and Stop cancels it
-// (`DELETE /transcriptions/{id}`), keeping what was written.
+// or Ogg Opus file is sent as it is, an Opus track of a WebM or MKV file remuxed into Ogg Opus, and what
+// the server would not take re-encoded (transcode.ts). Like a page fetch, a transcription is a Run:
+// Translate waits and Stop cancels it (`DELETE /transcriptions/{id}`), keeping what was written.
 
 import type { Health } from "../src/api.ts";
 import { API, ApiFailure, failureMessage, failureOf } from "./api.ts";
@@ -26,6 +26,7 @@ import { onPageWake, pageVisible, resumableEvents, TRANSCRIPTION_ID_HEADER } fro
 import { Run } from "./run.ts";
 import type { TranscriptionSseEvent } from "./sse.ts";
 import { setState } from "./state.ts";
+import { browserDecodes } from "./transcode.ts";
 import { minutes, transcriptionNotes, transcriptSrt } from "./transcription.ts";
 
 /** `separate` of `POST /transcriptions`. */
@@ -238,7 +239,14 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
     throw new Error("the connection closed before the transcription finished");
   }
 
-  async function transcribe(file: File, probe: MediaProbe, track: number, separate: Separate, limits: Limits) {
+  async function transcribe(
+    file: File,
+    probe: MediaProbe,
+    track: number,
+    separate: Separate,
+    limits: Limits,
+    ogg: boolean,
+  ) {
     d.stopReading();
     const run = new Run();
     // Once the server has the recording, Stop waits for it: it finishes the step it is in (a separation,
@@ -251,6 +259,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
     let shown = -1;
     try {
       const recording = await prepareRecording(file, probe, track, limits, {
+        ogg,
         signal: run.controller.signal,
         onProgress: (f) => {
           // The status line is rewritten only when the whole percent changes.
@@ -294,21 +303,17 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
         return { text: `${file.name} was not opened. ${problem}`, error: true };
       }
       const limits = limitsOf(health);
+      // Without libopus on the server, Opus is decoded and sent as WAV.
+      const ogg = health.upload_types.includes(OGG_TYPE);
       let probe: MediaProbe;
       try {
-        probe = await probeMedia(file, limits);
+        probe = await probeMedia(file, limits, { ogg, decodes: browserDecodes });
       } catch (e) {
         if (!(e instanceof MediaError)) {
           console.error(e);
         }
         return {
           text: `${file.name} was not opened. ${e instanceof MediaError ? e.message : "It could not be read."}`,
-          error: true,
-        };
-      }
-      if (probe.container !== "wav" && !health.upload_types.includes(OGG_TYPE)) {
-        return {
-          text: `${file.name} was not opened: this server takes only WAV recordings (its Opus library is not installed).`,
           error: true,
         };
       }
@@ -331,7 +336,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
       if (answer !== "transcribe") {
         return null;
       }
-      void transcribe(file, probe, fields.track(), fields.separate(), limits);
+      void transcribe(file, probe, fields.track(), fields.separate(), limits, ogg);
       return { text: `Opened ${file.name} to transcribe it.`, error: false };
     },
   };

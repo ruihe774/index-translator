@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import { join } from "node:path";
 
 import {
+  type Capabilities,
   type Limits,
   MediaError,
   OGG_TYPE,
@@ -14,7 +15,8 @@ import {
 } from "../public/media-file";
 import { concat, demuxOggOpus } from "../public/ogg-opus";
 import { validateRecording } from "../src/speech";
-import { ebmlHeader, element, ID, opusHead, opusPacket, simpleBlock, track, uint } from "./helpers/ebml";
+import { readWav } from "../src/wav";
+import { ebmlHeader, element, float, ID, opusHead, opusPacket, simpleBlock, track, uint } from "./helpers/ebml";
 
 const fixture = (name: string) => Bun.file(join(import.meta.dir, "fixtures", "media", name));
 /**
@@ -31,6 +33,8 @@ for (const name of [
   "compressed.mkv",
   "late.mkv",
   "very-late.mkv",
+  "codecs.mkv",
+  "gap.mka",
 ]) {
   loaded.set(name, new Blob([await fixture(name).bytes()]));
 }
@@ -44,6 +48,38 @@ const LIMITS: Limits = {
 };
 
 const bytes = async (r: Recording) => new Uint8Array(await r.body.arrayBuffer());
+
+/** A browser that decodes every codec but AC-3, as Playwright's Chromium does. */
+const CHROMIUM: Capabilities = { ogg: true, decodes: (c: { codec: string }) => Promise.resolve(c.codec !== "ac-3") };
+/** A server without libopus. */
+const NO_OPUS: Capabilities = { ...CHROMIUM, ogg: false };
+/** Bun: no WebCodecs. */
+const NO_WEBCODECS: Capabilities = { ogg: true, decodes: () => Promise.resolve(false) };
+
+/** A WAV file of `channels` channels of a tone at `rate`, 16-bit. */
+function wavFile(rate: number, channels: number, seconds: number): Blob {
+  const frames = rate * seconds;
+  const head = new Uint8Array(44);
+  const view = new DataView(head.buffer);
+  const ascii = (at: number, text: string) => head.set(new TextEncoder().encode(text), at);
+  ascii(0, "RIFF");
+  view.setUint32(4, 36 + frames * channels * 2, true);
+  ascii(8, "WAVEfmt ");
+  view.setUint32(16, 16, true);
+  view.setUint16(20, 1, true);
+  view.setUint16(22, channels, true);
+  view.setUint32(24, rate, true);
+  view.setUint32(28, rate * channels * 2, true);
+  view.setUint16(32, channels * 2, true);
+  view.setUint16(34, 16, true);
+  ascii(36, "data");
+  view.setUint32(40, frames * channels * 2, true);
+  const samples = new Int16Array(frames * channels);
+  for (let i = 0; i < frames; i++) {
+    samples[i * channels] = Math.round(8000 * Math.sin((2 * Math.PI * 440 * i) / rate));
+  }
+  return new Blob([head, new Uint8Array(samples.buffer)]);
+}
 
 /** What the server says of the body: its length in seconds, or it throws as the request would fail. */
 async function accepted(r: Recording): Promise<number> {
@@ -69,7 +105,7 @@ test("sniff tells the containers apart by their first bytes", async () => {
 
 describe("probeMedia", () => {
   test("lists the audio tracks with what the dialog says of them", async () => {
-    const probe = await probeMedia(media("tracks.mkv"), LIMITS);
+    const probe = await probeMedia(media("tracks.mkv"), LIMITS, NO_WEBCODECS);
     expect(probe.container).toBe("matroska");
     expect(probe.cutAt).toBeUndefined();
     expect(probe.tracks).toStrictEqual([
@@ -98,18 +134,45 @@ describe("probeMedia", () => {
         codec: "AAC",
         channels: undefined,
         isDefault: true,
-        problem: "AAC audio is not supported yet: only Opus tracks can be transcribed.",
+        problem: "This browser cannot decode AAC audio.",
       },
     ]);
     expect(preferredTrack(probe.tracks)?.number).toBe(3);
+    // Where the browser decodes it, AAC is re-encoded.
+    const decoding = await probeMedia(media("tracks.mkv"), LIMITS, CHROMIUM);
+    expect(decoding.tracks.map((t) => t.problem)).toStrictEqual([null, null, null]);
   });
 
-  test("5.1 Opus and a compressed track are listed but cannot be sent", async () => {
-    const [surround] = (await probeMedia(media("surround.mkv"), LIMITS)).tracks;
-    expect(surround!.problem).toBe("It has 6 channels: only mono and stereo tracks can be transcribed.");
-    const [compressed] = (await probeMedia(media("compressed.mkv"), LIMITS)).tracks;
+  test("5.1 Opus is decoded where the browser can; a compressed track never", async () => {
+    const [surround] = (await probeMedia(media("surround.mkv"), LIMITS, NO_WEBCODECS)).tracks;
+    expect(surround!.problem).toBe("This browser cannot decode Opus audio.");
+    expect((await probeMedia(media("surround.mkv"), LIMITS, CHROMIUM)).tracks[0]!.problem).toBeNull();
+    const [compressed] = (await probeMedia(media("compressed.mkv"), LIMITS, CHROMIUM)).tracks;
     expect(compressed!.problem).toBe("It is compressed inside the file, which is not supported.");
     expect(preferredTrack([surround!, compressed!])).toBeUndefined();
+  });
+
+  test("other codecs: what the browser does not decode is refused, PCM needs no decoder", async () => {
+    const probe = await probeMedia(media("codecs.mkv"), LIMITS, CHROMIUM);
+    expect(probe.tracks.map((t) => [t.name, t.codec, t.problem])).toStrictEqual([
+      ["Vorbis", "Vorbis", null],
+      ["FLAC", "FLAC", null],
+      ["MP3", "MP3", null],
+      ["PCM", "PCM", null],
+      ["AC-3", "AC-3", "This browser cannot decode AC-3 audio."],
+    ]);
+    const bare = await probeMedia(media("codecs.mkv"), LIMITS, NO_WEBCODECS);
+    expect(bare.tracks.map((t) => t.problem === null)).toStrictEqual([false, false, false, true, false]);
+    expect(preferredTrack(bare.tracks)?.name).toBe("PCM");
+  });
+
+  test("without libopus on the server, Opus is decoded, so the browser must decode it", async () => {
+    for (const name of ["tone.ogg", "tracks.mkv"]) {
+      const [first] = (await probeMedia(media(name), LIMITS, { ...NO_OPUS, decodes: () => Promise.resolve(false) }))
+        .tracks;
+      expect(first!.problem).toBe("This browser cannot decode Opus audio.");
+      expect((await probeMedia(media(name), LIMITS, NO_OPUS)).tracks[0]!.problem).toBeNull();
+    }
   });
 
   test("says where a long file is cut", async () => {
@@ -120,9 +183,13 @@ describe("probeMedia", () => {
     expect((await probeMedia(media("tone.wav"), LIMITS)).duration).toBe(2);
   });
 
-  test("a WAV file the server does not take", async () => {
+  test("a WAV file of a rate or channel count the server does not take is re-encoded, not refused", async () => {
     const [wav] = (await probeMedia(media("tone.wav"), { ...LIMITS, minRate: 22_050 })).tracks;
-    expect(wav!.problem).toBe("Its sample rate is 16 kHz: only 22.05 kHz to 48 kHz can be transcribed.");
+    expect(wav!.problem).toBeNull();
+    expect((await probeMedia(wavFile(16_000, 6, 1), LIMITS)).tracks[0]!.problem).toBeNull();
+    expect((await probeMedia(wavFile(16_000, 9, 1), LIMITS)).tracks[0]!.problem).toBe(
+      "It has 9 channels: at most 8 can be mixed down.",
+    );
   });
 
   test("files that cannot be transcribed at all", async () => {
@@ -164,14 +231,77 @@ describe("prepareRecording", () => {
     await expect(accepted(ogg)).resolves.toBe(1);
   });
 
-  test("a WAV file is cut to the server's byte limit", async () => {
-    // 16 kHz mono 16-bit: 32,000 bytes a second.
-    const wav = await prepare("tone.wav", 0, {
-      ...LIMITS,
-      maxBytes: 32_000 + 44 + 16,
-    });
-    expect(wav).toMatchObject({ seconds: 1, cut: true });
-    await expect(bytes(wav)).resolves.toHaveLength(32_000 + 44);
+  test("a WAV file the byte limit would cut is re-encoded (here, without WebCodecs, as a mono 44.1 kHz WAV)", async () => {
+    // 48 kHz stereo 16-bit is 192,000 bytes a second; mono 44.1 kHz is 88,200.
+    const limits = { ...LIMITS, maxBytes: 200_000 };
+    const file = wavFile(48_000, 2, 3);
+    expect((await probeMedia(file, limits)).cutAt).toBeUndefined();
+    const r = await prepareRecording(file, await probeMedia(file, limits), 0, limits);
+    expect(r).toMatchObject({ type: WAV_TYPE, cut: true, offset: 0 });
+    expect(r.body.size).toBeLessThanOrEqual(200_000);
+    const wav = readWav(await bytes(r));
+    expect([wav.sampleRate, wav.channels]).toStrictEqual([44_100, 1]);
+    expect(r.seconds).toBeCloseTo((200_000 - 44) / 88_200, 3);
+    await expect(accepted(r)).resolves.toBeCloseTo(r.seconds, 3);
+  });
+
+  test("a WAV file of another rate or more channels is resampled and mixed down", async () => {
+    const limits = { ...LIMITS, minRate: 22_050 };
+    const r = await prepare("tone.wav", 0, limits);
+    expect(r).toMatchObject({ type: WAV_TYPE, cut: false });
+    expect(r.seconds).toBe(2);
+    const wav = readWav(await bytes(r));
+    expect([wav.sampleRate, wav.channels, wav.samples.length]).toStrictEqual([44_100, 1, 88_200]);
+    const six = wavFile(16_000, 6, 1);
+    const mixed = await prepareRecording(six, await probeMedia(six, LIMITS), 0, LIMITS);
+    expect(readWav(await bytes(mixed)).samples).toHaveLength(44_100);
+  });
+
+  test("a PCM track of an MKV file is re-encoded", async () => {
+    const file = media("codecs.mkv");
+    const r = await prepareRecording(file, await probeMedia(file, LIMITS, CHROMIUM), 4, LIMITS);
+    expect(r).toMatchObject({ type: WAV_TYPE, cut: false, offset: 0 });
+    expect(r.seconds).toBeCloseTo(2, 2);
+    await expect(accepted(r)).resolves.toBeCloseTo(2, 2);
+  });
+
+  test("a gap between PCM blocks is filled, and a late start becomes the offset", async () => {
+    // 16 kHz mono 16-bit, 0.1 s blocks: at 0, 0.1 and then 0.5 s.
+    const block = new Uint8Array(3200).fill(0x10);
+    const pcmTrack = (n: number) =>
+      track({
+        number: n,
+        codec: "A_PCM/INT/LIT",
+        extra: [element(ID.Audio, float(ID.SamplingFrequency, 16_000), uint(ID.Channels, 1), uint(ID.BitDepth, 16))],
+      });
+    const file = (start: number) =>
+      new Blob([
+        concat([
+          ebmlHeader("matroska"),
+          element(
+            ID.Segment,
+            element(ID.Tracks, pcmTrack(1)),
+            element(
+              ID.Cluster,
+              uint(ID.Timecode, start),
+              simpleBlock(1, 0, [block]),
+              simpleBlock(1, 100, [block]),
+              simpleBlock(1, 500, [block]),
+            ),
+          ),
+        ]) as Uint8Array<ArrayBuffer>,
+      ]);
+    const near = file(0);
+    const r = await prepareRecording(near, await probeMedia(near, LIMITS), 1, LIMITS);
+    expect(r.seconds).toBeCloseTo(0.6, 5);
+    const wav = readWav(await bytes(r));
+    expect(Math.abs(wav.samples[Math.round(0.15 * 44_100)]!)).toBeGreaterThan(0.01);
+    expect(wav.samples[Math.round(0.35 * 44_100)]).toBe(0);
+    expect(Math.abs(wav.samples[Math.round(0.55 * 44_100)]!)).toBeGreaterThan(0.01);
+    const far = file(30_000);
+    const late = await prepareRecording(far, await probeMedia(far, LIMITS), 1, LIMITS);
+    expect(late.offset).toBe(30);
+    expect(late.seconds).toBeCloseTo(0.6, 5);
   });
 
   test("an Opus track of an MKV file is remuxed, padding and all", async () => {
@@ -257,8 +387,9 @@ describe("prepareRecording", () => {
   });
 
   test("a track that cannot be sent, and a stop", async () => {
-    await expect(prepare("tracks.mkv", 4)).rejects.toThrow(
-      new MediaError("AAC audio is not supported yet: only Opus tracks can be transcribed."),
+    await expect(prepare("codecs.mkv", 99)).rejects.toThrow(new MediaError("The track is not in the file."));
+    await expect(prepare("compressed.mkv", 1)).rejects.toThrow(
+      new MediaError("It is compressed inside the file, which is not supported."),
     );
     const file = media("tracks.mkv");
     const probe = await probeMedia(file, LIMITS);

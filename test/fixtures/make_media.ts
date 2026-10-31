@@ -73,7 +73,7 @@ try {
     workFile("aac.m4a"),
   );
 
-  // 5.1 Opus (channel mapping family 1), which the server does not take.
+  // 5.1 Opus (channel mapping family 1), which the server does not take: mixed down to stereo.
   ffmpeg(
     ...tone(440, 2),
     "-af",
@@ -88,6 +88,47 @@ try {
 
   // A track compressed in the file (mkvmerge does this only when asked).
   run("mkvmerge", "-q", "-o", join(out, "compressed.mkv"), "--compression", "0:zlib", workFile("ja.opus"));
+
+  // Codecs that are re-encoded: Vorbis (the default), FLAC, MP3, PCM, and AC-3, which Chromium does not decode.
+  const t44 = (hz: number) => ["-f", "lavfi", "-i", `sine=f=${hz}:d=2:sample_rate=44100`];
+  ffmpeg(...t44(330), "-ac", "2", "-c:a", "libvorbis", "-q:a", "0", workFile("vorbis.mka"));
+  ffmpeg(...tone(440, 2), "-ar", "16000", "-ac", "1", "-c:a", "flac", workFile("flac.mka"));
+  ffmpeg(...t44(550), "-ac", "1", "-c:a", "libmp3lame", "-b:a", "32k", workFile("mp3.mka"));
+  ffmpeg(...tone(660, 2), "-ar", "16000", "-ac", "1", "-c:a", "pcm_s16le", workFile("pcm.wav"));
+  ffmpeg(...tone(770, 2), "-ac", "2", "-c:a", "ac3", "-b:a", "96k", workFile("ac3.mka"));
+  const english = (name: string, file: string, isDefault = false) => [
+    "--language",
+    "0:en",
+    "--track-name",
+    `0:${name}`,
+    "--default-track-flag",
+    isDefault ? "0:yes" : "0:no",
+    workFile(file),
+  ];
+  run(
+    "mkvmerge",
+    "-q",
+    "-o",
+    join(out, "codecs.mkv"),
+    ...english("Vorbis", "vorbis.mka", true),
+    ...english("FLAC", "flac.mka"),
+    ...english("MP3", "mp3.mka"),
+    ...english("PCM", "pcm.wav"),
+    ...english("AC-3", "ac3.mka"),
+  );
+
+  // AAC whose timestamps skip half a second at 1 s (a recorder that lost audio); ffmpeg writes no block
+  // durations, so the gap is found from AAC's frame length.
+  ffmpeg(
+    ...t44(660),
+    "-af",
+    "asetpts='if(gte(T,1),PTS+0.5/TB,PTS)'",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "32k",
+    join(out, "gap.mka"),
+  );
 
   // Ogg Opus and WAV, opened as they are.
   ffmpeg(...tone(440, 2), ...opus("24k"), "-ac", "1", join(out, "tone.ogg"));

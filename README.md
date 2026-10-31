@@ -446,11 +446,10 @@ oddly in any language.
 The server can turn a recording into text, with who speaks when, and the page can then translate it
 as subtitles.
 
-Open, drop or paste a recording or a video: a WAV file (16 to 48 kHz, mono or stereo), an Ogg Opus
-file, or a WebM or MKV file whose audio is Opus (what browsers record, and what YouTube serves as
-WebM). A dialog says how long it is and asks before anything is sent. A video with several audio tracks
-lists them (language, name, codec), with the player's default chosen; a track that cannot be sent is
-listed with the reason. When the voice separation model is installed, **Take out music first** chooses
+Open, drop or paste a recording or a video: a WAV file, an Ogg Opus file, or a WebM or MKV file (what
+browsers record, what YouTube serves as WebM, and most films and series). A dialog says how long it is
+and asks before anything is sent. A video with several audio tracks lists them (language, name, codec),
+with the player's default chosen; a track that cannot be sent is listed with the reason. When the voice separation model is installed, **Take out music first** chooses
 whether music is taken out before transcribing (by default when music is heard).
 
 **Transcribe** sends the audio to the server and writes the transcript into the box as it comes,
@@ -462,10 +461,20 @@ page says "Stopping…" until it has; pressing **Stop** again stops waiting. The
 subtitles (see Translate subtitles, above): the speaker labels are not sent to the model and are put
 back on the translated cues.
 
-- **Nothing is re-encoded:** a WAV or Ogg Opus file is sent as it is, and the Opus track of a WebM or
-  MKV file is copied into an Ogg file in your browser. Other codecs (AAC, Vorbis, AC-3, …), Opus with
-  more than two channels (5.1), and tracks stored compressed inside the file cannot be transcribed yet.
-  A server without libopus (`build_libopus.ts`) takes WAV files only.
+- **What is sent:** a WAV or Ogg Opus file the server takes goes as it is, and a mono or stereo Opus
+  track of a WebM or MKV file is copied into an Ogg file in your browser, with no loss. Anything else
+  is converted in your browser first: AAC, Vorbis, FLAC, MP3 and PCM tracks, Opus with more than two
+  channels (5.1 and 7.1 are mixed down to stereo), and WAV files of another sample rate, more than two
+  channels, or too large to go whole. They are sent as Opus (64 kbps mono, 128 kbps stereo; stereo is
+  kept because taking out music works better with it). On a desktop, converting 30 minutes takes
+  about 2 to 15 seconds.
+- **What cannot be sent:** a codec your browser cannot decode is listed with that reason (AC-3 and
+  DTS in most browsers; Safari before 26 and Firefox before 130 decode none, so there only what needs
+  no conversion works), as are tracks stored compressed or encrypted inside the file. MP4 and MOV are
+  not opened yet.
+- **A server without libopus** (`build_libopus.ts`): Opus is decoded in your browser too, and
+  everything is sent as a mono 44.1 kHz WAV file (30 minutes fit the server's 160 MiB). So is
+  everything converted in a browser that cannot encode Opus.
 - **Long files:** only the first 30 minutes are transcribed. Where a video's audio starts late or
   skips (a recording that dropped audio), silence is put in its place, so the cue times match the
   video.

@@ -67,8 +67,8 @@ describe("files from ffmpeg and mkvmerge", () => {
 
   test("a compressed track is marked", async () => {
     const { tracks } = await probeMatroska(media("compressed.mkv").stream());
-    expect(tracks[0]!.encoded).toBe(true);
-    expect((await probeMatroska(media("late.mkv").stream())).tracks[0]!.encoded).toBe(false);
+    expect(tracks[0]!.encoding).toBe("compressed");
+    expect((await probeMatroska(media("late.mkv").stream())).tracks[0]!.encoding).toBeNull();
   });
 
   test("the same events whatever the chunk size", async () => {
@@ -206,7 +206,7 @@ describe("written by hand", () => {
     expect(packets[0]!.timestamp).toBe(1000 - 6500);
   });
 
-  test("LanguageBCP47 wins over Language in either order; ContentEncodings marks the track", async () => {
+  test("LanguageBCP47 wins over Language in either order; a ContentEncoding marks the track", async () => {
     const file = concat([
       ebmlHeader(),
       element(
@@ -225,14 +225,24 @@ describe("written by hand", () => {
             number: 3,
             extra: [element(ID.ContentEncodings, element(ID.ContentEncoding))],
           }),
+          track({
+            number: 4,
+            extra: [element(ID.ContentEncodings, element(ID.ContentEncoding, uint(ID.ContentEncodingType, 1)))],
+          }),
+          track({
+            number: 5,
+            extra: [element(ID.ContentEncodings, element(ID.ContentEncoding, element(ID.ContentEncryption)))],
+          }),
         ),
       ),
     ]);
     const { tracks } = await probeMatroska(chunked(file, 1000));
-    expect(tracks.map((t) => [t.language, t.encoded])).toStrictEqual([
-      ["zh-Hant", false],
-      ["de", false],
-      ["eng", true],
+    expect(tracks.map((t) => [t.language, t.encoding])).toStrictEqual([
+      ["zh-Hant", null],
+      ["de", null],
+      ["eng", "compressed"],
+      ["eng", "encrypted"],
+      ["eng", "encrypted"],
     ]);
   });
 

@@ -1,8 +1,11 @@
 // A recording or video opened to be transcribed (`POST /transcriptions`): which file it is, which of its
-// audio tracks can be sent, and the body that is sent. Nothing is decoded or re-encoded here: a WAV or
-// Ogg Opus file goes as it is (or cut at the server's limit), and an Opus track of a WebM or MKV file is
-// remuxed into Ogg Opus (matroska.ts reads it, ogg-opus.ts writes it). Pure apart from the Blob it reads,
-// so tested by bun test (test/media-file.test.ts).
+// audio tracks can be sent, and the body that is sent. What the server takes goes without re-encoding: a
+// WAV or Ogg Opus file as it is (or cut at the server's limit), and a mono or stereo Opus track of a WebM
+// or MKV file remuxed into Ogg Opus (matroska.ts reads it, ogg-opus.ts writes it). Everything else that
+// can be decoded is re-encoded by transcode.ts: other codecs, Opus of more channels, a WAV file of
+// another rate or channel count or too large to go whole, and any Opus when the server has no libopus.
+// Which tracks this browser decodes is asked of it (`Capabilities`). Pure apart from the Blob it reads and
+// transcode.ts, so tested by bun test (test/media-file.test.ts) where there is no WebCodecs.
 //
 // Ogg plays its packets back to back while Matroska stamps each block with its time, so where the
 // Matroska track skips ahead (audio that starts late, a recorder that dropped packets) the remux fills
@@ -14,6 +17,18 @@
 import type { Health } from "../src/api.ts";
 import { demux, probeMatroska, type TrackInfo } from "./matroska.ts";
 import { demuxOggOpus, OggOpusMuxer, opusPacketSamples } from "./ogg-opus.ts";
+import { MAX_CHANNELS, type PcmFormat, pcmReadable } from "./pcm.ts";
+import {
+  browserDecodes,
+  decoderConfig,
+  GAP_US,
+  packetMicros,
+  pcmFormatOf,
+  type Reading,
+  type SourceChunk,
+  transcode,
+  UNTIMED_JUMP_US,
+} from "./transcode.ts";
 
 export type Container = "wav" | "ogg" | "matroska";
 
@@ -75,6 +90,16 @@ export interface Recording {
 /** Why a file cannot be transcribed at all, as a sentence. */
 export class MediaError extends Error {}
 
+/** What the server and this browser can do with audio. */
+export interface Capabilities {
+  /** The server takes Ogg Opus (`upload_types`). */
+  ogg: boolean;
+  /** Whether this browser decodes `config` (WebCodecs). */
+  decodes(config: AudioDecoderConfig): Promise<boolean>;
+}
+
+const BROWSER: Capabilities = { ogg: true, decodes: browserDecodes };
+
 /** Opus always codes at 48 kHz. */
 const RATE = 48_000;
 /** A packet of Opus silence lasts 20 ms. */
@@ -86,6 +111,11 @@ const SILENCE = {
 };
 /** A late start up to this long is filled with silence; one later sets `offset` instead. */
 export const LEAD_LIMIT_SECONDS = 10;
+/**
+ * A Matroska track that says it is at most this much longer than the server's limit is not called cut: it
+ * is codec padding past a recording of exactly the limit.
+ */
+const CUT_SLACK_SECONDS = 0.5;
 /** Room left under the server's byte limit for Ogg page headers. */
 const PAGE_MARGIN = 64 * 1024;
 /** An Ogg file is read whole to be checked; one this large is not. */
@@ -170,23 +200,52 @@ function readOpusHead(bytes: Uint8Array | undefined): OpusHeadInfo | null {
   };
 }
 
-/** Why a Matroska track cannot be remuxed for the server; null when it can. */
+/** How a Matroska track is read when it is re-encoded; null when it cannot be. */
+function readingOf(t: TrackInfo): Reading | null {
+  const pcm = pcmFormatOf(t);
+  if (pcm) {
+    return pcmReadable(pcm.pcm) ? pcm : null;
+  }
+  const decoder = decoderConfig(t);
+  return decoder ? { decoder } : null;
+}
+
+/** A mono or stereo Opus track, which goes remuxed, not re-encoded, when the server takes Ogg. */
+function remuxable(t: TrackInfo): boolean {
+  const head = t.codecId === "A_OPUS" ? readOpusHead(t.codecPrivate) : null;
+  return head !== null && head.family === 0 && head.channels >= 1 && head.channels <= 2;
+}
+
+/** Why a Matroska track cannot be sent whatever the browser; null when it may be. */
 export function trackProblem(t: TrackInfo): string | null {
-  if (t.encoded) {
+  if (t.encoding === "encrypted") {
+    return "It is encrypted.";
+  }
+  if (t.encoding === "compressed") {
     return "It is compressed inside the file, which is not supported.";
   }
-  if (t.codecId !== "A_OPUS") {
-    return `${codecName(t.codecId)} audio is not supported yet: only Opus tracks can be transcribed.`;
+  const reading = readingOf(t);
+  if (!reading) {
+    return t.codecId === "A_OPUS"
+      ? "Its Opus header is missing or damaged."
+      : `${codecName(t.codecId)} audio cannot be transcribed.`;
   }
-  const head = readOpusHead(t.codecPrivate);
-  if (!head) {
-    return "Its Opus header is missing or damaged.";
+  const channels = "pcm" in reading ? reading.pcm.channels : reading.decoder.numberOfChannels;
+  if (channels > MAX_CHANNELS) {
+    return `It has ${channels} channels: at most ${MAX_CHANNELS} can be mixed down.`;
   }
-  if (head.channels > 2) {
-    return `It has ${head.channels} channels: only mono and stereo tracks can be transcribed.`;
+  return null;
+}
+
+/** Why the track cannot be sent from this browser to this server; null when it can. */
+async function trackProblemHere(t: TrackInfo, caps: Capabilities): Promise<string | null> {
+  const problem = trackProblem(t);
+  if (problem || (caps.ogg && remuxable(t))) {
+    return problem;
   }
-  if (head.family !== 0 || head.channels < 1) {
-    return "Its channel layout is not supported.";
+  const reading = readingOf(t)!;
+  if ("decoder" in reading && !(await caps.decodes(reading.decoder))) {
+    return `This browser cannot decode ${codecName(t.codecId)} audio.`;
   }
   return null;
 }
@@ -257,25 +316,41 @@ export function readWavHeader(head: Uint8Array, size: number): WavHeader {
   throw new MediaError("It is not a WAV file that can be read.");
 }
 
-/** Why a WAV file cannot be sent; null when it can. Mirrors the server's checks (src/wav.ts, src/speech.ts). */
-export function wavProblem(h: WavHeader, limits: Limits): string | null {
-  const supported =
-    (h.format === FORMAT_PCM && [8, 16, 24, 32].includes(h.bits)) ||
-    (h.format === FORMAT_FLOAT && [32, 64].includes(h.bits));
-  if (!supported) {
+/** How the samples of a WAV file are laid out. */
+const wavFormat = (h: WavHeader): PcmFormat => ({
+  channels: h.channels,
+  bits: h.bits,
+  float: h.format === FORMAT_FLOAT,
+  bigEndian: false,
+});
+
+/** Why a WAV file cannot be transcribed at all; null when it can, as it is or re-encoded. */
+export function wavProblem(h: WavHeader): string | null {
+  const supported = (h.format === FORMAT_PCM || h.format === FORMAT_FLOAT) && pcmReadable(wavFormat(h));
+  if (!supported || h.sampleRate < 1) {
     return "Its encoding is not supported: only PCM and floating-point WAV files can be transcribed.";
   }
-  if (h.channels < 1 || h.channels > 2) {
-    return `It has ${h.channels} channels: only mono and stereo recordings can be transcribed.`;
-  }
-  if (h.sampleRate < limits.minRate || h.sampleRate > limits.maxRate) {
-    const k = (hz: number) => `${hz / 1000} kHz`;
-    return `Its sample rate is ${k(h.sampleRate)}: only ${k(limits.minRate)} to ${k(limits.maxRate)} can be transcribed.`;
+  if (h.channels > MAX_CHANNELS) {
+    return `It has ${h.channels} channels: at most ${MAX_CHANNELS} can be mixed down.`;
   }
   if (h.dataBytes < h.blockAlign) {
     return "It holds no audio.";
   }
   return null;
+}
+
+/**
+ * Whether the server takes the WAV file as it is, cut only at `max_seconds` (mirrors its checks in
+ * src/wav.ts, src/speech.ts); otherwise it is re-encoded.
+ */
+function wavSendable(h: WavHeader, limits: Limits): boolean {
+  const duration = h.dataBytes / h.blockAlign / h.sampleRate;
+  return (
+    h.channels <= 2 &&
+    h.sampleRate >= limits.minRate &&
+    h.sampleRate <= limits.maxRate &&
+    wavKeep(h, limits) >= Math.min(duration, limits.maxSeconds)
+  );
 }
 
 /** Seconds of a WAV file that fit the server's limits. */
@@ -311,13 +386,18 @@ const bytesOf = async (blob: Blob) => new Uint8Array(await blob.arrayBuffer());
  * transcribed at all (not a file of these kinds, or not readable); a track that cannot be sent is listed
  * with its `problem`.
  */
-export async function probeMedia(file: Blob, limits: Limits): Promise<MediaProbe> {
+export async function probeMedia(file: Blob, limits: Limits, caps: Capabilities = BROWSER): Promise<MediaProbe> {
   const container = sniff(await bytesOf(file.slice(0, 12)));
   if (container === "wav") {
     const h = readWavHeader(await bytesOf(file.slice(0, WAV_HEAD_BYTES)), file.size);
-    const problem = wavProblem(h, limits);
+    const problem = wavProblem(h);
     const duration = h.dataBytes / h.blockAlign / h.sampleRate;
-    const keep = problem ? duration : wavKeep(h, limits);
+    // Re-encoded, it is cut only at `max_seconds`.
+    const keep = problem
+      ? duration
+      : wavSendable(h, limits)
+        ? wavKeep(h, limits)
+        : Math.min(duration, limits.maxSeconds);
     return {
       container,
       duration,
@@ -344,6 +424,9 @@ export async function probeMedia(file: Blob, limits: Limits): Promise<MediaProbe
       const { head, frames } = demuxOggOpus(await bytesOf(file));
       ({ channels } = head);
       duration = frames / RATE;
+      if (!caps.ogg && !(await caps.decodes(oggDecoderConfig(head)))) {
+        problem = "This browser cannot decode Opus audio.";
+      }
     } catch (e) {
       problem = `It cannot be read: ${e instanceof Error ? e.message : String(e)}.`;
     }
@@ -361,17 +444,19 @@ export async function probeMedia(file: Blob, limits: Limits): Promise<MediaProbe
     } catch (e) {
       throw new MediaError(`It cannot be read: ${e instanceof Error ? e.message : String(e)}.`);
     }
-    const tracks = info.tracks
-      .filter((t) => t.type === "audio")
-      .map((t) => ({
-        number: t.number,
-        language: languageName(t.language),
-        name: t.name || undefined,
-        codec: codecName(t.codecId),
-        channels: readOpusHead(t.codecPrivate)?.channels ?? t.channels,
-        isDefault: t.isDefault,
-        problem: trackProblem(t),
-      }));
+    const tracks = await Promise.all(
+      info.tracks
+        .filter((t) => t.type === "audio")
+        .map(async (t) => ({
+          number: t.number,
+          language: languageName(t.language),
+          name: t.name || undefined,
+          codec: codecName(t.codecId),
+          channels: readOpusHead(t.codecPrivate)?.channels ?? t.channels,
+          isDefault: t.isDefault,
+          problem: await trackProblemHere(t, caps),
+        })),
+    );
     if (tracks.length === 0) {
       throw new MediaError("It has no audio track.");
     }
@@ -380,7 +465,7 @@ export async function probeMedia(file: Blob, limits: Limits): Promise<MediaProbe
       container,
       duration,
       tracks,
-      cutAt: duration !== undefined && duration > limits.maxSeconds ? limits.maxSeconds : undefined,
+      cutAt: duration !== undefined && duration > limits.maxSeconds + CUT_SLACK_SECONDS ? limits.maxSeconds : undefined,
     };
   }
   throw new MediaError("It is not a WAV, Ogg, WebM or MKV file.");
@@ -464,6 +549,8 @@ class OpusWriter {
 }
 
 export interface PrepareOptions {
+  /** The server takes Ogg Opus; true unless said. */
+  ogg?: boolean;
   signal?: AbortSignal;
   /** Called with the share of the file read so far, 0 to 1. */
   onProgress?: (fraction: number) => void;
@@ -573,10 +660,117 @@ function cutOgg(bytes: Uint8Array, limits: Limits): Recording {
   };
 }
 
+/** The WebCodecs configuration of an Ogg Opus file's stream. */
+function oggDecoderConfig(head: { channels: number; preSkip: number; inputSampleRate?: number }): AudioDecoderConfig {
+  const opusHead = new Uint8Array(19);
+  opusHead.set(new TextEncoder().encode("OpusHead"));
+  const view = new DataView(opusHead.buffer);
+  view.setUint8(8, 1);
+  view.setUint8(9, head.channels);
+  view.setUint16(10, head.preSkip, true);
+  view.setUint32(12, head.inputSampleRate ?? RATE, true);
+  return { codec: "opus", sampleRate: RATE, numberOfChannels: head.channels, description: opusHead };
+}
+
+/** An Ogg Opus file's packets, timed from the granule positions they would have. */
+function* oggChunks(bytes: Uint8Array, o: PrepareOptions): Generator<SourceChunk> {
+  const { head, packets } = demuxOggOpus(bytes);
+  let at = -head.preSkip;
+  for (const [i, data] of packets.entries()) {
+    o.onProgress?.(i / packets.length);
+    yield { timestamp: (at * 1e6) / RATE, data, jump: false };
+    at += opusPacketSamples(data);
+  }
+}
+
+/** Frames of a WAV file read at a time when it is re-encoded. */
+const WAV_PIECE_FRAMES = 1 << 16;
+
+/** A WAV file's audio in pieces of whole frames, timed by their place. */
+async function* wavChunks(file: Blob, h: WavHeader, o: PrepareOptions): AsyncGenerator<SourceChunk> {
+  const data = file.slice(h.dataStart, h.dataStart + h.dataBytes);
+  const piece = WAV_PIECE_FRAMES * h.blockAlign;
+  let frames = 0;
+  for (let at = 0; at + h.blockAlign <= data.size; at += piece) {
+    o.signal?.throwIfAborted();
+    o.onProgress?.(at / data.size);
+    const bytes = await bytesOf(data.slice(at, Math.min(data.size, at + piece)));
+    const whole = bytes.subarray(0, bytes.length - (bytes.length % h.blockAlign));
+    yield { timestamp: (frames * 1e6) / h.sampleRate, data: whole, jump: false };
+    frames += whole.length / h.blockAlign;
+  }
+}
+
+/**
+ * The track's packets, each marked when it comes after a gap (see transcode.ts): a block that starts at
+ * least GAP_US after the last one ended (lengths from Matroska, else `packetMicros`), or, when that
+ * block's length is unknown, more than UNTIMED_JUMP_US after it started.
+ */
+async function* matroskaChunks(file: Blob, t: TrackInfo, o: PrepareOptions): AsyncGenerator<SourceChunk> {
+  const micros = packetMicros(t);
+  let segments = 0;
+  /** The last block's start, and its end while every frame's length is known. */
+  let blockStart: number | undefined;
+  let blockEnd: number | undefined;
+  for await (const event of demux(counted(file, o.onProgress), { tracks: new Set([t.number]) })) {
+    o.signal?.throwIfAborted();
+    if (event.type === "tracks") {
+      // A chained segment is another recording: the first one is what is sent.
+      if (++segments > 1) {
+        return;
+      }
+      continue;
+    }
+    let jump = false;
+    if (event.frame === 0) {
+      if (blockEnd !== undefined) {
+        jump = event.timestamp - blockEnd >= GAP_US;
+      } else if (blockStart !== undefined) {
+        jump = event.timestamp - blockStart > UNTIMED_JUMP_US;
+      }
+      blockStart = event.timestamp;
+      blockEnd = event.timestamp;
+    }
+    const length = event.duration ?? micros(event.data);
+    blockEnd = length === undefined || blockEnd === undefined ? undefined : blockEnd + length;
+    yield { timestamp: event.timestamp, data: event.data, jump };
+  }
+}
+
+/** Re-encodes what `chunks` hold (transcode.ts) into a Recording. */
+async function reencode(
+  chunks: AsyncIterable<SourceChunk> | Iterable<SourceChunk>,
+  reading: Reading,
+  limits: Limits,
+  o: PrepareOptions,
+  duration: number | undefined,
+): Promise<Recording> {
+  try {
+    const r = await transcode(chunks, reading, {
+      ogg: o.ogg ?? true,
+      keepSeconds: limits.maxSeconds,
+      maxBytes: limits.maxBytes,
+      leadLimitSeconds: LEAD_LIMIT_SECONDS,
+      signal: o.signal,
+    });
+    // Stopped at the limit by what is only padding past it is not cut.
+    const padding =
+      r.seconds >= limits.maxSeconds - 1e-3 &&
+      duration !== undefined &&
+      duration <= limits.maxSeconds + CUT_SLACK_SECONDS;
+    return { ...r, cut: r.cut && !padding, type: r.type === OGG_TYPE ? OGG_TYPE : WAV_TYPE };
+  } catch (e) {
+    if (e instanceof Error && e.message === "no audio") {
+      throw new MediaError("The track holds no audio.");
+    }
+    throw e;
+  }
+}
+
 /**
  * The body to send for `track` of a file `probeMedia` read: the file itself when the server takes it as
- * it is, else the file cut at the server's limit, or the track remuxed. Throws MediaError, or the
- * signal's reason when it is aborted.
+ * it is, else the file cut at the server's limit, the track remuxed, or re-encoded. Throws MediaError, or
+ * the signal's reason when it is aborted.
  */
 export async function prepareRecording(
   file: Blob,
@@ -585,8 +779,33 @@ export async function prepareRecording(
   limits: Limits,
   o: PrepareOptions = {},
 ): Promise<Recording> {
+  try {
+    return await prepare(file, probe, track, limits, o);
+  } catch (e) {
+    if (e instanceof MediaError || o.signal?.aborted) {
+      throw e;
+    }
+    throw new MediaError(`It cannot be read: ${e instanceof Error ? e.message : String(e)}.`);
+  }
+}
+
+async function prepare(
+  file: Blob,
+  probe: MediaProbe,
+  track: number,
+  limits: Limits,
+  o: PrepareOptions,
+): Promise<Recording> {
+  const ogg = o.ogg ?? true;
   if (probe.container === "wav") {
     const h = readWavHeader(await bytesOf(file.slice(0, WAV_HEAD_BYTES)), file.size);
+    const problem = wavProblem(h);
+    if (problem) {
+      throw new MediaError(problem);
+    }
+    if (!wavSendable(h, limits)) {
+      return reencode(wavChunks(file, h, o), { pcm: wavFormat(h), rate: h.sampleRate }, limits, o, probe.duration);
+    }
     const duration = h.dataBytes / h.blockAlign / h.sampleRate;
     const keep = wavKeep(h, limits);
     if (keep >= duration) {
@@ -608,7 +827,10 @@ export async function prepareRecording(
   }
   if (probe.container === "ogg") {
     const bytes = await bytesOf(file);
-    const { frames } = demuxOggOpus(bytes);
+    const { head, frames } = demuxOggOpus(bytes);
+    if (!ogg) {
+      return reencode(oggChunks(bytes, o), { decoder: oggDecoderConfig(head) }, limits, o, probe.duration);
+    }
     if (frames <= limits.maxSeconds * RATE && file.size <= limits.maxBytes) {
       return {
         body: file,
@@ -626,12 +848,8 @@ export async function prepareRecording(
   if (!t || problem) {
     throw new MediaError(problem ?? "The track cannot be transcribed.");
   }
-  try {
-    return await remuxMatroska(file, t, limits, o);
-  } catch (e) {
-    if (e instanceof MediaError || o.signal?.aborted) {
-      throw e;
-    }
-    throw new MediaError(`It cannot be read: ${e instanceof Error ? e.message : String(e)}.`);
+  if (ogg && remuxable(t)) {
+    return remuxMatroska(file, t, limits, o);
   }
+  return reencode(matroskaChunks(file, t, o), readingOf(t)!, limits, o, probe.duration);
 }
