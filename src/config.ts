@@ -80,7 +80,7 @@ export interface Config {
   audioDir: string;
   /** Directory holding the IndexTTS-2.5 GGUF. */
   speechModelDir: string;
-  /** Directory holding the BS-RoFormer GGUF that takes the voice out of an uploaded sample; without it samples are used as they are. */
+  /** Directory holding the Mel-Band RoFormer GGUF that takes the voice out of an uploaded sample; without it samples are used as they are. */
   separationModelDir: string;
   /** Reference recordings (`*.wav`), one per voice. */
   voicesDir: string;
@@ -231,7 +231,7 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     speech: env.SPEECH !== "0",
     audioDir: dir(env, "AUDIO_DIR", join(root, "vendor", "audio.cpp")),
     speechModelDir: dir(env, "SPEECH_MODEL_DIR", join(modelsDir, "IndexTTS2.5-GGUF")),
-    separationModelDir: dir(env, "SEPARATION_MODEL_DIR", join(modelsDir, "BS-RoFormer-ep368-GGUF")),
+    separationModelDir: dir(env, "SEPARATION_MODEL_DIR", join(modelsDir, "Mel-Band-RoFormer-GGUF")),
     voicesDir: dir(env, "VOICES_DIR", join(root, "voices")),
     speechBackend: speechBackend(env),
     speechIdleUnload: int(env, "SPEECH_IDLE_UNLOAD", 300),
@@ -269,7 +269,7 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   SPEECH: "0 turns reading aloud off (default on)",
   AUDIO_DIR: "directory with libaudiocpp (default vendor/audio.cpp)",
   SPEECH_MODEL_DIR: "directory with the speech model (default MODELS_DIR/IndexTTS2.5-GGUF)",
-  SEPARATION_MODEL_DIR: "directory with the voice separation model (default MODELS_DIR/BS-RoFormer-ep368-GGUF)",
+  SEPARATION_MODEL_DIR: "directory with the voice separation model (default MODELS_DIR/Mel-Band-RoFormer-GGUF)",
   VOICES_DIR: "directory with the voice recordings, one .wav each (default voices/)",
   SPEECH_BACKEND: "speech backend: vulkan (default), cuda (for an engine built with --cuda) or cpu",
   SPEECH_IDLE_UNLOAD: "seconds without speech before the model is freed; 0 never (default 300)",

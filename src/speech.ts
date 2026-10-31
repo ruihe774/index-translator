@@ -4,7 +4,7 @@
 // seconds without one, so the translation model has the GPU to itself until somebody listens.
 //
 // IndexTTS has no built-in voices: every request names a reference recording from `VOICES_DIR`,
-// whose voice the model imitates. A recording that is uploaded first goes through BS-RoFormer
+// whose voice the model imitates. A recording that is uploaded first goes through Mel-Band RoFormer
 // (when its model is installed), which takes the voice out of music and background noise; the
 // speech model is unloaded while that runs, so the two never share the GPU.
 //
@@ -40,8 +40,8 @@ export const MAX_SPEED = 2;
 
 /** audio.cpp's name for the IndexTTS-2 family of models. */
 const FAMILY = "index_tts2";
-/** audio.cpp's name for the BS-RoFormer family, which separates the vocals of a recording from the rest. */
-const SEPARATION_FAMILY = "bs_roformer";
+/** audio.cpp's name for the Mel-Band RoFormer family, which separates the vocals of a recording from the rest. */
+const SEPARATION_FAMILY = "mel_band_roformer";
 /** audio.cpp's name for MOSS-Transcribe-Diarize, which transcribes with speakers and times. */
 const TRANSCRIBE_FAMILY = "moss_transcribe_diarize";
 /** CPU threads for the parts of the model that do not run on the GPU. */
@@ -59,9 +59,9 @@ export const MAX_VOICE_NAME_CHARS = 60;
  */
 export const MIN_SAMPLE_SECONDS = 1;
 export const MAX_SAMPLE_SECONDS = 15;
-/** The one rate BS-RoFormer accepts; the client resamples, so the server never does. */
+/** The one rate Mel-Band RoFormer accepts; the client resamples, so the server never does. */
 export const SAMPLE_RATE = 44_100;
-/** BS-RoFormer takes mono or stereo; a mono sample is duplicated by audio.cpp. */
+/** Mel-Band RoFormer takes mono or stereo; a mono sample is duplicated by audio.cpp. */
 const MAX_SAMPLE_CHANNELS = 2;
 
 /** Longest recording `POST /transcriptions` takes: VRAM beside the translation model was measured up to here. */
@@ -215,7 +215,7 @@ export function missingSpeechModels(cfg: Config): string[] {
     missing.push("index-tts-2.5");
   }
   if (cfg.speech && !findSeparationModel(cfg)) {
-    missing.push("bs-roformer");
+    missing.push("mel-band-roformer");
   }
   if (cfg.transcribe && !findTranscribeModel(cfg)) {
     missing.push(TRANSCRIBE_MODEL_ID);
@@ -223,7 +223,7 @@ export function missingSpeechModels(cfg: Config): string[] {
   return missing;
 }
 
-/** The first BS-RoFormer GGUF in `SEPARATION_MODEL_DIR`, if there is one. */
+/** The first Mel-Band RoFormer GGUF in `SEPARATION_MODEL_DIR`, if there is one. */
 function findSeparationModel(cfg: Config): string | undefined {
   return findGguf(cfg.separationModelDir);
 }
@@ -341,7 +341,7 @@ export class NativeSpeech implements Speech {
     return { id, name };
   }
 
-  /** The BS-RoFormer GGUF in `SEPARATION_MODEL_DIR`, if the speech engine and the model are installed. */
+  /** The Mel-Band RoFormer GGUF in `SEPARATION_MODEL_DIR`, if the speech engine and the model are installed. */
   private separationModel(): string | undefined {
     if (this.missing()) {
       return undefined;

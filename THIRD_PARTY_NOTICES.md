@@ -12,7 +12,7 @@ names them and says where the full texts are. The AppImage carries this file in
 | [ggml](https://github.com/ggml-org/ggml), part of llama.cpp | Tensor library under llama.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | libmtmd (`libmtmd.so`), part of llama.cpp (`tools/mtmd`) | Image input: the image encoder of Index-Translate-9B | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/llama.cpp/LICENSE` |
 | stb_image, miniaudio and hash functions (SHA-1, SHA-256, xxHash), in llama.cpp's source tree (`vendor/`) | Compiled into `libmtmd.so`; stb_image decodes the image | Each under its own license: public domain or MIT (stb_image, Sean Barrett), public domain or MIT-0 (miniaudio, David Reid), public domain (SHA-1, SHA-256), BSD 2-Clause (xxHash, Copyright (c) 2012-2021 Yann Collet); the texts are in llama.cpp's repository at the pinned commit | `vendor/stb/stb_image.h`, `vendor/miniaudio/miniaudio.h`, `vendor/hash/*/` there |
-| [audio.cpp](https://github.com/0xShug0/audio.cpp) (`libaudiocpp.so`), pinned in `scripts/build_audiocpp.ts` | Reading aloud (IndexTTS-2.5), voice separation (BS-RoFormer) and transcription (MOSS-Transcribe-Diarize, Silero VAD) | Apache-2.0, Copyright 2026 ShugoAI LLC | `vendor/audio.cpp/LICENSE` |
+| [audio.cpp](https://github.com/0xShug0/audio.cpp) (`libaudiocpp.so`), pinned in `scripts/build_audiocpp.ts` | Reading aloud (IndexTTS-2.5), voice separation (Mel-Band RoFormer) and transcription (MOSS-Transcribe-Diarize, Silero VAD) | Apache-2.0, Copyright 2026 ShugoAI LLC | `vendor/audio.cpp/LICENSE` |
 | ggml, audio.cpp's fork, linked statically into `libaudiocpp.so` | Tensor library under audio.cpp | MIT, Copyright (c) 2023-2026 The ggml authors | `vendor/audio.cpp/LICENSE.ggml` |
 | cJSON, SentencePiece and the Abseil subset that comes with SentencePiece, in audio.cpp's source tree (`external/`) | Compiled into `libaudiocpp.so` | Each under its own license (MIT, Apache-2.0, Apache-2.0); the files are in audio.cpp's repository at the pinned commit | `external/*/LICENSE` there |
 | [Silero VAD](https://github.com/snakers4/silero-vad)'s weights (`silero_vad_16k.safetensors`), as audio.cpp bundles them (`assets/framework/models/silero_vad`), copied unchanged beside `libaudiocpp.so` | Transcription: finding the speech in a recording | MIT, Copyright (c) 2020-present Silero Team | `vendor/audio.cpp/LICENSE.silero_vad` |
@@ -92,13 +92,13 @@ about to download and asks for `yes` first (the same text as here, in short).
   speakers are and what they agreed to is not stated there. A voice is imitated by the speech model,
   so use only voices you have the right to use; your own uploads are your responsibility.
 
-### BS-RoFormer ep368 (`bs-roformer`)
+### Mel-Band RoFormer (`mel-band-roformer`)
 
 - Voice separation model, audio.cpp's GGUF conversion (`audio-cpp/audio.cpp-gguf`,
-  `BS-RoFormer-ep368-GGUF`, Q8_0).
-- License: Apache-2.0 according to audio.cpp's list of model licenses; the source of the checkpoint
-  is undocumented there.
-- <https://huggingface.co/audio-cpp/audio.cpp-gguf/tree/main/BS-RoFormer-ep368-GGUF>,
+  `Mel-Band-RoFormer-GGUF`, Q8_0).
+- License: MIT according to audio.cpp's list of model licenses, which names the checkpoint
+  <https://huggingface.co/mlx-community/mel-roformer-mlx> (MIT on its card).
+- <https://huggingface.co/audio-cpp/audio.cpp-gguf/tree/main/Mel-Band-RoFormer-GGUF>,
   <https://github.com/0xShug0/audio.cpp/blob/main/docs/model_licenses.md>
 
 ### MOSS-Transcribe-Diarize (`moss-transcribe-diarize`)

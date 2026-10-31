@@ -118,7 +118,7 @@ export function imageAdviceMessage(documentChosen: boolean, from: string, to: st
 /** What a missing model (by its `fetch_models.ts` id) takes away, in the words of the status line. */
 const FEATURES: Record<string, string> = {
   "index-tts-2.5": "reading aloud",
-  "bs-roformer": "voice separation",
+  "mel-band-roformer": "voice separation",
   "sat-3l-sm": "sentence segmentation",
   labse: "sentence alignment",
 };

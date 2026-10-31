@@ -21,7 +21,7 @@ nodes:
   - { id: speech, kind: service, label: speech worker, note: libaudiocpp, frame: server }
   - { id: chat, kind: model, label: Chat model, note: "GGUF, Q6_K, text and images" }
   - { id: tts, kind: model, label: Speech model, note: IndexTTS-2.5 }
-  - { id: sep, kind: model, label: Voice separator, note: BS-RoFormer }
+  - { id: sep, kind: model, label: Voice separator, note: Mel-Band RoFormer }
 edges:
   - { from: browser, to: api, label: "translate, speech" }
   - { from: api, to: tline, label: translate }

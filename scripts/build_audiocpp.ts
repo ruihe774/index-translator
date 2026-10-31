@@ -57,7 +57,7 @@ const COMMIT = "49e75c2facb50c54a7bbc28bbddd9ab1563c5f59";
 const REPO = "https://github.com/ruihe774/audio.cpp.git";
 /**
  * audio.cpp's CMake names of the model families to compile in; all of them take about ten times as long.
- * `roformer` holds BS-RoFormer (used) and Mel-Band RoFormer, which share their code. Silero VAD is part
+ * `roformer` holds Mel-Band RoFormer (used) and BS-RoFormer, which share their code. Silero VAD is part
  * of the core and always built. CED tells a transcription whether there is music to take out.
  */
 const MODELS = ["index_tts2", "roformer", "moss_transcribe_diarize", "ced"];
@@ -125,8 +125,8 @@ try {
       "Ninja",
       "-DCMAKE_BUILD_TYPE=Release",
       "-DAUDIOCPP_BUILD_C_API=ON",
-      // The BS-RoFormer GGUF embeds only a legacy model spec; the library then needs the current one
-      // from its own catalog, which this compiles in (no model_specs/ directory at run time).
+      // Mel-Band RoFormer's GGUF embeds a current spec; this compiles the catalog in as well, so a GGUF with
+      // only a legacy one (BS-RoFormer's) still loads, with no model_specs/ directory at run time.
       "-DAUDIOCPP_DEPLOYMENT_BUILD=ON",
       // Exactly one GPU backend, whichever the variant: a kept tree must not carry the other one over.
       `-DENGINE_ENABLE_VULKAN=${cudaToolkit ? "OFF" : "ON"}`,

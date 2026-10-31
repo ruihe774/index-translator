@@ -147,7 +147,23 @@ describe("POST /transcriptions", () => {
     });
   });
 
+  test("a run stopped before its first segment is an error, not an empty summary", async () => {
+    mockSpeech.segments = [];
+    mockSpeech.truncated = true;
+    const events = parseEvents(await (await transcribe(recording(), "?separate=false")).text());
+    expect(events.map((e) => e.event)).toStrictEqual(["start", "stage", "error"]);
+    expect(events.at(-1)).toMatchObject({
+      event: "error",
+      data: { code: "speech_error", message: expect.stringContaining("separate=true") as string },
+    });
+    // A recording with nothing said finishes, with no segments.
+    mockSpeech.truncated = false;
+    const silent = parseEvents(await (await transcribe()).text());
+    expect(silent.at(-1)).toMatchObject({ event: "done", data: { speakers: [], truncated: false } });
+  });
+
   test("a truncated transcription says so", async () => {
+    mockSpeech.segments = SEGMENTS.slice(0, 1);
     mockSpeech.truncated = true;
     const events = parseEvents(await (await transcribe()).text());
     expect(events.at(-1)).toMatchObject({ event: "done", data: { truncated: true } });

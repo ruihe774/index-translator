@@ -49,7 +49,7 @@ Usage:
   $self --version
 
 fetch downloads everything unless --model names what to get: index-translate-9b,
-index-nailong-9b, index-tts-2.5 (reading aloud, with the voices), bs-roformer (takes the voice out
+index-nailong-9b, index-tts-2.5 (reading aloud, with the voices), mel-band-roformer (takes the voice out
 of music and noise in an uploaded sample), sat-3l-sm (finds sentences for reading aloud), labse (matches the sentences of a source and its
 translation). It needs curl, and continues an interrupted download when run again.
 

@@ -422,7 +422,7 @@ describe("NativeSpeech state machine with a scripted worker", () => {
     const dir = tempDir("native-speech-");
     await Bun.write(libraryPath(dir), "");
     if (separation) {
-      await Bun.write(join(dir, "bs-roformer.gguf"), "");
+      await Bun.write(join(dir, "mel-band-roformer.gguf"), "");
     }
     const workers: any[] = [];
     const speech = new NativeSpeech(
@@ -631,8 +631,8 @@ describe("NativeSpeech state machine with a scripted worker", () => {
         const separation = workers[0].posted.find((m: any) => m.type === "separate");
         expect(separation.options).toMatchObject({
           dir,
-          modelPath: join(dir, "bs-roformer.gguf"),
-          family: "bs_roformer",
+          modelPath: join(dir, "mel-band-roformer.gguf"),
+          family: "mel_band_roformer",
           backend: "cpu",
         });
         // The recording as uploaded goes to the worker, which does the rest on the speech thread.

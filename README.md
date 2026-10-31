@@ -390,9 +390,9 @@ first (the button tells you so). Clicking a paragraph itself still scrolls the o
 - **Your own voice sample:** under **Model and options** you can also record or upload a sample.
   It is kept until the app stops. Only the first 15 seconds are used: a recording stops there and a
   longer file is cut. The voice is first taken out of any music and background noise
-  by a separation model (BS-RoFormer), which takes a few seconds; the speech model leaves the GPU
+  by a separation model (Mel-Band RoFormer), which takes a few seconds; the speech model leaves the GPU
   while that runs and is loaded again by the next sentence, which takes about five seconds. Without
-  the separation model (`fetch --model bs-roformer`, 0.2 GiB) the sample is used as it is, so a
+  the separation model (`fetch --model mel-band-roformer`, 0.3 GiB) the sample is used as it is, so a
   clean recording matters then.
 - **Markdown:** a text that is shown formatted is read the way it is shown. Headings, list items
   and table rows are read one by one, numbered lists with their numbers, table cells with their

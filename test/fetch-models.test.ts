@@ -135,14 +135,14 @@ describe("plan", () => {
   });
 
   test("the separation model is one pinned file in its own directory", () => {
-    const files = plan(["bs-roformer"], dirs);
+    const files = plan(["mel-band-roformer"], dirs);
     expect(files).toHaveLength(1);
-    expect(files[0]!.dest).toBe(join("/b", "bs-roformer-ep368-q8_0.gguf"));
+    expect(files[0]!.dest).toBe(join("/b", "mel-band-roformer-q8_0.gguf"));
     expect(files[0]!.url).toContain("/audio-cpp/audio.cpp-gguf/resolve/");
-    expect(files[0]!.url).toEndWith("/BS-RoFormer-ep368-GGUF/bs-roformer-ep368-q8_0.gguf");
+    expect(files[0]!.url).toEndWith("/Mel-Band-RoFormer-GGUF/mel-band-roformer-q8_0.gguf");
     expect(files[0]!.sha256).toMatch(/^[0-9a-f]{64}$/);
     expect(files[0]!.keep).toBeUndefined();
-    expect(MODEL_IDS).toContain("bs-roformer");
+    expect(MODEL_IDS).toContain("mel-band-roformer");
   });
 
   test("the segmentation model is two files pinned to one revision, in a directory of its own", () => {
@@ -295,7 +295,7 @@ describe("notices", () => {
       const log: string[] = [];
       const questions: string[] = [];
       await acceptNotices(
-        ["index-translate-9b", "bs-roformer"],
+        ["index-translate-9b", "mel-band-roformer"],
         dirs(),
         (l) => void log.push(l),
         (q) => {
@@ -304,7 +304,7 @@ describe("notices", () => {
         },
       );
       expect(log.join("\n")).toContain(NOTICES["index-translate-9b"]!);
-      expect(log.join("\n")).toContain(NOTICES["bs-roformer"]!);
+      expect(log.join("\n")).toContain(NOTICES["mel-band-roformer"]!);
       expect(log.join("\n")).not.toContain(NOTICES["index-tts-2.5"]!);
       expect(questions).toHaveLength(1);
     }
@@ -325,11 +325,11 @@ describe("notices", () => {
   test("a model whose files are all there asks nothing", async () => {
     const d = dirs();
     mkdirSync(d.separationModel, { recursive: true });
-    const [f] = plan(["bs-roformer"], d);
+    const [f] = plan(["mel-band-roformer"], d);
     await Bun.write(f!.dest, "x");
     const log: string[] = [];
     await acceptNotices(
-      ["bs-roformer"],
+      ["mel-band-roformer"],
       d,
       (l) => void log.push(l),
       () => Promise.reject(new Error("asked")),

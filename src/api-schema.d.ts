@@ -74,7 +74,7 @@ export interface paths {
          *     once that many are stored, the next upload is refused with `400` (`invalid_request`,
          *     `details.field` `body`) and nothing is evicted.
          *
-         *     When the voice separation model (BS-RoFormer) is installed, the voice is first taken out of
+         *     When the voice separation model (Mel-Band RoFormer) is installed, the voice is first taken out of
          *     music and background noise, and the separated voice is what is kept. The speech model is
          *     unloaded while that runs (a few seconds, depending on the length) and loaded again by the
          *     next utterance; utterances requested meanwhile wait for it. Without the model the sample
@@ -299,7 +299,7 @@ export interface paths {
          *
          *     1. When it is separated (`separate`; by default, when an audio tagger hears music in it), the
          *        voice separation model takes out music and background noise. This takes a while (about a
-         *        third of the recording's length with BS-RoFormer on a recent GPU) and cannot be stopped
+         *        tenth of the recording's length with Mel-Band RoFormer on a recent GPU) and cannot be stopped
          *        midway.
          *     2. Its loudness is evened out, and Silero VAD finds the speech. When more than 30% of it is
          *        silence, the silences are cut out (keeping a short pause between stretches of speech).
@@ -804,7 +804,7 @@ export interface components {
                 required: string[];
                 /**
                  * @description Models of features that are turned on but lack their model: `index-tts-2.5` (reading
-                 *     aloud), `bs-roformer` (voice separation, only with speech on), `sat-3l-sm`
+                 *     aloud), `mel-band-roformer` (voice separation, only with speech on), `sat-3l-sm`
                  *     (`POST /segment`), `labse` (`POST /align`), `moss-transcribe-diarize`
                  *     (`POST /transcriptions`). A feature turned off is not listed.
                  * @example [
@@ -1153,7 +1153,8 @@ export interface components {
         TranscriptionErrorEvent: {
             /**
              * @description `speech_error`: the engine failed (a model could not be loaded, the separation or the
-             *     transcription failed); the segments sent before it stand. `cancelled`: by
+             *     transcription failed), or the model was stopped for repeating itself before it wrote a
+             *     single segment (music or noise it cannot write down); the segments sent before it stand. `cancelled`: by
              *     `DELETE /transcriptions/{id}`; there is no `done`.
              * @enum {string}
              */
@@ -1833,7 +1834,7 @@ export interface operations {
                  *     music in at least a fifth of up to 30 ten-second stretches spread over the recording
                  *     (speech alone, meetings and lectures, is not separated); `true` always separates and is
                  *     refused with `400` without the model. Without separation the model may write nothing at
-                 *     all for a song, and with it a few short interjections may be lost.
+                 *     all for a song, which ends as a `speech_error`; with it a few short interjections may be lost.
                  */
                 separate?: "auto" | "true" | "false";
             };

@@ -141,7 +141,7 @@ export function config(overrides: Partial<Config> = {}): Config {
     speech: true,
     audioDir: "/nonexistent/audio.cpp",
     speechModelDir: "/nonexistent/IndexTTS2.5-GGUF",
-    separationModelDir: "/nonexistent/BS-RoFormer-ep368-GGUF",
+    separationModelDir: "/nonexistent/Mel-Band-RoFormer-GGUF",
     voicesDir: "/nonexistent/voices",
     speechBackend: "cpu",
     speechIdleUnload: 0,

@@ -305,7 +305,7 @@ export class SpeechModel extends Loaded {
   }
 }
 
-/** A source separation model (BS-RoFormer) with one session. Same rules as `SpeechModel`. */
+/** A source separation model (Mel-Band RoFormer) with one session. Same rules as `SpeechModel`. */
 export class VoiceSeparator extends Loaded {
   static load(opts: SpeechModelOptions): VoiceSeparator {
     return new VoiceSeparator(...Loaded.open(opts, "sep"));

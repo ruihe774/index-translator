@@ -30,7 +30,7 @@ describe("loadConfig defaults", () => {
       speech: true,
       audioDir: join(root, "vendor", "audio.cpp"),
       speechModelDir: join(root, "models", "IndexTTS2.5-GGUF"),
-      separationModelDir: join(root, "models", "BS-RoFormer-ep368-GGUF"),
+      separationModelDir: join(root, "models", "Mel-Band-RoFormer-GGUF"),
       voicesDir: join(root, "voices"),
       speechBackend: "vulkan",
       speechIdleUnload: 300,
@@ -66,7 +66,7 @@ describe("loadConfig defaults", () => {
     expect(loadConfig({ SPEECH: "0" }).speech).toBe(false);
     expect(loadConfig({ MODELS_DIR: "/m" }).speechModelDir).toBe(resolve("/m/IndexTTS2.5-GGUF"));
     expect(loadConfig({ MODELS_DIR: "/m", SPEECH_MODEL_DIR: "/s" }).speechModelDir).toBe(resolve("/s"));
-    expect(loadConfig({ MODELS_DIR: "/m" }).separationModelDir).toBe(resolve("/m/BS-RoFormer-ep368-GGUF"));
+    expect(loadConfig({ MODELS_DIR: "/m" }).separationModelDir).toBe(resolve("/m/Mel-Band-RoFormer-GGUF"));
     expect(loadConfig({ MODELS_DIR: "/m", SEPARATION_MODEL_DIR: "/b" }).separationModelDir).toBe(resolve("/b"));
     expect(loadConfig({ SPEECH_IDLE_UNLOAD: "0" }).speechIdleUnload).toBe(0);
     expect(() => loadConfig({ SPEECH_IDLE_UNLOAD: "soon" })).toThrow("SPEECH_IDLE_UNLOAD");

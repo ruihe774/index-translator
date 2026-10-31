@@ -296,6 +296,13 @@ export async function startApp(
       if (!done) {
         throw cancelled();
       }
+      // Stopped before it wrote a single segment: music or noise it cannot write down, not a recording
+      // with nothing said (which finishes, with no segments).
+      if (done.truncated && speakers.size === 0) {
+        throw new SpeechError(
+          `no speech could be written down: the model only repeated itself${done.separated ? "" : " (music? try separate=true)"}`,
+        );
+      }
       emit("done", {
         duration: done.duration,
         speakers: [...speakers],

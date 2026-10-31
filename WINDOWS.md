@@ -55,7 +55,7 @@ the new PATH. The GitHub runner image already has Ninja.
   `audiocpp_set_abort_flag` or `audiocpp_result_custom_output` and the server says so when speech is first used.
   The patched build has not been run on Windows yet, nor has transcription.
 - Checked on an RX 9070 (Vulkan) with the real engines: translation (72 tokens/s), speech in zh, en and ja,
-  a voice upload separated by BS-RoFormer (2 s), and speech with that uploaded voice.
+  a voice upload separated by BS-RoFormer (2 s; since replaced by Mel-Band RoFormer, not run on Windows), and speech with that uploaded voice.
 - The AppImage script and the CI `appimage` job are Linux-only and were not changed. CI has `test-windows` (lint and typecheck, `bun test`) and `engines-windows` (builds both engines, checks they open and that the server stops with a reason), neither with a GPU or models.
 
 ## Building the launcher

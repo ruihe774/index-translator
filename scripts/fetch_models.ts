@@ -1,6 +1,6 @@
 // Download the pinned models and verify their checksums: the two Index-Translate GGUF models with
 // the chat model's image encoder (its mmproj GGUF), and
-// the IndexTTS-2.5 GGUF for reading aloud and the BS-RoFormer GGUF that separates an uploaded voice
+// the IndexTTS-2.5 GGUF for reading aloud and the Mel-Band RoFormer GGUF that separates an uploaded voice
 // sample from music and noise into MODELS_DIR (./models), MOSS-Transcribe-Diarize for transcription, the
 // SaT sentence segmentation model (ONNX
 // with its tokenizer) into MODELS_DIR/sat-3l-sm, the LaBSE sentence embedding model (ONNX with its
@@ -9,7 +9,7 @@
 // Usage: bun scripts/fetch_models.ts [--model index-translate-9b ...] [--models-dir DIR] [--voices-dir DIR]
 //
 //   --model  one of index-translate-9b, index-nailong-9b, index-tts-2.5 (the speech model and the
-//            voices), bs-roformer (the voice separation model), moss-transcribe-diarize
+//            voices), mel-band-roformer (the voice separation model), moss-transcribe-diarize
 //            (transcription), sat-3l-sm (sentence segmentation), labse (sentence alignment);
 //            repeatable; all of them when not given
 //
@@ -70,15 +70,15 @@ const SPEECH_URL = resolveUrl(
 );
 const SPEECH_SHA256 = "5e827b2072042e4a1b21ccf24a5cb4f71cb1011403067a0a9b039311d8b38628";
 
-/** BS-RoFormer (ep368) as converted for audio.cpp (Q8_0, 173 MB), from the same repository and revision. */
-const SEPARATION = "bs-roformer";
-const SEPARATION_FILE = "bs-roformer-ep368-q8_0.gguf";
+/** Mel-Band RoFormer as converted for audio.cpp (Q8_0, 252 MB), from the same repository and revision. */
+const SEPARATION = "mel-band-roformer";
+const SEPARATION_FILE = "mel-band-roformer-q8_0.gguf";
 const SEPARATION_URL = resolveUrl(
   "audio-cpp/audio.cpp-gguf",
   "1b5981b2b89a1af578ebba5c8cf34226810e1f55",
-  `BS-RoFormer-ep368-GGUF/${SEPARATION_FILE}`,
+  `Mel-Band-RoFormer-GGUF/${SEPARATION_FILE}`,
 );
-const SEPARATION_SHA256 = "9a55a8cad369d00f6e0fb208bb0cd87e30e25430772b8491e20a4eace6423ad2";
+const SEPARATION_SHA256 = "2dd898ceb0e3812c18d6125dcd60174d35d3da22c94add76b029fbb21fc238fd";
 
 /** MOSS-Transcribe-Diarize as converted for audio.cpp (Q4_K, 758 MB), for `POST /transcriptions`. */
 const TRANSCRIPTION = "moss-transcribe-diarize";
@@ -184,8 +184,8 @@ export const NOTICES: Record<string, string> = {
     "  (Apache-2.0 on its card; the speakers' own rights are not stated). Use only voices you may use.",
   ].join("\n"),
   [SEPARATION]: [
-    "BS-RoFormer ep368, GGUF Q8_0 converted by audio.cpp",
-    "  License: Apache-2.0 per audio.cpp's model license list (checkpoint source undocumented there)",
+    "Mel-Band RoFormer, GGUF Q8_0 converted by audio.cpp",
+    "  License: MIT per audio.cpp's model license list (checkpoint: mlx-community/mel-roformer-mlx)",
     "  https://github.com/0xShug0/audio.cpp/blob/main/docs/model_licenses.md",
   ].join("\n"),
   [TRANSCRIPTION]: [

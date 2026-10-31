@@ -51,7 +51,7 @@ describe("metadata endpoints", () => {
       limits: { context_tokens: 1000, max_input_tokens: 400 },
       missing_models: {
         required: ["index-translate-9b", "index-nailong-9b"],
-        optional: ["index-tts-2.5", "bs-roformer", "moss-transcribe-diarize", "sat-3l-sm", "labse"],
+        optional: ["index-tts-2.5", "mel-band-roformer", "moss-transcribe-diarize", "sat-3l-sm", "labse"],
       },
       started_from: "source",
       queue: { running: false, waiting: 0, max_waiting: 1 },
