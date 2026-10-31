@@ -3,7 +3,8 @@ import { describe, expect, test } from "bun:test";
 import { canSpeak, kanjiNumber, SPEECH_LANGS, speechSegments, speechTexts } from "../public/speech-text";
 import { SPEECH_LANGUAGES } from "../src/speech";
 
-const texts = (text: string, markdown: boolean, lang = "en") => speechSegments(text, markdown, lang).map((s) => s.text);
+const texts = (text: string, markdown: boolean, lang = "en") =>
+  speechSegments(text, markdown ? "markdown" : "plain", lang).map((s) => s.text);
 
 describe("Markdown is read from its structure, not its source", () => {
   test("headings, emphasis, inline code and links lose their markers", () => {
@@ -65,11 +66,11 @@ describe("Markdown is read from its structure, not its source", () => {
 describe("pieces", () => {
   test("each carries the line of its top-level block", () => {
     const md = "# One\n\nTwo.\n\n- a\n- b\n\nThree.";
-    expect(speechSegments(md, true, "en").map((s) => s.line)).toStrictEqual([0, 2, 4, 4, 7]);
+    expect(speechSegments(md, "markdown", "en").map((s) => s.line)).toStrictEqual([0, 2, 4, 4, 7]);
   });
 
   test("plain text is read line by line; blank and symbol-only lines are dropped", () => {
-    const segments = speechSegments("First line.\n\n***\nThird line.", false, "en");
+    const segments = speechSegments("First line.\n\n***\nThird line.", "plain", "en");
     expect(segments.map((s) => [s.line, s.text])).toStrictEqual([
       [0, "First line."],
       [3, "Third line."],
@@ -173,7 +174,7 @@ describe("pieces", () => {
 
   test("the silence is longest after a heading and shortest inside a paragraph", () => {
     const sentence = "This sentence is here to fill the paragraph with ordinary words and a few more of them. ";
-    const pauses = speechSegments(`# Title\n\n${sentence.repeat(6)}`, true, "en").map((s) => s.pause);
+    const pauses = speechSegments(`# Title\n\n${sentence.repeat(6)}`, "markdown", "en").map((s) => s.pause);
     expect(pauses[0]).toBeGreaterThan(pauses.at(-1)!);
     expect(pauses.at(-1)).toBeGreaterThan(pauses[1]!);
   });
@@ -181,7 +182,7 @@ describe("pieces", () => {
   test("every piece fits one speech request", () => {
     const long = `${"x".repeat(5000)} ${"好".repeat(5000)}`;
     for (const lang of ["en", "zh"]) {
-      for (const s of speechSegments(long, false, lang)) {
+      for (const s of speechSegments(long, "plain", lang)) {
         expect(s.text.length).toBeLessThanOrEqual(1000);
       }
     }
@@ -310,7 +311,7 @@ test("kanjiNumber", () => {
 describe("sentence boundaries from a model", () => {
   const LOREM = "lorem ipsum dolor sit amet ".repeat(7); // 189 characters
   const withModel = (text: string, offsets: number[], probabilities: number[], lang = "en") =>
-    speechSegments(text, false, lang, () => ({ offsets, probabilities })).map((s) => s.text);
+    speechSegments(text, "plain", lang, () => ({ offsets, probabilities })).map((s) => s.text);
 
   test("a full stop before a lowercase letter is cut where the model says so", () => {
     const text = `${LOREM}done. then ${LOREM}`.trim();
@@ -359,20 +360,20 @@ describe("sentence boundaries from a model", () => {
 
   test("a text the model has no answer for is cut as without it", () => {
     const text = `${LOREM}done. Then ${LOREM}`.trim();
-    expect(speechSegments(text, false, "en", () => void 0)).toStrictEqual(speechSegments(text, false, "en"));
+    expect(speechSegments(text, "plain", "en", () => void 0)).toStrictEqual(speechSegments(text, "plain", "en"));
   });
 
   test("speechTexts lists the strings that are cut, with their blocks, and leaves out the short ones", () => {
     const long = `${LOREM}done. Then ${LOREM}`.trim();
     const md = `# A title\n\nShort one.\n\n${long}\n\n- ${long}\n\n\`\`\`\ncode\n\`\`\``;
     const asked: string[] = [];
-    speechSegments(md, true, "en", (t) => void asked.push(t));
-    const listed = speechTexts(md, true, "en");
+    speechSegments(md, "markdown", "en", (t) => void asked.push(t));
+    const listed = speechTexts(md, "markdown", "en");
     expect(listed.map((t) => t.text)).toStrictEqual(asked.filter((t) => t.length > 300));
     expect(listed.map((t) => t.line)).toStrictEqual([4, 6]);
-    expect(speechTexts("Hello there.", false, "en")).toStrictEqual([]);
-    expect(speechTexts("   \n  ", false, "en")).toStrictEqual([]);
-    expect(speechTexts("我".repeat(100), false, "zh")).toStrictEqual([{ line: 0, text: "我".repeat(100) }]);
+    expect(speechTexts("Hello there.", "plain", "en")).toStrictEqual([]);
+    expect(speechTexts("   \n  ", "plain", "en")).toStrictEqual([]);
+    expect(speechTexts("我".repeat(100), "plain", "zh")).toStrictEqual([{ line: 0, text: "我".repeat(100) }]);
   });
 });
 
@@ -384,4 +385,31 @@ test("canSpeak", () => {
   expect(["zh", "en", "ja", "es", "ar"].every(canSpeak)).toBe(true);
   expect(canSpeak("de")).toBe(false);
   expect(canSpeak(undefined)).toBe(false);
+});
+
+describe("subtitles", () => {
+  const srt =
+    "1\n00:00:01,000 --> 00:00:02,000\n{\\an8}<i>Where were</i>\nyou going\n\n" +
+    "2\n00:00:03,000 --> 00:00:04,000\nlast night?\n\n" +
+    "3\n00:00:05,000 --> 00:00:06,000\n\n" +
+    "4\n00:00:07,000 --> 00:00:08,000\nHome.\n";
+
+  test("each cue is read as the table shows it, without its number, time or tags", () => {
+    const segments = speechSegments(srt, "subtitles", "en");
+    expect(segments.map((s) => [s.line, s.text])).toStrictEqual([
+      [0, "Where were you going"],
+      [5, "last night?"],
+      [12, "Home."],
+    ]);
+  });
+
+  test("a cue that does not end a sentence is followed by a short pause", () => {
+    const [first, second] = speechSegments(srt, "subtitles", "en");
+    expect(first!.pause).toBeLessThan(second!.pause);
+  });
+
+  test("the texts a sentence model is asked about are the cells' text", () => {
+    const long = `1\n00:00:01,000 --> 00:00:09,000\n${"A sentence that goes on for a while. ".repeat(12).trim()}\n`;
+    expect(speechTexts(long, "subtitles", "en").map((t) => t.line)).toStrictEqual([0]);
+  });
 });

@@ -2,6 +2,7 @@
 
 import { type GlossaryProblem, parseGlossary } from "./glossary.ts";
 import { CHAT_MODEL, type ModelId } from "./select-model.ts";
+import { SUBTITLE_CONSTRAINT, SUBTITLE_GENRE } from "./subtitles.ts";
 
 export interface FormValues {
   text: string;
@@ -43,6 +44,20 @@ export type RequestResult = { body: Record<string, unknown> } | { glossaryProble
  */
 export function buildRequest(model: ModelId, sourceLang: string | undefined, v: FormValues): RequestResult {
   return build(model, { model, text: v.text, target_lang: v.targetLang, stream: true }, sourceLang, v, v.genre);
+}
+
+/**
+ * The request for subtitles: `wire` (their numbered text, subtitles.ts) to the chat model, with the
+ * constraint that keeps every cue under its number ahead of the user's, and the subtitle genre unless one
+ * was entered.
+ */
+export function buildSubtitleRequest(wire: string, sourceLang: string | undefined, v: FormValues): RequestResult {
+  return buildRequest(CHAT_MODEL, sourceLang, {
+    ...v,
+    text: wire,
+    hard: `${SUBTITLE_CONSTRAINT}\n${v.hard}`,
+    genre: v.genre.trim() || SUBTITLE_GENRE,
+  });
 }
 
 /**

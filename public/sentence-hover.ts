@@ -13,6 +13,7 @@
 // A view's groups (`sentence-spans.ts`) are collected at the first move after the view last changed;
 // any change to a view drops the mark, as its ranges may point at removed nodes.
 
+import { lineElementOf } from "./dom.ts";
 import { type Alignment, counterpart, type LineRange } from "./paragraphs.ts";
 import type { SentenceBoundaries } from "./segment.ts";
 import { pairOf, type SentenceAligner } from "./sentence-align.ts";
@@ -41,7 +42,7 @@ export interface Pairing {
 
 interface Collected {
   groups: Map<Text, { group: TextGroup; run: Run<Text> }>;
-  /** Every group in reading order, with the `data-line` of the top-level element it is in. */
+  /** Every group in reading order, with the `data-line` of the element it is in (see `lineElements`). */
   ordered: { group: TextGroup; line: number }[];
 }
 
@@ -88,13 +89,10 @@ function rangeOf({ group, span }: Sentence): Range | null {
   return range;
 }
 
-/** The `data-line` of the top-level element of `view` that holds `node`. */
+/** The `data-line` of the element of `view` that holds `node` (see `lineElements`). */
 function lineOf(node: Node, view: HTMLElement): number | null {
-  let top = node.parentElement;
-  while (top && top.parentElement !== view) {
-    top = top.parentElement;
-  }
-  return top?.dataset.line === undefined ? null : Number(top.dataset.line);
+  const el = lineElementOf(node, view);
+  return el ? Number(el.dataset.line) : null;
 }
 
 export interface SentenceHover {

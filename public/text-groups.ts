@@ -1,7 +1,8 @@
 // The text a rendered view shows, cut into groups: one per block that holds text (a paragraph, a
 // heading, a list item, a table cell, a line of plain text), so that a sentence never runs across two
 // of them (`sentence-spans.ts` finds the sentences of a group). A group's text is its text nodes
-// joined, a `<br>` written as a newline; code blocks and the notes only a screen reader gets are left out.
+// joined, a `<br>` written as a newline; code blocks, the notes only a screen reader gets and a subtitle
+// cue's number and time are left out.
 
 import type { Run } from "./sentence-spans.ts";
 
@@ -13,8 +14,8 @@ export interface TextGroup {
 
 /** Blocks that hold text of their own; the text of anything else belongs to the one around it. */
 const BLOCK = "p, h1, h2, h3, h4, h5, h6, li, th, td, blockquote";
-/** What is not text of the page: code blocks, and the notes added to links for screen readers. */
-const SKIPPED = "pre, .sr-only";
+/** What is not text of the page: code blocks, the notes added to links for screen readers, cue numbers and times. */
+const SKIPPED = "pre, .sr-only, .cue-meta";
 
 /** The block that `node` belongs to: its nearest block, else the top-level element of `view` around it. */
 function blockOf(node: Node, view: HTMLElement): Element | null {

@@ -2,6 +2,7 @@
 // its text and a line to its position on screen; the paragraph alignment (`paragraphs.ts`) maps a
 // block of one text to its counterpart in the other. Used only while the blocks are matched.
 
+import { lineElements } from "./dom.ts";
 import { type Alignment, counterpart, type LineRange } from "./paragraphs.ts";
 import type { Side } from "./state.ts";
 
@@ -14,7 +15,7 @@ export interface Pane {
   lineTop(line: number): number | null;
 }
 
-/** A rendered view whose top-level children carry `data-line` (see `markdown-dom.ts`). */
+/** A rendered view whose elements carry `data-line` (see `lineElements`). */
 export function viewPane(view: HTMLElement, scroller: HTMLElement): Pane {
   return {
     scroller,
@@ -23,17 +24,15 @@ export function viewPane(view: HTMLElement, scroller: HTMLElement): Pane {
       return hit && view.contains(hit) ? Number(hit.dataset.line) : null;
     },
     lineTop(line) {
+      const elements = lineElements(view);
       let best: HTMLElement | null = null;
-      for (const child of view.children) {
-        if (!(child instanceof HTMLElement) || child.dataset.line === undefined) {
-          continue;
-        }
-        if (Number(child.dataset.line) > line) {
+      for (const el of elements) {
+        if (Number(el.dataset.line) > line) {
           break;
         }
-        best = child;
+        best = el;
       }
-      best ??= view.firstElementChild as HTMLElement | null;
+      best ??= elements[0] ?? null;
       return best ? best.getBoundingClientRect().top : null;
     },
   };
@@ -125,13 +124,10 @@ export function clearLinked(view: HTMLElement) {
  */
 export function markLinked(view: HTMLElement, { from, to }: LineRange) {
   clearLinked(view);
-  for (const child of view.children) {
-    if (!(child instanceof HTMLElement) || child.dataset.line === undefined) {
-      continue;
-    }
-    const line = Number(child.dataset.line);
+  for (const el of lineElements(view)) {
+    const line = Number(el.dataset.line);
     if (line >= from && line < to) {
-      child.classList.add(LINKED);
+      el.classList.add(LINKED);
     }
   }
 }

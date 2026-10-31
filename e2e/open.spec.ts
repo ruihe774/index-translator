@@ -287,7 +287,7 @@ test.describe("text and Markdown", () => {
     await app.text.fill("kept");
     await pick(app.page, "report.doc", "ÐÏ");
     await expect(note(app.page)).toHaveText(
-      "report.doc was not opened: only plain text, Markdown, PDF and Word (.docx) files and JPEG, PNG and WebP images can be.",
+      "report.doc was not opened: only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files and JPEG, PNG and WebP images can be.",
     );
     await expect(note(app.page)).toHaveClass(/error/);
     await pick(app.page, "gbk.txt", Buffer.from([0xc4, 0xe3, 0xba, 0xc3]));
@@ -297,12 +297,13 @@ test.describe("text and Markdown", () => {
     await expect(app.text).toHaveValue("kept");
   });
 
-  test("the picker offers text, Markdown, PDF, Word and images", async ({ app }) => {
+  test("the picker offers text, Markdown, subtitles, PDF, Word and images", async ({ app }) => {
     await app.open();
     const accept = (await app.page.locator("#open-file").getAttribute("accept")) ?? "";
     for (const kind of [
       ".txt",
       ".md",
+      ".srt",
       ".pdf",
       ".docx",
       ".jpg",
@@ -563,7 +564,7 @@ test.describe("PDF", () => {
     const input = app.page.locator("#open-file");
     await expect(input).toHaveAttribute(
       "accept",
-      ".txt,.md,.markdown,text/plain,text/markdown,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp",
+      ".txt,.md,.markdown,.srt,text/plain,text/markdown,application/x-subrip,.jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp",
     );
     await expect(app.page.getByRole("button", { name: "Open a file" })).toHaveAttribute(
       "title",

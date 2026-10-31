@@ -1,0 +1,48 @@
+/* Subtitles shown as a table of cues (subtitle-dom.ts): the number and the time take what they need,
+   the text the rest. Rows are what sync scrolling, hovering and reading aloud mark (`data-line`). */
+.output.subtitles {
+  white-space: normal;
+}
+
+.cue-table {
+  inline-size: 100%;
+  border-collapse: collapse;
+
+  th {
+    padding: 0 0.75rem 0.25rem 0;
+    border-block-end: 1px solid var(--divider);
+    color: var(--muted);
+    font-size: 0.875em;
+    font-weight: 600;
+    text-align: start;
+  }
+
+  td {
+    padding: 0.375rem 0.75rem 0.375rem 0;
+    vertical-align: top;
+  }
+
+  tbody > tr + tr > td {
+    border-block-start: 1px solid var(--divider);
+  }
+
+  .cue-meta {
+    color: var(--muted);
+    font-size: 0.875em;
+    font-variant-numeric: tabular-nums;
+    white-space: nowrap;
+  }
+
+  .cue-text {
+    inline-size: 100%;
+    padding-inline-end: 0;
+    overflow-wrap: anywhere;
+  }
+}
+
+/* A row takes no margin or padding of its own, so the shade of the cue being read fills the row. */
+.output.subtitles .speaking {
+  padding-inline: 0;
+  margin-inline: 0;
+  border-radius: 0;
+}

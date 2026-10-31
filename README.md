@@ -47,7 +47,7 @@ service. It runs the Index-Translate 9B models on your GPU, with no accounts, qu
 | 🔒 **Private and offline** | Models run on your GPU. Your text never leaves your machine, so confidential documents are fine. |
 | 📄 **Built for whole documents** | A long-document model translates a full text in one pass (Chinese ↔ English, Chinese ↔ Japanese). The app picks it for you by length. |
 | 🖼️ **Reads pictures** | Drop a screenshot or photo (JPEG, PNG, WebP); the model reads and translates the text in it. No separate OCR step. |
-| 📑 **Opens PDFs locally** | Text, Markdown, PDF and Word files are read in your browser. One click on a page thumbnail turns it into Markdown. |
+| 📑 **Opens PDFs locally** | Text, Markdown, subtitle, PDF and Word files are read in your browser. One click on a page thumbnail turns it into Markdown. |
 | 🔊 **Reads aloud** | Hear the source or the translation, from any paragraph, in Chinese, English, Japanese, Spanish or Arabic, with voices and speed (IndexTTS-2.5, also local). |
 | 📚 **Terminology and style** | Glossary, hard rules ("keep placeholders unchanged"), soft style guidance and a genre such as academic paper or subtitles. |
 | ✅ **Tells you what went missing** | Models can silently drop or repeat paragraphs. The app counts paragraphs, warns you and names the paragraphs that went missing, were merged or were repeated; click one side to jump to the matching paragraph on the other. |
@@ -226,7 +226,7 @@ images are shown as links and are not loaded.
 </details>
 
 <details>
-<summary><b>Open a file</b>: text, Markdown, PDF, Word</summary>
+<summary><b>Open a file</b>: text, Markdown, subtitles, PDF, Word</summary>
 
 
 **Open**, next to the **From** language, takes the text from a file on your computer; dropping or pasting a
@@ -236,9 +236,9 @@ there: nothing is uploaded, and the server only receives the text you then send 
 itself to the server (see Translate an image, below). Opening a file replaces what
 is in the box and removes the translation of the old text; it never starts a translation.
 
-- **Plain text and Markdown** (`.txt`, `.md`, `.markdown`, UTF-8, up to 2 MB) go into the box as
-  they are. A text written in Markdown is shown formatted right away; **Raw** brings back the text
-  box if you want to edit it.
+- **Plain text, Markdown and subtitles** (`.txt`, `.md`, `.markdown`, `.srt`, UTF-8, up to 2 MB) go
+  into the box as they are. A text written in Markdown is shown formatted right away, and SubRip
+  subtitles as a table of cues; **Raw** brings back the text box if you want to edit it.
 - **PDF** (`.pdf`, up to 256 MB): the pages appear as small pictures beside the box. Click a page
   to take its text, as Markdown (headings, lists, tables and emphasis are kept where the PDF
   allows); it is shown formatted, with **Raw** for editing. Click another page to replace it. One
@@ -286,6 +286,32 @@ mixes several. **Clear** removes the picture and brings the text box back.
   fills a 16 GiB card. If the server says that images cannot be
   translated, the encoder file is missing: run `fetch` again (see [Install](#install)).
 - A transparent background is treated as white.
+
+</details>
+
+<details>
+<summary><b>Translate subtitles</b>: SubRip (.srt)</summary>
+
+
+Open a `.srt` file, or paste its text, and click **Translate**. Both sides are shown as a table of
+cues (number, time, text), and the translation fills in cue by cue as it arrives, each with the
+time of its cue. **Raw** shows the subtitle file itself, which is what **Copy translation** copies.
+
+- Only the cues' text is sent to the model, numbered; the times never are. Every cue of the
+  translation gets its number and time from your file again, exactly as they were written there.
+- Subtitles are always translated by Index-Translate-9B, whatever model is chosen. A glossary and
+  constraints apply as for text, and the genre is "subtitles" unless you enter one.
+- A sentence often runs across several cues, and the model then sometimes writes it under the first
+  of them. Those cues become one cue of the translation, from the first one's start to the last one's
+  end, and the note under the translation says which ones. Its text may also drift a cue or two from
+  its time, so check the timing of a long file before you use it.
+- Up to 200 cues per translation (about 10 to 15 minutes of dialogue). With more, the model may
+  start repeating earlier cues or stop early, and the app warns before you translate: split the file
+  into parts of at most 200 cues.
+- Clicking or hovering a cue finds its counterpart on the other side, as for paragraphs. The History
+  keeps subtitle translations like any other text, and reading aloud reads the cues' text only.
+- Styling tags (`<i>`, `<b>`, `<u>`) are shown as such; position tags such as `{\an8}` are kept in the
+  file and put back in front of the translated cue. Other subtitle formats (WebVTT, ASS) are not read.
 
 </details>
 

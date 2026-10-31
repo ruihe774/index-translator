@@ -17,6 +17,7 @@ import {
   seconds,
   selectionMessage,
   STOPPED_NOTE,
+  subtitleAdviceMessage,
 } from "../public/messages";
 import {
   CHAT_MODEL,
@@ -108,6 +109,18 @@ describe("imageAdviceMessage", () => {
   test("the document model was chosen: the chat model is used, and the warnings keep their order", () => {
     expect(imageAdviceMessage(true, "en", "en", "Note.")).toBe(
       `Warning: Index-NativeLong-9B does not translate images. Index-Translate-9B will be used. ${SAME_LANGUAGE_WARNING} Note.`,
+    );
+  });
+});
+
+describe("subtitleAdviceMessage", () => {
+  test("nothing to say up to 200 cues with the chat model or Automatic", () => {
+    expect(subtitleAdviceMessage(200, false, "auto", "en", "")).toBe("");
+  });
+
+  test("more cues, and the document model chosen", () => {
+    expect(subtitleAdviceMessage(1201, true, "en", "zh", "")).toBe(
+      "Warning: these subtitles have 1,201 cues. Beyond 200 the translation may repeat earlier cues or stop early; split the file into parts of at most 200 cues. Warning: Index-NativeLong-9B does not translate subtitles. Index-Translate-9B will be used.",
     );
   });
 });

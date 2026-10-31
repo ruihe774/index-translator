@@ -10,7 +10,7 @@
 
 import { DocxError, docxInstalled, readDocx } from "./docx.ts";
 import type { PdfPages } from "./elements/pdf-pages.ts";
-import { looksLikeMarkdown } from "./markdown.ts";
+import { formatOf } from "./format.ts";
 import {
   ACCEPT_DOCX,
   ACCEPT_IMAGE,
@@ -114,7 +114,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       say(`${file.name} was not opened: it is not text in UTF-8.`, "error");
       return;
     }
-    d.load(text, looksLikeMarkdown(text));
+    d.load(text, formatOf(text) !== "plain");
     say(`Opened ${file.name}.`);
   }
 

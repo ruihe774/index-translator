@@ -16,9 +16,11 @@
 
 import type { VoiceList } from "../src/api.ts";
 import { API, failureMessage, failureOf } from "./api.ts";
+import { lineElements } from "./dom.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { SampleDetail, VoiceSettings } from "./elements/voice-settings.ts";
+import type { Format } from "./format.ts";
 import { parseLines } from "./markdown.ts";
 import { OPUS_TYPE, opusDecodable } from "./opus.ts";
 import { ReadGutter } from "./read-gutter.ts";
@@ -26,6 +28,7 @@ import type { SentenceBoundaries } from "./segment.ts";
 import { type BoundaryLookup, canSpeak, type Segment, speechSegments, speechTexts } from "./speech-text.ts";
 import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
 import { setState, type Side, state } from "./state.ts";
+import { parseSrt } from "./subtitles.ts";
 import { audioToSample, uploadVoice } from "./voice-sample.ts";
 
 const SIDES: Side[] = ["source", "output"];
@@ -49,12 +52,20 @@ interface Reading {
   blocks: { line: number; end: number; index: number; label: string }[];
 }
 
-function readingOf(text: string, markdown: boolean, lang: string, boundaries?: BoundaryLookup): Reading {
-  const segments = speechSegments(text, markdown, lang, boundaries);
+/** Where each block of the text starts (a Markdown block, a cue), or null when every line is one. */
+function blockStarts(text: string, format: Format, lines: string[]): number[] | null {
+  if (format === "markdown") {
+    return parseLines(lines).map((b) => b.line);
+  }
+  return format === "subtitles" ? (parseSrt(text) ?? []).map((c) => c.line) : null;
+}
+
+function readingOf(text: string, format: Format, lang: string, boundaries?: BoundaryLookup): Reading {
+  const segments = speechSegments(text, format, lang, boundaries);
   const lines = text.split("\n");
-  // Where each block of the text starts, also the blocks that are not read (code): a block ends
-  // where the next one starts. Plain text is read line by line.
-  const starts = markdown ? parseLines(lines).map((b) => b.line) : null;
+  // Where each block of the text starts, also the blocks that are not read (code, a cue with no
+  // text): a block ends where the next one starts. Plain text is read line by line.
+  const starts = blockStarts(text, format, lines);
   const blocks: Reading["blocks"] = [];
   segments.forEach((s, index) => {
     if (blocks.at(-1)?.line === s.line) {
@@ -64,22 +75,19 @@ function readingOf(text: string, markdown: boolean, lang: string, boundaries?: B
     const label = s.text.length > LABEL_CHARS ? `${s.text.slice(0, LABEL_CHARS).trimEnd()}…` : s.text;
     blocks.push({ line: s.line, end, index, label });
   });
-  return { key: `${lang}\n${markdown}\n${text}`, segments, blocks };
+  return { key: `${lang}\n${format}\n${text}`, segments, blocks };
 }
 
-/** The top-level elements of `view` that show lines `line` to `end` (exclusive) and hold any text. */
+/** The elements of `view` (see `lineElements`) that show lines `line` to `end` (exclusive) and hold any text. */
 function elementsOf(view: HTMLElement, line: number, end: number): HTMLElement[] {
   const out: HTMLElement[] = [];
-  for (const child of view.children) {
-    if (!(child instanceof HTMLElement) || child.dataset.line === undefined) {
-      continue;
-    }
-    const at = Number(child.dataset.line);
+  for (const el of lineElements(view)) {
+    const at = Number(el.dataset.line);
     if (at >= end) {
       break;
     }
-    if (at >= line && child.textContent.trim()) {
-      out.push(child);
+    if (at >= line && el.textContent.trim()) {
+      out.push(el);
     }
   }
   return out;
@@ -95,8 +103,8 @@ export interface SpeechUiDeps {
   panes: Record<Side, { view: HTMLElement; area: HTMLElement }>;
   /** What the side holds now and the language it is in; `undefined` when that is not known. */
   target(side: Side): { text: string; lang: string | undefined };
-  /** Whether the side is shown as rendered Markdown, which is then read as such. */
-  isMarkdown(side: Side): boolean;
+  /** How the side is shown rendered (Markdown, subtitles), which is how it is read. */
+  format(side: Side): Format;
   /** Whether the side's text is in its view (`panes[side].view`), not in the source's text box. */
   shown(side: Side): boolean;
   /** The sentence boundaries the server has told, shared with the rest of the page. */
@@ -171,13 +179,13 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     if (!lang) {
       return null;
     }
-    const markdown = deps.isMarkdown(side);
-    const key = `${lang}\n${markdown}\n${text}`;
+    const format = deps.format(side);
+    const key = `${lang}\n${format}\n${text}`;
     const known = readings[side];
     if (known?.key === key) {
       return known;
     }
-    return (readings[side] = readingOf(text, markdown, lang));
+    return (readings[side] = readingOf(text, format, lang));
   }
 
   const player = new SpeechPlayer(synthesize, {
@@ -376,17 +384,17 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     setState({ speaking: { side, line } });
     showSpeaking();
     const { text, lang } = deps.target(side);
-    const markdown = deps.isMarkdown(side);
+    const format = deps.format(side);
     const settings = { lang: lang!, voice: voiceSettings.voice, speed: Number(voiceSettings.speed) };
 
     // The block being started is asked for first, the others follow. What the server has said by the
     // time the block's own answer is in (or has been waited for) cuts the pieces; the rest, `Intl.Segmenter`.
-    const texts = speechTexts(text, markdown, lang!);
+    const texts = speechTexts(text, format, lang!);
     const own = texts.filter((t) => t.line === line).map((t) => t.text);
     boundaries.request(own, true);
     boundaries.request(texts.map((t) => t.text));
     const plan = () => {
-      playing = boundaries.available ? readingOf(text, markdown, lang!, boundaries.get) : r;
+      playing = boundaries.available ? readingOf(text, format, lang!, boundaries.get) : r;
       return { segments: playing.segments, from: playing.blocks.find((b) => b.line === line)?.index ?? -1 };
     };
     if (boundaries.allSettled(own)) {
@@ -521,7 +529,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     for (const side of SIDES) {
       const { text, lang } = deps.target(side);
       if (canSpeak(lang)) {
-        boundaries.request(speechTexts(text, deps.isMarkdown(side), lang).map((t) => t.text));
+        boundaries.request(speechTexts(text, deps.format(side), lang).map((t) => t.text));
       }
     }
   }

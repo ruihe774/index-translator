@@ -29,7 +29,7 @@ const lookup = (text: string) => {
 
 /** The pieces of a text, whether there are several, and those but the last that do not end at a sentence end. */
 function cuts(text: string, markdown: boolean, lang: string) {
-  const pieces = speechSegments(text, markdown, lang, lookup).map((s) => s.text);
+  const pieces = speechSegments(text, markdown ? "markdown" : "plain", lang, lookup).map((s) => s.text);
   return {
     pieces,
     several: pieces.length > 1,
@@ -81,7 +81,7 @@ describe("the model's sentence ends hold through the changes made to a text befo
   });
 
   test("a heading and a list item without punctuation are closed, and nothing after the closing is cut", () => {
-    const heading = speechSegments("# A title without a stop\n", true, "en", lookup);
+    const heading = speechSegments("# A title without a stop\n", "markdown", "en", lookup);
     expect(heading.map((s) => s.text)).toStrictEqual(["A title without a stop."]);
     expect(cuts(`- ${EN(7)} And one without a stop`, true, "en")).toMatchObject(WELL_CUT);
   });
@@ -175,7 +175,7 @@ describe("the answer is asked for by the text as the page shows it", () => {
   test("a line break is a newline, an address is whole, a list item has no number, a task's box a space", () => {
     asks.length = 0;
     const md = `${EN(4)}  \nSee https://ex.com/a for more.\n\n3. ${EN(8)}\n\n- [ ] ${EN(8)}\n`;
-    speechSegments(md, true, "en", lookup);
+    speechSegments(md, "markdown", "en", lookup);
     expect(asks.some((t) => t.includes("\nSee https://ex.com/a for more."))).toBe(true);
     expect(asks).toContain(EN(8));
     expect(asks).toContain(` ${EN(8)}`);
@@ -184,16 +184,16 @@ describe("the answer is asked for by the text as the page shows it", () => {
   test("a table row and a paragraph with an image are not asked for, and are not listed", () => {
     asks.length = 0;
     const md = `| a | b |\n|---|---|\n| ${EN(8)} | ${EN(8)} |\n\n${EN(8)} ![alt](https://ex.com/i.png)\n`;
-    speechSegments(md, true, "en", lookup);
+    speechSegments(md, "markdown", "en", lookup);
     expect(asks).toStrictEqual([]);
-    expect(speechTexts(md, true, "en")).toStrictEqual([]);
+    expect(speechTexts(md, "markdown", "en")).toStrictEqual([]);
   });
 
   test("every text listed is asked for", () => {
     const md = `# Title\n\n${EN(8)}\n\n- ${EN(8)}\n- [ ] ${EN(8)}\n\n> ${EN(8)}\n`;
     asks.length = 0;
-    speechSegments(md, true, "en", lookup);
-    const listed = speechTexts(md, true, "en").map((t) => t.text);
+    speechSegments(md, "markdown", "en", lookup);
+    const listed = speechTexts(md, "markdown", "en").map((t) => t.text);
     expect(listed).toHaveLength(4);
     for (const text of listed) {
       expect(asks).toContain(text);
@@ -202,12 +202,12 @@ describe("the answer is asked for by the text as the page shows it", () => {
 
   test("an answer is used only for the text it is for: an offset past the end or before the start is dropped", () => {
     const text = EN(8);
-    const wild = speechSegments(text, false, "en", () => ({
+    const wild = speechSegments(text, "plain", "en", () => ({
       offsets: [0, -3, 1.5, text.length, text.length + 50],
       probabilities: [1, 1, 1, 1, 1],
     }));
     expect(wild.map((s) => s.text)).toStrictEqual(
-      speechSegments(text, false, "en", () => ({ offsets: [], probabilities: [] })).map((s) => s.text),
+      speechSegments(text, "plain", "en", () => ({ offsets: [], probabilities: [] })).map((s) => s.text),
     );
   });
 });

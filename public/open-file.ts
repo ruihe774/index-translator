@@ -8,13 +8,13 @@
 // sent for translation. An image
 // is the exception: it takes the place of the text, and Translate sends the file itself.
 
-/** Plain text and Markdown are the same to the page: whether a text is Markdown is read from it. */
+/** Plain text, Markdown and SubRip subtitles are the same to the page: which one a text is, is read from it. */
 export type FileKind = "text" | "pdf" | "docx" | "image";
 
 const DOCX_TYPE = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 /** What the file picker offers, as an `accept` list. */
-export const ACCEPT_TEXT = ".txt,.md,.markdown,text/plain,text/markdown";
+export const ACCEPT_TEXT = ".txt,.md,.markdown,.srt,text/plain,text/markdown,application/x-subrip";
 export const ACCEPT_PDF = ".pdf,application/pdf";
 export const ACCEPT_DOCX = `.docx,${DOCX_TYPE}`;
 export const ACCEPT_IMAGE = ".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp";
@@ -28,8 +28,8 @@ export const MAX_DOCX_BYTES = 64 * 2 ** 20;
 /** What the server takes (MAX_IMAGE_BYTES in src/image.ts). */
 export const MAX_IMAGE_BYTES = 8 * 2 ** 20;
 
-const TEXT_EXTENSIONS = ["txt", "text", "md", "markdown"];
-const TEXT_TYPES = ["text/plain", "text/markdown", "text/x-markdown"];
+const TEXT_EXTENSIONS = ["txt", "text", "md", "markdown", "srt"];
+const TEXT_TYPES = ["text/plain", "text/markdown", "text/x-markdown", "application/x-subrip"];
 const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "webp"];
 const IMAGE_TYPES = ["image/jpeg", "image/png", "image/webp"];
 
@@ -89,7 +89,7 @@ export function megabytes(bytes: number): string {
 /** Why a picked file is not opened; `null` when it can be. */
 export function refusal(name: string, kind: FileKind | null, size: number): string | null {
   if (kind === null) {
-    return `${name} was not opened: only plain text, Markdown, PDF and Word (.docx) files and JPEG, PNG and WebP images can be.`;
+    return `${name} was not opened: only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files and JPEG, PNG and WebP images can be.`;
   }
   const limit = { text: MAX_TEXT_BYTES, pdf: MAX_PDF_BYTES, docx: MAX_DOCX_BYTES, image: MAX_IMAGE_BYTES }[kind];
   if (size > limit) {

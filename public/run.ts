@@ -5,7 +5,6 @@ import { API, ApiFailure, failureOf } from "./api.ts";
 import { type Done, modelLabel } from "./messages.ts";
 import { onPageWake, pageVisible, resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
 import type { ModelId } from "./select-model.ts";
-import { appendTranslation } from "./state.ts";
 
 export class Run {
   readonly controller = new AbortController();
@@ -29,7 +28,7 @@ export class Run {
 export interface StreamHooks {
   /** What the one status line should say now. */
   status(text: string): void;
-  /** Called with each piece of the translation, after it is in the state. */
+  /** Called with each piece of the translation; it puts the piece in the state (`appendTranslation`, or rebuilt). */
   text(piece: string): void;
 }
 
@@ -73,7 +72,6 @@ export async function streamTranslation(run: Run, body: string, model: ModelId, 
     } else if (event === "start") {
       hooks.status(translating(data.model));
     } else if (event === "delta") {
-      appendTranslation(data.text);
       hooks.text(data.text);
     } else if (event === "done") {
       done = data;

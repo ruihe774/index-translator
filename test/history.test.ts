@@ -6,6 +6,7 @@ import {
   loadHistory,
   MAX_ENTRIES,
   parseHistory,
+  restoredAlignment,
   saveHistory,
   withBlocks,
   withEntry,
@@ -49,6 +50,14 @@ describe("blocks", () => {
       entry(5),
     ]);
     expect(parseHistory(raw).map((e) => e.id)).toStrictEqual(["id1", "id2", "id5"]);
+  });
+
+  test("subtitles are matched again by their cues' numbers and times, not by kept blocks", () => {
+    const source = "1\n00:00:01,000 --> 00:00:02,000\nHi.\n\n2\n00:00:03,000 --> 00:00:04,000\nBye.\n";
+    const translation = "1\n00:00:01,000 --> 00:00:04,000\n你好，再见。\n";
+    expect(restoredAlignment(entry(1, { source, translation }))!.groups).toStrictEqual([
+      { source: [0, 1], output: [0] },
+    ]);
   });
 
   test("withBlocks sets them on one entry only", () => {

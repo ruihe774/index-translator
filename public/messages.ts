@@ -4,6 +4,7 @@
 import type { DoneEvent, Health } from "../src/api.ts";
 import { mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
 import { CHAT_MODEL, DOCUMENT_MODEL, LONG_THRESHOLD_LETTERS, type ModelId, type Selection } from "./select-model.ts";
+import { MAX_CUES } from "./subtitles.ts";
 
 const MODEL_LABELS: Record<ModelId, string> = {
   [CHAT_MODEL]: "Index-Translate-9B",
@@ -104,6 +105,38 @@ export function imageAdviceMessage(documentChosen: boolean, from: string, to: st
   if (documentChosen) {
     parts.push(
       `Warning: ${MODEL_LABELS[DOCUMENT_MODEL]} does not translate images. ${MODEL_LABELS[CHAT_MODEL]} will be used.`,
+    );
+  }
+  if (sameLanguage(from, to)) {
+    parts.push(SAME_LANGUAGE_WARNING);
+  }
+  if (languageNote) {
+    parts.push(languageNote);
+  }
+  return parts.join(" ");
+}
+
+/**
+ * The same for subtitles. They are sent to Index-Translate-9B whatever was chosen (the cue numbers rely
+ * on its constraints); `documentChosen` says that the other model was. Past `MAX_CUES` cues one request
+ * goes wrong, so the user is told to split the file.
+ */
+export function subtitleAdviceMessage(
+  cues: number,
+  documentChosen: boolean,
+  from: string,
+  to: string,
+  languageNote: string,
+): string {
+  const parts: string[] = [];
+  if (cues > MAX_CUES) {
+    parts.push(
+      `Warning: these subtitles have ${number.format(cues)} cues. Beyond ${MAX_CUES} the translation may repeat earlier cues or stop early; split the file into parts of at most ${MAX_CUES} cues.`,
+    );
+  }
+  if (documentChosen) {
+    parts.push(
+      `Warning: ${MODEL_LABELS[DOCUMENT_MODEL]} does not translate subtitles. ${MODEL_LABELS[CHAT_MODEL]} will be used.`,
     );
   }
   if (sameLanguage(from, to)) {

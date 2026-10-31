@@ -13,13 +13,13 @@ import type { SpeechControls } from "./elements/speech-controls.ts";
 import type { ViewSwitch } from "./elements/view-switch.ts";
 import type { VoiceSettings } from "./elements/voice-settings.ts";
 import { initEngineStatus } from "./engine-status.ts";
+import { type Format, formatOf } from "./format.ts";
 import { initHistory } from "./history-state.ts";
 import { type HistoryEntry, newId, restoredAlignment } from "./history.ts";
 import { fillLanguages } from "./languages.ts";
 import { confirmLink } from "./link-dialog.ts";
 import { linkReference } from "./links.ts";
 import { clipboardHtml, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
-import { looksLikeMarkdown } from "./markdown.ts";
 import {
   adviceMessage,
   type Done,
@@ -29,11 +29,19 @@ import {
   modelLabel,
   resultNotes,
   selectionMessage,
+  subtitleAdviceMessage,
 } from "./messages.ts";
 import { initOpenUi } from "./open-ui.ts";
 import { alignBlocks, mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
 import { clearEnabled, copyEnabled, createRender, restoreFocusAfter } from "./render.ts";
-import { buildImageRequest, buildRequest, type FormValues, glossaryMessage, hasOptions } from "./request.ts";
+import {
+  buildImageRequest,
+  buildRequest,
+  buildSubtitleRequest,
+  type FormValues,
+  glossaryMessage,
+  hasOptions,
+} from "./request.ts";
 import { Run, streamTranslation } from "./run.ts";
 import { focusableWhenScrolling } from "./scroll-focus.ts";
 import { SentenceBoundaries } from "./segment.ts";
@@ -50,8 +58,18 @@ import { SentenceAligner } from "./sentence-align.ts";
 import { initSentenceHover } from "./sentence-hover.ts";
 import { initSourceImage } from "./source-image.ts";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
-import { bindRender, setState, type Side, state } from "./state.ts";
+import { appendTranslation, bindRender, setState, setTranslation, type Side, state } from "./state.ts";
 import { KEYS, store, stored } from "./storage.ts";
+import {
+  type Cue,
+  parseSrt,
+  type Progress,
+  subtitleAlignment,
+  subtitleNotes,
+  toWire,
+  translateSubtitles,
+  type Wire,
+} from "./subtitles.ts";
 import { initSyncState } from "./sync-state.ts";
 import { initWebpageFlow } from "./webpage-flow.ts";
 import { webpageLink } from "./webpage-link.ts";
@@ -147,6 +165,17 @@ function refreshSelection() {
     options.disabled = false;
     return s;
   }
+  const cues = parseSrt(textInput.value);
+  if (cues) {
+    setText(countEl, `${number.format(cues.length)} cues, ${number.format(s.letters)} letters`);
+    const documentChosen = modelChoice === DOCUMENT_MODEL;
+    setText(
+      adviceEl,
+      subtitleAdviceMessage(cues.length, documentChosen, fromSelect.value, toSelect.value, languageNote),
+    );
+    options.disabled = false;
+    return s;
+  }
   // While a page is fetched the count says so instead (webpage-flow.ts).
   if (!webpage.fetching) {
     setText(countEl, `${number.format(s.letters)} letters`);
@@ -175,22 +204,23 @@ async function loadLanguages() {
 // ---- raw and preview views -------------------------------------------------------------------
 //
 // After Translate, a source that looks like Markdown is shown rendered in place of the textarea,
-// and so is the translation. Each side has its own Raw / Preview switch; Raw on the source side is
-// the editable textarea. Clear returns the source to the plain textarea.
+// subtitles as a table of cues, and so is the translation. Each side has its own Raw / Preview
+// switch; Raw on the source side is the editable textarea. Clear returns the source to the plain
+// textarea.
 
 type View = "raw" | "preview";
 
-/** Whether the text is rendered as Markdown (it looked like it), and the chosen view. */
+/** How the text is rendered in Preview (`plain`: line by line, as it is), and the chosen view. */
 const views = {
-  source: { available: false, view: "raw" as View },
-  output: { available: false, view: "preview" as View },
+  source: { format: "plain" as Format, view: "raw" as View },
+  output: { format: "plain" as Format, view: "preview" as View },
 };
 
 let output: OutputView | null = null;
 
 /** Sets one side's view state in one place. */
-function setView(side: keyof typeof views, available: boolean, view: View) {
-  views[side] = { available, view };
+function setView(side: keyof typeof views, format: Format, view: View) {
+  views[side] = { format, view };
 }
 
 function showSwitch(el: ViewSwitch, side: keyof typeof views) {
@@ -211,7 +241,7 @@ function showSource() {
   showSwitch(sourceSwitch, "source");
   setLang(sourceView, sourceLangOf());
   if (preview) {
-    renderText(sourceView, textInput.value, views.source.available);
+    renderText(sourceView, textInput.value, views.source.format);
   } else {
     sourceView.replaceChildren();
   }
@@ -223,9 +253,9 @@ function showSource() {
   speech.showSpeaking();
 }
 
-/** Sets the source's view state and shows it: Markdown sources start rendered, others raw. */
-function showSourceAs(available: boolean, view: View) {
-  setView("source", available, view);
+/** Sets the source's view state and shows it: Markdown and subtitle sources start rendered, others raw. */
+function showSourceAs(format: Format, view: View) {
+  setView("source", format, view);
   showSource();
 }
 
@@ -233,7 +263,7 @@ function showSourceAs(available: boolean, view: View) {
 function showOutput() {
   showSwitch(outputSwitch, "output");
   refreshControls();
-  output = createOutput(outputEl, views.output.available && views.output.view === "preview");
+  output = createOutput(outputEl, views.output.view === "preview" ? views.output.format : "plain");
   if (state.translation) {
     output.append(state.translation);
     output.finish();
@@ -262,7 +292,7 @@ outputEl.addEventListener("auxclick", onOutputLink);
 function wireSwitch(el: ViewSwitch, side: keyof typeof views, show: () => void) {
   el.addEventListener("change", () => {
     if (side === "source") {
-      views.source.available = looksLikeMarkdown(textInput.value);
+      views.source.format = formatOf(textInput.value);
     }
     views[side].view = el.value as View;
     // The source is read only from Preview: its Raw text box is for writing.
@@ -358,12 +388,12 @@ new MutationObserver(() => {
 
 // ---- translating -----------------------------------------------------------------------------
 
-/** Markdown is rendered when the source looks written in it; the copied plain text stays the raw output. */
-function clearResult(markdown: boolean) {
+/** The output is rendered as the source is (Markdown, subtitles); the copied plain text stays the raw output. */
+function clearResult(format: Format) {
   sync.reset();
   boundaries.abort();
   aligner.abort();
-  setView("output", markdown, "preview");
+  setView("output", format, "preview");
   setState({ translation: "" });
   showOutput();
   metaEl.show("");
@@ -396,8 +426,10 @@ interface Job {
   sel: Selection;
   model: ModelId;
   body: Record<string, unknown>;
-  /** The source looks like Markdown, so both sides are shown rendered. */
-  markdown: boolean;
+  /** How the source is rendered, and so the translation. */
+  format: Format;
+  /** For subtitles: their cues and what was sent for them (subtitles.ts). */
+  subtitles: { cues: Cue[]; wire: Wire } | null;
 }
 
 /** The source to translate (an image, or a text that is not empty); says why not and returns null otherwise. */
@@ -433,14 +465,25 @@ async function webpageTookOver({ image, text }: { image: File | null; text: stri
 /** Picks the model and builds the request; says what is wrong with the form and returns null otherwise. */
 function prepareJob({ image, text }: { image: File | null; text: string }): Job | null {
   const sel = refreshSelection();
-  if (!image && sel.reason === "manual-document-unusable") {
+  const format = image ? "plain" : formatOf(text);
+  const cues = format === "subtitles" ? parseSrt(text) : null;
+  const subtitles = cues && { cues, wire: toWire(cues) };
+  if (subtitles && !subtitles.wire.text) {
+    fail("These subtitles have no text to translate.");
+    return null;
+  }
+  if (!image && !subtitles && sel.reason === "manual-document-unusable") {
     fail(selectionMessage(sel).text);
     return null;
   }
-  // Only the chat model reads images. The image itself is put in when the request is sent.
+  // Only the chat model reads images and subtitles. The image itself is put in when the request is sent.
   const sourceLang = fromSelect.value === "auto" ? undefined : fromSelect.value;
   const values = readForm();
-  const built = image ? buildImageRequest("", sourceLang, values) : buildRequest(sel.model, sel.sourceLang, values);
+  const built = image
+    ? buildImageRequest("", sourceLang, values)
+    : subtitles
+      ? buildSubtitleRequest(subtitles.wire.text, sel.sourceLang, values)
+      : buildRequest(sel.model, sel.sourceLang, values);
   if ("glossaryProblem" in built) {
     $<HTMLDetailsElement>("advanced").open = true;
     showFieldError(glossaryError, glossaryInput, glossaryMessage(built.glossaryProblem));
@@ -452,9 +495,10 @@ function prepareJob({ image, text }: { image: File | null; text: string }): Job 
     image,
     text,
     sel,
-    model: image ? CHAT_MODEL : sel.model,
+    model: image || subtitles ? CHAT_MODEL : sel.model,
     body: built.body,
-    markdown: !image && looksLikeMarkdown(text),
+    format,
+    subtitles,
   };
 }
 
@@ -466,27 +510,58 @@ function startTranslation(job: Job): Run {
   const run = new Run();
   setState({ running: run });
   following = true;
-  clearResult(job.markdown);
-  showSourceAs(job.markdown, job.markdown ? "preview" : "raw");
+  clearResult(job.format);
+  showSourceAs(job.format, job.format === "plain" ? "raw" : "preview");
   outputEl.lang = toSelect.value;
   stopBtn.focus();
   metaEl.show(`Translating with ${modelLabel(job.model)}…`);
   return run;
 }
 
+/**
+ * A subtitle translation as far as it got (`written`, what the model wrote): rebuilt as SubRip, which
+ * becomes the translation and is shown, its cues matched with the source's by number, and what it
+ * joined, left out or did not reach noted.
+ */
+function settleSubtitles({ text, subtitles }: Job, written: string, progress: Progress) {
+  const t = translateSubtitles(subtitles!.cues, subtitles!.wire, written, progress);
+  setTranslation(t.srt);
+  output?.show(t.srt);
+  for (const note of subtitleNotes(t)) {
+    addNote(note);
+  }
+  const alignment = subtitleAlignment(text, t.srt);
+  if (alignment) {
+    sync.set(text, t.srt, alignment);
+  }
+}
+
 /** The translation came to its end: its notes, the block matching, the link check and the history entry. */
-function finishTranslation({ image, text, sel, model, markdown }: Job, done: Done) {
+function finishTranslation(job: Job, done: Done, written: string) {
+  const { image, text, sel, model, format } = job;
+  const markdown = format === "markdown";
+  if (job.subtitles) {
+    const context = {
+      source: null,
+      translation: written,
+      model,
+      sourceLang: sel.sourceLang,
+      targetLang: toSelect.value,
+    };
+    for (const note of resultNotes(done, context)) {
+      addNote(note);
+    }
+    settleSubtitles(job, written, done.finish_reason === "stop" ? "complete" : "partial");
+  }
   const { translation } = state;
-  const notes = resultNotes(done, {
-    source: image ? null : text,
-    translation,
-    model,
-    sourceLang: sel.sourceLang,
-    targetLang: toSelect.value,
-  });
-  const mismatch = image ? null : paragraphMismatch(text, translation);
+  // Subtitles are matched by their cue numbers, so none of what follows is asked of them.
+  const prose = !image && !job.subtitles;
+  const notes = prose
+    ? resultNotes(done, { source: text, translation, model, sourceLang: sel.sourceLang, targetLang: toSelect.value })
+    : [];
+  const mismatch = prose ? paragraphMismatch(text, translation) : null;
   const mismatchNote = notes.map(addNote).find((li) => mismatch && li.textContent === mismatchMessage(mismatch));
-  const matched = !image && done.finish_reason === "stop";
+  const matched = prose && done.finish_reason === "stop";
   const blocks = matched || markdown ? alignBlocks(text, translation) : null;
   const alignment = matched ? blocks : null;
   const entryId = newId();
@@ -506,7 +581,7 @@ function finishTranslation({ image, text, sel, model, markdown }: Job, done: Don
       at: Date.now(),
       from: fromSelect.value,
       to: toSelect.value,
-      model: sel.model,
+      model,
       source: text,
       translation,
       ...(alignment && { blocks: "same" as const }),
@@ -543,6 +618,8 @@ async function translate() {
   }
   const run = startTranslation(job);
   let finished = false;
+  /** For subtitles, what the model wrote, which `translateSubtitles` rebuilds the translation from. */
+  let written = "";
   try {
     const body = JSON.stringify({
       ...job.body,
@@ -552,11 +629,24 @@ async function translate() {
     run.controller.signal.throwIfAborted();
     const done = await streamTranslation(run, body, job.model, {
       status: (text) => metaEl.show(text),
-      text: (piece) => output!.append(piece),
+      text: (piece) => {
+        if (!job.subtitles) {
+          appendTranslation(piece);
+          output!.append(piece);
+          return;
+        }
+        written += piece;
+        const { srt } = translateSubtitles(job.subtitles.cues, job.subtitles.wire, written, "streaming");
+        setTranslation(srt);
+        output!.show(srt);
+      },
     });
-    finishTranslation(job, done);
+    finishTranslation(job, done, written);
     finished = true;
   } catch (e) {
+    if (job.subtitles && written) {
+      settleSubtitles(job, written, "partial");
+    }
     if (run.stopped) {
       showInterruption(true);
     } else {
@@ -569,7 +659,7 @@ async function translate() {
 
 /**
  * Puts `text` in place of the source and drops the result: a new start. It is shown in the text
- * box, or with `preview` rendered as after Translate (Markdown when it looks like it).
+ * box, or with `preview` rendered as after Translate (Markdown or subtitles when it looks like them).
  */
 function loadSource(text: string, preview = false) {
   speech.stop();
@@ -578,8 +668,8 @@ function loadSource(text: string, preview = false) {
   textInput.scrollTop = 0;
   sourceArea.scrollTop = 0;
   showFieldError(textError, textInput, null);
-  showSourceAs(preview && looksLikeMarkdown(text), preview && text ? "preview" : "raw");
-  clearResult(false);
+  showSourceAs(preview ? formatOf(text) : "plain", preview && text ? "preview" : "raw");
+  clearResult("plain");
   placeholderEl.hidden = false;
   sync.refresh();
   refreshSelection();
@@ -657,9 +747,9 @@ function restoreEntry(entry: HistoryEntry) {
   if (has(toSelect, entry.to)) {
     toSelect.value = entry.to;
   }
-  const markdown = looksLikeMarkdown(entry.source);
-  clearResult(markdown);
-  showSourceAs(markdown, markdown ? "preview" : "raw");
+  const format = formatOf(entry.source);
+  clearResult(format);
+  showSourceAs(format, format === "plain" ? "raw" : "preview");
   outputEl.lang = toSelect.value;
   setState({ translation: entry.translation });
   showOutput();
@@ -697,7 +787,7 @@ const speech: SpeechUi = initSpeechUi({
     side === "source"
       ? { text: textInput.value, lang: sourceLangOf() }
       : { text: state.translation, lang: outputEl.lang || undefined },
-  isMarkdown: (side: Side) => (side === "source" ? looksLikeMarkdown(textInput.value) : views.output.available),
+  format: (side: Side) => (side === "source" ? formatOf(textInput.value) : views.output.format),
   shown: (side: Side) => side === "output" || !sourceArea.hidden,
 });
 

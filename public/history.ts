@@ -3,6 +3,7 @@
 
 import { alignBlocks, alignFromPairs, type Alignment, type BlockGroup } from "./paragraphs.ts";
 import { KEYS, store, stored } from "./storage.ts";
+import { parseSrt, subtitleAlignment } from "./subtitles.ts";
 
 export const HISTORY_KEY = KEYS.history;
 /** Newest first; the oldest entry goes when a new one would be the 51st. */
@@ -22,7 +23,8 @@ export interface HistoryEntry {
   /**
    * How the translation's blocks match the source's, kept so that click-to-sync and sentence matching
    * work again when the entry is restored: `"same"` for block i ↔ i (recomputed from the texts), else the
-   * groups `POST /align` found. Absent when the blocks were not matched. Checked against the texts on restore.
+   * groups `POST /align` found. Absent when the blocks were not matched, and for subtitles, whose cues are
+   * matched again by their numbers and times. Checked against the texts on restore.
    */
   blocks?: "same" | BlockGroup[];
 }
@@ -83,6 +85,9 @@ export function withBlocks(list: HistoryEntry[], id: string, blocks: BlockGroup[
 
 /** The block matching kept with an entry, if it still fits both texts (damaged storage is ignored). */
 export function restoredAlignment(entry: HistoryEntry): Alignment | null {
+  if (parseSrt(entry.source)) {
+    return subtitleAlignment(entry.source, entry.translation);
+  }
   const { blocks } = entry;
   if (blocks === "same") {
     return alignBlocks(entry.source, entry.translation);

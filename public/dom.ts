@@ -34,3 +34,17 @@ export function setLang(el: HTMLElement, lang: string | undefined) {
     el.removeAttribute("lang");
   }
 }
+
+/**
+ * The elements of a rendered view that carry `data-line`, in reading order: its top-level children
+ * (markdown-dom.ts), or the rows of a subtitle table (subtitle-dom.ts).
+ */
+export function lineElements(view: HTMLElement): HTMLElement[] {
+  return [...view.querySelectorAll<HTMLElement>(":scope > [data-line], :scope > table > tbody > tr[data-line]")];
+}
+
+/** The element of `lineElements(view)` that holds `node`, else null. */
+export function lineElementOf(node: Node, view: HTMLElement): HTMLElement | null {
+  const hit = (node instanceof Element ? node : node.parentElement)?.closest<HTMLElement>("[data-line]");
+  return hit && view.contains(hit) ? hit : null;
+}

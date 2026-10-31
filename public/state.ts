@@ -55,6 +55,18 @@ export function setState(patch: Partial<State>) {
 }
 
 /**
+ * Replaces the translation (a subtitle translation is rebuilt as it streams). As with
+ * `appendTranslation`, only a change between empty and not renders.
+ */
+export function setTranslation(text: string) {
+  if ((state.translation.length === 0) === (text.length === 0)) {
+    state.translation = text;
+  } else {
+    setState({ translation: text });
+  }
+}
+
+/**
  * Adds streamed text to the translation. Only the first token changes what the controls show (Copy
  * and Clear become available), so only it renders; the rest just grows the copied text.
  */

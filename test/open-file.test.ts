@@ -19,6 +19,7 @@ describe("fileKind", () => {
     expect(fileKind("notes.txt", "")).toBe("text");
     expect(fileKind("README.MD", "")).toBe("text");
     expect(fileKind("a.b.markdown", "application/octet-stream")).toBe("text");
+    expect(fileKind("Episode 1.SRT", "")).toBe("text");
     expect(fileKind("paper.PDF", "")).toBe("pdf");
     expect(fileKind("Report.DOCX", "")).toBe("docx");
     expect(fileKind("photo.JPG", "")).toBe("image");
@@ -30,6 +31,7 @@ describe("fileKind", () => {
   test("falls back to the media type when the extension says nothing", () => {
     expect(fileKind("LICENSE", "text/plain")).toBe("text");
     expect(fileKind("notes", "text/markdown; charset=utf-8")).toBe("text");
+    expect(fileKind("subtitles", "application/x-subrip")).toBe("text");
     expect(fileKind("download", "application/pdf")).toBe("pdf");
     expect(fileKind("attachment", "application/vnd.openxmlformats-officedocument.wordprocessingml.document")).toBe(
       "docx",
@@ -67,7 +69,7 @@ describe("decodeText", () => {
 describe("refusal", () => {
   test("names the file and the reason", () => {
     expect(refusal("a.doc", null, 10)).toContain(
-      "only plain text, Markdown, PDF and Word (.docx) files and JPEG, PNG and WebP images",
+      "only plain text, Markdown, SubRip subtitle (.srt), PDF and Word (.docx) files and JPEG, PNG and WebP images",
     );
     expect(refusal("a.docx", "docx", MAX_DOCX_BYTES + 1)).toContain("larger than 64 MB");
     expect(refusal("a.docx", "docx", MAX_DOCX_BYTES)).toBeNull();

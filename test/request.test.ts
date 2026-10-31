@@ -4,12 +4,14 @@ import { describe, expect, test } from "bun:test";
 import {
   buildImageRequest,
   buildRequest,
+  buildSubtitleRequest,
   type FormValues,
   glossaryMessage,
   hasOptions,
   lines,
 } from "../public/request";
 import { CHAT_MODEL, DOCUMENT_MODEL } from "../public/select-model";
+import { SUBTITLE_CONSTRAINT, SUBTITLE_GENRE } from "../public/subtitles";
 
 const form = (over: Partial<FormValues> = {}): FormValues => ({
   text: "hello",
@@ -169,6 +171,24 @@ describe("glossaryMessage", () => {
     );
     expect(glossaryMessage({ line: 4, kind: "duplicate", term: "cat" })).toBe(
       'Glossary line 4 repeats the source term "cat". Each source term may appear only once.',
+    );
+  });
+});
+
+describe("buildSubtitleRequest", () => {
+  test("sends the numbered text to the chat model with the cue constraint first and the subtitle genre", () => {
+    const body = bodyOf(buildSubtitleRequest("1\nHi.", "en", form({ text: "the SRT", hard: "Keep names" })));
+    expect(body.model).toBe(CHAT_MODEL);
+    expect(body.text).toBe("1\nHi.");
+    expect(body.source_lang).toBe("en");
+    expect(body.hard_constraints).toStrictEqual([SUBTITLE_CONSTRAINT, "Keep names"]);
+    expect(body.genre).toBe(SUBTITLE_GENRE);
+  });
+
+  test("a genre that was entered wins, and a bad glossary still stops it", () => {
+    expect(bodyOf(buildSubtitleRequest("1\nHi.", undefined, form({ genre: "anime" }))).genre).toBe("anime");
+    expect(buildSubtitleRequest("1\nHi.", undefined, form({ glossary: "no equals sign" }))).toHaveProperty(
+      "glossaryProblem",
     );
   });
 });

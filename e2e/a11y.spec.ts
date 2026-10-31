@@ -689,6 +689,64 @@ for (const scheme of ["light", "dark"] as const) {
   });
 }
 
+const SRT_SOURCE = Array.from(
+  { length: 6 },
+  (_, i) =>
+    `${i + 1}\n00:00:0${i},000 --> 00:00:0${i},900\n${i === 2 ? "<i>Quietly,</i>\nplease." : `Line number ${i + 1}.`}`,
+).join("\n\n");
+const SRT_OUTPUT = Array.from({ length: 6 }, (_, i) => `${i + 1}\n第${i + 1}行。`).join("\n\n");
+
+for (const scheme of ["light", "dark"] as const) {
+  test(`subtitle tables, both views and the hover shade pass axe in ${scheme} mode`, async ({ app, mock }) => {
+    await app.page.emulateMedia({ colorScheme: scheme });
+    await mock.set({ chunks: [SRT_OUTPUT] });
+    await app.open();
+    await app.from.selectOption("en");
+    await app.text.fill(SRT_SOURCE);
+    await app.translate.click();
+    await expect(app.meta).toContainText("generated");
+    await settle(app.page);
+
+    // Real tables with column headers, each side in the language of its text.
+    await expect(app.page.locator("#source-view table th[scope=col]")).toHaveCount(3);
+    await expect(app.output.locator("table tbody tr")).toHaveCount(6);
+    await expect(app.output).toHaveAttribute("lang", "zh");
+    let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+
+    await app.page.locator("#source-view tbody tr").nth(2).hover();
+    await expect(app.output.locator(".linked")).toHaveCount(1);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+    await app.page.mouse.move(0, 0);
+
+    await SWITCH(app.page, "Source view", "Raw").click();
+    await SWITCH(app.page, "Translation view", "Raw").click();
+    await settle(app.page);
+    results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+    expect(results.violations).toStrictEqual([]);
+  });
+}
+
+test("subtitle tables fit 320 px: nothing overflows and the end time goes under the start", async ({ app, mock }) => {
+  await mock.set({ chunks: [SRT_OUTPUT] });
+  await app.page.setViewportSize({ width: 320, height: 640 });
+  await app.open();
+  await app.text.fill(SRT_SOURCE);
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  expect(await overflow(app.page)).toBeLessThanOrEqual(0);
+  const time = app.output.locator(".cue-time").first();
+  const [start, end] = await time.evaluate((cell) => {
+    const range = document.createRange();
+    range.selectNodeContents(cell.firstChild!);
+    return [range.getBoundingClientRect().top, cell.querySelector(".cue-end")!.getBoundingClientRect().top];
+  });
+  expect(end).toBeGreaterThan(start);
+  const results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+  expect(results.violations).toStrictEqual([]);
+});
+
 test("rendered Markdown: wide tables and code blocks are reachable by keyboard, nothing overflows at 320 px", async ({
   app,
   mock,

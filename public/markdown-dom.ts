@@ -1,13 +1,16 @@
 // Writes the translation into the output element as it streams: as plain text, or rendered from
-// Markdown when the source looked like Markdown. Elements are built with the DOM API only; no
-// string from the model is ever parsed as HTML. The source preview is rendered the same way.
+// Markdown when the source looked like Markdown (subtitles: subtitle-dom.ts). Elements are built with
+// the DOM API only; no string from the model is ever parsed as HTML. The source preview is rendered
+// the same way.
 //
 // Each top-level element carries `data-line`, the index of its first line in the text (one span
 // per line for plain text, one element per block for Markdown), so scrolling can be synced by line.
 
+import type { Format } from "./format.ts";
 import { LINK_NOTE, linkProblem, type LinkReference } from "./links.ts";
 import { type Align, type Block, type Inline, MarkdownStream, type ParsedBlock } from "./markdown.ts";
 import { prefersReducedMotion } from "./media-query.ts";
+import { subtitleOutput } from "./subtitle-dom.ts";
 
 /** What the rendered tree holds: elements and text; nothing else is ever created. */
 type Child = Element | Text;
@@ -15,9 +18,14 @@ type Child = Element | Text;
 export interface OutputView {
   /** Adds streamed text. Rendering may be deferred to the next frame. */
   append(text: string): void;
+  /** Shows `text` in place of what was given so far (a subtitle translation, which is rebuilt as it streams). */
+  show(text: string): void;
   /** Renders everything appended so far; call when the stream ends, however it ends. */
   finish(): void;
 }
+
+/** A view that only grows; `createOutput` starts a new one to show another text. */
+type Streamed = Pick<OutputView, "append" | "finish">;
 
 /** Links open only to the web or mail; anything else (javascript:, data:, relative paths) stays text. */
 const SAFE_URL = /^(?:https?:\/\/|mailto:)/i;
@@ -189,7 +197,7 @@ function blockNodes(blocks: Block[], tight = false): Child[] {
 const REDUCED_MOTION_FLUSH_MS = 1000;
 
 /** Plain text: one span per line, holding the line and its newline; the last span grows. */
-function plainOutput(target: HTMLElement, reduced: boolean): OutputView {
+function plainOutput(target: HTMLElement, reduced: boolean): Streamed {
   target.replaceChildren();
   let line: HTMLSpanElement | null = null;
   let count = 0;
@@ -254,7 +262,7 @@ function lineNodes(parsed: ParsedBlock[], settled: boolean): Child[] {
  * Markdown, rendered incrementally: finished blocks are appended once and left alone; only the
  * blocks of the open tail are rebuilt, at most once per animation frame.
  */
-function markdownOutput(target: HTMLElement, reduced: boolean): OutputView {
+function markdownOutput(target: HTMLElement, reduced: boolean): Streamed {
   target.replaceChildren();
   const stream = new MarkdownStream();
   let tail: Child[] = [];
@@ -359,15 +367,28 @@ export function checkLinks(root: HTMLElement, ref: LinkReference) {
 }
 
 /** Clears `target` and returns the view that streamed text should be written to. */
-export function createOutput(target: HTMLElement, markdown: boolean): OutputView {
-  target.classList.toggle("markdown", markdown);
+export function createOutput(target: HTMLElement, format: Format): OutputView {
+  target.classList.toggle("markdown", format === "markdown");
+  target.classList.toggle("subtitles", format === "subtitles");
   const reduced = prefersReducedMotion();
-  return markdown ? markdownOutput(target, reduced) : plainOutput(target, reduced);
+  if (format === "subtitles") {
+    return subtitleOutput(target, reduced);
+  }
+  const start = () => (format === "markdown" ? markdownOutput(target, reduced) : plainOutput(target, reduced));
+  let view = start();
+  return {
+    append: (t) => view.append(t),
+    show(t) {
+      view = start();
+      view.append(t);
+    },
+    finish: () => view.finish(),
+  };
 }
 
 /** Writes a whole text into `target` at once, rendered as `createOutput` would stream it. */
-export function renderText(target: HTMLElement, text: string, markdown: boolean) {
-  const view = createOutput(target, markdown);
+export function renderText(target: HTMLElement, text: string, format: Format) {
+  const view = createOutput(target, format);
   view.append(text);
   view.finish();
 }

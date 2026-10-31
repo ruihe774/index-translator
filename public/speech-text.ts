@@ -4,7 +4,8 @@
 // Markdown is read from its parsed blocks, never from the raw text: no markers, link targets or
 // table pipes are spoken. Headings and list items become their own utterances, ordered items are
 // numbered, a table row is read as "header: cell" pairs, links are read by their text, images by
-// their alt text, and code blocks are skipped (inline code is read). Plain text is read line by line.
+// their alt text, and code blocks are skipped (inline code is read). Subtitles are read cue by cue,
+// without their numbers and times. Plain text is read line by line.
 //
 // Each piece carries the `data-line` of the top-level element it comes from, so the page can show
 // which block is being read.
@@ -17,7 +18,9 @@
 // numbers, addresses, digits), and the answer's offsets are carried over to it (`Derived`).
 
 import type { SegmentedText } from "../src/api.ts";
+import type { Format } from "./format.ts";
 import { type Block, type Inline, parseLines } from "./markdown.ts";
+import { parseSrt, shownText } from "./subtitles.ts";
 
 /** The languages IndexTTS-2.5 speaks; the same list as SPEECH_LANGUAGES in src/speech.ts. */
 export const SPEECH_LANGS = ["zh", "en", "ja", "es", "ar"] as const;
@@ -29,7 +32,7 @@ export function canSpeak(lang: string | undefined): lang is string {
 
 export interface Segment {
   text: string;
-  /** First line of the top-level block (Markdown) or the line (plain text) this comes from. */
+  /** First line of the top-level block (Markdown), of the cue (subtitles) or the line (plain text) this comes from. */
   line: number;
   /** Silence after it, in milliseconds: longer after a heading or a block than inside a paragraph. */
   pause: number;
@@ -587,15 +590,30 @@ function blockUtterances(b: Block, lang: string): Utterance[] {
  * Every utterance of the text, cleaned: the strings that are cut into pieces. `track` says where a
  * cleaned text comes from in the text the page shows, which the sentence model has an answer for.
  */
+/**
+ * A subtitle text's cues, each as the table shows its text (subtitle-dom.ts). A sentence often runs on
+ * into the next cue, so the pause after a cue is a block's only where it ends a sentence.
+ */
+function cueBlocks(text: string): { line: number; utterances: Utterance[] }[] {
+  return (parseSrt(text) ?? []).map((cue) => {
+    const shown = shownText(cue.lines);
+    const pause = SENTENCE_END.test(shown) ? PAUSE_BLOCK : PAUSE_SENTENCE;
+    return { line: cue.line, utterances: [{ text: shown, pause, derived: shownAs(shown) }] };
+  });
+}
+
 function cutTexts(
   text: string,
-  markdown: boolean,
+  format: Format,
   lang: string,
 ): { line: number; pause: number; text: string; track?: Derived }[] {
   const lines = text.split("\n");
-  const blocks: { line: number; utterances: Utterance[] }[] = markdown
-    ? parseLines(lines).map(({ block, line }) => ({ line, utterances: blockUtterances(block, lang) }))
-    : lines.map((l, line) => ({ line, utterances: [{ text: l, pause: PAUSE_BLOCK, derived: shownAs(l) }] }));
+  const blocks: { line: number; utterances: Utterance[] }[] =
+    format === "markdown"
+      ? parseLines(lines).map(({ block, line }) => ({ line, utterances: blockUtterances(block, lang) }))
+      : format === "subtitles"
+        ? cueBlocks(text)
+        : lines.map((l, line) => ({ line, utterances: [{ text: l, pause: PAUSE_BLOCK, derived: shownAs(l) }] }));
   return blocks.flatMap(({ line, utterances }) =>
     utterances.map((u) => ({
       line,
@@ -612,22 +630,22 @@ function cutTexts(
  * whose spoken form is too short to be cut into several pieces is not among them (a cut never pays off),
  * nor one with nothing to say, nor one that is shown otherwise than it is read (a table row, an image).
  */
-export function speechTexts(text: string, markdown: boolean, lang: string): { line: number; text: string }[] {
+export function speechTexts(text: string, format: Format, lang: string): { line: number; text: string }[] {
   const { soft } = limits(lang);
-  return cutTexts(text, markdown, lang)
+  return cutTexts(text, format, lang)
     .filter((u) => u.track && SPOKEN.test(u.text) && Math.round(u.text.length / soft) >= 2)
     .map((u) => ({ line: u.line, text: u.track!.shown }));
 }
 
 /**
- * The pieces to speak, in reading order. `markdown` says whether the text is shown rendered (the
- * source looked like Markdown); otherwise every line is read as it is. `boundaries` gives, for a text
+ * The pieces to speak, in reading order. `format` says how the text is shown: rendered Markdown,
+ * subtitles (the text of each cue), otherwise every line as it is. `boundaries` gives, for a text
  * of `speechTexts`, the sentence model's answer when there is one: it is then cut by that, not by
  * `Intl.Segmenter`.
  */
-export function speechSegments(text: string, markdown: boolean, lang: string, boundaries?: BoundaryLookup): Segment[] {
+export function speechSegments(text: string, format: Format, lang: string, boundaries?: BoundaryLookup): Segment[] {
   const out: Segment[] = [];
-  for (const { line, pause, text: cleaned, track } of cutTexts(text, markdown, lang)) {
+  for (const { line, pause, text: cleaned, track } of cutTexts(text, format, lang)) {
     const answer = track && boundaries?.(track.shown);
     const parts = pieces(cleaned, lang, track && answer ? carried(answer, track) : undefined);
     parts.forEach(

@@ -39,6 +39,11 @@
     padding: 0.5rem;
   }
 
+  /* A subtitle's end time goes under its start, so the cue's text keeps most of the width. */
+  .cue-table .cue-end {
+    display: block;
+  }
+
   #text,
   .output {
     padding-inline: 0.5rem;
