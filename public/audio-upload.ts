@@ -31,11 +31,17 @@ export interface Upload {
   type: string;
 }
 
+/**
+ * Complexity 6: a browser's default is libopus's maximum, whose extra analysis took about 9 s for a
+ * 30-minute stereo recording where 6 takes about 5 s (e2e/perf/opus-encode.ts). The server's Opus stream
+ * uses 6 as well.
+ */
 const opusConfig = (bitrate: number, channels: number): AudioEncoderConfig => ({
   codec: "opus",
   sampleRate: OPUS_RATE,
   numberOfChannels: channels,
   bitrate,
+  opus: { complexity: 6 },
 });
 
 /** Whether this browser encodes Opus at `bitrate` (mono unless said): WebCodecs' AudioEncoder is not everywhere yet. */
