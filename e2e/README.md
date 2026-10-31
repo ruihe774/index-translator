@@ -50,12 +50,9 @@ asserts nothing, since the numbers depend on the machine (compare runs of the sa
 proxy (`proxy.ts`): every request waits one round trip, and all responses share one bandwidth. The browser speaks
 HTTP/1.1 (`http://app.test:3201`) or HTTP/2 over a throwaway certificate (`https://app.test:3202`, needs `openssl`);
 `tailscale serve` is the latter. A proxy is used rather than DevTools' network emulation because that does not slow
-the service worker's own downloads (the prefetch of every file), which is most of a first visit.
+the service worker's own downloads.
 
-Options: `--worker prefetch,lazy` (the service worker as it is, or the ablation without its bulk prefetch: the
-proxy serves `sw.ts` with the `saveData` test it already has turned on, so the cache fills only with what the page
-asks for; with `lazy` the page's first visit caches nothing, as the worker does not control it yet),
-`--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s with 40 ms, 5 Mbit/s with 100 ms),
+Options: `--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s with 40 ms, 5 Mbit/s with 100 ms),
 `--protocol h1,h2`, `--scenario <names>`, `--repeats 3`. Results: a table of medians on stdout and every run in
 `perf-results/<time>.json`.
 
@@ -63,14 +60,13 @@ asks for; with `lazy` the page's first visit caches nothing, as the worker does 
 | ----------- | ----------------------------------------------------------------------------- |
 | `cold`      | first, no service worker, empty HTTP cache                                    |
 | `warm-http` | next visit, no service worker: the HTTP cache only                            |
-| `first-sw`  | first, with the service worker, which downloads every file                    |
-| `warm-sw`   | next visit, answered by the worker (checked: the page is controlled) |
-| `again-sw`  | the visit after that: the first with a complete cache, whichever `--worker` it is |
+| `first-sw`  | first, with the service worker, which installs while the page loads            |
+| `warm-sw`   | next visit, the first the worker controls; it caches what the page asks for (checked) |
+| `again-sw`  | the visit after that: the first answered from the worker's cache                 |
 | `sw-update` | next visit after every ETag outside `/vendor/` changed (the proxy rewrites them): a full update |
 | `sw-patch`  | after that has settled, the next visit once only five files the page loads at start changed |
 
-`visible` is the time until `visibility-gate.ts` sets the body's opacity to 1; `synced` is when the worker's cache
-holds every file at the listed version; `reqs` and `MB` are what the proxy saw until the page and the worker went
+`visible` is the time until `visibility-gate.ts` sets the body's opacity to 1; `reqs` and `MB` are what the proxy saw until the page and the worker went
 quiet. Run `bun scripts/fetch_web_libs.ts` first, or the page is lighter than the real one.
 
 The service worker needs a secure context, which `http://app.test` is not: the browser is started with

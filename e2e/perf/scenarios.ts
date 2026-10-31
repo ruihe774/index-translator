@@ -41,41 +41,13 @@ async function paints(page: Page): Promise<{ fcpMs?: number; lcpMs?: number }> {
   });
 }
 
-/** The time at which the service worker's cache held every file at the version the server lists. */
-async function whenSynced(page: Page): Promise<number> {
-  return page.evaluate(async (limitMs) => {
-    await navigator.serviceWorker.ready;
-    const res = await fetch("/asset-manifest.json", { cache: "no-store" });
-    const manifest = (await res.json()) as Record<string, string>;
-    const start = performance.now();
-    for (;;) {
-      const current = await Promise.all(
-        Object.entries(manifest).map(async ([path, etag]) => (await caches.match(path))?.headers.get("etag") === etag),
-      );
-      if (current.every(Boolean)) {
-        return performance.now();
-      }
-      if (performance.now() - start > limitMs) {
-        throw new Error("the service worker did not finish downloading");
-      }
-      await new Promise<void>((resolve) => {
-        setTimeout(resolve, 250);
-      });
-    }
-  }, VISIT_TIMEOUT_MS);
-}
-
-/** Opens `url` and measures it; with `sync`, also waits for the service worker's cache to be up to date. */
-async function visit(page: Page, proxy: Proxy, url: string, sync: boolean): Promise<Metrics> {
+/** Opens `url` and measures it, up to the time when its requests (and what the service worker asks for) are done. */
+async function visit(page: Page, proxy: Proxy, url: string): Promise<Metrics> {
   proxy.mark();
   await page.goto(url, { waitUntil: "commit" });
   const visibleMs = await whenVisible(page);
   const metrics: Metrics = { visibleMs, requests: 0, bytes: 0 };
-  if (sync) {
-    metrics.syncMs = await whenSynced(page);
-  } else {
-    await page.waitForLoadState("networkidle");
-  }
+  await page.waitForLoadState("networkidle");
   Object.assign(metrics, await paints(page));
   metrics.requests = proxy.log.length;
   metrics.bytes = proxy.log.reduce((sum, entry) => sum + entry.bytes, 0);
@@ -88,8 +60,8 @@ export async function plainChain(browser: Browser, proxy: Proxy, url: string): P
   try {
     const page = await context.newPage();
     return {
-      cold: await visit(page, proxy, url, false),
-      "warm-http": await visit(page, proxy, url, false),
+      cold: await visit(page, proxy, url),
+      "warm-http": await visit(page, proxy, url),
     };
   } finally {
     await context.close();
@@ -97,33 +69,31 @@ export async function plainChain(browser: Browser, proxy: Proxy, url: string): P
 }
 
 /**
- * With the service worker: `first-sw`, `warm-sw`, `again-sw`, `sw-update` after all the server's files changed and, once that has settled,
- * `sw-patch` after only `PATCH_FILES` did. A worker that
- * prefetches is waited for until its cache is complete; one that does not (`lazy`) never is, so the visit ends when
- * the page's own requests have.
+ * With the service worker: `first-sw`, `warm-sw`, `again-sw`, `sw-update` after all the server's files changed and,
+ * once that has settled, `sw-patch` after only `PATCH_FILES` did.
  */
-export async function workerChain(browser: Browser, proxy: Proxy, url: string, prefetch: boolean): Promise<Results> {
+export async function workerChain(browser: Browser, proxy: Proxy, url: string): Promise<Results> {
   const context = await browser.newContext({ serviceWorkers: "allow", locale: "en-US" });
   try {
     const page = await context.newPage();
-    const first = await visit(page, proxy, url, prefetch);
-    const warm = await visit(page, proxy, url, prefetch);
-    const again = await visit(page, proxy, url, prefetch);
+    const first = await visit(page, proxy, url);
+    const warm = await visit(page, proxy, url);
+    const again = await visit(page, proxy, url);
     // A visit that the worker did not answer would measure the network and call it the cache.
     if (!(await page.evaluate(() => navigator.serviceWorker.controller !== null))) {
       throw new Error("the second visit was not controlled by the service worker");
     }
     proxy.release();
-    const update = await visit(page, proxy, url, prefetch);
-    // A visit to settle: a lazy worker brings a file up to date only when the page asks for it.
-    await visit(page, proxy, url, prefetch);
+    const update = await visit(page, proxy, url);
+    // A visit to settle: the worker brings a file up to date only when the page asks for it.
+    await visit(page, proxy, url);
     proxy.release(PATCH_FILES);
     return {
       "first-sw": first,
       "warm-sw": warm,
       "again-sw": again,
       "sw-update": update,
-      "sw-patch": await visit(page, proxy, url, prefetch),
+      "sw-patch": await visit(page, proxy, url),
     };
   } finally {
     await context.close();

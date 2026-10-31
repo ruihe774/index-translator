@@ -1,6 +1,6 @@
 // Page load measurements under a throttled link, with and without the service worker, over HTTP/1.1 and HTTP/2.
 //
-//   bun run e2e:perf [--profile fast,slow] [--protocol h2] [--scenario cold,warm-sw] [--worker lazy] [--repeats 3]
+//   bun run e2e:perf [--profile fast,slow] [--protocol h2] [--scenario cold,warm-sw] [--repeats 3]
 //
 // Starts the mock server (e2e/mock-server.ts) on PERF_PORT (3200), a throttling proxy for each protocol on the next
 // two ports, and drives Chromium. Results go to stdout and to perf-results/<time>.json. Nothing is asserted: the
@@ -14,7 +14,7 @@ import { parseArgs } from "node:util";
 import { chromium } from "@playwright/test";
 
 import { selfSignedCert } from "./cert";
-import { PROFILES, PROTOCOLS, SCENARIOS, WORKERS } from "./profiles";
+import { PROFILES, PROTOCOLS, SCENARIOS } from "./profiles";
 import type { Metrics, Protocol, Row, Scenario } from "./profiles";
 import { startProxy } from "./proxy";
 import { table } from "./report";
@@ -31,7 +31,6 @@ const { values } = parseArgs({
     profile: { type: "string" },
     protocol: { type: "string" },
     scenario: { type: "string" },
-    worker: { type: "string" },
     repeats: { type: "string", default: "3" },
   },
 });
@@ -56,7 +55,6 @@ const profiles = choose(
 ).map((name) => PROFILES.find((p) => p.name === name)!);
 const protocols = choose("protocol", values.protocol, PROTOCOLS);
 const scenarios = choose("scenario", values.scenario, SCENARIOS);
-const workers = choose("worker", values.worker, WORKERS);
 const repeats = Number(values.repeats);
 if (!Number.isInteger(repeats) || repeats < 1) {
   throw new Error("--repeats must be a positive integer");
@@ -112,23 +110,21 @@ try {
     for (const protocol of protocols) {
       for (const profile of profiles) {
         const url = origins[protocol];
-        const record = (results: Partial<Record<Scenario, Metrics>>, worker: Row["worker"]) => {
+        const record = (results: Partial<Record<Scenario, Metrics>>) => {
           for (const scenario of scenarios) {
             const metrics = results[scenario];
             if (metrics) {
-              rows.push({ scenario, profile: profile.name, protocol, worker, repeat, metrics });
+              rows.push({ scenario, profile: profile.name, protocol, repeat, metrics });
             }
           }
         };
         if (wants(["cold", "warm-http"])) {
           proxy[protocol].use(profile);
-          record(await plainChain(browser, proxy[protocol], url), "none");
+          record(await plainChain(browser, proxy[protocol], url));
         }
         if (wants(["first-sw", "warm-sw", "again-sw", "sw-update", "sw-patch"])) {
-          for (const worker of workers) {
-            proxy[protocol].use(profile, worker);
-            record(await workerChain(browser, proxy[protocol], url, worker === "prefetch"), worker);
-          }
+          proxy[protocol].use(profile);
+          record(await workerChain(browser, proxy[protocol], url));
         }
         console.error(`repeat ${repeat}/${repeats} ${protocol} ${profile.name} done`);
       }
