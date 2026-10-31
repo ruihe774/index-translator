@@ -2,7 +2,7 @@
   "extends": "../tsconfig.json",
   "compilerOptions": {
     "lib": ["ESNext", "DOM", "DOM.Iterable"],
-    "types": ["network-information-types"]
+    "types": []
   },
   "include": ["./*.ts", "./elements/*.ts"]
 }

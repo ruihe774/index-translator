@@ -1,10 +1,11 @@
 // The service worker. The server lists every file it serves with its ETag (/asset-manifest.json).
 // The worker fetches that list first, answers a request from the cache only when the cached copy has
-// the listed ETag, and otherwise downloads the file and caches it. Right after the list arrives, every
-// file that is missing or out of date is requested at low priority. So no stale file is ever served,
-// except the loading page (index.html), which is answered from the cache without waiting for the list:
-// it only fetches app.html, which is checked. The price for the rest is a slower first render, and the
-// app is no use without its server anyway.
+// the listed ETag, and otherwise downloads the file and caches it, so a file is cached once the page has
+// asked for it. So no stale file is ever served, except the loading page (index.html), which is answered
+// from the cache without waiting for the list: it only fetches app.html, which is checked. The price for
+// the rest is a slower first render, and the app is no use without its server anyway. (Downloading every
+// missing or outdated file at low priority right after the list arrives is written but switched off, see
+// `prefetch`.)
 // On loopback (development, or the app on its own machine) the worker does nothing.
 
 /** The part of the service worker scope that is used (the DOM library has no `webworker` types). */
@@ -79,8 +80,11 @@ async function prefetch(manifest: Manifest): Promise<void> {
   const cache = await caches.open(CACHE);
   const cached = await cache.keys();
   await Promise.all(cached.filter((req) => !(new URL(req.url).pathname in manifest)).map((req) => cache.delete(req)));
-  // Network Information API is of limited availability. This detection is of best effort.
-  if (navigator.connection?.saveData !== true) {
+  // Switched off for everyone. e2e/perf measured it: downloading every file only makes the second visit faster, at
+  // the price of the whole download on the first one (about 12 MB), a slower first visit on a slow link and a slower
+  // update; a visit after a small release is as fast without it. A file is cached when the page asks for it.
+  // eslint-disable-next-line no-constant-condition -- the prefetch stays written; this is its switch
+  if (false) {
     await Promise.all(
       Object.keys(manifest).map(async (path) => {
         if (!(await current(cache, path, manifest))) {

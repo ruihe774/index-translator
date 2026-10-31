@@ -28,7 +28,6 @@
     "eslint-plugin-browser-compat": "^0.1",
     "eslint-plugin-es-x": "^10.1",
     "monocart-coverage-reports": "^2.13",
-    "network-information-types": "^0.1",
     "openapi-typescript": "^7.13",
     "postcss": "^8.5",
     "stylelint": "^17.16",
