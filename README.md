@@ -472,7 +472,11 @@ playing stops reading aloud and the reverse. Of a file with several audio tracks
 transcribed. Nothing of it is sent for this: your browser plays the file from your disk. Where the
 browser cannot play the transcribed track from the file (Chromium's media player has no AC-3, for
 example), you hear the audio that was sent to the server, without the picture; a video whose picture
-the browser cannot decode (HEVC in many browsers) plays as audio. Tested in Chromium only so far.
+the browser cannot decode (HEVC in many browsers) plays as audio. A video also has subtitles, in its
+player's own menu (⋮ → Captions in Chromium), also in full screen: the transcript, as it is written,
+and once there is a translation, the translation and both together (the translation above the
+original), which is then shown unless you picked another; speaker ids are left out. Tested in
+Chromium only so far.
 
 - **What is sent:** a WAV or Ogg Opus file the server takes goes as it is, and a mono or stereo Opus
   track of a WebM or MKV file is copied into an Ogg file in your browser, with no loss. Anything else

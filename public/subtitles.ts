@@ -144,6 +144,9 @@ export function parseSrt(text: string): Cue[] | null {
 const LABEL = /^([^\s:：<{][^:：]{0,23}?)\s*[:：]\s*(\S.*)$/u;
 /** A label that only tells speakers apart, as a transcription writes them: taken off before sending. */
 const SPEAKER_ID = /^S\d+(?: \/ S\d+)*$/;
+
+/** Whether a speaker label is only an id (`S01`, or `S01 / S02` for a joined cue), not a name. */
+export const isSpeakerId = (label: string) => SPEAKER_ID.test(label);
 /**
  * More labels than this in one text are not speakers, unless all are ids: a transcript of a film counts
  * more voices (one of 442 cues had 24, the 13th by its 113th cue).

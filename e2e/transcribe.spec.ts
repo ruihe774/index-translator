@@ -336,6 +336,83 @@ test("the video plays above its transcript with the transcribed track, the cue a
   await expect(app.page.locator("#source-media video")).toHaveCount(0);
 });
 
+/** The video's caption tracks: label, mode and cue texts. */
+const captionTracks = (page: Page) =>
+  page.locator("#source-media video").evaluate((v: HTMLVideoElement) =>
+    [...v.textTracks].map((t) => ({
+      label: t.label,
+      lang: t.language,
+      mode: t.mode,
+      cues: [...(t.cues ?? [])].map((c) => [(c as VTTCue).startTime, (c as VTTCue).endTime, (c as VTTCue).text]),
+    })),
+  );
+
+test("the video carries the transcript, its translation and both as caption tracks", async ({ app, mock }) => {
+  await mock.set({ speech: { segments: SEGMENTS } });
+  await app.open();
+  await app.from.selectOption("en");
+  await app.to.selectOption("zh");
+  await pick(app.page, "tracks.mkv", "video/x-matroska");
+  await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
+  await expect(note(app.page)).toHaveText(/^tracks\.mkv: transcribed/);
+  // The transcript, without its speaker ids, shown.
+  await expect
+    .poll(() => captionTracks(app.page))
+    .toStrictEqual([
+      {
+        label: expect.stringMatching(/^Original \(.+\)$/),
+        lang: "en",
+        mode: "showing",
+        cues: [
+          [0.2, 1.1, "Hello there."],
+          [1.3, 2, "How are you?"],
+          [2.1, 2.9, "Fine, thanks."],
+        ],
+      },
+    ]);
+
+  // A translation adds itself and both together, which are then shown.
+  await mock.set({ chunks: [THINK, "1\n你好。你好吗？\n\n2\n\n3\n很好，谢谢。"] });
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  const both = [
+    [0.2, 1.1, "<lang zh>你好。你好吗？</lang>\n<lang en>Hello there.</lang>"],
+    // A stretch with no original cue: the translation alone.
+    [1.1, 1.3, "<lang zh>你好。你好吗？</lang>"],
+    [1.3, 2, "<lang zh>你好。你好吗？</lang>\n<lang en>How are you?</lang>"],
+    [2.1, 2.9, "<lang zh>很好，谢谢。</lang>\n<lang en>Fine, thanks.</lang>"],
+  ];
+  await expect
+    .poll(() => captionTracks(app.page))
+    .toStrictEqual([
+      expect.objectContaining({ lang: "en", mode: "hidden" }),
+      {
+        label: expect.stringMatching(/^Translation \(.+\)$/),
+        lang: "zh",
+        mode: "hidden",
+        cues: [
+          [0.2, 2, "你好。你好吗？"],
+          [2.1, 2.9, "很好，谢谢。"],
+        ],
+      },
+      { label: "Original and translation", lang: "", mode: "showing", cues: both },
+    ]);
+  // What the reader picks in the menu stays picked through a new translation, which takes the old one's
+  // tracks away first.
+  await app.page.locator("#source-media video").evaluate((v: HTMLVideoElement) => {
+    v.textTracks[2]!.mode = "disabled";
+    v.textTracks[1]!.mode = "showing";
+  });
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+  await expect
+    .poll(async () => (await captionTracks(app.page)).map((t) => t.mode))
+    .toStrictEqual(["hidden", "showing", "hidden"]);
+
+  await app.page.locator("#clear").click();
+  await expect(app.page.locator("#source-media video")).toHaveCount(0);
+});
+
 test("a track this browser cannot play from the file is played from the recording sent", async ({ app, mock }) => {
   await mock.set({ speech: { segments: SEGMENTS } });
   // A browser without AAC in its media elements; WebCodecs still decodes it for the upload.

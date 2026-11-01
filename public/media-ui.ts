@@ -10,7 +10,12 @@
 // follows it unless the reader scrolls. A column of "play from here" buttons (read-gutter.ts) beside
 // the cues is the way to a cue from the keyboard; the source's Read aloud gutter takes its place
 // while that is pressed. Playing stops reading aloud and the reverse.
+//
+// A video with a picture also carries the transcript, its translation and both together as caption
+// tracks (caption-tracks.ts), which follow both texts as they are written.
 
+import { CaptionTracks } from "./caption-tracks.ts";
+import { bilingual, captions } from "./captions.ts";
 import { lineElements } from "./dom.ts";
 import type { MediaProbe, Recording } from "./media-file.ts";
 import { cueAt, playbackOf } from "./media-player.ts";
@@ -35,6 +40,12 @@ export interface MediaUiDeps {
   output: HTMLElement;
   /** The transcript as the source box holds it now. */
   text(): string;
+  /** The transcript's language, when known. */
+  lang(): string | undefined;
+  /** The translation so far, when there is one, and its language. */
+  translation(): { text: string; lang: string | undefined } | null;
+  /** A language's name, for a caption track's label. */
+  languageName(code: string): string;
   /** Whether the source is shown in its preview, not its Raw text box. */
   shown(): boolean;
   /** Whether the source's Read aloud gutter is shown, which takes this one's place. */
@@ -78,6 +89,10 @@ export function initMediaUi(d: MediaUiDeps): MediaUi {
   /** While playing, the source pane keeps the cue in view, until the reader scrolls it. */
   let follow = true;
   let parsed: { text: string; cues: Cue[] } = { text: "", cues: [] };
+  /** The video's caption tracks, once it has shown it has a picture. */
+  let tracks: CaptionTracks | null = null;
+  /** What the caption tracks were last made from. */
+  let captioned = "";
   const gutter = new ReadGutter(source.area, "Play the recording from", pick, "Play from");
 
   for (const type of ["wheel", "touchmove"]) {
@@ -94,6 +109,16 @@ export function initMediaUi(d: MediaUiDeps): MediaUi {
       });
     }
   }).observe(source.view, { childList: true, subtree: true });
+  // A translation streaming in only changes the captions.
+  let outputFrame = 0;
+  new MutationObserver(() => {
+    if (tracks && !outputFrame) {
+      outputFrame = requestAnimationFrame(() => {
+        outputFrame = 0;
+        updateCaptions();
+      });
+    }
+  }).observe(d.output, { childList: true, subtree: true, characterData: true });
 
   function cues(): Cue[] {
     const text = d.text();
@@ -116,6 +141,8 @@ export function initMediaUi(d: MediaUiDeps): MediaUi {
       url = null;
     }
     loaded = false;
+    tracks = null;
+    captioned = "";
     box.replaceChildren();
   }
 
@@ -149,6 +176,9 @@ export function initMediaUi(d: MediaUiDeps): MediaUi {
       clearTimeout(timer);
       if (player instanceof HTMLVideoElement && player.videoWidth === 0) {
         player.classList.add("audio-only");
+      } else if (player instanceof HTMLVideoElement) {
+        tracks = new CaptionTracks(player);
+        updateCaptions();
       }
       if (mode === "file") {
         held = null;
@@ -287,9 +317,41 @@ export function initMediaUi(d: MediaUiDeps): MediaUi {
     });
   }
 
+  /** The caption tracks, made again from the transcript and the translation when either changed. */
+  function updateCaptions() {
+    if (!tracks) {
+      return;
+    }
+    const lang = d.lang();
+    const t = d.translation();
+    const key = JSON.stringify([d.text(), lang, t]);
+    if (key === captioned) {
+      return;
+    }
+    captioned = key;
+    const original = captions(cues(), offset);
+    const translated = t ? captions(parseSrt(t.text) ?? [], offset) : [];
+    const named = (what: string, code: string | undefined) => (code ? `${what} (${d.languageName(code)})` : what);
+    tracks.update([
+      { id: "original", label: named("Original", lang), lang, cues: original },
+      ...(translated.length > 0
+        ? [
+            { id: "translation" as const, label: named("Translation", t!.lang), lang: t!.lang, cues: translated },
+            {
+              id: "both" as const,
+              label: "Original and translation",
+              lang: undefined,
+              cues: bilingual(original, translated, { original: lang, translation: t!.lang }),
+            },
+          ]
+        : []),
+    ]);
+  }
+
   function refresh() {
     paint();
     showGutter();
+    updateCaptions();
   }
 
   function close() {
