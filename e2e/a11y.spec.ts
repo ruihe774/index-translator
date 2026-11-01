@@ -994,11 +994,51 @@ for (const scheme of ["light", "dark"] as const) {
     await dialog.getByRole("button", { name: "Transcribe" }).click();
     await expect(app.page.locator("#file-note")).toContainText("tracks.mkv: transcribed, 2 cues");
     await expect(app.page.locator("#source-view table th[scope=col]")).toHaveCount(4);
+    // The player above it, paused on the second cue, which is marked.
+    await PLAY_FROM(app.page).nth(1).click();
+    await expect(app.page.locator("#source-view tbody tr").nth(1)).toHaveAttribute("aria-current", "time");
+    await app.page.locator("#source-media video").evaluate((v: HTMLVideoElement) => v.pause());
     await settle(app.page);
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
   });
 }
+
+const PLAY_FROM = (page: Page) => page.getByRole("toolbar", { name: "Play the recording from" }).getByRole("button");
+
+test("the player and its play-from column: one tab stop, arrows, 24 px targets, nothing overflows at 320 px", async ({
+  app,
+  mock,
+}) => {
+  await app.page.setViewportSize({ width: 320, height: 640 });
+  await mock.set({ speech: { segments: TRANSCRIPT } });
+  await app.open();
+  await pickMedia(app.page, "tracks.mkv");
+  await TRANSCRIBE_DIALOG(app.page).getByRole("button", { name: "Transcribe" }).click();
+  await expect(app.page.locator("#file-note")).toContainText("tracks.mkv: transcribed, 2 cues");
+  const video = app.page.locator("#source-media video");
+  await expect(video).toBeVisible();
+  for (const el of [video, app.page.locator("#source-area")]) {
+    const box = (await el.boundingBox())!;
+    expect(box.x).toBeGreaterThanOrEqual(0);
+    expect(box.x + box.width).toBeLessThanOrEqual(320);
+  }
+  const buttons = PLAY_FROM(app.page);
+  await expect(buttons).toHaveCount(2);
+  for (const b of await buttons.all()) {
+    const box = (await b.boundingBox())!;
+    expect(box.width).toBeGreaterThanOrEqual(24);
+    expect(box.height).toBeGreaterThanOrEqual(24);
+  }
+  // The column is one tab stop; Down moves to the next cue and Enter plays from it.
+  await buttons.first().focus();
+  await app.page.keyboard.press("ArrowDown");
+  await expect(buttons.nth(1)).toBeFocused();
+  await expect(buttons.first()).toHaveAttribute("tabindex", "-1");
+  await app.page.keyboard.press("Enter");
+  await expect(app.page.locator("#source-view tbody tr").nth(1)).toHaveAttribute("aria-current", "time");
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(false);
+});
 
 test("the transcription dialog is keyboard operable, fits 320 px, and its tracks are 24 px", async ({ app }) => {
   await app.page.setViewportSize({ width: 320, height: 640 });

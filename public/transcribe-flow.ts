@@ -51,6 +51,10 @@ export interface TranscribeFlowDeps {
   show(srt: string): void;
   /** The transcription ended, however: the source box can be edited again. */
   end(): void;
+  /** After `begin`: the file and the track being transcribed, played above the transcript (media-ui.ts). */
+  play(file: File, probe: MediaProbe, track: number): void;
+  /** The recording that is sent, which the player plays when it cannot play the file. */
+  recording(r: Recording): void;
 }
 
 export interface OpenResult {
@@ -254,6 +258,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
     run.onStopping = () => stage("Stopping… the server finishes its current step first.");
     setState({ running: run });
     d.begin();
+    d.play(file, probe, track);
     d.stopButton.focus();
     stage(preparing());
     let shown = -1;
@@ -269,6 +274,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
           }
         },
       });
+      d.recording(recording);
       stage(`Sending the recording (${megabytes(recording.body.size)})…`);
       const { done, segments } = await follow(run, recording, separate);
       const cues = segments.length;

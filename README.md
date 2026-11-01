@@ -463,6 +463,17 @@ page says "Stopping…" until it has; pressing **Stop** again stops waiting. The
 subtitles (see Translate subtitles, above): the speaker labels are not sent to the model and are put
 back on the translated cues.
 
+The recording or video stays above its transcript, with its own player controls, until another text,
+**Clear** or a kept translation takes the box. While it plays, the cue being said is outlined in the
+transcript (and in the translation, once its cues are matched), and the transcript scrolls along until
+you scroll it yourself. The buttons beside the cues play from that cue; with the keyboard they are one
+stop, moved through with the arrow keys. **Read aloud** puts its own buttons in their place, and
+playing stops reading aloud and the reverse. Of a file with several audio tracks you hear the one
+transcribed. Nothing of it is sent for this: your browser plays the file from your disk. Where the
+browser cannot play the transcribed track from the file (Chromium's media player has no AC-3, for
+example), you hear the audio that was sent to the server, without the picture; a video whose picture
+the browser cannot decode (HEVC in many browsers) plays as audio. Tested in Chromium only so far.
+
 - **What is sent:** a WAV or Ogg Opus file the server takes goes as it is, and a mono or stereo Opus
   track of a WebM or MKV file is copied into an Ogg file in your browser, with no loss. Anything else
   is converted in your browser first: AAC, Vorbis, FLAC, MP3 and PCM tracks, Opus with more than two

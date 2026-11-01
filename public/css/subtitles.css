@@ -5,25 +5,55 @@
 }
 
 .cue-table {
-  inline-size: 100%;
+  /* The lines are 1px backgrounds, not borders: then a cell's box is its row's, which the gutter's
+     buttons are measured by. A collapsed border moves the cells' boxes and is painted half into the
+     row above, differently from row to row. Each row's line is at its own top, the first row's too
+     (the line under the header), so every row starts with one, which a gutter button leaves out
+     (below). */
+  --rule: linear-gradient(var(--divider), var(--divider));
+  /* Wider than the text by `--row-reach` at the start (the gap to a gutter's buttons, else as much of
+     the pane's padding as there is) and 0.5rem at the end, given back as the first and last cells'
+     padding: a shaded row (being read, playing, hovered) reaches the buttons by its own background,
+     and the text stays where it was. */
+  --reach: var(--row-reach, 0.75rem);
+  inline-size: calc(100% + var(--reach) + 0.5rem);
+  margin-inline: calc(-1 * var(--reach)) -0.5rem;
   border-collapse: collapse;
+
+  :is(th, td):first-child {
+    padding-inline-start: var(--reach);
+  }
 
   th {
     padding: 0 0.75rem 0.25rem 0;
-    border-block-end: 1px solid var(--divider);
     color: var(--muted);
     font-size: 0.875em;
     font-weight: 600;
     text-align: start;
   }
 
+  /* The number, time and speaker are smaller than the text: their first lines share its baseline. */
   td {
     padding: 0.375rem 0.75rem 0.375rem 0;
-    vertical-align: top;
+    vertical-align: baseline;
   }
 
-  tbody > tr + tr > td {
-    border-block-start: 1px solid var(--divider);
+  tbody > tr > td {
+    background: var(--rule) top / 100% 1px no-repeat;
+  }
+
+  /* Colours are forced there, so the lines are borders again (no mark is shaded in that mode). */
+  @media (forced-colors: active) {
+    th {
+      padding-block-end: 0.25rem;
+      background: none;
+      border-block-end: 1px solid CanvasText;
+    }
+
+    tbody > tr + tr > td {
+      background: none;
+      border-block-start: 1px solid CanvasText;
+    }
   }
 
   .cue-meta {
@@ -48,14 +78,24 @@
 
   .cue-text {
     inline-size: 100%;
-    padding-inline-end: 0;
+    padding-inline-end: 0.5rem;
     overflow-wrap: anywhere;
   }
 }
 
-/* A row takes no margin or padding of its own, so the shade of the cue being read fills the row. */
+/* A row takes no margin or padding of its own: the table's own room carries its shade to the gutter. */
 .output.subtitles .speaking {
   padding-inline: 0;
   margin-inline: 0;
   border-radius: 0;
+}
+
+/* A cue's text starts below its cell's top padding, and so does the glyph beside it. The row's line
+   at its top is left out: the button's top border, its only one, is unfilled, so the fill of a current
+   button starts under the line, as the row's shade shows, and ends at the next row's. Not a clip-path,
+   which would cut off the focus ring. */
+.output-area:has(> .output.subtitles) button.read-from {
+  padding-block-start: calc(0.375rem + (var(--first-line) - 1.25rem) / 2 - 1px);
+  border-width: 1px 0 0;
+  background-clip: padding-box;
 }

@@ -20,6 +20,8 @@
 //   element throws MatroskaTruncatedError; malformed data throws a plain Error.
 // - When the consumer stops iterating early, or an error is thrown, the source is closed (a
 //   ReadableStream is cancelled).
+// - Where each TrackType's byte is (`typeAt`) and where the checksums over the track list are
+//   (`checksums`) are noted in file offsets, for media-player.ts, which rewrites them in place.
 
 export interface TrackInfo {
   number: number;
@@ -34,6 +36,8 @@ export interface TrackInfo {
   /** BCP 47 when the file has LanguageBCP47, else the ISO 639-2 code (`eng` by default, `und` for none). */
   language: string;
   name?: string;
+  /** Where the TrackType's byte is in the file; undefined when its value is not one byte long. */
+  typeAt?: number;
   /** FlagDefault: the player's choice among tracks of a type. */
   isDefault: boolean;
   /** FlagEnabled: a disabled track is not played. */
@@ -55,6 +59,8 @@ export type DemuxEvent =
       /** The segment's Duration from its Info, in seconds; undefined when the muxer did not write it. */
       duration: number | undefined;
       tracks: TrackInfo[];
+      /** Where the CRC-32 elements of Tracks and of its TrackEntries start in the file. */
+      checksums: number[];
     }
   | {
       type: "packet";
@@ -128,6 +134,7 @@ const ID = {
   BlockDuration: 0x9b,
   ReferenceBlock: 0xfb,
   DiscardPadding: 0x75_a2,
+  Crc32: 0xbf,
 } as const;
 
 const DEFAULT_TIMECODE_SCALE = 1_000_000;
@@ -181,6 +188,8 @@ const MAX_VINT = 8;
 class ByteQueue {
   private chunks: Uint8Array[] = [];
   private length = 0;
+  /** Bytes consumed so far: the file offset of what `peek()` starts with. */
+  position = 0;
   private ended = false;
   private readonly source: AsyncIterator<Uint8Array>;
 
@@ -233,6 +242,7 @@ class ByteQueue {
 
   consume(n: number): void {
     this.length -= n;
+    this.position += n;
     while (n > 0) {
       const chunk = this.chunks[0]!;
       if (n < chunk.length) {
@@ -619,7 +629,10 @@ export async function* demux(
   let timecodeScale = DEFAULT_TIMECODE_SCALE;
   let durationTicks: number | undefined;
   let tracks: TrackInfo[] = [];
+  let checksums: number[] = [];
   let current: TrackInfo | null = null;
+  /** The master just entered, while none of its children has been read: a CRC-32 comes first. */
+  let entered: number | null = null;
   let clusterTime = 0;
   let tracksEmitted = false;
   let segmentSeen = false;
@@ -627,7 +640,7 @@ export async function* demux(
   const tracksEvent = (): DemuxEvent => {
     tracksEmitted = true;
     const duration = durationTicks === undefined ? undefined : (durationTicks * timecodeScale) / 1e9;
-    return { type: "tracks", timecodeScale, duration, tracks };
+    return { type: "tracks", timecodeScale, duration, tracks, checksums };
   };
 
   function* packets(block: ParsedBlock, keyframe: boolean, group?: ParsedGroup): Generator<DemuxEvent> {
@@ -666,6 +679,9 @@ export async function* demux(
       if (!(await q.ensure(1))) {
         break; // a clean end at an element boundary
       }
+      const start = q.position;
+      const parent = entered;
+      entered = null;
       const idLength = vintLength(q.peek()[0]!);
       if (idLength === 0 || idLength > 4) {
         throw corrupt("a bad element ID");
@@ -694,6 +710,7 @@ export async function* demux(
               yield tracksEvent();
             }
             tracks = [];
+            checksums = [];
             current = null;
             timecodeScale = DEFAULT_TIMECODE_SCALE;
             durationTicks = undefined;
@@ -710,6 +727,7 @@ export async function* demux(
         } else if (id.value === ID.Cluster && !tracksEmitted) {
           yield tracksEvent();
         }
+        entered = id.value;
         continue;
       }
 
@@ -719,6 +737,9 @@ export async function* demux(
       }
       if (id.value === ID.ContentEncryption && current) {
         current.encoding = "encrypted";
+      }
+      if (id.value === ID.Crc32 && (parent === ID.Tracks || parent === ID.TrackEntry)) {
+        checksums.push(start);
       }
       // A block of a track not asked for is skipped after reading its track number.
       if (wanted && id.value === ID.SimpleBlock && size.value > 0) {
@@ -751,6 +772,9 @@ export async function* demux(
         // Strays outside a TrackEntry are ignored.
         if (current) {
           setTrackField(current, id.value, p);
+          if (id.value === ID.TrackType) {
+            current.typeAt = size.value === 1 ? q.position : undefined;
+          }
         }
       } else {
         switch (id.value) {
@@ -796,11 +820,11 @@ export async function* demux(
 /** The first segment's tracks and duration, read up to its first Cluster; the rest is not read. */
 export async function probeMatroska(
   src: ReadableStream<Uint8Array> | AsyncIterable<Uint8Array>,
-): Promise<{ duration: number | undefined; tracks: TrackInfo[] }> {
+): Promise<{ duration: number | undefined; tracks: TrackInfo[]; checksums: number[] }> {
   for await (const event of demux(src, { tracks: new Set() })) {
     if (event.type === "tracks") {
-      return { duration: event.duration, tracks: event.tracks };
+      return { duration: event.duration, tracks: event.tracks, checksums: event.checksums };
     }
   }
-  return { duration: undefined, tracks: [] };
+  return { duration: undefined, tracks: [], checksums: [] };
 }

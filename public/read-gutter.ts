@@ -1,6 +1,7 @@
 // The "read from here" buttons beside the blocks of a pane, shown while that side's Read aloud is
-// pressed. A click on the text itself stays click-to-sync; these buttons are separate targets in a
-// column at the pane's start edge.
+// pressed, and the "play from here" buttons beside the cues of a transcript whose recording is shown
+// above it (media-ui.ts). A click on the text itself stays click-to-sync; these buttons are separate
+// targets in a column at the pane's start edge. A pane may have both kinds; one is shown at a time.
 //
 // One tab stop for the whole column (a vertical toolbar with a roving tabindex): Tab lands on the
 // block being read, or on the one last focused, or on the first in view; Up and Down move between
@@ -17,7 +18,7 @@ import { hasFocus } from "./render.ts";
 export interface GutterBlock {
   /** The block's first line, its `data-line`. */
   line: number;
-  /** What the block says first: the button's name is "Read from: <label>". */
+  /** What the block says first: the button's name is "<verb>: <label>" ("Read from: …"). */
   label: string;
   /** The elements that show the block: one when rendered, its non-empty lines in Raw. */
   elements: HTMLElement[];
@@ -59,17 +60,23 @@ export class ReadGutter {
   private readonly el: HTMLElement;
   private blocks: GutterBlock[] = [];
   private buttons: HTMLButtonElement[] = [];
+  /** The line each button reads or plays from. */
+  private readonly lineOf = new WeakMap<HTMLButtonElement, number>();
   /** The button that takes Tab. */
   private stop = 0;
   /** A button was focused since the gutter was shown: Tab goes back there. */
   private chosen = false;
   private readonly resize = new ResizeObserver(() => this.place());
 
-  /** `label` names the column ("Read the translation aloud from"); `onPick` gets the line of a pressed button. */
+  /**
+   * `label` names the column ("Read the translation aloud from"), `verb` starts each button's name;
+   * `onPick` gets the line of a pressed button.
+   */
   constructor(
     private readonly scroller: HTMLElement,
     label: string,
     private readonly onPick: (line: number) => void,
+    private readonly verb = "Read from",
   ) {
     this.el = document.createElement("div");
     this.el.className = "read-gutter";
@@ -132,7 +139,10 @@ export class ReadGutter {
     }
     const hadFocus = hasFocus(this.el);
     this.el.hidden = true;
-    this.scroller.classList.remove("with-gutter");
+    // Another column of the pane may be shown in its place.
+    if (!this.scroller.querySelector(":scope > .read-gutter:not([hidden])")) {
+      this.scroller.classList.remove("with-gutter");
+    }
     this.resize.disconnect();
     return hadFocus;
   }
@@ -168,19 +178,40 @@ export class ReadGutter {
 
   private build() {
     const focused = hasFocus(this.el);
+    // A button whose block is still there is kept: a new one would run the background's transition
+    // again when it is the current one, which blinks as a growing transcript adds a block at a time.
+    const kept = new Map(this.buttons.map((b) => [b.getAttribute("aria-label"), b]));
     this.buttons = this.blocks.map((block) => {
+      const name = `${this.verb}: ${block.label}`;
+      const known = kept.get(name);
+      if (known && this.lineOf.get(known) === block.line) {
+        return known;
+      }
       const b = document.createElement("button");
       b.type = "button";
       // No `data-line`: that names the text's own elements, which sync scrolling looks for.
       b.className = "read-from";
-      const name = `Read from: ${block.label}`;
       b.setAttribute("aria-label", name);
       b.title = name;
       b.append(playIcon());
       b.addEventListener("click", () => this.onPick(block.line));
+      this.lineOf.set(b, block.line);
       return b;
     });
-    this.el.replaceChildren(...this.buttons);
+    // Only what changed is moved, so a kept button stays in the tree (and keeps focus and style).
+    let at: ChildNode | null = this.el.firstChild;
+    for (const b of this.buttons) {
+      if (b === at) {
+        at = b.nextSibling;
+      } else {
+        this.el.insertBefore(b, at);
+      }
+    }
+    while (at) {
+      const next = at.nextSibling;
+      at.remove();
+      at = next;
+    }
     this.setStop(Math.min(this.stop, this.buttons.length - 1));
     if (focused) {
       this.buttons[this.stop]?.focus();

@@ -79,6 +79,8 @@ button.icon {
 
   &.with-gutter > .output {
     padding-left: calc(var(--read-gutter) + 0.375rem + 0.75rem);
+    /* A subtitle table's rows reach the buttons (css/subtitles.css). */
+    --row-reach: 0.75rem;
   }
 }
 

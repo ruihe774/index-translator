@@ -73,6 +73,16 @@ export interface MediaProbe {
   tracks: AudioTrack[];
   /** Seconds the server will get when that is less than `duration`: it is cut there. */
   cutAt: number | undefined;
+  /** A Matroska file's layout, for playing it with only the chosen audio track (media-player.ts). */
+  matroska?: MatroskaLayout;
+}
+
+export interface MatroskaLayout {
+  video: boolean;
+  /** Every audio track in the file's order, with where its TrackType's byte is. */
+  audio: { number: number; typeAt: number | undefined }[];
+  /** Where the CRC-32 elements over the track list start. */
+  checksums: number[];
 }
 
 /** The body of `POST /transcriptions`. */
@@ -466,6 +476,11 @@ export async function probeMedia(file: Blob, limits: Limits, caps: Capabilities 
       duration,
       tracks,
       cutAt: duration !== undefined && duration > limits.maxSeconds + CUT_SLACK_SECONDS ? limits.maxSeconds : undefined,
+      matroska: {
+        video: info.tracks.some((t) => t.type === "video"),
+        audio: info.tracks.filter((t) => t.type === "audio").map((t) => ({ number: t.number, typeAt: t.typeAt })),
+        checksums: info.checksums,
+      },
     };
   }
   throw new MediaError("It is not a WAV, Ogg, WebM or MKV file.");

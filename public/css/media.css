@@ -1,0 +1,77 @@
+/* The recording or video a transcript was made from, above it (media-ui.ts). The player takes its
+   room from the box, so the panel keeps its height: the picture at most a share of it, the transcript
+   the rest. */
+.source-field.with-media {
+  flex-direction: column;
+  block-size: var(--pane-height);
+  gap: 0.5rem;
+
+  > #text,
+  > .output-area {
+    flex: 1 1 0;
+    block-size: auto;
+    min-block-size: 0;
+  }
+}
+
+.source-media {
+  flex: none;
+  display: flex;
+  justify-content: center;
+
+  > video {
+    display: block;
+    max-inline-size: 100%;
+    block-size: min(calc(var(--pane-height) * 0.4), 20rem);
+    background: #000;
+    border-radius: var(--radius-sm);
+  }
+
+  /* No picture this browser decodes: the controls alone, as for audio. */
+  > video.audio-only {
+    inline-size: 100%;
+    block-size: 3.25rem;
+    background: none;
+  }
+
+  > audio {
+    inline-size: 100%;
+  }
+
+  > p {
+    margin: 0;
+  }
+}
+
+/* The cue at the playhead, in both views: shaded, and not by shade alone (1.4.1): a 4 px bar at the
+   row's start edge, which beside a column of buttons (the table reaches it, css/subtitles.css) joins
+   a current button's fill. A background of the first cell, as the line above a row is, in the
+   cell's room before the number. Under the shade of a cue being read aloud. */
+.cue-table {
+  --bar: linear-gradient(var(--accent), var(--accent)) left / 0.25rem 100% no-repeat;
+
+  &:dir(rtl) {
+    --bar: linear-gradient(var(--accent), var(--accent)) right / 0.25rem 100% no-repeat;
+  }
+
+  tr.cue-playing {
+    background: color-mix(in srgb, var(--accent) 18%, transparent);
+
+    @media (forced-colors: active) {
+      outline: 2px solid Highlight;
+      outline-offset: -2px;
+    }
+  }
+
+  /* Under the row's line, as the shade is. */
+  tbody > tr.cue-playing > td:first-child {
+    background:
+      var(--rule) top / 100% 1px no-repeat,
+      var(--bar);
+  }
+
+  /* Also being read aloud: the darker shade of that. */
+  tr.speaking.cue-playing {
+    background: color-mix(in srgb, var(--accent) 24%, transparent);
+  }
+}

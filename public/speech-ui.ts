@@ -109,6 +109,10 @@ export interface SpeechUiDeps {
   shown(side: Side): boolean;
   /** The sentence boundaries the server has told, shared with the rest of the page. */
   boundaries: SentenceBoundaries;
+  /** A side's gutter was shown or hidden: the source's takes the place of the recording's (media-ui.ts). */
+  gutterChanged(): void;
+  /** A reading is starting: other sound stops. */
+  reading(): void;
 }
 
 export interface SpeechUi {
@@ -124,6 +128,8 @@ export interface SpeechUi {
   recheck(): void;
   /** Asks the server for the sentence boundaries of both sides' texts, to be there when a reading starts. */
   prefetch(): void;
+  /** Whether the side's Read aloud is pressed, its gutter shown. */
+  isOpen(side: Side): boolean;
 }
 
 /** One request for a piece; Opus is asked for with `Accept`, WAV is what a request without it gets. */
@@ -236,11 +242,15 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
 
   /** Hides the side's gutter; focus that was in it goes back to its Read aloud. */
   function close(side: Side) {
-    if (open === side) {
+    const wasOpen = open === side;
+    if (wasOpen) {
       open = null;
     }
     if (gutters[side].hide()) {
       controls[side].focusToggle();
+    }
+    if (wasOpen) {
+      deps.gutterChanged();
     }
   }
 
@@ -352,6 +362,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
       }
     }
     open = side;
+    deps.gutterChanged();
     showGutter();
     refresh();
     gutters[side].focus();
@@ -381,6 +392,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
       void loadVoices();
     }
     player.stop();
+    deps.reading();
     setState({ speaking: { side, line } });
     showSpeaking();
     const { text, lang } = deps.target(side);
@@ -534,5 +546,5 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
     }
   }
 
-  return { refresh, showSpeaking, stop, loadVoices, recheck, prefetch };
+  return { refresh, showSpeaking, stop, loadVoices, recheck, prefetch, isOpen: (side) => open === side };
 }

@@ -8,9 +8,12 @@ import { join, normalize, resolve, sep } from "node:path";
 
 import type { PublicWatcher } from "./public-watch";
 
-/** The page loads only same-origin scripts and styles, and nothing can frame it. */
+/**
+ * The page loads only same-origin scripts and styles, and nothing can frame it. Media elements may also
+ * play `blob:` URLs: the file a transcript was made from, which the page plays without sending it.
+ */
 const HTML_CSP =
-  "default-src 'self'; frame-ancestors 'none'; style-src 'self' 'sha256-3UZwvRm3UKR9RB0lE57/ZGxUodThIOqU6t14BTQJ4Wk='; script-src 'self' 'sha256-mPO7V38BOo1RlEecQ/LNj5fR3FFanGg+QCFN4pFYXxg='";
+  "default-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; style-src 'self' 'sha256-3UZwvRm3UKR9RB0lE57/ZGxUodThIOqU6t14BTQJ4Wk='; script-src 'self' 'sha256-mPO7V38BOo1RlEecQ/LNj5fR3FFanGg+QCFN4pFYXxg='";
 
 interface Transpiled {
   mtimeMs: number;

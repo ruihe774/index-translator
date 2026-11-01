@@ -267,3 +267,152 @@ test.describe("re-encoded in the browser", () => {
     expect(r!.seconds).toBeCloseTo(2, 1);
   });
 });
+
+/** The pitch the page hears from a playing player, in Hz: the loudest bin of a Web Audio analyser. */
+function pitch(page: Page, selector: string): Promise<number> {
+  return page.evaluate(async (sel) => {
+    const el = document.querySelector<HTMLMediaElement>(sel)!;
+    const ctx = new AudioContext();
+    await ctx.resume();
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 8192;
+    ctx.createMediaElementSource(el).connect(analyser);
+    // Real audio time: the analyser needs some of the tone (README: a fixed wait only for what nothing shows).
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 400);
+    });
+    const bins = new Float32Array(analyser.frequencyBinCount);
+    analyser.getFloatFrequencyData(bins);
+    let loudest = 0;
+    bins.forEach((x, i) => {
+      if (x > bins[loudest]!) {
+        loudest = i;
+      }
+    });
+    return (loudest * ctx.sampleRate) / analyser.fftSize;
+  }, selector);
+}
+
+const playFrom = (page: Page) => page.getByRole("toolbar", { name: "Play the recording from" }).getByRole("button");
+
+test("the video plays above its transcript with the transcribed track, the cue at the playhead marked", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ speech: { segments: SEGMENTS } });
+  await app.open();
+  await pick(app.page, "tracks.mkv", "video/x-matroska");
+  // Not the first audio track, which Chromium would play: the others are hidden from it.
+  await dialog(app.page)
+    .getByRole("radio", { name: /^French · AAC/ })
+    .check();
+  await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
+  const video = app.page.locator("#source-media video");
+  await expect(video).toHaveAttribute("aria-label", "Recording: tracks.mkv");
+  await expect(note(app.page)).toHaveText(/^tracks\.mkv: transcribed/);
+  await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.videoWidth)).toBeGreaterThan(0);
+
+  await expect
+    .poll(() => playFrom(app.page).evaluateAll((buttons) => buttons.map((b) => b.getAttribute("aria-label"))))
+    .toStrictEqual([
+      "Play from: 0:00:00 Hello there.",
+      "Play from: 0:00:01 How are you?",
+      "Play from: 0:00:02 Fine, thanks.",
+    ]);
+  await playFrom(app.page).nth(1).click();
+  await expect(rows(app.page, "#source-view").nth(1)).toHaveAttribute("aria-current", "time");
+  await expect(playFrom(app.page).nth(1)).toHaveAttribute("aria-current", "true");
+  // The French track's tone, 660 Hz (the first audio track's is 330 Hz).
+  expect(Math.abs((await pitch(app.page, "#source-media video")) - 660)).toBeLessThan(30);
+  await expect(rows(app.page, "#source-view").nth(2)).toHaveAttribute("aria-current", "time");
+  await expect(rows(app.page, "#source-view").nth(1)).not.toHaveAttribute("aria-current");
+
+  // Raw shows the text box under the player, without the column; Clear takes the player away.
+  await app.page.getByRole("group", { name: "Source view" }).getByRole("button", { name: "Raw" }).click();
+  await expect(video).toBeVisible();
+  await expect(playFrom(app.page)).toHaveCount(0);
+  await app.page.locator("#clear").click();
+  await expect(app.page.locator("#source-media")).toBeHidden();
+  await expect(app.page.locator("#source-media video")).toHaveCount(0);
+});
+
+test("a track this browser cannot play from the file is played from the recording sent", async ({ app, mock }) => {
+  await mock.set({ speech: { segments: SEGMENTS } });
+  // A browser without AAC in its media elements; WebCodecs still decodes it for the upload.
+  await app.page.addInitScript(() => {
+    const real = Object.getOwnPropertyDescriptor(HTMLMediaElement.prototype, "canPlayType")!.value as (
+      this: HTMLMediaElement,
+      type: string,
+    ) => CanPlayTypeResult;
+    HTMLMediaElement.prototype.canPlayType = function canPlayType(this: HTMLMediaElement, type: string) {
+      return type.includes("mp4a") ? "" : real.call(this, type);
+    };
+  });
+  await app.open();
+  await pick(app.page, "tracks.mkv", "video/x-matroska");
+  await dialog(app.page)
+    .getByRole("radio", { name: /^French · AAC/ })
+    .check();
+  await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
+  const audio = app.page.locator("#source-media audio");
+  await expect(audio).toHaveAttribute("aria-label", "Transcribed audio of tracks.mkv");
+  await expect(app.page.locator("#source-media video")).toHaveCount(0);
+  await expect(note(app.page)).toHaveText(/^tracks\.mkv: transcribed/);
+  await playFrom(app.page).nth(2).click();
+  await expect(rows(app.page, "#source-view").nth(2)).toHaveAttribute("aria-current", "time");
+  expect(Math.abs((await pitch(app.page, "#source-media audio")) - 660)).toBeLessThan(30);
+});
+
+test("Read aloud's column takes the place of the player's, and one sound stops the other", async ({ app, mock }) => {
+  await mock.set({ speech: { segments: SEGMENTS, audioSeconds: 5 } });
+  await app.open();
+  await app.from.selectOption("en");
+  await pick(app.page, "tone.webm", "video/webm");
+  await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
+  await expect(note(app.page)).toHaveText(/^tone\.webm: transcribed/);
+  const video = app.page.locator("#source-media video");
+  const paused = () => video.evaluate((v: HTMLVideoElement) => v.paused);
+  await playFrom(app.page).first().click();
+  await expect.poll(paused).toBe(false);
+
+  const listen = app.page.locator("#listen-source");
+  await listen.click();
+  const read = app.page.getByRole("toolbar", { name: "Read the source text aloud from" }).getByRole("button");
+  await expect(read).toHaveCount(3);
+  await expect(playFrom(app.page)).toHaveCount(0);
+  await expect(app.page.locator("#source-area")).toHaveClass(/with-gutter/);
+  // Reading aloud pauses the player.
+  await read.first().click();
+  await expect.poll(paused).toBe(true);
+  await expect(app.page.locator("#pause-source")).toBeVisible();
+
+  // Released, the player's column is back; playing stops the reading.
+  await listen.click();
+  await expect(playFrom(app.page)).toHaveCount(3);
+  await expect(app.page.locator("#source-area")).toHaveClass(/with-gutter/);
+  await listen.click();
+  await read.nth(1).click();
+  await expect(app.page.locator("#pause-source")).toBeVisible();
+  await video.evaluate((v: HTMLVideoElement) => v.play());
+  await expect(app.page.locator("#pause-source")).toBeHidden();
+  await expect(listen).toHaveAttribute("aria-pressed", "false");
+  await expect(playFrom(app.page)).toHaveCount(3);
+});
+
+test("while the transcript grows, the play-from buttons already there stay (no blink of the current one)", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ speech: { segments: SEGMENTS, segmentDelayMs: 400 } });
+  await app.open();
+  await pick(app.page, "tone.webm", "video/webm");
+  await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
+  await expect(playFrom(app.page)).toHaveCount(1);
+  await playFrom(app.page).first().click();
+  // A mark on the element itself: a rebuilt button would not carry it.
+  await playFrom(app.page)
+    .first()
+    .evaluate((b) => b.classList.add("kept"));
+  await expect(playFrom(app.page)).toHaveCount(3);
+  await expect(playFrom(app.page).first()).toHaveClass(/kept/);
+});

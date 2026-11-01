@@ -50,6 +50,11 @@
     line-height: 1.5;
   }
 
+  /* A subtitle table reaches no further than this padding (css/subtitles.css). */
+  .output {
+    --row-reach: 0.5rem;
+  }
+
   .output-area {
     --first-line: calc(var(--text-size) * 1.5);
   }
@@ -116,5 +121,10 @@
   .pdf-pages {
     --strip-pad: 0.25rem;
     inline-size: 4.5rem;
+  }
+
+  /* The transcript keeps most of a phone's pane. */
+  .source-media > video:not(.audio-only) {
+    block-size: min(calc(var(--pane-height) * 0.3), 14rem);
   }
 }

@@ -20,6 +20,7 @@ import { fillLanguages } from "./languages.ts";
 import { confirmLink } from "./link-dialog.ts";
 import { linkReference } from "./links.ts";
 import { clipboardHtml, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
+import { initMediaUi } from "./media-ui.ts";
 import {
   addDone,
   adviceMessage,
@@ -274,6 +275,7 @@ function showSource() {
   refreshControls();
   sync.refresh();
   speech.showSpeaking();
+  media.refresh();
 }
 
 /** Sets the source's view state and shows it: Markdown and subtitle sources start rendered, others raw. */
@@ -292,6 +294,7 @@ function showOutput() {
     output.finish();
     sync.applyLinkCheck();
     speech.showSpeaking();
+    media.refresh();
   }
 }
 
@@ -357,6 +360,22 @@ const sentenceHover = initSentenceHover(
   boundaries,
   { aligner, blocks: () => sync.active() },
 );
+
+/** The recording or video a transcript was made from, played above it; media-ui.ts. */
+const media = initMediaUi({
+  box: $("source-media"),
+  field: $("source-field"),
+  source: { view: sourceView, area: sourceArea },
+  output: outputEl,
+  text: () => textInput.value,
+  shown: () => !sourceArea.hidden,
+  readGutterOpen: () => speech.isOpen("source"),
+  alignment: () => sync.active(),
+  playing() {
+    speech.stop();
+    followingSource = false;
+  },
+});
 
 /**
  * Asks for the sentence boundaries of what both sides show, once a translation is finished (or a kept one
@@ -739,6 +758,7 @@ async function streamSubtitles(run: Run, job: Job, subtitles: NonNullable<Job["s
  */
 function loadSource(text: string, preview = false) {
   speech.stop();
+  media.close();
   sourceImage.set(null);
   textInput.value = text;
   textInput.scrollTop = 0;
@@ -826,6 +846,8 @@ const transcriber = initTranscribeFlow({
     showSourceAs(formatOf(text), text ? "preview" : "raw");
     refreshSelection();
   },
+  play: (file, probe, track) => media.open(file, probe, track),
+  recording: (r) => media.recording(r),
 });
 
 // ---- history ---------------------------------------------------------------------------------
@@ -855,6 +877,7 @@ function restoreEntry(entry: HistoryEntry) {
     return;
   }
   speech.stop();
+  media.close();
   openUi.deselect();
   sourceImage.set(null);
   textInput.value = entry.source;
@@ -908,6 +931,8 @@ const speech: SpeechUi = initSpeechUi({
       : { text: state.translation, lang: outputEl.lang || undefined },
   format: (side: Side) => (side === "source" ? formatOf(textInput.value) : views.output.format),
   shown: (side: Side) => side === "output" || !sourceArea.hidden,
+  gutterChanged: () => media.refresh(),
+  reading: () => media.pause(),
 });
 
 // ---- wiring ----------------------------------------------------------------------------------

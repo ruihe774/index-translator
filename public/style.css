@@ -15,6 +15,7 @@
 @import url("css/link-dialog.css") layer(components);
 @import url("css/panes.css") layer(components);
 @import url("css/pdf-pages.css") layer(components);
+@import url("css/media.css") layer(components);
 @import url("css/sync-scroll.css") layer(components);
 @import url("css/sentence.css") layer(components);
 @import url("css/switches.css") layer(components);
