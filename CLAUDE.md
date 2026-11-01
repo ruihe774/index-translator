@@ -18,7 +18,7 @@ Run `bun install` before `lint:*` or `e2e` when `node_modules` is missing or sta
 - Coverage: `bun run test:coverage`, `bun run e2e:coverage`; workers are not measured. Page load times on a throttled link: `bun run e2e:perf` (asserts nothing)
 - Lint and typecheck: `bun run lint:ts` (`bun lint`: builtin linter and type checker, no `tsc`; each file uses its nearest `tsconfig.json`; config under `[lint]` in `bunfig.toml`). Errors and warnings stay at zero. Suppress with `// eslint-disable-next-line <rule> -- <why>` (a `: <why>` suffix suppresses nothing). **If a change introduces lint errors or warnings, tell the user which rules failed, even if you then fix them** (the user audits the rules).
 - JS browser support: `bun run lint:es` (ESLint with `eslint-plugin-browser-compat` against `.browserslistrc` and `eslint-plugin-es-x` up to `ES_EDITION` in `scripts/lint_es.ts`). It lints what `public/*.ts` becomes under `Bun.Transpiler`: `bun:*` and `*.json` imports are errors. Bun strips comments, so `eslint-disable` in `public/` does nothing: an exception goes in `scripts/lint_es.ts` (`settings.polyfills` or a rule override) with a comment why.
-- Format: `bun run format:write` / `format:check` (120 columns; Markdown is hand-formatted)
+- Format: `bun run format:write` / `format:check` (120 columns; Markdown is hand-formatted). DO NOT USE prettier
 - CSS: `bun run lint:css`. Markdown conformance: `bun scripts/commonmark.ts`. Long documents: `MODEL=index-nailong-9b bun scripts/longtext.ts <url>`; long subtitles: `bun scripts/longsubs.ts <url> [out-dir]`
 
 Setup (Linux and Windows):
