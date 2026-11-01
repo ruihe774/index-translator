@@ -148,14 +148,14 @@ bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from 
 bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
 bun scripts/build_libopus.ts    # libopus, which compresses speech for the browser and reads compressed uploads: built from source, seconds
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, the sentence segmentation and alignment models, example voices
-bun scripts/fetch_onnxruntime.ts  # ONNX Runtime, which runs the sentence segmentation and alignment models (29 MB), into vendor/
-bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files in the browser (13 MB), into public/vendor/
-bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into Markdown (27 KB), into vendor/
+bun scripts/fetch_onnxruntime.ts  # ONNX Runtime, which runs the sentence segmentation and alignment models, into vendor/
+bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files in the browser, into public/vendor/
+bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into Markdown, into vendor/
 ```
 
 Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
 Markdown files, and says that PDF and Word support is not installed. Without `build_libopus.ts` reading
-aloud sends its audio as WAV, about twelve times the size of Opus, and voice samples are uploaded as WAV too. Translating a web page by its address needs `fetch_turndown.ts`
+aloud sends its audio as WAV, which is much larger, and voice samples are uploaded as WAV too. Translating a web page by its address needs `fetch_turndown.ts`
 and is off until you allow some sites (see [Translate a web page](#translate-a-web-page)).
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts`, `build_soxr.ts` and `build_libopus.ts` and download only the
@@ -188,10 +188,10 @@ LLAMA_DIR=vendor/llama.cpp-cuda AUDIO_DIR=vendor/audio.cpp-cuda SPEECH_BACKEND=c
 bun scripts/build_appimage.ts --cuda   # dist/Index_Translator-<arch>-cuda.AppImage
 ```
 
-By default the kernels are compiled as PTX for Turing and Ampere (`75-virtual;86-virtual`), which the NVIDIA driver
-compiles for your GPU on the first run (about 20 s on a Blackwell GPU, kept in the driver's cache afterwards); on
-Ada and Blackwell they run about 5% slower than a native build. `--cuda-arch=LIST` names the architectures instead
-(`native` builds for the GPU in this machine only: fastest to build and to run, not for sharing).
+By default the kernels are compiled so that the NVIDIA driver finishes them for your GPU on the first run (a short
+wait, kept in the driver's cache afterwards), which is a little slower than a native build. `--cuda-arch=LIST`
+names the architectures instead (`native` builds for the GPU in this machine only: fastest to build and to run, not
+for sharing).
 
 > [!NOTE]
 > Reading aloud is optional. Skipping it saves 14.2 GiB of downloads and about 5.7 GiB of VRAM.
@@ -260,9 +260,8 @@ the app says so instead of filling the box (it does no character recognition). W
 not say which characters its fonts stand for, which some Chinese and Japanese PDFs with fonts that
 are not embedded do, the text comes out garbled and the app warns under the box. Pages in two
 columns can come out in a different reading order than on paper, so look the text over before you
-translate. Password-protected PDFs are not opened. Use a current browser: with a 17 MB paper, a
-year-old Chromium (141) ran out of memory and closed the tab, while Chrome 156 and Firefox 157
-opened it. **Open** and the page pictures have not been through the accessibility review yet.
+translate. Password-protected PDFs are not opened. Use a current browser: an old one can run out of
+memory on a large PDF and close the tab. **Open** and the page pictures have not been through the accessibility review yet.
 
 ### Translate an image
 
@@ -277,10 +276,9 @@ mixes several. **Clear** removes the picture and brings the text box back.
 - The translation is plain text in the order the model reads the picture. There is nothing to
   compare it with, so the paragraph check and click-to-scroll do not apply, and the picture is not
   kept in the History.
-- An image may be up to 8 MB and 50 million pixels. Large pictures are scaled down to about
-  4 million pixels for the model, so very small print in a big photo can be lost: crop to the part
-  you need. A full-size picture takes a few seconds to read before the translation starts and
-  uses about 4,100 tokens of the input limit.
+- An image may be up to 8 MB and 50 million pixels. Large pictures are scaled down for the
+  model, so very small print in a big photo can be lost: crop to the part you need. A full-size
+  picture takes a few seconds to read before the translation starts.
 - The first image loads the model's image encoder (0.6 GiB, part of `fetch`), which then uses
   about 1 GiB more GPU memory until the model is switched; together with reading aloud that
   fills a 16 GiB card. If the server says that images cannot be
@@ -344,9 +342,8 @@ and asks before anything is sent. A video with several audio tracks lists them (
 with the player's default chosen; a track that cannot be sent is listed with the reason. When the voice separation model is installed, **Take out music first** chooses
 whether music is taken out before transcribing (by default when music is heard).
 **Time the cues for reading** (on unless you clear it) times the cues as subtitlers do: each starts a
-moment (75 ms) before its speech, cues less than 0.15 s apart are joined, and in a WebM or MKV video
-an edge near a cut moves onto it (a start up to 0.17 s earlier, an end from 0.17 s earlier to 0.2 s
-later). Cuts are the video's keyframes, read while the audio is prepared; a video with keyframes at
+moment before its speech, cues that nearly touch are joined, and in a WebM or MKV video an edge near
+a cut moves onto it. Cuts are the video's keyframes, read while the audio is prepared; a video with keyframes at
 fixed intervals (common in streams) has no cuts to keep to. Cleared, the cues keep the times the
 server gives.
 
@@ -378,28 +375,27 @@ Chromium only so far.
   track of a WebM or MKV file is copied into an Ogg file in your browser, with no loss. Anything else
   is converted in your browser first: AAC, Vorbis, FLAC, MP3 and PCM tracks, Opus with more than two
   channels (5.1 and 7.1 are mixed down to stereo), and WAV files of another sample rate, more than two
-  channels, or too large to go whole. They are sent as Opus (64 kbps mono, 96 kbps stereo; stereo is
-  kept because taking out music works better with it). On a desktop, converting 30 minutes takes
-  about 2 to 15 seconds.
+  channels, or too large to go whole. They are sent compressed, and stereo stays stereo because taking
+  out music works better with it. On a desktop, converting 30 minutes takes about 2 to 15 seconds.
 - **What cannot be sent:** a codec your browser cannot decode is listed with that reason (AC-3 and
   DTS in most browsers; Safari before 26 and Firefox before 130 decode none, so there only what needs
   no conversion works), as are tracks stored compressed or encrypted inside the file. MP4 and MOV are
   not opened yet.
 - **A server without libopus** (`build_libopus.ts`): Opus is decoded in your browser too, and
-  everything is sent as a mono 44.1 kHz WAV file (30 minutes fit the server's 160 MiB). So is
-  everything converted in a browser that cannot encode Opus.
+  everything is sent as a WAV file, and so is everything converted in a browser that cannot encode
+  Opus.
 - **Long files:** only the first 30 minutes are transcribed. Where a video's audio starts late or
   skips (a recording that dropped audio), silence is put in its place, so the cue times match the
   video.
-- **Many cues:** a transcript of more than 200 cues gets the same warning as long subtitles: the
+- **Many cues:** a long transcript gets the same warning as long subtitles: the
   model may repeat earlier cues or stop early.
 
 Transcription is also available [over the API](#use-it-from-other-programs). Details:
 
 - **Model:** MOSS-Transcribe-Diarize (0.7 GiB, `fetch --model moss-transcribe-diarize`). It writes
   the language it hears; Chinese, English and Japanese were tried.
-- **Music:** when the voice separation model is installed, the music is taken out first wherever a
-  small audio tagger (CED) hears it; `?separate=true` (the whole recording) or `false` decides
+- **Music:** when the voice separation model is installed, the music is taken out first wherever
+  the server hears it; `?separate=true` (the whole recording) or `false` decides
   yourself. Without it a song may come out empty. Separation takes about a thirtieth of the
   separated length on a recent GPU; a meeting or a lecture is not separated, and of a podcast only
   its jingles are.
@@ -438,7 +434,7 @@ first (the button tells you so). Clicking a paragraph itself still scrolls the o
 - **Your own voice sample:** under **Model and options** you can also record or upload a sample.
   It is kept until the app stops. Only the first 15 seconds are used: a recording stops there and a
   longer file is cut. The voice is first taken out of any music and background noise
-  by a separation model (Mel-Band RoFormer), which takes a few seconds; the speech model leaves the GPU
+  by a separation model, which takes a few seconds; the speech model leaves the GPU
   while that runs and is loaded again by the next sentence, which takes about five seconds. Without
   the separation model (`fetch --model mel-band-roformer`, 0.3 GiB) the sample is used as it is, so a
   clean recording matters then.
@@ -448,10 +444,9 @@ first (the button tells you so). Clicking a paragraph itself still scrolls the o
 
 The first sentence takes about five seconds longer, because the speech model is loaded when you
 first listen. It needs about 5.7 GiB of GPU memory beside the translation model and is unloaded
-again after five minutes without listening. Speech is generated sentence by sentence, about four
-times faster than it is spoken, so long texts start right away. While you listen, the sentences
-that follow are generated in the background (up to a minute and a half ahead), and what you have
-heard is kept, so **Previous** and **Next** usually start at once (a far ▶ waits for its first
+again after five minutes without listening. Speech is generated sentence by sentence, faster
+than it is spoken, so long texts start right away. While you listen, the sentences that follow are
+generated in the background, and what you have heard is kept, so **Previous** and **Next** usually start at once (a far ▶ waits for its first
 sentence). Where a text is cut into sentences is decided by the sentence segmentation model when
 it is installed (it copes with abbreviations and with sentences the punctuation does not mark), and by
 the browser's own rules otherwise; reading never waits for it more than a moment.
@@ -488,7 +483,7 @@ older ones simply show no mark.
 
 When the paragraphs are matched and the source is shown in **Preview**, the sentence's translation in
 the other pane is marked too (or, on the translation's side, the source sentence it translates): one
-sentence may go with up to four on the other side, and all of them are marked together. The sentence
+sentence may go with several on the other side, and all of them are marked together. The sentence
 alignment model finds them, for the paragraph under the pointer, after the sentence segmentation model
 has answered for both sides of that paragraph; until then, or without these models, only the sentence
 itself is marked. A sentence the translation left out is usually marked together with its neighbour's.
@@ -573,8 +568,8 @@ closed); flags work as above.
 | `HOST` | `127.0.0.1` | Address to listen on. The app has no login, so keep it on `127.0.0.1` unless you put it behind a proxy. |
 | `DEFAULT_MODEL` | `index-translate-9b` | Model loaded at startup |
 | `GPU_LAYERS` | `all` | Layers to run on the GPU; `0` runs on the CPU |
-| `LLAMA_THREADS` | the fast cores, at most 8 | CPU threads for the engine; matters when running on the CPU. The default is the number of performance cores (Intel P-cores, Arm big cores; where that is not known, half the CPU threads), at most 8 and at most the CPUs the app may use. On Windows, while the page is shown on the same computer, the app also asks Windows to run it at high priority on the fast cores; within 15 seconds of the page being hidden or closed, Windows decides again |
-| `MTP` | on | `0` turns multi-token prediction off. Where the whole model is on a GPU with 16 GiB of memory or more, Index-Translate-9B guesses two tokens ahead with its own prediction layer and checks them in one step, which writes text translations about 1.4 to 1.6 times as fast for about 0.65 GiB more GPU memory. The translation can differ in a word here and there from one written a token at a time: both are what the model finds most likely, computed in a different order. Images, and smaller GPUs, are translated a token at a time. |
+| `LLAMA_THREADS` | the fast cores, at most 8 | CPU threads for the engine; matters when running on the CPU. The default is the number of performance cores (Intel P-cores, Arm big cores; where that is not known, half the CPU threads), at most 8. On Windows, while the page is shown on the same computer, the app also asks Windows to run it at high priority on the fast cores |
+| `MTP` | on | `0` turns multi-token prediction off. Where the whole model is on a GPU with 16 GiB of memory or more, Index-Translate-9B guesses a few words ahead and checks them in one step, which writes text translations about one and a half times as fast for a little more GPU memory. The translation can differ in a word here and there from one written a word at a time. Images, and smaller GPUs, are translated a word at a time. |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
 | `ALLOWED_WEBPAGE_DOMAINS` | none (off) | Sites whose pages the app may fetch for translation, comma separated: `example.com`, `*.example.com` (its subdomains) or `*` (any site) |
@@ -584,7 +579,7 @@ closed); flags work as above.
 | `TRANSCRIBE` | on | `0` turns transcription (`POST /api/v1/transcriptions`, a preview) off |
 | `SEGMENT` | on | `0` turns the sentence segmentation model off; reading aloud then finds sentences by the browser's rules |
 | `SEGMENT_THREADS` | the fast cores, at most 8 | CPU threads for the sentence segmentation and alignment models, chosen like `LLAMA_THREADS` |
-| `SEGMENT_IDLE_UNLOAD` | `300` | Seconds without use after which the sentence segmentation model (about 0.4 GiB of memory) or the alignment model (about 0.5 GiB) is freed; `0` keeps them loaded |
+| `SEGMENT_IDLE_UNLOAD` | `300` | Seconds without use after which the sentence segmentation and alignment models are freed; `0` keeps them loaded |
 | `ALIGN` | on | `0` turns the sentence alignment model off: only the sentence under the pointer is marked, and paragraphs are matched only when the counts are the same |
 
 Only one translation runs at a time. Other requests wait in line.
