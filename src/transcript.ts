@@ -20,34 +20,101 @@ export interface Segment {
  * fixed; on a meeting with little silence the cut made diarization worse (DER 28.8% to 34.6%).
  */
 export const TRIM_SILENCE_SHARE = 0.3;
-/** CED-tiny, which `fetch_models.ts` puts beside MOSS: what `separate: auto` asks whether there is music. */
+/** CED-tiny, which `fetch_models.ts` puts beside MOSS: what `separate: auto` asks where there is music. */
 export const MUSIC_MODEL_FILE = "ced-tiny-f32.gguf";
 /** CED hears music in a window at this probability; speech alone scored at most 0.16, music under talk 0.6 to 0.8. */
 const MUSIC_SCORE = 0.3;
-/** A recording has music to take out when at least this share of its windows does (not a jingle at the start). */
-const MUSIC_SHARE = 0.2;
+/** CED was trained on 10 s clips; one every 5 s covers the whole recording (30 minutes take about 8 s on the CPU). */
 const MUSIC_WINDOW_SECONDS = 10;
-/** Windows CED hears at most, spread over the recording (30 take about 1.5 s on the CPU). */
-const MAX_MUSIC_WINDOWS = 30;
+const MUSIC_HOP_SECONDS = 5;
+/** Separated beyond a window that has music (its music may start or end anywhere inside the window next to it). */
+const MUSIC_PAD_SECONDS = 2;
+/**
+ * Two stretches of music this close are separated as one: RoFormer works in 8 s chunks, and every
+ * stretch costs at least one and its context on both sides.
+ */
+const MUSIC_JOIN_SECONDS = 8;
 
-/** The [start, end) sample ranges CED hears of a recording of `total` samples: 10 s each, at most 30, spread evenly. */
+/**
+ * The [start, end) sample ranges CED hears of a recording of `total` samples: 10 s every 5 s, the
+ * last one ending with the recording, so every sample is heard.
+ */
 export function musicWindows(total: number, rate: number): [number, number][] {
   // Under a second there is too little for CED (and for music to matter).
   if (total < rate) {
     return [];
   }
   const size = Math.min(total, MUSIC_WINDOW_SECONDS * rate);
-  const fits = Math.floor(total / size);
-  const count = Math.min(fits, MAX_MUSIC_WINDOWS);
-  return Array.from({ length: count }, (_, i) => {
-    const at = count === 1 ? 0 : Math.round((i * (fits - 1)) / (count - 1)) * size;
-    return [at, at + size];
-  });
+  const hop = MUSIC_HOP_SECONDS * rate;
+  const out: [number, number][] = [];
+  for (let at = 0; at + size < total; at += hop) {
+    out.push([at, at + size]);
+  }
+  out.push([total - size, total]);
+  return out;
 }
 
-/** Whether CED's Music scores of a recording's windows say it has music to take out. */
-export const hasMusic = (scores: readonly number[]): boolean =>
-  scores.length > 0 && scores.filter((s) => s >= MUSIC_SCORE).length >= MUSIC_SHARE * scores.length;
+/**
+ * The [start, end) sample ranges of a recording of `total` samples to separate, given CED's Music
+ * scores of its `windows` (`musicWindows`): those that have music, padded and joined, in order.
+ */
+export function musicRegions(
+  windows: readonly [number, number][],
+  scores: readonly number[],
+  total: number,
+  rate: number,
+): [number, number][] {
+  const pad = MUSIC_PAD_SECONDS * rate;
+  const join = MUSIC_JOIN_SECONDS * rate;
+  const out: [number, number][] = [];
+  windows.forEach(([s, e], i) => {
+    if (scores[i]! < MUSIC_SCORE) {
+      return;
+    }
+    const from = Math.max(0, s - pad);
+    const to = Math.min(total, e + pad);
+    const last = out.at(-1);
+    if (last && from - last[1] < join) {
+      last[1] = Math.max(last[1], to);
+    } else {
+      out.push([from, to]);
+    }
+  });
+  // A short gap at either end is separated too, for the same reason.
+  const [first] = out;
+  if (first && first[0] < join) {
+    first[0] = 0;
+  }
+  const last = out.at(-1);
+  if (last && total - last[1] < join) {
+    last[1] = total;
+  }
+  return out;
+}
+
+/** Separated audio is faded in over this at a stretch's edges, so the music does not stop with a click. */
+const SPLICE_SECONDS = 0.5;
+
+/**
+ * Writes `vocals`, the separated samples from `from` on, over mono `samples`, fading from one to the
+ * other over SPLICE_SECONDS inside each edge that is not one of the recording's.
+ */
+export function splice(samples: Float32Array, from: number, vocals: Float32Array, rate: number): void {
+  const length = Math.min(vocals.length, samples.length - from);
+  const fade = Math.min(Math.round(SPLICE_SECONDS * rate), Math.floor(length / 2));
+  const fadeIn = from > 0 ? fade : 0;
+  const fadeOut = from + length < samples.length ? fade : 0;
+  for (let i = 0; i < length; i++) {
+    let w = 1;
+    if (i < fadeIn) {
+      w = (i + 0.5) / fadeIn;
+    }
+    if (length - i <= fadeOut) {
+      w = Math.min(w, (length - i - 0.5) / fadeOut);
+    }
+    samples[from + i] = w * vocals[i]! + (1 - w) * samples[from + i]!;
+  }
+}
 
 /** Kept on each side of a stretch of speech (Silero ends it tight). */
 const PAD_SECONDS = 0.2;
@@ -133,6 +200,12 @@ export function toOriginal(seconds: number, pieces: readonly Piece[], rate: numb
  */
 export const maxTokens = (seconds: number): number => 512 + Math.ceil(11 * seconds);
 
+/**
+ * A segment still open after this many characters is MOSS drawing out one sound forever (a 「ひーー」
+ * went on until the token budget ran out); the longest real ones were under 60 characters of Japanese.
+ */
+const MAX_UNFINISHED = 1000;
+
 // MOSS writes `[start][Sxx]text[end]` segments one after another, times in seconds; the pattern is audio.cpp's.
 const SEGMENT =
   /\[([0-9]+(?:\.[0-9]*)?|\.[0-9]+)\]\s*\[(S[0-9]+)\]([\s\S]*?)\[([0-9]+(?:\.[0-9]*)?|\.[0-9]+)\](?=\s*(?:\[|$))/g;
@@ -154,6 +227,11 @@ export class SegmentReader {
 
   end(): Segment[] {
     return this.take(true);
+  }
+
+  /** Whether the segment being written never ends (MOSS caught in a loop inside one), so it should be stopped. */
+  get runaway(): boolean {
+    return this.text.length - this.done > MAX_UNFINISHED;
   }
 
   private take(final: boolean): Segment[] {

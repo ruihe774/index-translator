@@ -504,10 +504,11 @@ curl -N -H 'content-type: audio/wav' --data-binary @meeting.wav http://127.0.0.1
 
 - **Model:** MOSS-Transcribe-Diarize (0.7 GiB, `fetch --model moss-transcribe-diarize`). It writes
   the language it hears; Chinese, English and Japanese were tried.
-- **Music:** when the voice separation model is installed and a small audio tagger (CED) hears music
-  in the recording, the music is taken out first; `?separate=true` or `false` decides yourself.
-  Without it a song may come out empty. Separation takes about a third of the recording's length;
-  a meeting or a lecture is not separated.
+- **Music:** when the voice separation model is installed, the music is taken out first wherever a
+  small audio tagger (CED) hears it; `?separate=true` (the whole recording) or `false` decides
+  yourself. Without it a song may come out empty. Separation takes about a thirtieth of the
+  separated length on a recent GPU; a meeting or a lecture is not separated, and of a podcast only
+  its jingles are.
 - **Long silences** are cut out before the model hears them; the times still refer to the original
   recording.
 - **GPU memory:** up to about 6 GiB beside the translation model for 30 minutes (less for shorter

@@ -24,12 +24,13 @@ import { soxrResampler } from "./resample";
 import {
   cutAudio,
   cutPlan,
-  hasMusic,
   LoopGuard,
   maxTokens,
+  musicRegions,
   musicWindows,
   type Segment,
   SegmentReader,
+  splice,
   toOriginal,
   TRANSCRIBE_RATE,
 } from "./transcript";
@@ -61,6 +62,7 @@ export interface Transcribed {
   type: "transcribed";
   /** Seconds of the uploaded recording. */
   duration: number;
+  /** Some of it, or all, was separated. */
   separated: boolean;
   /** The silence was cut out before MOSS heard it (`TRIM_SILENCE_SHARE`). */
   trimmed: boolean;
@@ -75,8 +77,8 @@ export interface TranscribeModels {
   /** The separation model, when the recording may be separated first. */
   separator?: SpeechModelOptions;
   /**
-   * CED, run on the CPU: with it the recording is separated only when it has music (`hasMusic`);
-   * without it, whenever there is a `separator`.
+   * CED, run on the CPU: with it only the stretches of the recording that have music are separated
+   * (`musicRegions`); without it, the whole recording, whenever there is a `separator`.
    */
   musicDetector?: SpeechModelOptions;
 }
@@ -132,14 +134,15 @@ function mono(pcm: Pcm): Float32Array {
   return out;
 }
 
-/** Whether CED hears music in enough of a 16 kHz mono recording (`hasMusic`); on the CPU, about 1.5 s at most. */
-function music(samples: Float32Array, options: SpeechModelOptions): boolean {
+/** The stretches of a 16 kHz mono recording where CED hears music (`musicRegions`); on the CPU, about 8 s for 30 minutes. */
+function musicIn(samples: Float32Array, options: SpeechModelOptions): [number, number][] {
   const detector = MusicDetector.load(options);
   try {
-    const scores = musicWindows(samples.length, TRANSCRIBE_RATE).map(([from, to]) =>
+    const windows = musicWindows(samples.length, TRANSCRIBE_RATE);
+    const scores = windows.map(([from, to]) =>
       detector.music({ samples: samples.subarray(from, to), sampleRate: TRANSCRIBE_RATE, channels: 1 }),
     );
-    return hasMusic(scores);
+    return musicRegions(windows, scores, samples.length, TRANSCRIBE_RATE);
   } finally {
     detector.free();
   }
@@ -147,6 +150,14 @@ function music(samples: Float32Array, options: SpeechModelOptions): boolean {
 
 /** The sample rate the separation model takes. */
 const SEPARATION_RATE = 44_100;
+/** Seconds of the recording around a stretch the separation model hears too, and whose output is dropped. */
+const SEPARATION_CONTEXT_SECONDS = 2;
+/**
+ * RoFormer's chunks of a recording to transcribe do not overlap (the model's default is 2): twice as
+ * fast, about 30 times real time on an RX 9070, and the vocals are the default's at an SNR of 32 dB
+ * (25 dB at the chunks' edges). Voice samples keep the default.
+ */
+const TRANSCRIBE_SEPARATION_OVERLAP = 1;
 
 function unload(): void {
   model?.free();
@@ -216,19 +227,38 @@ serve<SpeechProtocol>({
     const at16k = (p: Pcm) => resample(mono(p), 1, p.sampleRate, TRANSCRIBE_RATE);
     let heard = at16k(pcm);
 
-    const separate = models.separator !== undefined && (!models.musicDetector || music(heard, models.musicDetector));
-    if (separate) {
+    const whole: [number, number][] = [[0, heard.length]];
+    const { separator, musicDetector } = models;
+    const regions = !separator ? [] : musicDetector ? musicIn(heard, musicDetector) : whole;
+    if (separator && regions.length > 0) {
       post({ type: "stage", stage: "separating" });
-      const mixture = { ...pcm, samples: resample(pcm.samples, pcm.channels, pcm.sampleRate, SEPARATION_RATE) };
-      const separator = VoiceSeparator.load(models.separator!);
-      try {
-        heard = at16k(separator.vocals({ ...mixture, sampleRate: SEPARATION_RATE }));
-      } finally {
-        separator.free();
+      // The separated stretches are written over `heard`, which must not be the samples they are cut from.
+      if (heard === pcm.samples) {
+        heard = heard.slice();
       }
-      // A separation cannot be stopped inside; an abort during it is seen here.
-      if (isAborted(abort)) {
-        return { type: "aborted" };
+      const context = SEPARATION_CONTEXT_SECONDS * TRANSCRIBE_RATE;
+      const ratio = pcm.sampleRate / TRANSCRIBE_RATE;
+      const separation = VoiceSeparator.load(separator, TRANSCRIBE_SEPARATION_OVERLAP);
+      try {
+        for (const [from, to] of regions) {
+          const start = Math.max(0, from - context);
+          const end = Math.min(heard.length, to + context);
+          const part = pcm.samples.subarray(
+            Math.round(start * ratio) * pcm.channels,
+            Math.round(end * ratio) * pcm.channels,
+          );
+          const mixture = resample(part, pcm.channels, pcm.sampleRate, SEPARATION_RATE);
+          const vocals = at16k(
+            separation.vocals({ samples: mixture, sampleRate: SEPARATION_RATE, channels: pcm.channels }),
+          );
+          splice(heard, from, vocals.subarray(from - start, to - start), TRANSCRIBE_RATE);
+          // A stretch cannot be stopped inside; an abort during one is seen here.
+          if (isAborted(abort)) {
+            return { type: "aborted" };
+          }
+        }
+      } finally {
+        separation.free();
       }
     }
     post({ type: "stage", stage: "transcribing" });
@@ -275,7 +305,13 @@ serve<SpeechProtocol>({
       end = transcriber.transcribe(
         { samples: said, sampleRate: TRANSCRIBE_RATE, channels: 1 },
         { max_tokens: String(maxTokens(saidSeconds)) },
-        (piece) => send(reader.push(piece)),
+        (piece) => {
+          if (!send(reader.push(piece))) {
+            return false;
+          }
+          looped = reader.runaway;
+          return !looped;
+        },
         abort,
       );
     } catch (e) {
@@ -293,7 +329,7 @@ serve<SpeechProtocol>({
     return {
       type: "transcribed",
       duration,
-      separated: separate,
+      separated: regions.length > 0,
       trimmed: !!plan,
       truncated: end !== "finished" || looped,
     };

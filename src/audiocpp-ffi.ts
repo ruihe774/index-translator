@@ -54,6 +54,9 @@ function bind(dir: string) {
     audiocpp_last_error: { args: [], returns: "ptr" },
     // Ours, not upstream's: scripts/patches/audiocpp-abort.patch.
     audiocpp_set_abort_flag: { args: ["ptr"], returns: "void" },
+    audiocpp_options_create: { args: [], returns: "ptr" },
+    audiocpp_options_set: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
+    audiocpp_options_free: { args: ["ptr"], returns: "void" },
     audiocpp_registry_create: { args: ["ptr", "ptr"], returns: "i32" },
     audiocpp_registry_free: { args: ["ptr"], returns: "void" },
     audiocpp_model_load: { args: ["ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
@@ -191,8 +194,16 @@ class Loaded {
     protected session: Pointer,
   ) {}
 
-  /** Loads the model and creates its session for `task` (`tts`, `sep`, ...) in `mode` (`offline` or `streaming`). */
-  protected static open(opts: SpeechModelOptions, task: string, mode = "offline"): [Lib, Pointer, Pointer, Pointer] {
+  /**
+   * Loads the model and creates its session for `task` (`tts`, `sep`, ...) in `mode` (`offline` or
+   * `streaming`), with `sessionOptions` (audiocpp_cli's `--session-option`).
+   */
+  protected static open(
+    opts: SpeechModelOptions,
+    task: string,
+    mode = "offline",
+    sessionOptions: Record<string, string> = {},
+  ): [Lib, Pointer, Pointer, Pointer] {
     const lib = audiocpp.open(opts.dir);
     const out = slot();
     check(lib, lib.audiocpp_registry_create(null, out), "audiocpp_registry_create");
@@ -212,11 +223,23 @@ class Loaded {
       const fields = new DataView(backend.buffer);
       fields.setInt32(8, 0, true);
       fields.setInt32(12, opts.threads, true);
-      check(
-        lib,
-        lib.audiocpp_session_create(model, cstr(task), cstr(mode), backend, null, out),
-        "audiocpp_session_create",
-      );
+      // audio.cpp copies the options into the session, so they are freed right after.
+      const options = lib.audiocpp_options_create();
+      if (!options) {
+        throw new Error("audiocpp_options_create failed");
+      }
+      try {
+        for (const [key, value] of Object.entries(sessionOptions)) {
+          check(lib, lib.audiocpp_options_set(options, cstr(key), cstr(value)), "audiocpp_options_set");
+        }
+        check(
+          lib,
+          lib.audiocpp_session_create(model, cstr(task), cstr(mode), backend, options, out),
+          "audiocpp_session_create",
+        );
+      } finally {
+        lib.audiocpp_options_free(options);
+      }
       session = pointerOf(out);
       return [lib, registry, model, session];
     } catch (e) {
@@ -307,8 +330,13 @@ export class SpeechModel extends Loaded {
 
 /** A source separation model (Mel-Band RoFormer) with one session. Same rules as `SpeechModel`. */
 export class VoiceSeparator extends Loaded {
-  static load(opts: SpeechModelOptions): VoiceSeparator {
-    return new VoiceSeparator(...Loaded.open(opts, "sep"));
+  /**
+   * `overlap` is how many chunks each sample is separated in (RoFormer's `num_overlap`); the time
+   * grows with it. Left out, the model's own (2 for Mel-Band RoFormer).
+   */
+  static load(opts: SpeechModelOptions, overlap?: number): VoiceSeparator {
+    const options = overlap === undefined ? {} : { [`${opts.family}.num_overlap`]: String(overlap) };
+    return new VoiceSeparator(...Loaded.open(opts, "sep", "offline", options));
   }
 
   /**

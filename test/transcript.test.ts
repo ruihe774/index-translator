@@ -6,11 +6,12 @@ import { describe, expect, test } from "bun:test";
 import {
   cutAudio,
   cutPlan,
-  hasMusic,
   LoopGuard,
   maxTokens,
+  musicRegions,
   musicWindows,
   SegmentReader,
+  splice,
   toOriginal,
 } from "../src/transcript";
 
@@ -102,6 +103,16 @@ describe("SegmentReader", () => {
   });
 });
 
+describe("SegmentReader runaway", () => {
+  test("a segment still open after 1,000 characters never ends", () => {
+    const reader = new SegmentReader();
+    reader.push(`[0.00][S01]${"x".repeat(50)}[3.00][3.10][S02]ひ`);
+    expect(reader.runaway).toBe(false);
+    reader.push("ー".repeat(1000));
+    expect(reader.runaway).toBe(true);
+  });
+});
+
 describe("LoopGuard", () => {
   const s = (start: number, text = "la") => ({ start, end: start + 1, speaker: "S01", text });
 
@@ -133,26 +144,91 @@ test("the token budget grows with the recording: about 20,300 for 30 minutes", (
 });
 
 describe("music detection", () => {
-  test("windows are 10 s, at most 30, spread over the recording from start to end", () => {
-    expect(musicWindows(35 * RATE, RATE)).toStrictEqual([
+  test("windows are 10 s every 5 s, the last one ending with the recording", () => {
+    expect(musicWindows(23 * RATE, RATE)).toStrictEqual([
       [0, 1000],
+      [500, 1500],
       [1000, 2000],
-      [2000, 3000],
+      [1300, 2300],
     ]);
-    const long = musicWindows(1800 * RATE, RATE);
-    expect(long).toHaveLength(30);
-    expect(long[0]).toStrictEqual([0, 1000]);
-    expect(long.at(-1)).toStrictEqual([179_000, 180_000]);
+    expect(musicWindows(20 * RATE, RATE)).toStrictEqual([
+      [0, 1000],
+      [500, 1500],
+      [1000, 2000],
+    ]);
+    expect(musicWindows(1800 * RATE, RATE)).toHaveLength(359);
     // A short recording is one window of its own length; under a second, none.
     expect(musicWindows(4 * RATE, RATE)).toStrictEqual([[0, 400]]);
     expect(musicWindows(RATE - 1, RATE)).toStrictEqual([]);
   });
 
-  test("music in at least a fifth of the windows counts, a jingle does not", () => {
-    expect(hasMusic([0.8, 0.7, 0.75])).toBe(true);
-    expect(hasMusic([0.6, 0.01, 0.02, 0.03, 0.01])).toBe(true);
-    expect(hasMusic([0.6, ...Array<number>(9).fill(0.01)])).toBe(false);
-    expect(hasMusic([0.16, 0.13, 0.29])).toBe(false);
-    expect(hasMusic([])).toBe(false);
+  const total = 600 * RATE;
+  const windows = musicWindows(total, RATE);
+  /** CED's scores with music in the windows starting at the given seconds. */
+  const scored = (...starts: number[]) => windows.map(([s]) => (starts.includes(s / RATE) ? 0.6 : 0.05));
+
+  test("no music, nothing separated; speech alone stays under the threshold", () => {
+    expect(musicRegions(windows, scored(), total, RATE)).toStrictEqual([]);
+    expect(
+      musicRegions(
+        windows,
+        windows.map(() => 0.29),
+        total,
+        RATE,
+      ),
+    ).toStrictEqual([]);
+  });
+
+  test("windows with music are separated, padded by 2 s", () => {
+    expect(musicRegions(windows, scored(100, 105), total, RATE)).toStrictEqual([[98 * RATE, 117 * RATE]]);
+  });
+
+  test("stretches less than 8 s apart are joined, farther ones kept apart", () => {
+    // 98..112 and 118..132: 6 s apart.
+    expect(musicRegions(windows, scored(100, 120), total, RATE)).toStrictEqual([[98 * RATE, 132 * RATE]]);
+    expect(musicRegions(windows, scored(100, 200), total, RATE)).toStrictEqual([
+      [98 * RATE, 112 * RATE],
+      [198 * RATE, 212 * RATE],
+    ]);
+  });
+
+  test("a short gap at either end of the recording is separated too", () => {
+    expect(musicRegions(windows, scored(5, 590), total, RATE)).toStrictEqual([
+      [0, 17 * RATE],
+      [588 * RATE, total],
+    ]);
+  });
+
+  test("music throughout is the whole recording", () => {
+    expect(
+      musicRegions(
+        windows,
+        windows.map(() => 0.7),
+        total,
+        RATE,
+      ),
+    ).toStrictEqual([[0, total]]);
+  });
+});
+
+describe("splice", () => {
+  test("the vocals replace the samples, faded in and out over 0.5 s inside the stretch", () => {
+    const samples = new Float32Array(1000).fill(1);
+    splice(samples, 200, new Float32Array(300), RATE);
+    expect(samples[199]).toBe(1);
+    expect(samples[200]).toBeCloseTo(0.99);
+    expect(samples[224]).toBeCloseTo(0.51);
+    expect(samples.subarray(250, 450).every((x) => x === 0)).toBe(true);
+    expect(samples[499]).toBeCloseTo(0.99);
+    expect(samples[500]).toBe(1);
+  });
+
+  test("no fade at the recording's own edges, and vocals past its end are dropped", () => {
+    const samples = new Float32Array(100).fill(1);
+    splice(samples, 0, new Float32Array(40), RATE);
+    expect(samples[0]).toBe(0);
+    splice(samples, 60, new Float32Array(80), RATE);
+    expect(samples[99]).toBe(0);
+    expect(samples[60]).toBeCloseTo(0.98);
   });
 });

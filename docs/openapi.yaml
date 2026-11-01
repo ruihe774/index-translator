@@ -736,10 +736,10 @@ paths:
 
         What happens to it, in order:
 
-        1. When it is separated (`separate`; by default, when an audio tagger hears music in it), the
-           voice separation model takes out music and background noise. This takes a while (about a
-           tenth of the recording's length with Mel-Band RoFormer on a recent GPU) and cannot be stopped
-           midway.
+        1. When it is separated (`separate`; by default, only the stretches where an audio tagger hears
+           music), the voice separation model takes out music and background noise. This takes a while
+           (about a thirtieth of the separated length with Mel-Band RoFormer on a recent GPU); a stretch
+           cannot be stopped midway.
         2. Its loudness is evened out, and Silero VAD finds the speech. When more than 30% of it is
            silence, the silences are cut out (keeping a short pause between stretches of speech).
         3. MOSS-Transcribe-Diarize transcribes it. Each segment is sent as soon as the model has
@@ -761,10 +761,10 @@ paths:
             default: auto
           description: |
             Whether to take the voice out of music first. `auto` does so when the separation model
-            is installed (`transcribe.separation` in `GET /health`) and CED, an audio tagger, hears
-            music in at least a fifth of up to 30 ten-second stretches spread over the recording
-            (speech alone, meetings and lectures, is not separated); `true` always separates and is
-            refused with `400` without the model. Without separation the model may write nothing at
+            is installed (`transcribe.separation` in `GET /health`), for the stretches where CED, an
+            audio tagger, hears music (speech alone, meetings and lectures, is not separated; an intro
+            song is, and nothing else); `true` separates the whole recording and is refused with `400`
+            without the model. Without separation the model may write nothing at
             all for a song, which ends as a `speech_error`; with it a few short interjections may be lost.
       requestBody:
         required: true
@@ -2266,7 +2266,7 @@ components:
             type: string
         separated:
           type: boolean
-          description: Music was taken out first.
+          description: Music was taken out of the recording first, of some stretches or of all of it.
         trimmed:
           type: boolean
           description: Long silences were cut out before the model heard the recording (times are still the original ones).
