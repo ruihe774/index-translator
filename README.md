@@ -20,9 +20,8 @@
 <p align="center">
   <a href="#install">Install</a> ·
   <a href="#using-it">Using it</a> ·
-  <a href="#listen-to-a-text">Read aloud</a> ·
+  <a href="#use-it-from-other-programs">API</a> ·
   <a href="#settings">Settings</a> ·
-  <a href="docs/openapi.yaml">API</a> ·
   <a href="THIRD_PARTY_NOTICES.md">Licenses</a>
 </p>
 
@@ -37,25 +36,27 @@
 
 ---
 
-## Why Index Translator
+## What it does
 
-It is a local translator for people who cannot, or would rather not, paste their documents into an online
-service. It runs the Index-Translate 9B models on your GPU, with no accounts, quotas or fees.
+Index Translator is a local translator for people who cannot, or would rather not, paste their documents into an
+online service. It runs the Index-Translate 9B models on your GPU, with no accounts, quotas or fees.
 
 | | |
 |---|---|
 | 🔒 **Private and offline** | Models run on your GPU. Your text never leaves your machine, so confidential documents are fine. |
 | 📄 **Built for whole documents** | A long-document model translates a full text in one pass (Chinese ↔ English, Chinese ↔ Japanese). The app picks it for you by length. |
+| 📑 **Opens your files** | Text, Markdown, PDF and Word files are read in your browser; one click on a PDF page thumbnail turns it into Markdown. |
 | 🖼️ **Reads pictures** | Drop a screenshot or photo (JPEG, PNG, WebP); the model reads and translates the text in it. No separate OCR step. |
-| 📑 **Opens PDFs locally** | Text, Markdown, subtitle, PDF and Word files are read in your browser. One click on a page thumbnail turns it into Markdown. |
+| 🎞️ **Subtitles, and transcripts of recordings** | Translate `.srt` files cue by cue with their timing kept, or turn a recording or video into speaker-labelled subtitles first (preview). |
+| 🌐 **Web pages** | Paste an address and the server fetches the page as Markdown (off until you allow some sites). |
 | 🔊 **Reads aloud** | Hear the source or the translation, from any paragraph, in Chinese, English, Japanese, Spanish or Arabic, with voices and speed (IndexTTS-2.5, also local). |
-| 📚 **Terminology and style** | Glossary, hard rules ("keep placeholders unchanged"), soft style guidance and a genre such as academic paper or subtitles. |
 | ✅ **Tells you what went missing** | Models can silently drop or repeat paragraphs. The app counts paragraphs, warns you and names the paragraphs that went missing, were merged or were repeated; click one side to jump to the matching paragraph on the other. |
+| 📚 **Terminology and style** | Glossary, hard rules ("keep placeholders unchanged"), soft style guidance and a genre such as academic paper or subtitles. |
 | ✍️ **Markdown stays Markdown** | Headings, lists, tables and code are shown formatted as they stream in, with Raw / Preview per side. Copy returns the Markdown, and the formatted text as rich text when the translation is shown formatted. |
 
 Also: streaming with **Stop**, correct Chinese and Japanese typography, an interface checked against WCAG 2.2 AA
-(keyboard and screen readers), and a local REST API with streaming ([`docs/openapi.yaml`](docs/openapi.yaml)) so
-other programs can use the same translator.
+(keyboard and screen readers), and a [local REST API](#use-it-from-other-programs) so other programs can use the same
+translator.
 
 ## Install
 
@@ -155,7 +156,7 @@ bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into 
 Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
 Markdown files, and says that PDF and Word support is not installed. Without `build_libopus.ts` reading
 aloud sends its audio as WAV, about twelve times the size of Opus, and voice samples are uploaded as WAV too. Translating a web page by its address needs `fetch_turndown.ts`
-and is off until you allow some sites (see Translate a web page, below).
+and is off until you allow some sites (see [Translate a web page](#translate-a-web-page)).
 
 Reading aloud is optional. To leave it out, skip `build_audiocpp.ts`, `build_soxr.ts` and `build_libopus.ts` and download only the
 translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.
@@ -195,21 +196,25 @@ Ada and Blackwell they run about 5% slower than a native build. `--cuda-arch=LIS
 > [!NOTE]
 > Reading aloud is optional. Skipping it saves 14.2 GiB of downloads and about 5.7 GiB of VRAM.
 
+
 ## Using it
 
 Open the app in your browser (the AppImage and installer do it for you; from source it is
-http://127.0.0.1:3000/). Pick languages, paste text, click **Translate**.
+http://127.0.0.1:3000/). Pick languages, paste text, click **Translate**. Each section below covers one thing you can do:
 
+- [Translate text](#translate-text) · [Open a file](#open-a-file) · [Translate an image](#translate-an-image) ·
+  [Translate subtitles](#translate-subtitles) · [Translate a web page](#translate-a-web-page) ·
+  [Transcribe a recording](#transcribe-a-recording-preview)
+- [Read it aloud](#read-it-aloud) · [Check a translation](#check-a-translation)
+- [Choose a model](#choose-a-model) · [Glossary and constraints](#glossary-and-constraints) · [History](#history)
 
-<details>
-<summary><b>Translate text</b>: languages, Markdown, copy</summary>
-
+### Translate text
 
 1. Choose the **From** and **To** languages. Pick **Detect** if you are not sure of the
    source. Languages include English, Chinese, Japanese, Korean, German, French, Spanish, Russian
    and about 25 more.
 2. Paste or type your text into the box, or click **Open** to take it from a file (see
-   Open a file, below).
+   [Open a file](#open-a-file)).
 3. Click **Translate**. The translation appears as it is generated. Click **Stop** to end it early,
    and **Copy translation** to copy the result. **Clear** empties both sides for a new text.
 
@@ -223,18 +228,14 @@ Markdown source and the formatted view; **Raw** on your side brings back the tex
 formatted, also puts the formatted text on the clipboard as rich text. Links open in a new tab;
 images are shown as links and are not loaded.
 
-</details>
-
-<details>
-<summary><b>Open a file</b>: text, Markdown, subtitles, PDF, Word, recordings</summary>
-
+### Open a file
 
 **Open**, next to the **From** language, takes the text from a file on your computer; dropping or pasting a
 file anywhere on the page does the same. A text, PDF or Word file is read by your browser and stays
 there: nothing is uploaded, and the server only receives the text you then send with
 **Translate**. An image is different: it is what gets translated, so **Translate** sends the image
-itself to the server (see Translate an image, below). So is a recording or a video: after you confirm,
-its audio is sent to the server to be transcribed (see Transcribe a recording, below). Opening a file replaces what
+itself to the server (see [Translate an image](#translate-an-image)). So is a recording or a video: after you confirm,
+its audio is sent to the server to be transcribed (see [Transcribe a recording](#transcribe-a-recording-preview)). Opening a file replaces what
 is in the box and removes the translation of the old text; it never starts a translation.
 
 - **Plain text, Markdown and subtitles** (`.txt`, `.md`, `.markdown`, `.srt`, UTF-8, up to 2 MB) go
@@ -250,9 +251,9 @@ is in the box and removes the translation of the old text; it never starts a tra
   is not taken, only its name, as a Markdown image (shown as a link). Older `.doc` files and
   password-protected documents are not opened.
 - **Images** (`.jpg`, `.jpeg`, `.png`, `.webp`, up to 8 MB): the picture takes the place of the
-  text box. See Translate an image, below.
+  text box. See [Translate an image](#translate-an-image).
 - **Recordings and videos** (`.wav`, `.ogg`, `.opus`, `.webm`, `.mkv`): transcribed into the box as
-  subtitles. See Transcribe a recording, below.
+  subtitles. See [Transcribe a recording](#transcribe-a-recording-preview).
 
 What to expect from a PDF: the text comes from the PDF's text layer. A scanned page has none, and
 the app says so instead of filling the box (it does no character recognition). Where the PDF does
@@ -263,11 +264,7 @@ translate. Password-protected PDFs are not opened. Use a current browser: with a
 year-old Chromium (141) ran out of memory and closed the tab, while Chrome 156 and Firefox 157
 opened it. **Open** and the page pictures have not been through the accessibility review yet.
 
-</details>
-
-<details>
-<summary><b>Translate an image</b></summary>
-
+### Translate an image
 
 Open, drop or paste (Ctrl+V) a JPEG, PNG or WebP image (a screenshot, a photo of a sign or a menu, a diagram) and
 it is shown where the text box was. Choose the **To** language and click **Translate**: the image
@@ -290,11 +287,7 @@ mixes several. **Clear** removes the picture and brings the text box back.
   translated, the encoder file is missing: run `fetch` again (see [Install](#install)).
 - A transparent background is treated as white.
 
-</details>
-
-<details>
-<summary><b>Translate subtitles</b>: SubRip (.srt)</summary>
-
+### Translate subtitles
 
 Open a `.srt` file, or paste its text, and click **Translate**. Both sides are shown as a table of
 cues (number, time, text), and the translation fills in cue by cue as it arrives, each with the
@@ -318,11 +311,7 @@ time of its cue. **Raw** shows the subtitle file itself, which is what **Copy tr
 - Styling tags (`<i>`, `<b>`, `<u>`) are shown as such; position tags such as `{\an8}` are kept in the
   file and put back in front of the translated cue. Other subtitle formats (WebVTT, ASS) are not read.
 
-</details>
-
-<details>
-<summary><b>Translate a web page</b>: paste its address</summary>
-
+### Translate a web page
 
 Paste the address of a page into the box, alone (`https://example.com/post`, or just
 `example.com/post`), and click **Translate**. The app asks first: **Fetch page** has the server open
@@ -337,65 +326,87 @@ the page's main part), only that is taken; menus, sidebars, the page's header an
 whatever the page hides are left out. Links keep their full addresses.
 
 This is the one feature that makes the server go on the internet, so it is off until you list the
-sites it may open in `ALLOWED_WEBPAGE_DOMAINS` (see Settings): for example
+sites it may open in `ALLOWED_WEBPAGE_DOMAINS` (see [Settings](#settings)): for example
 `ALLOWED_WEBPAGE_DOMAINS=en.wikipedia.org,*.example.com`, or `*` for any site. A page on another site,
 or one that sends the browser to another site, is refused. The server needs a browser to open pages
 with: Chrome, Chromium, Edge or Brave installed (set `BUN_CHROME_PATH` to its program if it is
 somewhere unusual; on macOS the system's WebKit is used). Only the address goes to the server; the
 page's text comes back to your browser and is translated like any other text.
 
-</details>
+### Transcribe a recording (preview)
 
-<details>
-<summary><b>Choosing a model</b></summary>
+The server can turn a recording into text, with who speaks when, and the page can then translate it
+as subtitles.
 
+Open, drop or paste a recording or a video: a WAV file, an Ogg Opus file, or a WebM or MKV file (what
+browsers record, what YouTube serves as WebM, and most films and series). A dialog says how long it is
+and asks before anything is sent. A video with several audio tracks lists them (language, name, codec),
+with the player's default chosen; a track that cannot be sent is listed with the reason. When the voice separation model is installed, **Take out music first** chooses
+whether music is taken out before transcribing (by default when music is heard).
 
-Leave the model on **Automatic** (it picks by text length) unless you have a reason to pick one yourself.
-The app then chooses:
+**Transcribe** sends the audio to the server and writes the transcript into the box as it comes,
+as a table of subtitles: one cue per stretch of speech, with its time in the video and its speaker
+(`S01`, `S02`, …, in a column of their own). **Translate** waits until the transcription has finished,
+and **Stop** ends it early, keeping what was written. The server stops at its next chance: while it
+takes the music out, or reads the recording before the first cue, that can take a while, and the
+page says "Stopping…" until it has; pressing **Stop** again stops waiting. Then **Translate** translates it like any
+subtitles (see [Translate subtitles](#translate-subtitles)): the speaker labels are not sent to the model and are put
+back on the translated cues.
 
-- **Index-Translate-9B** for short texts (up to about 11,000 letters) and any language.
-- **Index-NativeLong-9B** for longer texts, when the direction is Chinese ↔ English or
-  Chinese ↔ Japanese. This model translates a whole document in one pass, but it only handles those
-  four directions and does not support glossaries or constraints.
-- **Index-Translate-9B** for longer texts in other directions, with a warning that it may drop or
-  repeat paragraphs.
+The recording or video stays above its transcript, with its own player controls, until another text,
+**Clear** or a kept translation takes the box. While it plays, the cue being said is outlined in the
+transcript (and in the translation, once its cues are matched), and the transcript scrolls along until
+you scroll it yourself. The buttons beside the cues play from that cue; with the keyboard they are one
+stop, moved through with the arrow keys. **Read aloud** puts its own buttons in their place, and
+playing stops reading aloud and the reverse. Of a file with several audio tracks you hear the one
+transcribed. Nothing of it is sent for this: your browser plays the file from your disk. Where the
+browser cannot play the transcribed track from the file (Chromium's media player has no AC-3, for
+example), you hear the audio that was sent to the server, without the picture; a video whose picture
+the browser cannot decode (HEVC in many browsers) plays as audio. A video also has subtitles, in its
+player's own menu (⋮ → Captions in Chromium), also in full screen: the transcript, as it is written,
+and once there is a translation, the translation and both together (the translation above the
+original), which is then shown unless you picked another; speaker ids are left out. Tested in
+Chromium only so far.
 
-</details>
+- **What is sent:** a WAV or Ogg Opus file the server takes goes as it is, and a mono or stereo Opus
+  track of a WebM or MKV file is copied into an Ogg file in your browser, with no loss. Anything else
+  is converted in your browser first: AAC, Vorbis, FLAC, MP3 and PCM tracks, Opus with more than two
+  channels (5.1 and 7.1 are mixed down to stereo), and WAV files of another sample rate, more than two
+  channels, or too large to go whole. They are sent as Opus (64 kbps mono, 128 kbps stereo; stereo is
+  kept because taking out music works better with it). On a desktop, converting 30 minutes takes
+  about 2 to 15 seconds.
+- **What cannot be sent:** a codec your browser cannot decode is listed with that reason (AC-3 and
+  DTS in most browsers; Safari before 26 and Firefox before 130 decode none, so there only what needs
+  no conversion works), as are tracks stored compressed or encrypted inside the file. MP4 and MOV are
+  not opened yet.
+- **A server without libopus** (`build_libopus.ts`): Opus is decoded in your browser too, and
+  everything is sent as a mono 44.1 kHz WAV file (30 minutes fit the server's 160 MiB). So is
+  everything converted in a browser that cannot encode Opus.
+- **Long files:** only the first 30 minutes are transcribed. Where a video's audio starts late or
+  skips (a recording that dropped audio), silence is put in its place, so the cue times match the
+  video.
+- **Many cues:** a transcript of more than 200 cues gets the same warning as long subtitles: the
+  model may repeat earlier cues or stop early.
 
-<details>
-<summary><b>Glossary and constraints</b></summary>
+Transcription is also available [over the API](#use-it-from-other-programs). Details:
 
+- **Model:** MOSS-Transcribe-Diarize (0.7 GiB, `fetch --model moss-transcribe-diarize`). It writes
+  the language it hears; Chinese, English and Japanese were tried.
+- **Music:** when the voice separation model is installed, the music is taken out first wherever a
+  small audio tagger (CED) hears it; `?separate=true` (the whole recording) or `false` decides
+  yourself. Without it a song may come out empty. Separation takes about a thirtieth of the
+  separated length on a recent GPU; a meeting or a lecture is not separated, and of a podcast only
+  its jingles are.
+- **Long silences** are cut out before the model hears them; the times still refer to the original
+  recording.
+- **GPU memory:** up to about 6 GiB beside the translation model for 30 minutes (less for shorter
+  recordings). The speech model leaves the GPU while a transcription runs, and reading aloud waits
+  for it to finish.
+- **Leaving the page:** a transcription does not stop when the connection drops. Its events can be
+  read again for 30 minutes after it ends (`GET /api/v1/transcriptions/{id}/events`), and
+  `DELETE` cancels it. The page reconnects by itself when it comes back.
 
-Open **Glossary and constraints** to refine a translation. This works with Index-Translate-9B only.
-
-- **Glossary:** one term per line, as `source term = target term`, for example `模型 = model`.
-- **Hard constraints:** rules that must be kept, one per line, for example "keep placeholders
-  unchanged".
-- **Soft constraints:** style guidance, one per line, for example "formal tone".
-- **Genre:** the kind of text, for example `学术论文` (academic paper) or `字幕` (subtitles). It is
-  used only together with a glossary or constraints.
-
-In **Automatic** mode, entering any of these makes the app use Index-Translate-9B. If you pick
-Index-NativeLong-9B by hand while they are filled in, the app warns that the request cannot be
-translated with that model.
-
-</details>
-
-<details>
-<summary><b>History</b></summary>
-
-
-The **History** panel under **Model and options** lists your last 50 finished translations, newest
-first, with the time, languages and model. **Restore** puts the text, the languages and the
-translation back on the page without translating again; **Delete** removes one entry and **Clear
-history** all of them. The history lives in your browser's local storage only: the server never
-receives or stores it, and it is not shared between browsers. Clearing the site's data in the
-browser clears it too.
-
-</details>
-
-## Listen to a text
-
+### Read it aloud
 
 Each side has a **Read aloud** button (the loudspeaker) under its text. Click it and a ▶ button
 appears beside every paragraph, heading and list of that side; click the one where you want to
@@ -443,87 +454,7 @@ Known limits: numbers written in digits are read correctly in Chinese, English, 
 Japanese, but not reliably in Arabic, and unusual formats (for example `$1,200`) may be read
 oddly in any language.
 
-## Transcribe a recording (preview)
-
-The server can turn a recording into text, with who speaks when, and the page can then translate it
-as subtitles.
-
-Open, drop or paste a recording or a video: a WAV file, an Ogg Opus file, or a WebM or MKV file (what
-browsers record, what YouTube serves as WebM, and most films and series). A dialog says how long it is
-and asks before anything is sent. A video with several audio tracks lists them (language, name, codec),
-with the player's default chosen; a track that cannot be sent is listed with the reason. When the voice separation model is installed, **Take out music first** chooses
-whether music is taken out before transcribing (by default when music is heard).
-
-**Transcribe** sends the audio to the server and writes the transcript into the box as it comes,
-as a table of subtitles: one cue per stretch of speech, with its time in the video and its speaker
-(`S01`, `S02`, …, in a column of their own). **Translate** waits until the transcription has finished,
-and **Stop** ends it early, keeping what was written. The server stops at its next chance: while it
-takes the music out, or reads the recording before the first cue, that can take a while, and the
-page says "Stopping…" until it has; pressing **Stop** again stops waiting. Then **Translate** translates it like any
-subtitles (see Translate subtitles, above): the speaker labels are not sent to the model and are put
-back on the translated cues.
-
-The recording or video stays above its transcript, with its own player controls, until another text,
-**Clear** or a kept translation takes the box. While it plays, the cue being said is outlined in the
-transcript (and in the translation, once its cues are matched), and the transcript scrolls along until
-you scroll it yourself. The buttons beside the cues play from that cue; with the keyboard they are one
-stop, moved through with the arrow keys. **Read aloud** puts its own buttons in their place, and
-playing stops reading aloud and the reverse. Of a file with several audio tracks you hear the one
-transcribed. Nothing of it is sent for this: your browser plays the file from your disk. Where the
-browser cannot play the transcribed track from the file (Chromium's media player has no AC-3, for
-example), you hear the audio that was sent to the server, without the picture; a video whose picture
-the browser cannot decode (HEVC in many browsers) plays as audio. A video also has subtitles, in its
-player's own menu (⋮ → Captions in Chromium), also in full screen: the transcript, as it is written,
-and once there is a translation, the translation and both together (the translation above the
-original), which is then shown unless you picked another; speaker ids are left out. Tested in
-Chromium only so far.
-
-- **What is sent:** a WAV or Ogg Opus file the server takes goes as it is, and a mono or stereo Opus
-  track of a WebM or MKV file is copied into an Ogg file in your browser, with no loss. Anything else
-  is converted in your browser first: AAC, Vorbis, FLAC, MP3 and PCM tracks, Opus with more than two
-  channels (5.1 and 7.1 are mixed down to stereo), and WAV files of another sample rate, more than two
-  channels, or too large to go whole. They are sent as Opus (64 kbps mono, 128 kbps stereo; stereo is
-  kept because taking out music works better with it). On a desktop, converting 30 minutes takes
-  about 2 to 15 seconds.
-- **What cannot be sent:** a codec your browser cannot decode is listed with that reason (AC-3 and
-  DTS in most browsers; Safari before 26 and Firefox before 130 decode none, so there only what needs
-  no conversion works), as are tracks stored compressed or encrypted inside the file. MP4 and MOV are
-  not opened yet.
-- **A server without libopus** (`build_libopus.ts`): Opus is decoded in your browser too, and
-  everything is sent as a mono 44.1 kHz WAV file (30 minutes fit the server's 160 MiB). So is
-  everything converted in a browser that cannot encode Opus.
-- **Long files:** only the first 30 minutes are transcribed. Where a video's audio starts late or
-  skips (a recording that dropped audio), silence is put in its place, so the cue times match the
-  video.
-- **Many cues:** a transcript of more than 200 cues gets the same warning as long subtitles: the
-  model may repeat earlier cues or stop early.
-
-`POST /api/v1/transcriptions` takes a WAV file (16 to 48 kHz) or an Ogg Opus file (`audio/ogg`, with
-`build_libopus.ts`), mono or stereo, up to 30 minutes, and streams the transcript segment by segment,
-each with its start and end time and a speaker label; see [`docs/openapi.yaml`](docs/openapi.yaml).
-
-```bash
-curl -N -H 'content-type: audio/wav' --data-binary @meeting.wav http://127.0.0.1:3000/api/v1/transcriptions
-```
-
-- **Model:** MOSS-Transcribe-Diarize (0.7 GiB, `fetch --model moss-transcribe-diarize`). It writes
-  the language it hears; Chinese, English and Japanese were tried.
-- **Music:** when the voice separation model is installed, the music is taken out first wherever a
-  small audio tagger (CED) hears it; `?separate=true` (the whole recording) or `false` decides
-  yourself. Without it a song may come out empty. Separation takes about a thirtieth of the
-  separated length on a recent GPU; a meeting or a lecture is not separated, and of a podcast only
-  its jingles are.
-- **Long silences** are cut out before the model hears them; the times still refer to the original
-  recording.
-- **GPU memory:** up to about 6 GiB beside the translation model for 30 minutes (less for shorter
-  recordings). The speech model leaves the GPU while a transcription runs, and reading aloud waits
-  for it to finish.
-- **Leaving the page:** a transcription does not stop when the connection drops. Its events can be
-  read again for 30 minutes after it ends (`GET /api/v1/transcriptions/{id}/events`), and
-  `DELETE` cancels it. The page reconnects by itself when it comes back.
-
-## Check long translations
-
+### Check a translation
 
 Language models can occasionally drop or repeat paragraphs, and this is not reported as an error.
 After each translation, the app compares the number of paragraphs with the source. If they differ,
@@ -559,6 +490,60 @@ itself is marked. A sentence the translation left out is usually marked together
 The model you use also matters. In testing, Index-NativeLong-9B translated a 30-paragraph English
 document to Chinese completely, but Chinese-to-English translation of a full-length document was
 not reliable, so check those results carefully.
+
+### Choose a model
+
+Leave the model on **Automatic** (it picks by text length) unless you have a reason to pick one yourself.
+The app then chooses:
+
+- **Index-Translate-9B** for short texts (up to about 11,000 letters) and any language.
+- **Index-NativeLong-9B** for longer texts, when the direction is Chinese ↔ English or
+  Chinese ↔ Japanese. This model translates a whole document in one pass, but it only handles those
+  four directions and does not support glossaries or constraints.
+- **Index-Translate-9B** for longer texts in other directions, with a warning that it may drop or
+  repeat paragraphs.
+
+### Glossary and constraints
+
+Open **Glossary and constraints** to refine a translation. This works with Index-Translate-9B only.
+
+- **Glossary:** one term per line, as `source term = target term`, for example `模型 = model`.
+- **Hard constraints:** rules that must be kept, one per line, for example "keep placeholders
+  unchanged".
+- **Soft constraints:** style guidance, one per line, for example "formal tone".
+- **Genre:** the kind of text, for example `学术论文` (academic paper) or `字幕` (subtitles). It is
+  used only together with a glossary or constraints.
+
+In **Automatic** mode, entering any of these makes the app use Index-Translate-9B. If you pick
+Index-NativeLong-9B by hand while they are filled in, the app warns that the request cannot be
+
+### History
+
+The **History** panel under **Model and options** lists your last 50 finished translations, newest
+first, with the time, languages and model. **Restore** puts the text, the languages and the
+translation back on the page without translating again; **Delete** removes one entry and **Clear
+history** all of them. The history lives in your browser's local storage only: the server never
+receives or stores it, and it is not shared between browsers. Clearing the site's data in the
+browser clears it too.
+
+
+## Use it from other programs
+
+The app is a thin page over a REST API with streaming, served by the same process at `/api/v1/`.
+[`docs/openapi.yaml`](docs/openapi.yaml) is the reference (also served at `/api/v1/openapi.yaml`): translation,
+tokenizing, speech, voices, sentence segmentation and alignment, web pages and transcription. There is no
+authentication, so keep `HOST` on loopback or behind a proxy.
+
+For example, transcription:
+
+`POST /api/v1/transcriptions` takes a WAV file (16 to 48 kHz) or an Ogg Opus file (`audio/ogg`, with
+`build_libopus.ts`), mono or stereo, up to 30 minutes, and streams the transcript segment by segment,
+each with its start and end time and a speaker label; see [`docs/openapi.yaml`](docs/openapi.yaml).
+
+```bash
+curl -N -H 'content-type: audio/wav' --data-binary @meeting.wav http://127.0.0.1:3000/api/v1/transcriptions
+```
+
 
 ## Settings
 
