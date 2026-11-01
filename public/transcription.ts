@@ -3,6 +3,7 @@
 // tested by bun test (test/transcription.test.ts).
 
 import type { TranscriptionEvents, TranscriptSegment } from "../src/api.ts";
+import { timeCues } from "./cue-timing.ts";
 
 /** `HH:MM:SS,mmm` of a time in seconds, as SubRip writes it. */
 export function srtTime(seconds: number): string {
@@ -14,13 +15,20 @@ export function srtTime(seconds: number): string {
 
 /**
  * The segments as SubRip text, numbered from 1; `offset` (seconds) is added to every time (where the
- * recording starts in the file, media-file.ts). Blank lines inside a segment's text would end its cue,
- * so they are left out.
+ * recording starts in the file, media-file.ts). With `cuts` (cue-timing.ts `cutsOf`, empty without a
+ * video) the cues are timed for reading; with null they keep the server's times. Blank lines inside a
+ * segment's text would end its cue, so they are left out.
  */
-export function transcriptSrt(segments: TranscriptSegment[], offset = 0): string {
+export function transcriptSrt(
+  segments: TranscriptSegment[],
+  offset = 0,
+  cuts: readonly number[] | null = null,
+): string {
+  const spans = segments.map((seg) => ({ start: seg.start + offset, end: seg.end + offset }));
+  const times = cuts ? timeCues(spans, cuts) : spans;
   const cues = segments.map((seg, k) => {
-    const start = seg.start + offset;
-    const end = Math.max(seg.end + offset, start);
+    const { start } = times[k]!;
+    const end = Math.max(times[k]!.end, start);
     const lines = seg.text
       .split("\n")
       .map((l) => l.trim())

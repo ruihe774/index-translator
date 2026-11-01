@@ -28,6 +28,19 @@ test("transcriptSrt: one cue per segment, the speaker before the text", () => {
   expect(transcriptSrt([])).toBe("");
 });
 
+test("transcriptSrt times the cues for reading when given the cuts, after the offset", () => {
+  const segments = [
+    { start: 1, end: 2, speaker: "S01", text: "Hi." },
+    { start: 2.1, end: 3, speaker: "S02", text: "Hello." },
+  ];
+  // No video: 75 ms earlier, and 100 ms apart is joined halfway.
+  expect(transcriptSrt(segments, 20, [])).toBe(
+    "1\n00:00:20,925 --> 00:00:22,050\nS01: Hi.\n\n2\n00:00:22,050 --> 00:00:23,000\nS02: Hello.\n",
+  );
+  // A cut at 22.9 s in the file: the second ends on it.
+  expect(transcriptSrt(segments, 20, [22.9])).toContain("00:00:22,050 --> 00:00:22,900");
+});
+
 test("transcriptSrt adds the offset of a recording that starts late in its file", () => {
   expect(transcriptSrt([{ start: 1, end: 2, speaker: "S01", text: "Hi." }], 20)).toContain(
     "00:00:21,000 --> 00:00:22,000",

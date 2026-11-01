@@ -13,6 +13,9 @@
 // - A packet's duration is BlockDuration, else the track's DefaultDuration (RFC 9559); otherwise it is
 //   undefined (the spec's gap to the next block would need lookahead).
 // - DiscardPadding (a BlockGroup's, in nanoseconds) is given on the block's last frame.
+// - The keyframes of the tracks in `keyframes` are reported (`keyframe` events) even when their packets
+//   are not read: a SimpleBlock's flag, read from its header before the block is skipped, or a BlockGroup
+//   without ReferenceBlock. transcribe-flow.ts times subtitles by a video's keyframes.
 // - Chained segments (EBML header + Segment pairs back to back) each emit their own `tracks` event.
 // - A ContentEncodings element (compression, encryption) is not undone: a track that has one is marked
 //   with its `encoding` and its packets are not what its codec reads.
@@ -78,6 +81,12 @@ export type DemuxEvent =
       discardPaddingNs?: number;
       keyframe: boolean;
       data: Uint8Array;
+    }
+  | {
+      type: "keyframe";
+      track: number;
+      /** Presentation time in integer microseconds, CodecDelay already subtracted. */
+      timestamp: number;
     };
 
 export interface DemuxOptions {
@@ -85,6 +94,8 @@ export interface DemuxOptions {
   maxElementSize?: number;
   /** Only these tracks' packets are read; the blocks of others are skipped without being buffered. */
   tracks?: ReadonlySet<number>;
+  /** These tracks' keyframes are reported, whether or not their packets are read. */
+  keyframes?: ReadonlySet<number>;
 }
 
 export class MatroskaTruncatedError extends Error {
@@ -184,6 +195,8 @@ const LEAVES_READ = new Set<number>([
 
 /** The longest a track number's VINT can be. */
 const MAX_VINT = 8;
+/** A block's header after its track number: an int16 relative timestamp and the flags. */
+const BLOCK_HEAD = 3;
 
 class ByteQueue {
   private chunks: Uint8Array[] = [];
@@ -491,6 +504,9 @@ const newTrack = (): TrackInfo => ({
   encoding: null,
 });
 
+/** A big-endian int16 at `at` (a block's relative timestamp). */
+const readInt16 = (b: Uint8Array, at: number) => (((b[at]! << 8) | b[at + 1]!) << 16) >> 16;
+
 interface ParsedBlock {
   track: number;
   relativeTicks: number;
@@ -508,7 +524,7 @@ function parseBlock(b: Uint8Array): ParsedBlock {
   if (b.length < at + 3) {
     throw corrupt("a block header too short");
   }
-  const relativeTicks = (((b[at]! << 8) | b[at + 1]!) << 16) >> 16; // sign-extended int16
+  const relativeTicks = readInt16(b, at);
   const flags = b[at + 2]!;
   at += 3;
   const base = { track: track.value, relativeTicks, flags };
@@ -625,6 +641,7 @@ export async function* demux(
 ): AsyncGenerator<DemuxEvent> {
   const maxElementSize = options.maxElementSize ?? DEFAULT_MAX_ELEMENT_SIZE;
   const wanted = options.tracks;
+  const keyframesOf = options.keyframes;
   const q = new ByteQueue(src);
   let timecodeScale = DEFAULT_TIMECODE_SCALE;
   let durationTicks: number | undefined;
@@ -643,12 +660,26 @@ export async function* demux(
     return { type: "tracks", timecodeScale, duration, tracks, checksums };
   };
 
+  /** Where a block of `trackNumber` starts, in ns: its cluster's time plus its own, less CodecDelay. */
+  const blockStartNs = (trackNumber: number, relativeTicks: number) =>
+    (clusterTime + relativeTicks) * timecodeScale - (tracks.find((t) => t.number === trackNumber)?.codecDelayNs ?? 0);
+
+  function* keyframe(trackNumber: number, relativeTicks: number): Generator<DemuxEvent> {
+    if (keyframesOf?.has(trackNumber)) {
+      yield {
+        type: "keyframe",
+        track: trackNumber,
+        timestamp: Math.round(blockStartNs(trackNumber, relativeTicks) / 1000),
+      };
+    }
+  }
+
   function* packets(block: ParsedBlock, keyframe: boolean, group?: ParsedGroup): Generator<DemuxEvent> {
     if (wanted && !wanted.has(block.track)) {
       return;
     }
     const track = tracks.find((t) => t.number === block.track);
-    const startNs = (clusterTime + block.relativeTicks) * timecodeScale - (track?.codecDelayNs ?? 0);
+    const startNs = blockStartNs(block.track, block.relativeTicks);
     const n = block.frames.length;
     const blockNs = group?.durationTicks === undefined ? undefined : group.durationTicks * timecodeScale;
     // BlockDuration's implicit default is the track's DefaultDuration (RFC 9559).
@@ -741,13 +772,19 @@ export async function* demux(
       if (id.value === ID.Crc32 && (parent === ID.Tracks || parent === ID.TrackEntry)) {
         checksums.push(start);
       }
-      // A block of a track not asked for is skipped after reading its track number.
+      // A block of a track not asked for is skipped after reading its track number (and, for a track
+      // whose keyframes are asked for, its time and flags).
       if (wanted && id.value === ID.SimpleBlock && size.value > 0) {
-        if (!(await q.ensure(Math.min(size.value, MAX_VINT)))) {
+        if (!(await q.ensure(Math.min(size.value, MAX_VINT + BLOCK_HEAD)))) {
           throw new MatroskaTruncatedError(`element 0x${hex}`);
         }
-        const track = readVint(q.peek(), 0);
+        const head = q.peek();
+        const track = readVint(head, 0);
         if (track && !track.unknown && !wanted.has(track.value)) {
+          const at = track.length;
+          if (size.value >= at + BLOCK_HEAD && (head[at + 2]! & 0x80) !== 0) {
+            yield* keyframe(track.value, readInt16(head, at));
+          }
           if (!(await q.skip(size.value))) {
             throw new MatroskaTruncatedError(`element 0x${hex}`);
           }
@@ -795,13 +832,20 @@ export async function* demux(
           }
           case ID.SimpleBlock: {
             const block = parseBlock(p);
+            if ((block.flags & 0x80) !== 0) {
+              yield* keyframe(block.track, block.relativeTicks);
+            }
             yield* packets(block, (block.flags & 0x80) !== 0);
             break;
           }
           case ID.BlockGroup: {
             const group = parseBlockGroup(p);
             if (group.block) {
-              yield* packets(parseBlock(group.block), !group.hasReference, group);
+              const block = parseBlock(group.block);
+              if (!group.hasReference) {
+                yield* keyframe(block.track, block.relativeTicks);
+              }
+              yield* packets(block, !group.hasReference, group);
             }
             break;
           }

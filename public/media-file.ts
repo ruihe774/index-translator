@@ -13,6 +13,9 @@
 // the server answers are times in the video. Audio that starts more than LEAD_LIMIT_SECONDS late is
 // not filled from 0 (that could use up the server's limit on silence); the Ogg file starts at its
 // first packet and `offset` says how far into the file that is.
+//
+// While a Matroska file is demuxed for its audio, the keyframes of its video are noted too (only the
+// blocks' headers are read): cue-timing.ts moves cue edges onto the cuts they mark.
 
 import type { Health } from "../src/api.ts";
 import { demux, probeMatroska, type TrackInfo } from "./matroska.ts";
@@ -95,7 +98,43 @@ export interface Recording {
   cut: boolean;
   /** Seconds into the file at which the recording starts: add to every time the server answers. */
   offset: number;
+  /** The video's keyframes, when the file has a video. */
+  video?: VideoFrames;
 }
+
+/** Where a video's keyframes are, as read while demuxing; times in seconds of the file. */
+export interface VideoFrames {
+  /** In the order the file has them, up to where the recording ends. */
+  keyframes: number[];
+  /** One frame's length (the track's DefaultDuration), when the file says. */
+  frameSeconds: number | undefined;
+}
+
+/** The video a Matroska file's keyframes are taken from, and where they are collected. */
+interface KeyframeSink {
+  track: number;
+  frames: VideoFrames;
+}
+
+/** Collects the keyframes of the file's first video track that plays; undefined without one. */
+function keyframeSink(tracks: TrackInfo[]): KeyframeSink | undefined {
+  const t = tracks.find((x) => x.type === "video" && x.enabled);
+  return (
+    t && {
+      track: t.number,
+      frames: {
+        keyframes: [],
+        frameSeconds: t.defaultDurationNs === undefined ? undefined : t.defaultDurationNs / 1e9,
+      },
+    }
+  );
+}
+
+/** The demux options that read `track`'s packets and note the keyframes `video` collects. */
+const demuxing = (track: number, video: KeyframeSink | undefined) => ({
+  tracks: new Set([track]),
+  keyframes: video && new Set([video.track]),
+});
 
 /** Why a file cannot be transcribed at all, as a sentence. */
 export class MediaError extends Error {}
@@ -589,7 +628,13 @@ function counted(file: Blob, onProgress?: (fraction: number) => void): ReadableS
 }
 
 /** The track's Opus packets remuxed into Ogg, gaps filled with silence (see the top of this file). */
-async function remuxMatroska(file: Blob, t: TrackInfo, limits: Limits, o: PrepareOptions): Promise<Recording> {
+async function remuxMatroska(
+  file: Blob,
+  t: TrackInfo,
+  video: KeyframeSink | undefined,
+  limits: Limits,
+  o: PrepareOptions,
+): Promise<Recording> {
   const head = readOpusHead(t.codecPrivate)!;
   const writer = new OpusWriter(head.channels as 1 | 2, head.preSkip, limits.maxSeconds * RATE, limits.maxBytes);
   /** Samples at 48 kHz from the file's 0 to the Ogg file's 0. */
@@ -599,15 +644,17 @@ async function remuxMatroska(file: Blob, t: TrackInfo, limits: Limits, o: Prepar
   let segments = 0;
   let full = false;
 
-  for await (const event of demux(counted(file, o.onProgress), {
-    tracks: new Set([t.number]),
-  })) {
+  for await (const event of demux(counted(file, o.onProgress), demuxing(t.number, video))) {
     o.signal?.throwIfAborted();
     if (event.type === "tracks") {
       // A chained segment is another recording: the first one is what is sent.
       if (++segments > 1) {
         break;
       }
+      continue;
+    }
+    if (event.type === "keyframe") {
+      video?.frames.keyframes.push(event.timestamp / 1e6);
       continue;
     }
     const duration = opusPacketSamples(event.data);
@@ -654,6 +701,7 @@ async function remuxMatroska(file: Blob, t: TrackInfo, limits: Limits, o: Prepar
     seconds: writer.audio / RATE,
     cut: full || writer.cut,
     offset: (offset ?? 0) / RATE,
+    ...(video && { video: video.frames }),
   };
 }
 
@@ -721,19 +769,28 @@ async function* wavChunks(file: Blob, h: WavHeader, o: PrepareOptions): AsyncGen
  * least GAP_US after the last one ended (lengths from Matroska, else `packetMicros`), or, when that
  * block's length is unknown, more than UNTIMED_JUMP_US after it started.
  */
-async function* matroskaChunks(file: Blob, t: TrackInfo, o: PrepareOptions): AsyncGenerator<SourceChunk> {
+async function* matroskaChunks(
+  file: Blob,
+  t: TrackInfo,
+  video: KeyframeSink | undefined,
+  o: PrepareOptions,
+): AsyncGenerator<SourceChunk> {
   const micros = packetMicros(t);
   let segments = 0;
   /** The last block's start, and its end while every frame's length is known. */
   let blockStart: number | undefined;
   let blockEnd: number | undefined;
-  for await (const event of demux(counted(file, o.onProgress), { tracks: new Set([t.number]) })) {
+  for await (const event of demux(counted(file, o.onProgress), demuxing(t.number, video))) {
     o.signal?.throwIfAborted();
     if (event.type === "tracks") {
       // A chained segment is another recording: the first one is what is sent.
       if (++segments > 1) {
         return;
       }
+      continue;
+    }
+    if (event.type === "keyframe") {
+      video?.frames.keyframes.push(event.timestamp / 1e6);
       continue;
     }
     let jump = false;
@@ -863,8 +920,10 @@ async function prepare(
   if (!t || problem) {
     throw new MediaError(problem ?? "The track cannot be transcribed.");
   }
+  const video = keyframeSink(tracks);
   if (ogg && remuxable(t)) {
-    return remuxMatroska(file, t, limits, o);
+    return remuxMatroska(file, t, video, limits, o);
   }
-  return reencode(matroskaChunks(file, t, o), readingOf(t)!, limits, o, probe.duration);
+  const r = await reencode(matroskaChunks(file, t, video, o), readingOf(t)!, limits, o, probe.duration);
+  return video ? { ...r, video: video.frames } : r;
 }

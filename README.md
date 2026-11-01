@@ -343,6 +343,12 @@ browsers record, what YouTube serves as WebM, and most films and series). A dial
 and asks before anything is sent. A video with several audio tracks lists them (language, name, codec),
 with the player's default chosen; a track that cannot be sent is listed with the reason. When the voice separation model is installed, **Take out music first** chooses
 whether music is taken out before transcribing (by default when music is heard).
+**Time the cues for reading** (on unless you clear it) times the cues as subtitlers do: each starts a
+moment (75 ms) before its speech, cues less than 0.15 s apart are joined, and in a WebM or MKV video
+an edge near a cut moves onto it (a start up to 0.17 s earlier, an end from 0.17 s earlier to 0.2 s
+later). Cuts are the video's keyframes, read while the audio is prepared; a video with keyframes at
+fixed intervals (common in streams) has no cuts to keep to. Cleared, the cues keep the times the
+server gives.
 
 **Transcribe** sends the audio to the server and writes the transcript into the box as it comes,
 as a table of subtitles: one cue per stretch of speech, with its time in the video and its speaker

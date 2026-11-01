@@ -58,7 +58,7 @@
   .link-dialog-fields {
     display: grid;
     gap: 0.75rem;
-    margin-block-end: 1rem;
+    margin-block-end: 1.5rem;
 
     fieldset {
       display: grid;
@@ -66,8 +66,20 @@
     }
   }
 
-  /* A track is a radio button and its description; one that cannot be sent says why under it. */
-  .transcribe-track {
+  /* The transcription's fields, in one box of their own. */
+  .transcribe-fields {
+    display: grid;
+    gap: 1.25rem;
+
+    fieldset {
+      margin: 0;
+    }
+  }
+
+  /* A track is a radio button and its description; one that cannot be sent says why under it. The
+     timing box is laid out the same, its hint in place of the why. */
+  .transcribe-track,
+  .transcribe-check {
     display: flex;
     flex-wrap: wrap;
     align-items: center;
@@ -84,6 +96,10 @@
     &:has(input:disabled) {
       color: var(--muted);
     }
+  }
+
+  .transcribe-check {
+    row-gap: 0.25rem;
   }
 
   .transcribe-why {

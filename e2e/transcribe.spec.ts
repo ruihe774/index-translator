@@ -1,6 +1,6 @@
 // Recordings and videos opened to be transcribed: the dialog (track, music), the transcript growing in
 // the source as subtitles with a Speaker column while Translate waits, Stop, and the translation of the
-// transcript with its speakers put back; then what is re-encoded in the browser (other codecs, 5.1, a gap,
+// transcript with its speakers put back; the cues timed for reading, or as the server gives them; then what is re-encoded in the browser (other codecs, 5.1, a gap,
 // a server without libopus), checked on the body sent. The files are test/fixtures/media/ (make_media.ts
 // beside them); the mock speech engine answers `segments`.
 
@@ -44,6 +44,7 @@ test("a video's audio track is transcribed into the source as subtitles, then tr
   await expect(d.getByRole("radio", { name: /^French · AAC/ })).toBeEnabled();
   await d.getByRole("radio", { name: "Commentary (English) · Opus · stereo" }).check();
   await d.getByLabel("Take out music first").selectOption("false");
+  await expect(d.getByRole("checkbox", { name: "Time the cues for reading" })).toBeChecked();
   await d.getByRole("button", { name: "Transcribe" }).click();
 
   // While it runs Translate waits and Stop is offered; rows come in with a Speaker column.
@@ -60,7 +61,8 @@ test("a video's audio track is transcribed into the source as subtitles, then tr
   );
   await expect(app.page.locator("#count")).toHaveText(/^3 cues, \d+ letters$/);
   await expect(app.translate).toHaveAttribute("aria-disabled", "false");
-  await expect(box(app.page)).toHaveValue(/^1\n00:00:00,200 --> 00:00:01,100\nS01: Hello there\.\n/);
+  // Timed for reading: 75 ms early, and joined halfway to the next cue, 200 ms on.
+  await expect(box(app.page)).toHaveValue(/^1\n00:00:00,125 --> 00:00:01,200\nS01: Hello there\.\n/);
   await expect(rows(app.page, "#source-view").nth(1).locator(".cue-speaker")).toHaveText("S02");
   await expect(rows(app.page, "#source-view").nth(1).locator(".cue-text")).toHaveText("How are you?");
   expect((await mock.state()).speech.transcriptions).toMatchObject([{ separate: "off" }]);
@@ -77,6 +79,20 @@ test("a video's audio track is transcribed into the source as subtitles, then tr
   await expect(rows(app.page, "#output").locator(".cue-speaker")).toHaveText(["S01S02", "S01"]);
   await expect(rows(app.page, "#output").first().locator(".cue-speaker br")).toHaveCount(1);
   await expect(rows(app.page, "#output").first().locator(".cue-text")).toHaveText("你好。你好吗？");
+});
+
+test("with the timing box cleared, the cues keep the server's times", async ({ app, mock }) => {
+  await mock.set({ speech: { segments: SEGMENTS } });
+  await app.open();
+  await pick(app.page, "tone.webm", "video/webm");
+  const timing = dialog(app.page).getByRole("checkbox", { name: "Time the cues for reading" });
+  await expect(timing).toHaveAccessibleDescription(/^Cues start a moment before the speech/);
+  await timing.uncheck();
+  await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
+  await expect(note(app.page)).toContainText("tone.webm: transcribed, 3 cues");
+  await expect(box(app.page)).toHaveValue(
+    "1\n00:00:00,200 --> 00:00:01,100\nS01: Hello there.\n\n2\n00:00:01,300 --> 00:00:02,000\nS02: How are you?\n\n3\n00:00:02,100 --> 00:00:02,900\nS01: Fine, thanks.\n",
+  );
 });
 
 test("Stop keeps what was written and gives the box back", async ({ app, mock }) => {
@@ -353,6 +369,8 @@ test("the video carries the transcript, its translation and both as caption trac
   await app.from.selectOption("en");
   await app.to.selectOption("zh");
   await pick(app.page, "tracks.mkv", "video/x-matroska");
+  // The server's times, so that the cues below leave a gap between them.
+  await dialog(app.page).getByRole("checkbox", { name: "Time the cues for reading" }).uncheck();
   await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
   await expect(note(app.page)).toHaveText(/^tracks\.mkv: transcribed/);
   // The transcript, without its speaker ids, shown.

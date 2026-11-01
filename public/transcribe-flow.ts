@@ -3,10 +3,13 @@
 // writes it. Translate then translates it as any subtitles. The file is read here (media-file.ts): a WAV
 // or Ogg Opus file is sent as it is, an Opus track of a WebM or MKV file remuxed into Ogg Opus, and what
 // the server would not take re-encoded (transcode.ts). Like a page fetch, a transcription is a Run:
-// Translate waits and Stop cancels it (`DELETE /transcriptions/{id}`), keeping what was written.
+// Translate waits and Stop cancels it (`DELETE /transcriptions/{id}`), keeping what was written. Unless
+// the dialog's box is cleared, the cues are timed as subtitlers time them (cue-timing.ts), by the video's
+// keyframes when there is one.
 
 import type { Health } from "../src/api.ts";
 import { API, ApiFailure, failureMessage, failureOf } from "./api.ts";
+import { cutsOf } from "./cue-timing.ts";
 import { ask } from "./link-dialog.ts";
 import {
   type AudioTrack,
@@ -93,9 +96,13 @@ export function dialogMessage(name: string, probe: MediaProbe): string {
 
 let fieldId = 0;
 
-/** The dialog's fields: the track (when there is a choice) and whether to take the music out first. */
+/**
+ * The dialog's fields: the track (when there is a choice), whether to take the music out first, and whether
+ * to time the cues for reading.
+ */
 function buildFields(tracks: AudioTrack[], start: AudioTrack, separation: boolean) {
   const box = document.createElement("div");
+  box.className = "transcribe-fields";
   const id = `transcribe-${++fieldId}`;
   let radios: HTMLInputElement[] = [];
   if (tracks.length > 1) {
@@ -147,10 +154,26 @@ function buildFields(tracks: AudioTrack[], start: AudioTrack, separation: boolea
     field.append(label, select);
     box.append(field);
   }
+  const timing = document.createElement("label");
+  timing.className = "transcribe-check";
+  const check = document.createElement("input");
+  check.type = "checkbox";
+  check.checked = true;
+  const text = document.createElement("span");
+  text.textContent = "Time the cues for reading";
+  const hint = document.createElement("span");
+  hint.className = "transcribe-why";
+  hint.id = `${id}-timing`;
+  hint.textContent =
+    "Cues start a moment before the speech, cues a moment apart are joined, and in a video they keep to its cuts. Cleared, they keep the times the server gives.";
+  check.setAttribute("aria-describedby", hint.id);
+  timing.append(check, text, hint);
+  box.append(timing);
   return {
     box,
     track: () => Number(radios.find((r) => r.checked)?.value ?? start.number),
     separate: () => (select?.value ?? "auto") as Separate,
+    timed: () => check.checked,
   };
 }
 
@@ -184,9 +207,13 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
     return null;
   }
 
-  /** Follows the transcription's events until it ends; returns the segments' summary, or throws. */
-  async function follow(run: Run, recording: Recording, separate: Separate) {
+  /**
+   * Follows the transcription's events until it ends; returns the segments' summary, or throws. With
+   * `timed`, the cues are timed for reading.
+   */
+  async function follow(run: Run, recording: Recording, separate: Separate, timed: boolean) {
     const segments: Parameters<typeof transcriptSrt>[0] = [];
+    const cuts = timed ? cutsOf(recording.video?.keyframes ?? [], recording.video?.frameSeconds) : null;
     let duration = 0;
     const transcribing = () =>
       segments.length > 0 && duration > 0
@@ -233,7 +260,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
       } else if (event === "segment") {
         segments.push(data);
         progressUnlessStopping(transcribing());
-        d.show(transcriptSrt(segments, recording.offset));
+        d.show(transcriptSrt(segments, recording.offset, cuts));
       } else if (event === "done") {
         return { done: data, segments };
       } else {
@@ -248,6 +275,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
     probe: MediaProbe,
     track: number,
     separate: Separate,
+    timed: boolean,
     limits: Limits,
     ogg: boolean,
   ) {
@@ -276,7 +304,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
       });
       d.recording(recording);
       stage(`Sending the recording (${megabytes(recording.body.size)})…`);
-      const { done, segments } = await follow(run, recording, separate);
+      const { done, segments } = await follow(run, recording, separate, timed);
       const cues = segments.length;
       const speakers = done.speakers.length === 1 ? "1 speaker" : `${done.speakers.length} speakers`;
       const said =
@@ -342,7 +370,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
       if (answer !== "transcribe") {
         return null;
       }
-      void transcribe(file, probe, fields.track(), fields.separate(), limits, ogg);
+      void transcribe(file, probe, fields.track(), fields.separate(), fields.timed(), limits, ogg);
       return { text: `Opened ${file.name} to transcribe it.`, error: false };
     },
   };

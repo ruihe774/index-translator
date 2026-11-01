@@ -302,6 +302,46 @@ describe("prepareRecording", () => {
     const late = await prepareRecording(far, await probeMedia(far, LIMITS), 1, LIMITS);
     expect(late.offset).toBe(30);
     expect(late.seconds).toBeCloseTo(0.6, 5);
+    // No video, no keyframes.
+    expect(r.video).toBeUndefined();
+  });
+
+  test("a re-encoded track's video keyframes are noted, in the file's times", async () => {
+    const block = new Uint8Array(3200).fill(0x10);
+    const picture = (relative: number, key: boolean) =>
+      simpleBlock(2, relative, [new Uint8Array(500)], "none", key ? 0x80 : 0);
+    const file = new Blob([
+      concat([
+        ebmlHeader("matroska"),
+        element(
+          ID.Segment,
+          element(
+            ID.Tracks,
+            track({
+              number: 1,
+              codec: "A_PCM/INT/LIT",
+              extra: [
+                element(ID.Audio, float(ID.SamplingFrequency, 16_000), uint(ID.Channels, 1), uint(ID.BitDepth, 16)),
+              ],
+            }),
+            track({ number: 2, type: 1, codec: "V_TEST", defaultDurationNs: 41_708_333 }),
+          ),
+          element(
+            ID.Cluster,
+            uint(ID.Timecode, 30_000),
+            picture(0, true),
+            simpleBlock(1, 0, [block]),
+            picture(42, false),
+            simpleBlock(1, 100, [block]),
+            picture(83, true),
+          ),
+        ),
+      ]) as Uint8Array<ArrayBuffer>,
+    ]);
+    const r = await prepareRecording(file, await probeMedia(file, LIMITS), 1, LIMITS);
+    // The recording starts at 30 s (see `offset`); the keyframes are the file's times all the same.
+    expect(r.offset).toBe(30);
+    expect(r.video).toStrictEqual({ keyframes: [30, 30.083], frameSeconds: 0.041708333 });
   });
 
   test("an Opus track of an MKV file is remuxed, padding and all", async () => {
@@ -312,6 +352,8 @@ describe("prepareRecording", () => {
     expect(ogg.frames).toBe(144_000);
     expect(ogg.head).toMatchObject({ channels: 1, preSkip: 312 });
     await expect(accepted(r)).resolves.toBe(3);
+    // The video's keyframes are noted on the way (x264 made one, at the start; 5 frames a second).
+    expect(r.video).toStrictEqual({ keyframes: [0], frameSeconds: 0.2 });
     // The stereo commentary.
     const en = await prepare("tracks.mkv", 2);
     expect(demuxOggOpus(await bytes(en)).head.channels).toBe(2);

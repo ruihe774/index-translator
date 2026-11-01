@@ -23,9 +23,9 @@ const media = (name: string) => Bun.file(join(import.meta.dir, "fixtures", "medi
 
 type Packet = Extract<DemuxEvent, { type: "packet" }>;
 
-async function collect(src: ReadableStream<Uint8Array>, tracks?: ReadonlySet<number>) {
+async function collect(src: ReadableStream<Uint8Array>, tracks?: ReadonlySet<number>, keyframes?: ReadonlySet<number>) {
   const events: DemuxEvent[] = [];
-  for await (const e of demux(src, { tracks })) {
+  for await (const e of demux(src, { tracks, keyframes })) {
     events.push(e);
   }
   const packets = events.filter((e): e is Packet => e.type === "packet");
@@ -260,6 +260,54 @@ describe("written by hand", () => {
     expect(all.packets.map((p) => p.track)).toStrictEqual([1, 1]);
     const { packets } = await collect(chunked(file, 4096), new Set([2]));
     expect(packets).toStrictEqual([]);
+  });
+
+  test("a video's keyframes are reported without reading its blocks", async () => {
+    const video = (relative: number, flags: number) => simpleBlock(1, relative, [frame(7, 50_000)], "none", flags);
+    const group = (relative: number, ...children: Uint8Array[]) =>
+      element(ID.BlockGroup, element(ID.Block, blockPayload(1, relative, [frame(8, 30)], "none", 0)), ...children);
+    const file = concat([
+      ebmlHeader(),
+      element(
+        ID.Segment,
+        element(
+          ID.Tracks,
+          track({ number: 1, type: 1, codec: "V_TEST" }),
+          track({ number: 2, codecPrivate: opusHead(1), codecDelayNs: 6_500_000 }),
+        ),
+        element(
+          ID.Cluster,
+          uint(ID.Timecode, 1000),
+          video(0, 0x80),
+          simpleBlock(2, 0, [frame(1, 3)]),
+          video(40, 0),
+          group(80, int16(ID.ReferenceBlock, -40)),
+          group(120),
+          video(-20, 0x80),
+        ),
+      ),
+    ]);
+    const keyframes = (events: DemuxEvent[]) =>
+      events.flatMap((e) => (e.type === "keyframe" ? [[e.track, e.timestamp / 1000]] : []));
+    // Only the audio is read; the video's blocks are skipped after their headers, even when a header is
+    // split across chunks.
+    for (const size of [3, 4096]) {
+      const { events, packets } = await collect(chunked(file, size), new Set([2]), new Set([1]));
+      expect(keyframes(events)).toStrictEqual([
+        [1, 1000],
+        [1, 1120],
+        [1, 980],
+      ]);
+      expect(packets.map((p) => p.track)).toStrictEqual([2]);
+    }
+    // Read whole, the same keyframes come with the packets; without asking, none.
+    const all = await collect(chunked(file, 4096), undefined, new Set([1]));
+    expect(keyframes(all.events)).toStrictEqual([
+      [1, 1000],
+      [1, 1120],
+      [1, 980],
+    ]);
+    expect(keyframes((await collect(chunked(file, 4096), new Set([2]))).events)).toStrictEqual([]);
   });
 
   test("chained segments each give their tracks", async () => {

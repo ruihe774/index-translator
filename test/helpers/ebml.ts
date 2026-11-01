@@ -89,6 +89,7 @@ export const ID = {
   BlockGroup: 0xa0,
   Block: 0xa1,
   BlockDuration: 0x9b,
+  ReferenceBlock: 0xfb,
   DiscardPadding: 0x75_a2,
   Void: 0xec,
 } as const;

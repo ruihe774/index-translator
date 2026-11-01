@@ -1040,7 +1040,9 @@ test("the player and its play-from column: one tab stop, arrows, 24 px targets, 
   await expect.poll(() => video.evaluate((v: HTMLVideoElement) => v.paused)).toBe(false);
 });
 
-test("the transcription dialog is keyboard operable, fits 320 px, and its tracks are 24 px", async ({ app }) => {
+test("the transcription dialog is keyboard operable, fits 320 px, and its tracks and box are 24 px", async ({
+  app,
+}) => {
   await app.page.setViewportSize({ width: 320, height: 640 });
   await app.open();
   await pickMedia(app.page, "tracks.mkv");
@@ -1049,11 +1051,17 @@ test("the transcription dialog is keyboard operable, fits 320 px, and its tracks
   const box = (await dialog.boundingBox())!;
   expect(box.x).toBeGreaterThanOrEqual(0);
   expect(box.x + box.width).toBeLessThanOrEqual(320);
-  for (const track of await dialog.locator(".transcribe-track").all()) {
-    expect((await track.boundingBox())!.height).toBeGreaterThanOrEqual(24);
+  for (const target of await dialog.locator(".transcribe-track, .transcribe-check").all()) {
+    expect((await target.boundingBox())!.height).toBeGreaterThanOrEqual(24);
   }
-  // From Cancel, Shift+Tab reaches the music choice, then the checked track; arrows move between the usable ones.
+  // From Cancel, Shift+Tab reaches the timing box (Space clears it), the music choice, then the checked
+  // track; arrows move between the usable ones.
   await expect(dialog.getByRole("button", { name: "Cancel" })).toBeFocused();
+  await app.page.keyboard.press("Shift+Tab");
+  const timing = dialog.getByRole("checkbox", { name: "Time the cues for reading" });
+  await expect(timing).toBeFocused();
+  await app.page.keyboard.press("Space");
+  await expect(timing).not.toBeChecked();
   await app.page.keyboard.press("Shift+Tab");
   await expect(dialog.getByLabel("Take out music first")).toBeFocused();
   await app.page.keyboard.press("Shift+Tab");
