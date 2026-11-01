@@ -2235,7 +2235,16 @@ export interface operations {
     };
     getHealth: {
         parameters: {
-            query?: never;
+            query?: {
+                /**
+                 * @description `true` says a page using this server is shown on screen; the web app sends it with
+                 *     every poll, which it makes only while shown. On Windows, a request from this machine
+                 *     (a loopback address) then puts the server in high quality of service, which keeps its
+                 *     threads on performance cores, until 15 seconds pass without another such request.
+                 *     Elsewhere, and from other machines, it changes nothing.
+                 */
+                visible?: "true" | "false";
+            };
             header?: never;
             path?: never;
             cookie?: never;

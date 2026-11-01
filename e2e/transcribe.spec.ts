@@ -225,7 +225,7 @@ test.describe("re-encoded in the browser", () => {
   }
 
   test("without libopus on the server, Opus is decoded and sent as a mono 44.1 kHz WAV", async ({ app, mock }) => {
-    await app.page.route("**/api/v1/health", async (route) => {
+    await app.page.route("**/api/v1/health*", async (route) => {
       const res = await route.fetch();
       const health = (await res.json()) as { transcribe?: { upload_types: string[] } };
       if (health.transcribe) {

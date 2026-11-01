@@ -1134,6 +1134,19 @@ paths:
         is being loaded (a request for a different model causes this), `stopped` means no model
         is loaded yet (startup), and `error` means the last load failed; the next request for
         that model tries again.
+      parameters:
+        - name: visible
+          in: query
+          schema:
+            type: string
+            enum: ["true", "false"]
+            default: "false"
+          description: |
+            `true` says a page using this server is shown on screen; the web app sends it with
+            every poll, which it makes only while shown. On Windows, a request from this machine
+            (a loopback address) then puts the server in high quality of service, which keeps its
+            threads on performance cores, until 15 seconds pass without another such request.
+            Elsewhere, and from other machines, it changes nothing.
       responses:
         "200":
           description: The engine is ready to translate.

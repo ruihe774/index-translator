@@ -34,7 +34,7 @@ for (const scheme of ["light", "dark"] as const) {
     await app.page.setViewportSize({ width: 320, height: 640 });
     let loading = true;
     let freeGiB = 2;
-    await app.page.route("**/api/v1/health", async (route) => {
+    await app.page.route("**/api/v1/health*", async (route) => {
       const real = (await (await route.fetch()).json()) as object;
       await route.fulfill({
         json: loading
@@ -70,8 +70,8 @@ for (const scheme of ["light", "dark"] as const) {
     expect(results.violations).toStrictEqual([]);
 
     // Error, stopped and unreachable are sentences in the warning colour, bold.
-    await app.page.unroute("**/api/v1/health");
-    await app.page.route("**/api/v1/health", (route) => route.abort());
+    await app.page.unroute("**/api/v1/health*");
+    await app.page.route("**/api/v1/health*", (route) => route.abort());
     await app.page.reload();
     await expect(app.engine).toHaveText("The server cannot be reached.");
     await expect(app.engine).toHaveClass("problem");

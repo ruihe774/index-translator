@@ -100,7 +100,8 @@ export function initEngineStatus({ el, onHealth }: EngineStatusDeps): EngineStat
     let vram: Vram | null = null;
     let problem: boolean;
     try {
-      const res = await fetch(`${API}/health`, { priority: "low" });
+      // Only a shown page polls, so each poll says so: the server keeps its threads on fast cores meanwhile.
+      const res = await fetch(`${API}/health?visible=true`, { priority: "low" });
       const health = (await res.json()) as Health;
       ({ text, loading, vram, problem } = healthMessage(health));
       onHealth(health);

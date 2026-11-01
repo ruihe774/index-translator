@@ -117,7 +117,7 @@ test("falls back to three languages when /languages fails", async ({ app }) => {
 
 test("health: loading is polled until ready", async ({ app }) => {
   let calls = 0;
-  await app.page.route("**/api/v1/health", (route) => {
+  await app.page.route("**/api/v1/health*", (route) => {
     calls++;
     return route.fulfill({ json: calls < 2 ? health({ status: "loading", model: null }) : health() });
   });
@@ -129,7 +129,7 @@ test("health: loading is polled until ready", async ({ app }) => {
 test("health: a bar of the VRAM in use when ready, an indeterminate one while loading", async ({ app }) => {
   const gib = 1024 ** 3;
   let loading = true;
-  await app.page.route("**/api/v1/health", (route) =>
+  await app.page.route("**/api/v1/health*", (route) =>
     route.fulfill({
       json: loading
         ? health({ status: "loading", model: null })
@@ -152,7 +152,7 @@ test("health: a ready engine is polled every 5 s while the tab is visible", asyn
   const gib = 1024 ** 3;
   let free = 6;
   let calls = 0;
-  await app.page.route("**/api/v1/health", (route) => {
+  await app.page.route("**/api/v1/health*", (route) => {
     calls++;
     return route.fulfill({ json: { ...health(), gpu_memory: { total_bytes: 8 * gib, free_bytes: free * gib } } });
   });
@@ -170,12 +170,12 @@ test("health: a ready engine is polled every 5 s while the tab is visible", asyn
 });
 
 test("health: an unreachable server and an engine error", async ({ app }) => {
-  await app.page.route("**/api/v1/health", (route) => route.abort());
+  await app.page.route("**/api/v1/health*", (route) => route.abort());
   await app.page.goto("/");
   await expect(app.engine).toHaveText("The server cannot be reached.");
 
-  await app.page.unroute("**/api/v1/health");
-  await app.page.route("**/api/v1/health", (route) =>
+  await app.page.unroute("**/api/v1/health*");
+  await app.page.route("**/api/v1/health*", (route) =>
     route.fulfill({ json: health({ status: "error", error: "no GPU" }) }),
   );
   await app.page.reload();

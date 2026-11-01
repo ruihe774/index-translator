@@ -52,6 +52,7 @@ import {
 } from "./parse";
 import { LANGUAGES } from "./prompt";
 import { watchPublic } from "./public-watch";
+import { createQosLease, isLoopback, type QosSetter, windowsQos } from "./qos";
 import type { Ticket } from "./queue";
 import { soxrResampler } from "./resample";
 import { nativeSegmenter, type Segmenter, type SegmentLauncher } from "./segment";
@@ -141,6 +142,7 @@ function checkOrigin(req: Request, access: Access): void {
 interface RouteContext {
   req: Request;
   url: URL;
+  server: Server<undefined>;
 }
 type Handler = (ctx: RouteContext) => Response | Promise<Response>;
 /** `noTimeout`: the request may stay silent longer than Bun's idle timeout (a model load, a long generation). */
@@ -163,6 +165,7 @@ export async function startApp(
   launchSpeech: SpeechLauncher = nativeSpeech,
   fetchPageUnlimited: WebpageFetcher = webViewFetcher(),
   launchSegmenter: SegmentLauncher = nativeSegmenter,
+  setQos: QosSetter | undefined = windowsQos(),
 ): Promise<App> {
   const access = compileAccess(cfg);
   const engine = new Engine(cfg, launch);
@@ -196,6 +199,19 @@ export async function startApp(
   }
 
   const status = createStatus({ cfg, engine, speech, segmenter, queue: lines.translations.queue, webpageProblem });
+  const qos = createQosLease(setQos);
+
+  /** `GET /health`; `visible=true` from this machine renews HighQoS (src/qos.ts), from elsewhere it is ignored. */
+  function health({ req, url, server }: RouteContext): Promise<Response> {
+    const visible = url.searchParams.get("visible");
+    if (visible !== null && visible !== "true" && visible !== "false") {
+      throw invalid("visible must be true or false", "visible");
+    }
+    if (visible === "true" && isLoopback(server.requestIP(req)?.address)) {
+      qos.renew();
+    }
+    return status.health();
+  }
 
   /** Resamples an Ogg Opus voice sample, which is decoded at 48 kHz, to the rate the separator takes. */
   const resample = soxrResampler(soxrDir(cfg.audioDir));
@@ -369,7 +385,7 @@ export async function startApp(
   }
 
   const routes: Record<string, Route> = {
-    "/health": { GET: () => status.health() },
+    "/health": { GET: health },
     "/models": { GET: () => status.models() },
     "/languages": {
       GET: () => json<{ languages: Language[] }>({ languages: LANGUAGES.map(({ code, name }) => ({ code, name })) }),
@@ -495,10 +511,10 @@ export async function startApp(
       return methodNotAllowed(Object.keys(methods).join(", "));
     }
     if (typeof entry === "function") {
-      return entry({ req, url });
+      return entry({ req, url, server });
     }
     server.timeout(req, 0);
-    return entry.handler({ req, url });
+    return entry.handler({ req, url, server });
   }
 
   const publicWatcher = watchPublic(cfg.publicDir);
@@ -542,6 +558,7 @@ export async function startApp(
     async stop() {
       devReload?.close();
       publicWatcher.close();
+      qos.stop();
       await server.stop(true);
       await speech.stop();
       await segmenter.stop();
