@@ -107,7 +107,7 @@ test("an error shows in the meta line too", async ({ app, mock }) => {
 
 test("the text box and the option boxes carry their instructions as placeholders", async ({ app }) => {
   await app.open();
-  await expect(app.text).toHaveAttribute("placeholder", "Text to translate");
+  await expect(app.text).toHaveAttribute("placeholder", /^Type, paste, or drop text, PDF, Word, image/);
   await expect(app.page.getByText("(required)")).toHaveCount(0);
   await expect(app.text).toHaveAttribute("aria-required", "true");
 

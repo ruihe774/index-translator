@@ -12,6 +12,7 @@ import {
   pageNote,
   type PageText,
   refusal,
+  sourcePlaceholder,
 } from "../public/open-file";
 
 describe("fileKind", () => {
@@ -143,5 +144,19 @@ describe("pageNote", () => {
       expect(n.warning).toBe(true);
       expect(n.text).toContain("Check it before translating");
     }
+  });
+});
+
+describe("sourcePlaceholder", () => {
+  test("names what is on offer", () => {
+    expect(sourcePlaceholder({ pdf: true, docx: true, media: true, webpage: true })).toBe(
+      "Type, paste, or drop text, PDF, Word, image, or audio/video files, or a web address",
+    );
+    expect(sourcePlaceholder({ pdf: false, docx: false, media: false, webpage: false })).toBe(
+      "Type, paste, or drop text, image files",
+    );
+    expect(sourcePlaceholder({ pdf: true, docx: false, media: false, webpage: true })).toBe(
+      "Type, paste, or drop text, PDF or image files, or a web address",
+    );
   });
 });

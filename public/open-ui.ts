@@ -33,6 +33,8 @@ export interface OpenUiDeps {
   button: HTMLElement;
   input: HTMLInputElement;
   pages: PdfPages;
+  /** What the picker offers changed (also once at the start): the page words its placeholder from it. */
+  onOffered(offered: { pdf: boolean; docx: boolean; media: boolean }): void;
   /** The line under the source's button row that says what was opened, or why not. */
   note: HTMLElement;
   /** The source box's field: gets `aria-busy` (a spinner at its center) while a file is read. */
@@ -367,6 +369,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       ACCEPT_IMAGE,
       ...(offered.media ? [ACCEPT_MEDIA] : []),
     ].join(",");
+    d.onOffered(offered);
   };
   setAccept();
   void Promise.all([pdfInstalled(), docxInstalled()]).then(([pdfOk, docxOk]) => {

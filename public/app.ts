@@ -33,6 +33,7 @@ import {
   selectionMessage,
   subtitleAdviceMessage,
 } from "./messages.ts";
+import { sourcePlaceholder } from "./open-file.ts";
 import { initOpenUi } from "./open-ui.ts";
 import { alignBlocks, mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
 import { clearEnabled, copyEnabled, createRender, restoreFocusAfter } from "./render.ts";
@@ -406,10 +407,17 @@ const webpage = initWebpageFlow({
   refreshSelection: () => void refreshSelection(),
 });
 
+// The text box's placeholder names what the picker and the server take (open-file.ts `sourcePlaceholder`).
+let files = { pdf: true, docx: true, media: false };
+function wordPlaceholder() {
+  textInput.placeholder = sourcePlaceholder({ ...files, webpage: webpage.available });
+}
+
 const engine = initEngineStatus({
   el: $("engine"),
   onHealth: (health) => {
     webpage.available = health.webpage?.status === "available";
+    wordPlaceholder();
     transcriber.configure(health.transcribe);
     openUi.setMedia(health.transcribe?.status === "available");
     boundaries.configure(health.segment);
@@ -799,6 +807,10 @@ function clearAll() {
 // text reaches the box the way Clear empties it; nothing about the file goes to the server.
 
 const openUi = initOpenUi({
+  onOffered: (offered) => {
+    files = offered;
+    wordPlaceholder();
+  },
   button: $("open"),
   input: $<HTMLInputElement>("open-file"),
   pages: $<PdfPages>("pdf-pages"),

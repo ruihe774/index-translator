@@ -51,6 +51,28 @@ const MEDIA_TYPES = [
   "video/matroska",
 ];
 
+/** What the source box takes besides typed text, as far as this server and page go. */
+export interface Offered {
+  pdf: boolean;
+  docx: boolean;
+  media: boolean;
+  webpage: boolean;
+}
+
+/** `a`, `a or b`, `a, b, or c`. */
+function orList(items: string[]): string {
+  if (items.length < 3) {
+    return items.join(" or ");
+  }
+  return `${items.slice(0, -1).join(", ")}, or ${items.at(-1)}`;
+}
+
+/** The text box's placeholder: the ways to put text in, naming only those on offer. */
+export function sourcePlaceholder(o: Offered): string {
+  const types = [...(o.pdf ? ["PDF"] : []), ...(o.docx ? ["Word"] : []), "image", ...(o.media ? ["audio/video"] : [])];
+  return `Type, paste, or drop text, ${orList(types)} files${o.webpage ? ", or a web address" : ""}`;
+}
+
 /** The kind of a picked file, by its name's extension, else by its media type; `null` when neither is taken. */
 export function fileKind(name: string, type: string): FileKind | null {
   const dot = name.lastIndexOf(".");
