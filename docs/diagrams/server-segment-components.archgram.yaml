@@ -1,0 +1,40 @@
+archgram: 1
+title: Index Translator server components, sentences and web pages
+description: >-
+  The app asks the segmentation engine for sentence ends and for paragraph or sentence alignment. The
+  engine starts its worker thread on the first request, which loads ONNX Runtime through the bindings
+  file and runs SaT for sentence ends and LaBSE for the embeddings that the alignment step matches.
+  The alignment step is the dynamic programme of the AIlign paper. A web page is opened by its own
+  module in a headless browser, and a script that runs inside the page turns it into Markdown. The
+  two share nothing but the process.
+direction: down
+legend: true
+frames:
+  - { id: sentences, label: Sentences and alignment }
+  - { id: pages, label: Web pages }
+nodes:
+  - { id: app, kind: service, label: "src/app.ts", note: "caller, see HTTP diagram" }
+  - { id: segment, kind: service, label: "src/segment.ts", note: "owns the worker, idle unload", frame: sentences }
+  - { id: segment-worker, kind: service, label: "src/segment-worker.ts", note: "worker thread, two sessions", frame: sentences }
+  - { id: sat, kind: service, label: "src/sat.ts", note: "SaT sentence ends", frame: sentences }
+  - { id: labse, kind: service, label: "src/labse.ts", note: "LaBSE embeddings", frame: sentences }
+  - { id: align, kind: service, label: "src/align.ts", note: "AIlign DP step", frame: sentences }
+  - { id: ort-ffi, kind: service, label: "src/onnxruntime-ffi.ts", note: bindings, frame: sentences }
+  - { id: ort, kind: service, label: ONNX Runtime, note: CPU, variant: external }
+  - { id: webpage, kind: service, label: "src/webpage.ts", note: "allowed hosts, one view per fetch", frame: pages }
+  - { id: extract, kind: script, label: "src/page/extract.ts", note: "runs inside the page", frame: pages }
+  - { id: webview, kind: service, label: Bun.WebView, note: headless browser, variant: external, frame: pages }
+edges:
+  - { from: app, to: segment, label: "segment, align" }
+  - { from: app, to: webpage, label: fetch a page }
+  - { from: segment, to: segment-worker, label: "start, post" }
+  - { from: segment-worker, to: sat, label: sentence ends }
+  - { from: segment-worker, to: labse, label: embeddings }
+  - { from: segment-worker, to: align, label: "match groups" }
+  - { from: segment-worker, to: ort-ffi, label: calls }
+  - { from: ort-ffi, to: ort, label: dlopen }
+  - { from: webpage, to: extract, label: "sends, as text" }
+  - { from: webpage, to: webview, label: opens }
+flows:
+  - { name: sentence ends, steps: [app, segment, segment-worker, ort-ffi, ort] }
+  - { name: a web page, steps: [app, webpage, extract] }

@@ -1,48 +1,30 @@
 archgram: 1
-title: Index Translator server components, startup and HTTP
+title: Index Translator server components, HTTP
 description: >-
-  The entry point loads the configuration and runs the preflight check before it starts the app.
-  Preflight probes the llama library in a child process and checks the default model's file. The
-  app checks each request's origin and host, serves the web app, puts translations and speech into
-  their own lines, and hands the work to the engines. An image is prepared before it takes a place in
-  the line, so a bad one never waits. A translation the reader has left keeps running for a while and
-  can be read again. The engines are drawn in the next diagram.
-direction: right
+  The app puts translations and speech
+  into their own lines, and hands the work to the engines. An image is prepared before it takes a
+  place in the line, so a bad one never waits. Translations and transcriptions run as jobs that keep
+  going for a while after the reader has left and can be read again. Speech is answered as WAV or as
+  an Ogg Opus stream. Startup is drawn in the previous diagram, the engines in the next ones.
+direction: down
 legend: true
-frames:
-  - { id: startup, label: Startup }
-  - { id: http, label: HTTP }
 nodes:
+  - { id: engines, kind: service, label: "Engines", note: "llama.ts, speech.ts, segment.ts, webpage.ts: next diagrams", variant: external }
   - { id: client, kind: browser, label: Web app, note: "public/, in the browser" }
-  - { id: server, kind: script, label: "src/server.ts", note: "entry: preflight, then start", frame: startup }
-  - { id: config, kind: file, label: "src/config.ts", note: env and flags, frame: startup }
-  - { id: preflight, kind: check, label: "src/preflight.ts", note: refuses an unusable machine, frame: startup }
-  - { id: probe, kind: script, label: "src/llama-probe.ts", note: child process, frame: startup }
-  - { id: models, kind: file, label: "src/models.ts", note: the two model specs, frame: startup }
-  - { id: app, kind: service, label: "src/app.ts", note: "routes, SSE, resumable jobs", frame: http }
-  - { id: image, kind: service, label: "src/image.ts", note: "PNG for the engine", frame: http }
-  - { id: access, kind: check, label: "src/access.ts", note: origin and host rules, frame: http }
-  - { id: static, kind: service, label: "src/static.ts", note: serves public/, frame: http }
-  - { id: qoa, kind: service, label: "src/qoa-stream.ts", note: QOA audio stream, frame: http }
-  - { id: queue, kind: queue, label: "src/queue.ts", note: "429 when full", frame: http }
-  - { id: llama, kind: service, label: "src/llama.ts", note: "translation engine, next diagram" }
-  - { id: speech, kind: service, label: "src/speech.ts", note: "speech engine, next diagram" }
+  - { id: app, kind: service, label: "src/app.ts", note: "route table, SSE" }
+  - { id: image, kind: service, label: "src/image.ts", note: "PNG for the engine" }
+  - { id: jobs, kind: service, label: "src/jobs.ts", note: "resumable jobs" }
+  - { id: tickets, kind: service, label: "src/tickets.ts", note: "an engine's waiting line" }
+  - { id: queue, kind: queue, label: "src/queue.ts", note: "429 when full" }
+  - { id: speech-response, kind: service, label: "src/speech-response.ts", note: "WAV or Ogg Opus" }
 edges:
-  - { from: client, to: app, label: "POST /translate, /speech" }
-  - { from: server, to: config, label: settings }
-  - { from: server, to: preflight, label: first }
-  - { from: server, to: app, label: startApp }
-  - { from: preflight, to: probe, label: spawns }
-  - { from: preflight, to: models, label: model file }
-  - { from: config, to: models, label: default model }
-  - { from: config, to: access, label: "origin, host rules" }
-  - { from: app, to: access, label: "origin, host check" }
-  - { from: app, to: static, label: web app files }
+  - { from: app, to: engines, label: "generate, synthesize, transcribe, segment, align, fetch" }
+  - { from: client, to: app, label: "POST /translate, /speech, ..." }
   - { from: app, to: image, label: prepare image }
-  - { from: app, to: queue, label: takes a place }
-  - { from: app, to: models, label: find model }
-  - { from: app, to: qoa, label: QOA stream }
-  - { from: app, to: llama, label: generate }
-  - { from: app, to: speech, label: synthesize }
+  - { from: app, to: jobs, label: "translations, transcriptions" }
+  - { from: app, to: tickets, label: "lines: translate, speech, segment" }
+  - { from: tickets, to: queue, label: takes a place }
+  - { from: jobs, to: queue, label: "job slots" }
+  - { from: app, to: speech-response, label: "speech answer" }
 flows:
-  - { name: a request, steps: [client, app, llama] }
+  - { name: a request, steps: [client, app, engines] }

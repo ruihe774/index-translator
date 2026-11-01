@@ -1,28 +1,26 @@
 archgram: 1
 title: Index Translator browser components, requests
 description: >-
-  The page's main module builds the translation request. The request module builds the body from
-  the form, or the image's when the source is an image, and the glossary module parses the glossary.
-  The model selector picks the model by the text's length. The main module posts the request to the
-  server and reads its event stream through the resume module, which reconnects after a cut. The state
-  and render modules update the page. Server errors are described by the API module.
-direction: right
+  The page's main module builds the request body, from text or an image and with the glossary, and
+  picks the model by the text's length. A run sends it and reads the event stream through the resume
+  module, which reconnects after the last event seen when the connection is cut. A web page is
+  fetched through the same run before its Markdown is translated.
+direction: down
 legend: true
 frames:
   - { id: requesting, label: Request }
-  - { id: pagestate, label: Page state }
 nodes:
   - { id: server, kind: service, label: Server API, note: "/api/v1, see server diagrams", variant: external }
   - { id: app, kind: browser, label: "public/app.ts", note: "wires the page, sends the request" }
   - { id: api, kind: service, label: "public/api.ts", note: "API base, failure text", frame: requesting }
   - { id: errors, kind: check, label: "public/errors.ts", note: server error codes, frame: requesting }
   - { id: request, kind: service, label: "public/request.ts", note: "builds the body, text or image", frame: requesting }
+  - { id: run, kind: service, label: "public/run.ts", note: "one run, Stop", frame: requesting }
   - { id: resume, kind: service, label: "public/resume.ts", note: "reconnects after a cut", frame: requesting }
   - { id: glossary, kind: service, label: "public/glossary.ts", note: parses the glossary, frame: requesting }
   - { id: select, kind: service, label: "public/select-model.ts", note: "picks the model by length", frame: requesting }
   - { id: sse, kind: service, label: "public/sse.ts", note: reads the event stream, frame: requesting }
-  - { id: state, kind: file, label: "public/state.ts", note: one state object, frame: pagestate }
-  - { id: render, kind: service, label: "public/render.ts", note: one synchronous render, frame: pagestate }
+  - { id: webpage-flow, kind: service, label: "public/webpage-flow.ts", note: "fetches a page, asks first", frame: requesting }
 edges:
   - { from: app, to: server, label: "POST /translate, GET events" }
   - { from: app, to: api }
@@ -31,11 +29,12 @@ edges:
   - { from: request, to: glossary }
   - { from: request, to: select }
   - { from: app, to: select, label: "select model" }
-  - { from: app, to: resume, label: "read stream" }
+  - { from: app, to: run, label: "start a run" }
+  - { from: run, to: resume, label: "read stream" }
   - { from: resume, to: sse, label: "reads events" }
-  - { from: app, to: state }
-  - { from: app, to: render }
-  - { from: render, to: state }
+  - { from: app, to: webpage-flow, label: "a page address" }
+  - { from: webpage-flow, to: run }
+  - { from: webpage-flow, to: server, label: "POST /webpage" }
 flows:
-  - { name: a request, steps: [app, server] }
+  - { name: a request, steps: [app, run, resume, sse] }
   - { name: choose the model, steps: [app, request, select] }

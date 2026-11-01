@@ -5,15 +5,17 @@ description: >-
   engine owns a worker thread, which loads the model through the bindings file and calls libllama.
   The chat prompt is written by the bindings, not by the templates. An image is encoded by libmtmd on
   that same thread. The speech engine owns its own worker thread, which calls libaudiocpp through its
-  bindings, runs the voice separator on uploaded samples, and reads WAV samples through wav.ts. The
-  two engines share nothing but the process.
+  bindings. It reads aloud, separates the voice of uploaded samples, and transcribes recordings, whose
+  stream of segments is read by transcript.ts. Both engines talk to their workers through
+  worker-rpc.ts. They share nothing but the process.
 direction: down
 legend: true
 frames:
   - { id: translation, label: Translation }
-  - { id: reading, label: Reading aloud }
+  - { id: reading, label: Reading aloud and transcribing }
 nodes:
   - { id: app, kind: service, label: "src/app.ts", note: "caller, see HTTP diagram" }
+  - { id: rpc, kind: service, label: "src/worker-rpc.ts", note: "worker client, both engines" }
   - { id: prompt, kind: service, label: "src/prompt.ts", note: chat and document prompts, frame: translation }
   - { id: prompts, kind: file, label: "prompts/*.txt", note: NativeLong templates, frame: translation }
   - { id: llama, kind: service, label: "src/llama.ts", note: owns the worker, frame: translation }
@@ -22,26 +24,32 @@ nodes:
   - { id: shim, kind: generated, label: "src/llama-shim.c", note: builds the shim, frame: translation }
   - { id: libllama, kind: service, label: libllama, note: llama.cpp on Vulkan, variant: external }
   - { id: libmtmd, kind: service, label: libmtmd, note: "image encoder", variant: external }
-  - { id: speech, kind: service, label: "src/speech.ts", note: one utterance at a time, frame: reading }
-  - { id: speech-worker, kind: service, label: "src/speech-worker.ts", note: "worker, speech and separator", frame: reading }
+  - { id: speech, kind: service, label: "src/speech.ts", note: "speech and transcription queue", frame: reading }
+  - { id: speech-worker, kind: service, label: "src/speech-worker.ts", note: "worker: speech, separator, MOSS", frame: reading }
   - { id: audiocpp-ffi, kind: service, label: "src/audiocpp-ffi.ts", note: bindings, frame: reading }
+  - { id: transcript, kind: service, label: "src/transcript.ts", note: "reads MOSS's segments", frame: reading }
+  - { id: opus-file, kind: service, label: "src/opus-file.ts", note: "Ogg Opus uploads", frame: reading }
   - { id: wav, kind: service, label: "src/wav.ts", note: "WAV, loudness", frame: reading }
   - { id: libaudiocpp, kind: service, label: libaudiocpp, note: audio.cpp, variant: external }
 edges:
   - { from: app, to: prompt, label: build prompt }
   - { from: app, to: llama, label: generate }
-  - { from: app, to: speech, label: synthesize }
+  - { from: app, to: speech, label: "synthesize, transcribe" }
   - { from: prompt, to: prompts, label: templates }
-  - { from: llama, to: llama-worker, label: "load, decode" }
+  - { from: llama, to: rpc, label: worker client }
+  - { from: speech, to: rpc, label: worker client }
+  - { from: rpc, to: llama-worker, label: "load, decode" }
+  - { from: rpc, to: speech-worker, label: "start, post" }
   - { from: llama-worker, to: llama-ffi, label: calls }
   - { from: llama-ffi, to: libllama, label: dlopen }
   - { from: llama-ffi, to: libmtmd, label: "dlopen, images" }
   - { from: shim, to: llama-ffi, label: loads }
-  - { from: speech, to: speech-worker, label: "start, post" }
+  - { from: speech, to: opus-file, label: "decode Ogg Opus" }
   - { from: speech, to: wav, label: read WAV }
   - { from: speech-worker, to: audiocpp-ffi, label: calls }
+  - { from: speech-worker, to: transcript, label: segments }
   - { from: speech-worker, to: wav, label: loudness }
   - { from: audiocpp-ffi, to: libaudiocpp, label: dlopen }
 flows:
-  - { name: a translation, steps: [app, llama, llama-worker, llama-ffi, libllama] }
-  - { name: reading aloud, steps: [app, speech, speech-worker, audiocpp-ffi, libaudiocpp] }
+  - { name: a translation, steps: [app, llama, rpc, llama-worker, llama-ffi, libllama] }
+  - { name: reading or transcribing, steps: [app, speech, rpc, speech-worker, audiocpp-ffi, libaudiocpp] }

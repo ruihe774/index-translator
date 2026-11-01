@@ -1,0 +1,28 @@
+archgram: 1
+title: Index Translator server components, startup
+description: >-
+  The entry point loads the configuration and runs the preflight check before it starts the app.
+  Preflight probes the llama library in a child process and checks the default model's file, and
+  exits with one message when the machine cannot run the translator. The configuration also gives the
+  app its origin and host rules. The routes are drawn in the next diagram.
+direction: down
+legend: true
+nodes:
+  - { id: server, kind: script, label: "src/server.ts", note: "entry: preflight, then start" }
+  - { id: config, kind: file, label: "src/config.ts", note: env and flags }
+  - { id: preflight, kind: check, label: "src/preflight.ts", note: refuses an unusable machine }
+  - { id: probe, kind: script, label: "src/llama-probe.ts", note: child process }
+  - { id: models, kind: file, label: "src/models.ts", note: the two model specs }
+  - { id: access, kind: check, label: "src/access.ts", note: origin and host rules }
+  - { id: app, kind: service, label: "src/app.ts", note: "routes, next diagram" }
+edges:
+  - { from: server, to: config, label: settings }
+  - { from: server, to: preflight, label: first }
+  - { from: server, to: app, label: startApp }
+  - { from: preflight, to: probe, label: spawns }
+  - { from: preflight, to: models, label: model file }
+  - { from: config, to: models, label: default model }
+  - { from: config, to: access, label: "origin, host rules" }
+  - { from: access, to: app, label: "rules for the app" }
+flows:
+  - { name: start, steps: [server, preflight, probe] }

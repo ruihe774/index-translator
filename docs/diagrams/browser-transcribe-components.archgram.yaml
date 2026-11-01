@@ -1,0 +1,37 @@
+archgram: 1
+title: Index Translator browser components, transcribing a recording
+description: >-
+  Open offers an audio or video file when the server can transcribe. The media module reads its
+  tracks. What the server takes (WAV, Ogg Opus, or Opus remuxed from WebM or Matroska) goes as it is;
+  anything else is decoded and re-encoded by the transcode module, as Ogg Opus where the server
+  takes it. The flow posts the recording, reads the stream of segments through the resume module,
+  and rewrites the transcript into the source as SubRip after every segment.
+direction: down
+legend: true
+frames:
+  - { id: prepare, label: Preparing the recording }
+nodes:
+  - { id: server, kind: service, label: Server API, note: "/transcriptions, see server diagrams", variant: external }
+  - { id: open-ui, kind: service, label: "public/open-ui.ts", note: "Open, track dialog" }
+  - { id: transcribe-flow, kind: service, label: "public/transcribe-flow.ts", note: "posts, follows the run" }
+  - { id: transcription, kind: service, label: "public/transcription.ts", note: "segments to SubRip, pure" }
+  - { id: resume, kind: service, label: "public/resume.ts", note: "reconnects after a cut" }
+  - { id: media-file, kind: service, label: "public/media-file.ts", note: "probes tracks, picks a route", frame: prepare }
+  - { id: matroska, kind: service, label: "public/matroska.ts", note: "reads WebM and MKV", frame: prepare }
+  - { id: transcode, kind: service, label: "public/transcode.ts", note: "decodes, re-encodes", frame: prepare }
+  - { id: audio-upload, kind: service, label: "public/audio-upload.ts", note: "Ogg Opus encoder", frame: prepare }
+  - { id: ogg-opus, kind: service, label: "public/ogg-opus.ts", note: "Ogg muxer and demuxer", frame: prepare }
+edges:
+  - { from: open-ui, to: transcribe-flow, label: "a recording" }
+  - { from: transcribe-flow, to: media-file, label: probe }
+  - { from: media-file, to: matroska }
+  - { from: media-file, to: ogg-opus, label: "remux Opus" }
+  - { from: transcribe-flow, to: transcode, label: "if not taken as is" }
+  - { from: transcode, to: matroska }
+  - { from: transcode, to: audio-upload, label: encode }
+  - { from: audio-upload, to: ogg-opus }
+  - { from: transcribe-flow, to: server, label: "POST /transcriptions" }
+  - { from: transcribe-flow, to: resume, label: "read segments" }
+  - { from: transcribe-flow, to: transcription, label: "rewrite SubRip" }
+flows:
+  - { name: re-encoding a recording, steps: [open-ui, transcribe-flow, transcode, audio-upload, ogg-opus] }

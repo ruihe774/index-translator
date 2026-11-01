@@ -1,0 +1,34 @@
+archgram: 1
+title: Index Translator browser components, sentences and sync
+description: >-
+  After a translation the page asks the server for sentence ends and, when the paragraph counts
+  differ, for the paragraph matching. The sync state turns the answers into click-to-sync scrolling.
+  Hovering a sentence marks it, and its counterpart in the other view once the alignment has
+  answered, using sentence ends from the segment module.
+direction: down
+legend: true
+nodes:
+  - { id: server, kind: service, label: Server API, note: "/segment and /align, see server diagrams", variant: external }
+  - { id: app, kind: browser, label: "public/app.ts", note: "wires the page" }
+  - { id: sync-state, kind: service, label: "public/sync-state.ts", note: "matching, sync on" }
+  - { id: sync-scroll, kind: service, label: "public/sync-scroll.ts", note: click to sync }
+  - { id: paragraphs, kind: check, label: "public/paragraphs.ts", note: "blocks and groups" }
+  - { id: segment, kind: service, label: "public/segment.ts", note: "sentence ends, one per text" }
+  - { id: sentence-hover, kind: service, label: "public/sentence-hover.ts", note: "marks the sentence" }
+  - { id: sentence-align, kind: service, label: "public/sentence-align.ts", note: "counterpart sentences" }
+edges:
+  - { from: app, to: sync-state, label: "finished translation" }
+  - { from: app, to: sentence-hover }
+  - { from: app, to: segment, label: "prefetch sentences" }
+  - { from: sync-state, to: paragraphs }
+  - { from: sync-state, to: sync-scroll }
+  - { from: sync-state, to: sentence-align }
+  - { from: sync-state, to: segment }
+  - { from: sentence-hover, to: sentence-align }
+  - { from: sentence-hover, to: segment }
+  - { from: sentence-hover, to: paragraphs }
+  - { from: sentence-align, to: segment }
+  - { from: segment, to: server, label: "POST /segment" }
+  - { from: sentence-align, to: server, label: "POST /align" }
+flows:
+  - { name: mark a sentence, steps: [app, sentence-hover, sentence-align, server] }

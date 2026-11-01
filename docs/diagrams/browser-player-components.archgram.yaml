@@ -1,0 +1,31 @@
+archgram: 1
+title: Index Translator browser components, player and captions
+description: >-
+  Once a recording is being transcribed, the media module plays it above the transcript from a blob
+  URL, with the audio tracks that were not chosen hidden. The cue at the playhead is marked in the
+  source and its counterpart in the translation. A video with a picture also gets caption tracks, one
+  for the original, one for the translation and one for both, rebuilt as either text changes. A
+  column of Play from buttons starts the player at any cue.
+direction: down
+legend: true
+nodes:
+  - { id: app, kind: browser, label: "public/app.ts", note: "wires the page" }
+  - { id: media-ui, kind: service, label: "public/media-ui.ts", note: "the player, cue at the playhead" }
+  - { id: media-player, kind: service, label: "public/media-player.ts", note: "which track plays, pure" }
+  - { id: media-file, kind: service, label: "public/media-file.ts", note: "file and tracks" }
+  - { id: caption-tracks, kind: service, label: "public/caption-tracks.ts", note: "track elements" }
+  - { id: captions, kind: service, label: "public/captions.ts", note: "WebVTT cues, pure" }
+  - { id: subtitles, kind: service, label: "public/subtitles.ts", note: "SubRip, pure" }
+  - { id: read-gutter, kind: service, label: "public/read-gutter.ts", note: "Play from buttons" }
+edges:
+  - { from: app, to: media-ui, label: "begin a recording" }
+  - { from: media-ui, to: media-player, label: "play or fall back" }
+  - { from: media-player, to: media-file }
+  - { from: media-player, to: subtitles }
+  - { from: media-ui, to: caption-tracks, label: "video with a picture" }
+  - { from: caption-tracks, to: captions }
+  - { from: captions, to: subtitles }
+  - { from: media-ui, to: subtitles, label: "cue at the playhead" }
+  - { from: media-ui, to: read-gutter }
+flows:
+  - { name: captions, steps: [app, media-ui, caption-tracks, captions] }
