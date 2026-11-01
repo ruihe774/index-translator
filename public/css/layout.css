@@ -111,6 +111,7 @@ main:has(.output.subtitles) {
   line-height: var(--target);
   white-space: nowrap;
   overflow: auto hidden;
+  font-variant-numeric: tabular-nums;
 }
 
 .speech-settings {
