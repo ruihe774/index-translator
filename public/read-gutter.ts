@@ -37,7 +37,7 @@ function playIcon(): SVGElement {
 }
 
 /** Where `elements` are in the scroller's content, in CSS pixels from its top; null if not rendered. */
-function extent(elements: HTMLElement[], scroller: HTMLElement): { top: number; bottom: number } | null {
+function extent(elements: HTMLElement[], origin: number): { top: number; bottom: number } | null {
   let top = Infinity;
   let bottom = -Infinity;
   for (const el of elements) {
@@ -52,7 +52,6 @@ function extent(elements: HTMLElement[], scroller: HTMLElement): { top: number; 
   if (top === Infinity) {
     return null;
   }
-  const origin = scroller.getBoundingClientRect().top + scroller.clientTop - scroller.scrollTop;
   return { top: top - origin, bottom: bottom - origin };
 }
 
@@ -100,6 +99,14 @@ export class ReadGutter {
     const same =
       blocks.length === this.blocks.length &&
       blocks.every((b, i) => b.line === this.blocks[i]!.line && b.label === this.blocks[i]!.label);
+    // Observing notifies once at once, which places again: only when what is observed changed.
+    const watched =
+      same &&
+      !this.el.hidden &&
+      blocks.every((b, i) => {
+        const old = this.blocks[i]!.elements;
+        return b.elements.length === old.length && b.elements.every((el, k) => el === old[k]);
+      });
     this.blocks = blocks;
     if (!same) {
       this.build();
@@ -109,19 +116,24 @@ export class ReadGutter {
       this.scroller.classList.add("with-gutter");
       this.chosen = false;
     }
-    // Any block that changes height moves the ones below it (a wider pane, text spacing, fonts).
-    this.resize.disconnect();
-    this.resize.observe(this.scroller);
-    for (const block of blocks) {
-      for (const el of block.elements) {
-        this.resize.observe(el);
+    if (!watched) {
+      // Any block that changes height moves the ones below it (a wider pane, text spacing, fonts).
+      this.resize.disconnect();
+      this.resize.observe(this.scroller);
+      for (const block of blocks) {
+        for (const el of block.elements) {
+          this.resize.observe(el);
+        }
       }
     }
     this.buttons.forEach((b, i) => {
-      if (blocks[i]!.line === current) {
-        b.setAttribute("aria-current", "true");
-      } else {
-        b.removeAttribute("aria-current");
+      const is = blocks[i]!.line === current;
+      if (is !== b.hasAttribute("aria-current")) {
+        if (is) {
+          b.setAttribute("aria-current", "true");
+        } else {
+          b.removeAttribute("aria-current");
+        }
       }
     });
     // Tab goes to the block being read, unless the reader is choosing in the column.
@@ -165,13 +177,22 @@ export class ReadGutter {
     if (this.el.hidden) {
       return;
     }
-    this.blocks.forEach((block, i) => {
+    // All reads, then all writes: a write between two reads would lay the pane out once per block.
+    const { scroller } = this;
+    const origin = scroller.getBoundingClientRect().top + scroller.clientTop - scroller.scrollTop;
+    const spots = this.blocks.map((block) => extent(block.elements, origin));
+    spots.forEach((at, i) => {
       const button = this.buttons[i]!;
-      const at = extent(block.elements, this.scroller);
       button.hidden = at === null;
       if (at) {
-        button.style.insetBlockStart = `${at.top}px`;
-        button.style.blockSize = `${at.bottom - at.top}px`;
+        const top = `${at.top}px`;
+        const size = `${at.bottom - at.top}px`;
+        if (button.style.insetBlockStart !== top) {
+          button.style.insetBlockStart = top;
+        }
+        if (button.style.blockSize !== size) {
+          button.style.blockSize = size;
+        }
       }
     });
   }
