@@ -2,7 +2,7 @@
 // AAC, Vorbis, FLAC, MP3 or PCM in WebM/MKV, Opus of more than two channels, a WAV file the server would
 // not take whole, or any Opus for a server without libopus. WebCodecs' AudioDecoder decodes (PCM is read
 // here), pcm.ts puts the samples on the file's timeline, mixes them down and resamples them, and they go
-// out as Ogg Opus (64 kbps mono, 128 kbps stereo: stereo is kept because the server's music separation
+// out as Ogg Opus (64 kbps mono, 96 kbps stereo: stereo is kept because the server's music separation
 // uses it) or, where the server or this browser has no Opus, as a mono 44.1 kHz WAV (30 minutes fit the
 // server's 160 MiB; 16 kHz would hurt separation).
 //
@@ -30,7 +30,7 @@ import {
 } from "./pcm.ts";
 
 /** Opus bitrates by channel count. */
-export const OPUS_BITRATE = { 1: 64_000, 2: 128_000 } as const;
+export const OPUS_BITRATE = { 1: 64_000, 2: 96_000 } as const;
 /** The rate of a WAV body. */
 export const WAV_RATE = 44_100;
 /** A gap in a track's blocks that flushes the decoder (PcmTimeline fills what is at least this long). */

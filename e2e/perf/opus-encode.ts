@@ -49,25 +49,25 @@ interface Result {
 }
 
 // The page's config (complexity 6, application audio), whether CELT-only lowdelay adds to it, and the
-// browser's own default (maximum complexity) with lowdelay. Mono at 64 kbps and stereo at 128 kbps are
+// browser's own default (maximum complexity) with lowdelay. Mono at 64 kbps and stereo at 96 kbps are
 // transcode.ts's.
 const runs: Run[] = [
-  { label: "page config (6)", channels: 2, bitrate: 128_000 },
+  { label: "page config (6)", channels: 2, bitrate: 96_000 },
   {
     label: "6 + lowdelay",
     channels: 2,
-    bitrate: 128_000,
+    bitrate: 96_000,
     opus: { complexity: 6, application: "lowdelay" },
   },
-  { label: "browser default", channels: 2, bitrate: 128_000, opus: null },
+  { label: "browser default", channels: 2, bitrate: 96_000, opus: null },
   {
     label: "10 + lowdelay",
     channels: 2,
-    bitrate: 128_000,
+    bitrate: 96_000,
     opus: { complexity: 10, application: "lowdelay" },
   },
-  { label: "4 + lowdelay", channels: 2, bitrate: 128_000, opus: { complexity: 4, application: "lowdelay" } },
-  { label: "2 + lowdelay", channels: 2, bitrate: 128_000, opus: { complexity: 2, application: "lowdelay" } },
+  { label: "4 + lowdelay", channels: 2, bitrate: 96_000, opus: { complexity: 4, application: "lowdelay" } },
+  { label: "2 + lowdelay", channels: 2, bitrate: 96_000, opus: { complexity: 2, application: "lowdelay" } },
   { label: "page config (6) mono", channels: 1, bitrate: 64_000 },
   {
     label: "6 + lowdelay mono",

@@ -106,7 +106,7 @@ export function dequeued(codec: AudioEncoder | AudioDecoder): Promise<void> {
 /**
  * Planar 48 kHz samples encoded by WebCodecs and muxed into an Ogg Opus file as they come. Only
  * where `opusEncodable` said so; `write` and `finish` reject when the encoder fails. The file's pages
- * are kept (at most 128 kbps, a few megabytes a minute); the samples are not. Muxing as the packets
+ * are kept (at most 96 kbps, a few megabytes a minute); the samples are not. Muxing as the packets
  * come keeps `finish` short: muxing 30 minutes at once held the page for about 200 ms.
  */
 export class OggOpusEncoder {

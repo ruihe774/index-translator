@@ -378,7 +378,7 @@ Chromium only so far.
   track of a WebM or MKV file is copied into an Ogg file in your browser, with no loss. Anything else
   is converted in your browser first: AAC, Vorbis, FLAC, MP3 and PCM tracks, Opus with more than two
   channels (5.1 and 7.1 are mixed down to stereo), and WAV files of another sample rate, more than two
-  channels, or too large to go whole. They are sent as Opus (64 kbps mono, 128 kbps stereo; stereo is
+  channels, or too large to go whole. They are sent as Opus (64 kbps mono, 96 kbps stereo; stereo is
   kept because taking out music works better with it). On a desktop, converting 30 minutes takes
   about 2 to 15 seconds.
 - **What cannot be sent:** a codec your browser cannot decode is listed with that reason (AC-3 and
