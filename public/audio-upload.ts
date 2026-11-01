@@ -104,14 +104,22 @@ export function dequeued(codec: AudioEncoder | AudioDecoder): Promise<void> {
 }
 
 /**
- * Planar 48 kHz samples encoded by WebCodecs as they come, then written as an Ogg Opus file. Only
- * where `opusEncodable` said so; `write` and `finish` reject when the encoder fails. The packets are
- * kept (at most 128 kbps, a few megabytes a minute); the samples are not.
+ * Planar 48 kHz samples encoded by WebCodecs and muxed into an Ogg Opus file as they come. Only
+ * where `opusEncodable` said so; `write` and `finish` reject when the encoder fails. The file's pages
+ * are kept (at most 128 kbps, a few megabytes a minute); the samples are not. Muxing as the packets
+ * come keeps `finish` short: muxing 30 minutes at once held the page for about 200 ms.
  */
 export class OggOpusEncoder {
   readonly rate = OPUS_RATE;
   private readonly encoder: AudioEncoder;
-  private readonly packets: Uint8Array[] = [];
+  /** Made by the first packet, whose metadata tells the pre-skip that its OpusHead says. */
+  private mux: OggOpusMuxer | undefined;
+  /** The file's pages so far. */
+  private readonly pages: Uint8Array[] = [];
+  /** Packets not yet muxed: those that may end past the audio, which `finish` cuts or leaves out. */
+  private readonly held: Uint8Array[] = [];
+  /** 48 kHz samples, pre-skip included, through the last packet muxed. */
+  private muxed = 0;
   private preSkip = DEFAULT_PRE_SKIP;
   private failure: DOMException | undefined;
   /** Frames given, silence at the end not counted. */
@@ -129,10 +137,13 @@ export class OggOpusEncoder {
     this.pending = Array.from({ length: channels }, () => []);
     this.encoder = new AudioEncoder({
       output: (chunk, metadata) => {
-        this.preSkip = preSkipOf(metadata?.decoderConfig?.description) ?? this.preSkip;
+        if (!this.mux) {
+          this.preSkip = preSkipOf(metadata?.decoderConfig?.description) ?? this.preSkip;
+        }
         const data = new Uint8Array(chunk.byteLength);
         chunk.copyTo(data);
-        this.packets.push(data);
+        this.held.push(data);
+        this.muxWhole();
       },
       error: (e) => void (this.failure = e),
     });
@@ -164,29 +175,56 @@ export class OggOpusEncoder {
     this.throwIfFailed();
 
     // The decoder drops the pre-skip; the granule position ends the audio where the samples end, so packets
-    // wholly past that (the tail's) are left out and the last one is cut.
-    const { packets } = this;
-    const durations = packets.map(opusPacketSamples);
+    // wholly past that (the tail's) are left out and the last one is cut. The file keeps one packet.
+    const mux = this.muxer();
+    const { held } = this;
+    const durations = held.map(opusPacketSamples);
     const end = this.preSkip + this.frames;
-    let total = durations.reduce((n, d) => n + d, 0);
-    while (packets.length > 1 && total - durations.at(-1)! >= end) {
+    let total = durations.reduce((n, d) => n + d, this.muxed);
+    while (held.length > (this.muxed > 0 ? 0 : 1) && total - durations.at(-1)! >= end) {
       total -= durations.pop()!;
-      packets.pop();
+      held.pop();
     }
-    const mux = new OggOpusMuxer({
-      channels: this.channels,
-      sampleRate: OPUS_RATE,
-      preSkip: this.preSkip,
-      vendor: "index-translator, WebCodecs",
-    });
-    const parts = [mux.header()];
-    packets.forEach((data, i) => {
+    held.forEach((data, i) => {
       const duration = durations[i]!;
-      const padding = i === packets.length - 1 ? Math.max(0, total - end) : 0;
-      parts.push(mux.addPacket({ data, duration, validDuration: duration - padding }));
+      const padding = i === held.length - 1 ? Math.max(0, total - end) : 0;
+      this.pages.push(mux.addPacket({ data, duration, validDuration: duration - padding }));
     });
-    parts.push(mux.finish());
-    return concat(parts) as Uint8Array<ArrayBuffer>;
+    this.pages.push(mux.finish());
+    return concat(this.pages) as Uint8Array<ArrayBuffer>;
+  }
+
+  private muxer(): OggOpusMuxer {
+    if (!this.mux) {
+      this.mux = new OggOpusMuxer({
+        channels: this.channels,
+        sampleRate: OPUS_RATE,
+        preSkip: this.preSkip,
+        vendor: "index-translator, WebCodecs",
+      });
+      this.pages.push(this.mux.header());
+    }
+    return this.mux;
+  }
+
+  /** Muxes the held packets that end within the samples written so far: no later sample cuts those. */
+  private muxWhole() {
+    const mux = this.muxer();
+    const end = this.preSkip + this.frames;
+    let taken = 0;
+    for (const data of this.held) {
+      const duration = opusPacketSamples(data);
+      if (this.muxed + duration > end) {
+        break;
+      }
+      this.muxed += duration;
+      const page = mux.addPacket({ data, duration, validDuration: duration });
+      if (page.length > 0) {
+        this.pages.push(page);
+      }
+      taken++;
+    }
+    this.held.splice(0, taken);
   }
 
   /** Gives up: the encoder is closed and nothing is written. */
