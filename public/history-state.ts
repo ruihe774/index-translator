@@ -5,6 +5,7 @@
 import { type HistoryUiDeps, initHistoryUi } from "./history-ui.ts";
 import { type HistoryEntry, loadHistory, saveHistory, withBlocks, withEntry } from "./history.ts";
 import type { BlockGroup } from "./paragraphs.ts";
+import { theServer } from "./server-name.ts";
 import { KEYS, store, stored } from "./storage.ts";
 
 export interface HistoryDeps extends Pick<HistoryUiDeps, "list" | "empty" | "count" | "clear" | "languageName"> {
@@ -60,7 +61,7 @@ export function initHistory(d: HistoryDeps): History {
     d.pause.setAttribute("aria-label", paused ? "Resume history" : "Pause history");
     d.empty.textContent = paused
       ? "History is paused: finished translations are not being kept."
-      : "Finished translations appear here. They are kept in this browser only and never sent to the server.";
+      : `Finished translations appear here. They are kept in this browser only and never sent to ${theServer()}.`;
   }
   d.pause.addEventListener("click", () => {
     paused = !paused;

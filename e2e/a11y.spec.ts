@@ -73,7 +73,7 @@ for (const scheme of ["light", "dark"] as const) {
     await app.page.unroute("**/api/v1/health*");
     await app.page.route("**/api/v1/health*", (route) => route.abort());
     await app.page.reload();
-    await expect(app.engine).toHaveText("The server cannot be reached.");
+    await expect(app.engine).toHaveText("The local server in your computer cannot be reached.");
     await expect(app.engine).toHaveClass("problem");
     await expect(app.engine).toHaveCSS("font-weight", "700");
     await transitionsDone(app.translate);

@@ -2,6 +2,7 @@
 // Pure: no DOM access, so it can be unit tested.
 
 import type { ErrorBody, ErrorEvent } from "../src/api.ts";
+import { TheServer } from "./server-name.ts";
 
 /**
  * What the server's error says, whether it came as a response or as an `error` event. Every field is
@@ -63,7 +64,7 @@ export function describeError(e: ApiErrorBody | undefined, status?: number): str
   if (e?.message) {
     return e.message;
   }
-  return status ? `The server answered with an error (HTTP ${status}).` : "Something went wrong.";
+  return status ? `${TheServer()} answered with an error (HTTP ${status}).` : "Something went wrong.";
 }
 
 /** `describeError` for `POST /webpage`, whose full queue is the server's few browser tabs, not the translator's. */

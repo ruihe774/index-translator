@@ -13,6 +13,7 @@ import { describeWebpageError } from "./errors.ts";
 import { ask } from "./link-dialog.ts";
 import { restoreFocusAfter } from "./render.ts";
 import { Run } from "./run.ts";
+import { TheServer } from "./server-name.ts";
 import { setState } from "./state.ts";
 
 /** What the person chose in the dialog; Cancel and Escape are `cancel`. */
@@ -97,8 +98,7 @@ export function initWebpageFlow(d: WebpageFlowDeps): WebpageFlow {
     ask: async (link) => {
       const answer = await ask({
         title: "Fetch this web page?",
-        message:
-          "The text is a web address. The server can open the page and put its text in the box, ready to translate. Or the address can be translated as it is.",
+        message: `The text is a web address. ${TheServer()} can open the page and put its text in the box, ready to translate. Or the address can be translated as it is.`,
         target: link,
         choices: [
           { value: "text", label: "Translate as text" },

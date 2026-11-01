@@ -72,7 +72,7 @@ test.describe("images", () => {
     await expect(box(app.page)).toBeHidden();
     await expect(box(app.page)).toHaveValue("");
     await expect(note(app.page)).toHaveText(
-      "Opened menu.png. Translate sends the image to the server, which reads the text in it.",
+      "Opened menu.png. Translate sends the image to the local server in your computer, which reads the text in it.",
     );
     await expect(app.page.locator("#count")).toHaveText("menu.png, 300 × 120 pixels");
     await expect(app.page.getByRole("group", { name: "Source view" }).getByRole("button").first()).toHaveAttribute(

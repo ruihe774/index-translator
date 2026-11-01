@@ -7,6 +7,7 @@ import type { Voice } from "../src/api.ts";
 import { failureOf } from "./api.ts";
 import { encodeUpload, type Upload } from "./audio-upload.ts";
 import { MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS } from "./mic-recorder.ts";
+import { TheServer } from "./server-name.ts";
 
 export { encodeWav, MAX_SAMPLE_SECONDS, MIN_SAMPLE_SECONDS, MicRecorder } from "./mic-recorder.ts";
 
@@ -77,7 +78,7 @@ export async function uploadVoice(api: string, name: string, sample: Upload): Pr
   });
   if (!res.ok) {
     const failure = await failureOf(res);
-    throw new Error(failure.body.message ?? `The server answered HTTP ${res.status}.`);
+    throw new Error(failure.body.message ?? `${TheServer()} answered HTTP ${res.status}.`);
   }
   return (await res.json()) as Voice;
 }

@@ -103,7 +103,9 @@ test("Stop keeps what was written and gives the box back", async ({ app, mock })
   await expect(rows(app.page, "#source-view")).toHaveCount(1);
   await app.stop.click();
   // The server stops at its next check (here the next segment, 0.8 s on): until then the page says so.
-  await expect(app.page.locator("#count")).toContainText("Stopping… the server finishes its current step first.");
+  await expect(app.page.locator("#count")).toContainText(
+    "Stopping… the local server in your computer finishes its current step first.",
+  );
   await expect(app.stop).toBeVisible();
   await expect(note(app.page)).toHaveText("tone.webm: stopped. What was written so far stays in the box.");
   await expect(app.page.locator("#count")).toHaveText(/^1 cues, \d+ letters$/);

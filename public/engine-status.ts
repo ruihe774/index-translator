@@ -6,6 +6,7 @@ import type { Health } from "../src/api.ts";
 import { API } from "./api.ts";
 import { ask } from "./link-dialog.ts";
 import { engineDetail, healthMessage, type Vram } from "./messages.ts";
+import { TheServer } from "./server-name.ts";
 
 const LOADING_POLL_MS = 2000;
 const POLL_MS = 5000;
@@ -30,7 +31,7 @@ async function showEngineDialog() {
     detail = engineDetail(health);
     json = JSON.stringify(health, null, 2);
   } catch {
-    detail = { message: "The server cannot be reached." };
+    detail = { message: `${TheServer()} cannot be reached.` };
   }
   await ask({
     title: "Engine status",
@@ -106,7 +107,7 @@ export function initEngineStatus({ el, onHealth }: EngineStatusDeps): EngineStat
       ({ text, loading, vram, problem } = healthMessage(health));
       onHealth(health);
     } catch {
-      text = "The server cannot be reached.";
+      text = `${TheServer()} cannot be reached.`;
       problem = true;
     }
     if (mine !== seq) {

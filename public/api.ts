@@ -2,6 +2,7 @@
 // carries the server's error body, so the page can say what went wrong in a sentence.
 
 import { type ApiErrorBody, describeError } from "./errors.ts";
+import { TheServer } from "./server-name.ts";
 
 export const API = "/api/v1";
 
@@ -26,7 +27,7 @@ export function failureMessage(e: unknown): string {
     return describeError(e.body, e.status);
   }
   if (e instanceof TypeError) {
-    return "The server cannot be reached.";
+    return `${TheServer()} cannot be reached.`;
   }
   return e instanceof Error ? e.message : String(e);
 }

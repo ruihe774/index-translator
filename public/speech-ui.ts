@@ -25,6 +25,7 @@ import { parseLines } from "./markdown.ts";
 import { OPUS_TYPE, opusDecodable } from "./opus.ts";
 import { ReadGutter } from "./read-gutter.ts";
 import type { SentenceBoundaries } from "./segment.ts";
+import { theServer } from "./server-name.ts";
 import { type BoundaryLookup, canSpeak, type Segment, speechSegments, speechTexts } from "./speech-text.ts";
 import { SpeechPlayer, type SpeechSettings } from "./speech.ts";
 import { setState, type Side, state } from "./state.ts";
@@ -467,7 +468,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
         }
         state.voicesStale = false;
       } catch {
-        state.speechProblem = "Reading aloud is not available: the server cannot be reached.";
+        state.speechProblem = `Reading aloud is not available: ${theServer()} cannot be reached.`;
       }
       voicesCheckedAt = Date.now();
       refresh();
@@ -503,7 +504,7 @@ export function initSpeechUi(deps: SpeechUiDeps): SpeechUi {
       voiceSettings.addVoice(voice);
       player.update({ voice: voice.id });
       setState({ speechProblem: "" });
-      voiceSettings.status = `Voice "${voice.name}" added. It is kept until the server stops.`;
+      voiceSettings.status = `Voice "${voice.name}" added. It is kept until ${theServer()} stops.`;
     } catch (e) {
       voiceSettings.status = e instanceof Error ? e.message : String(e);
     }

@@ -2,6 +2,7 @@
 // Pure apart from the stream it is given; no DOM access, so it can be unit tested.
 
 import type { TranscriptionEvents, TranslateEvents } from "../src/api.ts";
+import { theServer } from "./server-name.ts";
 
 export interface SseEvent<E extends string = string, D = unknown> {
   event: E;
@@ -92,6 +93,6 @@ function parseBlock(block: string): SseEvent | null {
     }
     return eventObj;
   } catch {
-    throw new Error("the server sent an unreadable event");
+    throw new Error(`${theServer()} sent an unreadable event`);
   }
 }

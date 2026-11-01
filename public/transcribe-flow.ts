@@ -27,6 +27,7 @@ import { megabytes } from "./open-file.ts";
 import { restoreFocusAfter } from "./render.ts";
 import { onPageWake, pageVisible, resumableEvents, TRANSCRIPTION_ID_HEADER } from "./resume.ts";
 import { Run } from "./run.ts";
+import { theServer } from "./server-name.ts";
 import type { TranscriptionSseEvent } from "./sse.ts";
 import { setState } from "./state.ts";
 import { browserDecodes } from "./transcode.ts";
@@ -90,7 +91,7 @@ export function dialogMessage(name: string, probe: MediaProbe): string {
   const cut =
     probe.cutAt === undefined
       ? ""
-      : ` Only its first ${minutes(probe.cutAt)} are transcribed: that is as much as the server takes.`;
+      : ` Only its first ${minutes(probe.cutAt)} are transcribed: that is as much as ${theServer()} takes.`;
   return `${name}${length}. Its audio is sent to this server, which writes down what is said, with times and speakers, as subtitles in the box; Translate then translates them.${cut} This takes a while.`;
 }
 
@@ -164,8 +165,7 @@ function buildFields(tracks: AudioTrack[], start: AudioTrack, separation: boolea
   const hint = document.createElement("span");
   hint.className = "transcribe-why";
   hint.id = `${id}-timing`;
-  hint.textContent =
-    "Cues start a moment before the speech, cues a moment apart are joined, and in a video they keep to its cuts. Cleared, they keep the times the server gives.";
+  hint.textContent = `Cues start a moment before the speech, cues a moment apart are joined, and in a video they keep to its cuts. Cleared, they keep the times ${theServer()} gives.`;
   check.setAttribute("aria-describedby", hint.id);
   timing.append(check, text, hint);
   box.append(timing);
@@ -283,7 +283,7 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
     const run = new Run();
     // Once the server has the recording, Stop waits for it: it finishes the step it is in (a separation,
     // or MOSS reading the whole recording before its first cue) and only then frees the GPU.
-    run.onStopping = () => stage("Stopping… the server finishes its current step first.");
+    run.onStopping = () => stage(`Stopping… ${theServer()} finishes its current step first.`);
     setState({ running: run });
     d.begin();
     d.play(file, probe, track);

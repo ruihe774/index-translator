@@ -4,6 +4,7 @@
 
 import type { TranscriptionEvents, TranscriptSegment } from "../src/api.ts";
 import { timeCues } from "./cue-timing.ts";
+import { theServer } from "./server-name.ts";
 
 /** `HH:MM:SS,mmm` of a time in seconds, as SubRip writes it. */
 export function srtTime(seconds: number): string {
@@ -58,7 +59,7 @@ export function transcriptionNotes(
   const notes: string[] = [];
   if (recording.cut) {
     notes.push(
-      `Only the first ${minutes(recording.seconds)} of the recording were transcribed: that is as much as the server takes.`,
+      `Only the first ${minutes(recording.seconds)} of the recording were transcribed: that is as much as ${theServer()} takes.`,
     );
   }
   if (done.truncated) {

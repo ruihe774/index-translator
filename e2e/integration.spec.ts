@@ -97,7 +97,7 @@ test("a dropped connection before the done event is reported", async ({ app }) =
   await stubTranslate(app, 200, sse([["delta", { text: "part" }]]));
   await run(app);
   // The stub sends no x-translation-id, so the stream cannot be resumed and the cut is reported as a lost connection.
-  await expect(app.meta).toContainText("The server cannot be reached.");
+  await expect(app.meta).toContainText("The local server in your computer cannot be reached.");
   await expect(app.output).toHaveText("part");
   await expect(app.meta).toContainText("error interrupted it");
 });
@@ -105,7 +105,7 @@ test("a dropped connection before the done event is reported", async ({ app }) =
 test("an unreachable server says so", async ({ app }) => {
   await app.page.route("**/api/v1/translate", (route) => route.abort("connectionrefused"));
   await run(app);
-  await expect(app.meta).toHaveText("The server cannot be reached.");
+  await expect(app.meta).toHaveText("The local server in your computer cannot be reached.");
 });
 
 test("falls back to three languages when /languages fails", async ({ app }) => {
@@ -172,7 +172,7 @@ test("health: a ready engine is polled every 5 s while the tab is visible", asyn
 test("health: an unreachable server and an engine error", async ({ app }) => {
   await app.page.route("**/api/v1/health*", (route) => route.abort());
   await app.page.goto("/");
-  await expect(app.engine).toHaveText("The server cannot be reached.");
+  await expect(app.engine).toHaveText("The local server in your computer cannot be reached.");
 
   await app.page.unroute("**/api/v1/health*");
   await app.page.route("**/api/v1/health*", (route) =>

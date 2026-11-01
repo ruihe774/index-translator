@@ -27,6 +27,7 @@ import {
 } from "./open-file.ts";
 import { openPdf, PdfError, pdfInstalled } from "./pdf.ts";
 import type { PdfDocument } from "./pdf.ts";
+import { theServer } from "./server-name.ts";
 import type { TranscribeFlow } from "./transcribe-flow.ts";
 
 export interface OpenUiDeps {
@@ -148,7 +149,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
       return;
     }
     d.loadImage(file, picture);
-    say(`Opened ${file.name}. Translate sends the image to the server, which reads the text in it.`);
+    say(`Opened ${file.name}. Translate sends the image to ${theServer()}, which reads the text in it.`);
   }
 
   async function openWord(file: File, mine: number) {
