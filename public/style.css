@@ -1,7 +1,9 @@
 /* Entry point: the layer order and the parts, one file per feature in css/. The parts hold plain
    rules; the layer of each is named here, so within a layer the import order is the cascade order.
-   The fonts and reduced motion are in no layer. */
-@layer base, layout, components, utilities;
+   The fonts and reduced motion are in no layer. Temml's stylesheet for equations (css/temml.css) is
+   loaded by math.ts with the first equation; its layer comes after the components so that the page's
+   rules for text (fonts by language in cjk.css) do not reach into the MathML. */
+@layer base, layout, components, temml, utilities;
 
 @import url("css/fonts.css");
 @import url("css/base.css") layer(base);

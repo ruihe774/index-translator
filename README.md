@@ -149,12 +149,12 @@ bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses:
 bun scripts/build_libopus.ts    # libopus, which compresses speech for the browser and reads compressed uploads: built from source, seconds
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, the sentence segmentation and alignment models, example voices
 bun scripts/fetch_onnxruntime.ts  # ONNX Runtime, which runs the sentence segmentation and alignment models, into vendor/
-bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files in the browser, into public/vendor/
+bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and show equations in the browser, into public/vendor/
 bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into Markdown, into vendor/
 ```
 
 Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
-Markdown files, and says that PDF and Word support is not installed. Without `build_libopus.ts` reading
+Markdown files, says that PDF and Word support is not installed, and shows equations as their TeX. Without `build_libopus.ts` reading
 aloud sends its audio as WAV, which is much larger, and voice samples are uploaded as WAV too. Translating a web page by its address needs `fetch_turndown.ts`
 and is off until you allow some sites (see [Translate a web page](#translate-a-web-page)).
 
@@ -227,6 +227,12 @@ Markdown source and the formatted view; **Raw** on your side brings back the tex
 **Copy translation** copies the Markdown source as plain text and, when the translation is shown
 formatted, also puts the formatted text on the clipboard as rich text. Links open in a new tab;
 images are shown as links and are not loaded.
+
+Equations written in TeX between dollar signs are shown typeset: `$E = mc^2$` within a line, and
+`$$ … $$` set apart, on one line or with each `$$` on a line of its own. A dollar sign followed by a
+space or a closing one followed by a digit is not an equation, so `$5 and $10` stays as it is;
+`\$` is always a dollar sign. An equation that cannot be read is shown as written. Chemistry
+(`\ce{H2O}`) works too. Equations are not read aloud.
 
 ### Open a file
 
@@ -440,7 +446,8 @@ first (the button tells you so). Clicking a paragraph itself still scrolls the o
   clean recording matters then.
 - **Markdown:** a text that is shown formatted is read the way it is shown. Headings, list items
   and table rows are read one by one, numbered lists with their numbers, table cells with their
-  column heading, links by their text and images by their description. Code blocks are skipped.
+  column heading, links by their text and images by their description. Code blocks and equations
+  are skipped.
 
 The first sentence takes about five seconds longer, because the speech model is loaded when you
 first listen. It needs about 5.7 GiB of GPU memory beside the translation model and is unloaded

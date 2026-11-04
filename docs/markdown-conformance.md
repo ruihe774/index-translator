@@ -40,6 +40,16 @@ Example numbers for each reason are in `KNOWN` in `scripts/commonmark.ts`.
 
 - GFM extensions: pipe tables (with alignment), `~~strikethrough~~` (two tildes only), task list
   items `- [ ]` / `- [x]`, bare URL autolinks. The GFM spec suite has not been run.
+- Equations (TeX, as GitHub and Pandoc write them; shown as MathML by Temml): `$…$` inline needs a
+  non-space after the opening `$` and before the closing one and no digit after the closing one, and
+  the first unescaped `$` decides, so `$5 and $10` stays text. `$$…$$` within a paragraph is a
+  display equation in the line. A line starting with `$$` (no second `$$` before its end) starts a
+  display block that interrupts a paragraph and ends at the next line ending in `$$`; a blank line
+  before that cancels it and the lines are a paragraph, so a stray `$$` cannot swallow the rest. An
+  equation's TeX is taken as written (no backslash escapes, emphasis or code spans inside), like a
+  code span. Not supported: `\(…\)` and `\[…\]` (CommonMark escapes, and turndown escapes brackets
+  as `\[`), `` $`…`$ ``, and ```` ```math ```` fences, which stay code. No spec example has a
+  `$` that opens an equation, so the count above is unaffected.
 - Emphasis beside ideographs: CommonMark refuses `**「日本」**です` because the closing `**` follows
   punctuation and precedes a letter. Ideographic text has no spaces, so here a delimiter run
   (`*`, `_`, `~~`) next to an ideograph (Han, Hiragana, Katakana, Bopomofo) may open or close even
@@ -47,8 +57,11 @@ Example numbers for each reason are in `KNOWN` in `scripts/commonmark.ts`.
   Widely implemented (markdown-it and cmark plugins for CJK); no spec example involves it, so the
   count above is unaffected. Hangul is excluded because Korean uses spaces.
 - Rendering in the page: Markdown heading levels are shifted down two (`#` becomes `<h3>`) below
-  the page's own headings; an `md-h<level>` class keeps the source level for styling. Images are shown
+  the page's own headings; an `md-h<level>` class keeps the source level for styling. An equation
+  Temml cannot read, or any equation while Temml is loading or when it is not installed, is shown as
+  its TeX with its dollar signs. Images are shown
   as links labelled with their alt text and are not loaded. Links open in a new tab and are only
   clickable for `http:`, `https:` and `mailto:` URLs; others are rendered as plain text.
-- Streaming: an unclosed code fence drops its trailing blank lines while it is still open. The
-  finished output is the same as a parse of the whole text.
+- Streaming: an unclosed code fence drops its trailing blank lines while it is still open. A display
+  equation whose closing `$$` has not come is shown as its TeX until it does (an open one at the end
+  of the finished text stays so). The finished output is the same as a parse of the whole text.

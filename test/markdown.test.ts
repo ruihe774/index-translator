@@ -17,6 +17,8 @@ describe("looksLikeMarkdown", () => {
     expect(looksLikeMarkdown("Run:\n\n```sh\nls\n```")).toBe(true);
     expect(looksLikeMarkdown("| a | b |\n|---|---|\n| 1 | 2 |")).toBe(true);
     expect(looksLikeMarkdown("See [the docs](https://example.com) for more.")).toBe(true);
+    expect(looksLikeMarkdown("So:\n$$\nE = mc^2\n$$")).toBe(true);
+    expect(looksLikeMarkdown(String.raw`where $\alpha$ is the rate`)).toBe(true);
   });
 
   test("weaker hints need company", () => {
@@ -25,11 +27,14 @@ describe("looksLikeMarkdown", () => {
     expect(looksLikeMarkdown("- apples\n- pears")).toBe(true);
     expect(looksLikeMarkdown("This is **important** and `code`.")).toBe(true);
     expect(looksLikeMarkdown("> quoted\n\n1. first")).toBe(true);
+    expect(looksLikeMarkdown("The area is $r^2$.")).toBe(false);
+    expect(looksLikeMarkdown("Both $x_1$ and $x^2$.")).toBe(true);
   });
 
   test("plain prose is not Markdown", async () => {
     expect(looksLikeMarkdown("Hello, world")).toBe(false);
     expect(looksLikeMarkdown("#hashtag and 5 * 3 = 15, 2023. A year.")).toBe(false);
+    expect(looksLikeMarkdown("It costs $5 and $10, or US$ 7_000 in $_bulk.")).toBe(false);
     expect(looksLikeMarkdown(await Bun.file(new URL("fixtures/essays.en.txt", import.meta.url)).text())).toBe(false);
   });
 });
@@ -127,6 +132,49 @@ describe("parseMarkdown blocks", () => {
   test("an ordered item other than 1 does not interrupt a paragraph", () => {
     expect(parseMarkdown("In\n2023. A year.").map((b) => b.type)).toStrictEqual(["paragraph"]);
     expect(parseMarkdown("Steps:\n1. one").map((b) => b.type)).toStrictEqual(["paragraph", "list"]);
+  });
+
+  test("display equations: one line or many, ended by a blank line or left open at the end", () => {
+    expect(parseMarkdown("Text\n$$\nx = 1\n- y\n$$\nafter\n$$ \\int $$")).toStrictEqual([
+      { type: "paragraph", children: [{ type: "text", text: "Text" }] },
+      { type: "math", tex: "x = 1\n- y", open: false },
+      { type: "paragraph", children: [{ type: "text", text: "after" }] },
+      { type: "math", tex: "\\int", open: false },
+    ]);
+    expect(parseMarkdown("$$ a \\\\\nb $$")).toStrictEqual([{ type: "math", tex: "a \\\\\nb", open: false }]);
+    // A blank line before the closing `$$`: no equation, so a stray `$$` cannot take the rest of the text.
+    expect(parseMarkdown("$$\nx\n\ny")).toStrictEqual([
+      { type: "paragraph", children: [{ type: "text", text: "$$" }, { type: "br" }, { type: "text", text: "x" }] },
+      { type: "paragraph", children: [{ type: "text", text: "y" }] },
+    ]);
+    expect(parseMarkdown("$$\nx\n")).toStrictEqual([{ type: "math", tex: "x", open: true }]);
+    // A second `$$` before the end of the line: an equation inside a paragraph.
+    expect(parseMarkdown("$$a$$ is b")).toStrictEqual([
+      {
+        type: "paragraph",
+        children: [
+          { type: "math", tex: "a", display: true },
+          { type: "text", text: " is b" },
+        ],
+      },
+    ]);
+    expect(parseMarkdown("- item\n  $$\n  x\n  $$")).toStrictEqual([
+      {
+        type: "list",
+        ordered: false,
+        start: 1,
+        tight: true,
+        items: [
+          {
+            task: null,
+            children: [
+              { type: "paragraph", children: [{ type: "text", text: "item" }] },
+              { type: "math", tex: "x", open: false },
+            ],
+          },
+        ],
+      },
+    ]);
   });
 
   test("GFM tables with alignment", () => {
@@ -241,6 +289,32 @@ describe("parseInline", () => {
     expect(parseInline("[not a link] (x)")).toStrictEqual([{ type: "text", text: "[not a link] (x)" }]);
   });
 
+  test("equations: TeX kept as written, dollars that open nothing stay text", () => {
+    expect(parseInline(String.raw`Let $x^*_1$ and $$\sum$$ be`)).toStrictEqual([
+      { type: "text", text: "Let " },
+      { type: "math", tex: "x^*_1", display: false },
+      { type: "text", text: " and " },
+      { type: "math", tex: "\\sum", display: true },
+      { type: "text", text: " be" },
+    ]);
+    expect(parseInline("$a\\$b$ `$c$`")).toStrictEqual([
+      { type: "math", tex: "a\\$b", display: false },
+      { type: "text", text: " " },
+      { type: "code", text: "$c$" },
+    ]);
+    for (const text of ["$5 and $10", "$ a$", "$a $", "$$x$", "a $$ $$ b", String.raw`\$x$`]) {
+      expect(parseInline(text)).toStrictEqual([{ type: "text", text: text.replace(String.raw`\$`, "$") }]);
+    }
+    expect(parseInline(String.raw`[$\alpha$](https://a.b)`)).toStrictEqual([
+      {
+        type: "link",
+        href: "https://a.b",
+        title: "",
+        children: [{ type: "math", tex: "\\alpha", display: false }],
+      },
+    ]);
+  });
+
   test("raw HTML is text", () => {
     expect(parseInline("<b>x</b>")).toStrictEqual([{ type: "text", text: "<b>x</b>" }]);
   });
@@ -274,6 +348,14 @@ describe("MarkdownStream", () => {
     "***",
     "1. a",
     "2. b",
+    "",
+    "With $x^2$ and",
+    "$$",
+    String.raw`a &= b \\`,
+    "+ c",
+    "$$",
+    "$$",
+    "unclosed",
     "",
     "Last line",
   ].join("\n");
@@ -352,6 +434,19 @@ describe("MarkdownStream", () => {
       }
       expect([...got, ...tail]).toStrictEqual(whole);
     }
+  });
+
+  test("an open display equation stays in the tail until it closes or a blank line ends it", () => {
+    const s = new MarkdownStream();
+    s.push("$$\nx\n+ y\n");
+    expect(s.take()).toMatchObject({ done: [], tail: [{ type: "math", tex: "x\n+ y", open: true }] });
+    s.push("$$\nafter\n");
+    expect(s.take()).toMatchObject({ done: [{ type: "math", open: false }], tail: [{ type: "paragraph" }] });
+    const t = new MarkdownStream();
+    t.push("$$\nx\n+ y\n\n");
+    expect(t.take()).toMatchObject({ done: [], tail: [{ type: "paragraph" }, { type: "list" }] });
+    t.push("z\n");
+    expect(t.take()).toMatchObject({ done: [{ type: "paragraph" }, { type: "list" }], tail: [{ type: "paragraph" }] });
   });
 
   test("an open code fence stays in the tail until it closes", () => {

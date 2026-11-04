@@ -3,8 +3,9 @@
 // builds elements from the tree in `markdown-dom.ts`.
 //
 // It covers what translated documents and model output use: ATX and setext headings, paragraphs,
-// fenced code, block quotes, bullet, ordered and task lists, thematic breaks and GFM tables; inline
-// code, emphasis, strong, strikethrough, inline links, images (shown as links) and autolinks.
+// fenced code, block quotes, bullet, ordered and task lists, thematic breaks, GFM tables and display
+// equations (`$$`); inline code, equations (`$…$`, `$$…$$`), emphasis, strong, strikethrough, inline
+// links, images (shown as links) and autolinks.
 // Deliberately left out: raw HTML (shown as text), indented code blocks (indented prose stays
 // prose), reference links and entity references. A single newline inside a paragraph is kept as a
 // line break, as in the plain-text view. Every other CommonMark spec example passes; see
@@ -19,6 +20,8 @@ export type Inline =
   | { type: "em" | "strong" | "del"; children: Inline[] }
   | { type: "link"; href: string; title: string; children: Inline[] }
   | { type: "image"; href: string; title: string; alt: string }
+  /** TeX, without its dollar signs; `display` for `$$…$$`. */
+  | { type: "math"; tex: string; display: boolean }
   | { type: "br" };
 
 export type Align = "left" | "center" | "right" | null;
@@ -36,7 +39,9 @@ export type Block =
   | { type: "quote"; children: Block[] }
   | { type: "list"; ordered: boolean; start: number; tight: boolean; items: ListItem[] }
   | { type: "hr" }
-  | { type: "table"; align: Align[]; head: Inline[][]; rows: Inline[][][] };
+  | { type: "table"; align: Align[]; head: Inline[][]; rows: Inline[][][] }
+  /** A display equation; `open` while its closing `$$` has not come (the end of the text came first). */
+  | { type: "math"; tex: string; open: boolean };
 
 // ---- detection -------------------------------------------------------------------------------
 
@@ -45,6 +50,8 @@ const DETECT_STRONG = [
   /^ {0,3}(?:`{3,}|~{3,})/m, // code fence
   /^ {0,3}\|?[ \t]*:?-{3,}:?[ \t]*\|[ \t]*:?-{3,}:?/m, // table delimiter row
   /\[[^\]\n]+\]\((?:https?:\/\/|mailto:|\/|#|\.)[^)\s]*\)/, // inline link
+  /^ {0,3}\$\$[^$]+\$\$[ \t]*$/m, // display equation
+  /(?<![$\\])\$(?![\s$])[^$\n]*\\[a-zA-Z]+[^$\n]*(?<![\s\\])\$(?![\d$])/, // equation with a TeX command
 ];
 
 const DETECT_WEAK = [
@@ -54,12 +61,14 @@ const DETECT_WEAK = [
   /(?:\*\*|__)\S(?:[^\n]*?\S)?(?:\*\*|__)/g, // strong
   /`[^`\n]+`/g, // inline code
   /^ {0,3}(?:[-*_][ \t]*){3,}$/gm, // thematic break
+  /(?<![$\\])\$(?![\s$])[^$\n]*[\^_][^$\n]*(?<![\s\\])\$(?![\d$])/g, // equation with a sub- or superscript
 ];
 
 /**
  * Whether the source text looks written in Markdown: one unambiguous construct (heading, fence,
- * table, link), or at least two of the weaker hints (list items, quotes, strong, code spans,
- * breaks), which plain text seldom has together.
+ * table, link, display equation, an equation with a TeX command), or at least two of the weaker
+ * hints (list items, quotes, strong, code spans, breaks, equations with `^` or `_`), which plain text
+ * seldom has together.
  */
 export function looksLikeMarkdown(source: string): boolean {
   if (DETECT_STRONG.some((re) => re.test(source))) {
@@ -86,6 +95,7 @@ const BULLET = /^( {0,3})([-*+])([ \t]+|$)/;
 const ORDERED = /^( {0,3})(\d{1,9})([.)])([ \t]+|$)/;
 const TABLE_DELIM = /^ {0,3}\|?[ \t]*:?-+:?[ \t]*(?:\|[ \t]*:?-+:?[ \t]*)*\|?[ \t]*$/;
 const TASK = /^\[([ xX])\](?:[ \t]+|$)/;
+const MATH_OPEN = /^ {0,3}\$\$(.*)$/;
 
 const isBlank = (line: string) => !/\S/.test(line);
 
@@ -181,10 +191,62 @@ function tableStart(lines: string[], i: number): boolean {
   return splitRow(head).length === splitRow(delim).length;
 }
 
+/**
+ * The TeX after a line's opening `$$`, and whether the line closes the equation too; null when the
+ * line cannot open one: `$$` not at its start, or a second `$$` before its end (`$$a$$ is…` is a
+ * paragraph with an equation in it).
+ */
+function mathOpener(line: string): { rest: string; closed: boolean } | null {
+  const m = MATH_OPEN.exec(line);
+  if (!m) {
+    return null;
+  }
+  const rest = m[1]!.trimEnd();
+  if (rest.endsWith("$$")) {
+    const tex = rest.slice(0, -2);
+    return tex.includes("$$") || isBlank(tex) ? null : { rest: tex, closed: true };
+  }
+  return rest.includes("$$") ? null : { rest, closed: false };
+}
+
+/**
+ * The display equation that starts at lines[i]: from `$$` at the start of a line to the next line
+ * that ends with `$$` (the same line or a later one). A blank line before that ends the attempt and
+ * the lines are read as a paragraph instead (TeX allows no blank line in an equation), so that a
+ * stray `$$` cannot take the rest of the text; at the end of the text the equation is open (a last
+ * blank line may be a partial one). Null when there is no equation here.
+ */
+function mathBlock(lines: string[], i: number): { tex: string; open: boolean; end: number } | null {
+  const opener = mathOpener(lines[i]!);
+  if (!opener) {
+    return null;
+  }
+  const body = [opener.rest];
+  if (opener.closed) {
+    return { tex: opener.rest.trim(), open: false, end: i + 1 };
+  }
+  for (let j = i + 1; j < lines.length; j++) {
+    const line = lines[j]!;
+    if (isBlank(line)) {
+      if (j < lines.length - 1) {
+        return null;
+      }
+      break;
+    }
+    const t = line.trimEnd();
+    if (t.endsWith("$$")) {
+      body.push(t.slice(0, -2));
+      return { tex: body.join("\n").trim(), open: false, end: j + 1 };
+    }
+    body.push(line);
+  }
+  return { tex: body.join("\n").trim(), open: true, end: lines.length };
+}
+
 /** Whether a line starts a block that ends a paragraph (and lazy continuation in lists and quotes). */
 function interrupts(lines: string[], i: number): boolean {
   const line = lines[i]!;
-  if (ATX.test(line) || FENCE_OPEN.test(line) || HR.test(line) || QUOTE.test(line)) {
+  if (ATX.test(line) || FENCE_OPEN.test(line) || HR.test(line) || QUOTE.test(line) || mathOpener(line)) {
     return true;
   }
   const marker = listMarker(line);
@@ -219,6 +281,7 @@ function lazyLine(line: string): string {
     FENCE_OPEN.test(l) ||
     HR.test(l) ||
     QUOTE.test(l) ||
+    mathOpener(l) ||
     SETEXT.test(l) ||
     listMarker(l) ||
     l.startsWith("|")
@@ -275,6 +338,13 @@ export function parseLines(rawLines: string[]): ParsedBlock[] {
         },
         line: first,
       });
+      continue;
+    }
+
+    const math = mathBlock(lines, i);
+    if (math) {
+      out.push({ block: { type: "math", tex: math.tex, open: math.open }, line: first });
+      i = math.end;
       continue;
     }
 
@@ -441,7 +511,7 @@ export function parseMarkdown(text: string): Block[] {
 
 // ---- inlines ---------------------------------------------------------------------------------
 //
-// The CommonMark algorithm: code spans and autolinks are taken first while scanning; "*", "_" and
+// The CommonMark algorithm: code spans, equations and autolinks are taken first while scanning; "*", "_" and
 // "~~" runs and "[" / "![" go on delimiter stacks; "]" closes the nearest bracket if an inline link
 // destination follows, and emphasis is resolved by "process emphasis" with the flanking rules and
 // the rule of three.
@@ -479,6 +549,33 @@ function codeClose(s: string, from: number, len: number): number {
     j += run;
   }
   return -1;
+}
+
+/**
+ * The equation that starts with the `$` at s[i] (Pandoc's and GitHub's rules): `$$…$$` is shown as a
+ * display equation, `$…$` inline. An inline one needs a non-space after its opening `$` and before
+ * its closing one, and no digit after the closing one, so "$5 and $10" stays text; the first `$` that
+ * is not escaped by a backslash decides.
+ */
+function mathSpan(s: string, i: number): { tex: string; display: boolean; end: number } | null {
+  const run = runLength(s, i);
+  if (run === 2) {
+    const close = s.indexOf("$$", i + 2);
+    const tex = close === -1 ? "" : s.slice(i + 2, close);
+    return /\S/.test(tex) ? { tex: tex.trim(), display: true, end: close + 2 } : null;
+  }
+  if (run !== 1 || WHITESPACE.test(s[i + 1] ?? " ")) {
+    return null;
+  }
+  for (let j = i + 1; j < s.length; j++) {
+    if (s[j] === "\\") {
+      j++;
+    } else if (s[j] === "$") {
+      const closes = !WHITESPACE.test(s[j - 1]!) && s[j + 1] !== "$" && !/\d/.test(s[j + 1] ?? "");
+      return closes ? { tex: s.slice(i + 1, j), display: false, end: j + 1 } : null;
+    }
+  }
+  return null;
 }
 
 const unescapePunctuation = (s: string) => s.replaceAll(/\\([!-/:-@[-`{-~])/g, "$1");
@@ -565,7 +662,9 @@ function plainText(nodes: Inline[]): string {
           ? " "
           : n.type === "image"
             ? n.alt
-            : plainText(n.children),
+            : n.type === "math"
+              ? n.tex
+              : plainText(n.children),
     )
     .join("");
 }
@@ -731,6 +830,21 @@ export function parseInline(src: string): Inline[] {
       flush();
       out.push({ type: "code", text: code });
       i = close + run;
+      continue;
+    }
+
+    if (c === "$") {
+      const math = mathSpan(src, i);
+      if (math) {
+        flush();
+        out.push({ type: "math", tex: math.tex, display: math.display });
+        i = math.end;
+      } else {
+        // A run that opens nothing is text, all of it: "$$x$" is not "$" and then "$x$".
+        const run = runLength(src, i);
+        buf += src.slice(i, i + run);
+        i += run;
+      }
       continue;
     }
 

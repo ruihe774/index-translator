@@ -496,6 +496,10 @@ function inlineBoth(nodes: Inline[], lang: string): InlineText {
           walk(n.children);
           break;
         }
+        case "math": {
+          // Not read, and not in what the page shows either: `text-groups.ts` leaves equations out.
+          break;
+        }
         case "image": {
           out.plain = false;
           out.origin.push(...Array<number>(n.alt.length).fill(out.shown.length));
@@ -552,6 +556,7 @@ function blockUtterances(b: Block, lang: string): Utterance[] {
       return [{ text: inlineText(b.children, lang), pause: PAUSE_BLOCK, derived: inlineDerived(b.children, lang) }];
     }
     case "code":
+    case "math":
     case "hr": {
       return [];
     }

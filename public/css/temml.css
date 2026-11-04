@@ -1,0 +1,4 @@
+/* Temml's stylesheet for the Noto Sans Math font, which it names beside itself (public/vendor/temml,
+   put there by scripts/fetch_web_libs.ts), in its own layer. Not imported by style.css: math.ts links
+   it with the first equation, so a page without equations loads neither it nor the font. */
+@import url("../vendor/temml/Temml-NotoSans.css") layer(temml);

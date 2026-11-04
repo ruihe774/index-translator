@@ -1,10 +1,13 @@
 // Fetch the libraries the web app runs in the browser, into public/vendor/: for PDF support, pdf.js
-// (page thumbnails), an npm package downloaded from the registry by version and checksum, of which
-// only the files the page loads are unpacked, plus the license; and, each a few files of a git commit,
+// (page thumbnails), and for equations in Markdown, Temml (TeX to MathML), each an npm package
+// downloaded from the registry by version and checksum, of which only the files the page loads are
+// unpacked, plus the license (Temml's directory also gets the Noto Sans Math font, pinned by commit
+// and checksum); and, each a few files of a git commit,
 // pdf-inspector's WebAssembly build (page text as Markdown) and undoc's (a Word document's text as
 // Markdown). Nothing is installed with a package manager, and the page never loads them from the
 // network: the server serves public/vendor/ like the rest of public/. Without the PDF libraries or
-// undoc opening a PDF or a Word document is refused with a message.
+// undoc opening a PDF or a Word document is refused with a message; without Temml equations are
+// shown as their TeX source.
 // Usage: bun scripts/fetch_web_libs.ts
 //
 // A library whose directory already holds the pinned version is left alone. Needs nothing besides Bun.
@@ -24,6 +27,15 @@ export interface Library {
   place: (path: string) => string | undefined;
   /** Files that must have come out, so a package whose layout changed fails here and not in the browser. */
   expect: string[];
+  /** Files from elsewhere, each pinned by checksum, that go in the same directory (what the package names beside itself). */
+  extra?: PinnedFile[];
+}
+
+export interface PinnedFile {
+  /** Where the file goes, relative to the library's directory. */
+  to: string;
+  url: string;
+  sha256: string;
 }
 
 export const LIBRARIES: Library[] = [
@@ -70,6 +82,37 @@ export const LIBRARIES: Library[] = [
       "iccs/CGATS001Compat-v2-micro.icc",
     ],
   },
+  {
+    dir: "temml",
+    version: "0.14.0",
+    url: "https://registry.npmjs.org/temml/-/temml-0.14.0.tgz",
+    sha256: "6be7cc75cd61af39a98fd1d88146732818b042ae665963cf0473b44a44b090e2",
+    // The ES module build (it has mhchem's \ce and the physics package's macros built in; the
+    // browser build has not) and the stylesheet for Noto Sans Math, which names the font beside
+    // itself. The other stylesheets are for fonts not fetched here.
+    place: (path) => {
+      if (path === "LICENSE") {
+        return path;
+      }
+      const dist = /^dist\/(temml\.mjs|Temml-NotoSans\.css)$/.exec(path);
+      return dist?.[1];
+    },
+    expect: ["temml.mjs", "Temml-NotoSans.css", "LICENSE"],
+    // The TrueType build Temml's stylesheet names (its author found the WOFF2 one renders worse),
+    // the same bytes as Temml's own site serves, from the Noto project's build repository.
+    extra: [
+      {
+        to: "NotoSansMath-Regular.ttf",
+        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/55773c3eb233b5a0eaa07de6226da189b136b4f0/fonts/NotoSansMath/full/ttf/NotoSansMath-Regular.ttf",
+        sha256: "7283c396e9b22699bb542d9631030dc804a7e5b954f193d8f8f5b5f1162fbc61",
+      },
+      {
+        to: "NotoSansMath-OFL.txt",
+        url: "https://raw.githubusercontent.com/notofonts/math/9a787713b618795e51cb4c7ef6af357022cfc6ec/OFL.txt",
+        sha256: "403a95275b469061b7d4371c328e0ada3bc7d63328abe2e88aad5cd243b2fe21",
+      },
+    ],
+  },
 ];
 
 /** A library that is a few files of a git commit, downloaded one by one (a commit's raw files never change; its archive's bytes may). */
@@ -78,12 +121,7 @@ export interface FileLibrary {
   dir: string;
   /** The commit; every URL names it. */
   version: string;
-  files: {
-    /** Where the file goes, relative to `dir`. */
-    to: string;
-    url: string;
-    sha256: string;
-  }[];
+  files: PinnedFile[];
 }
 
 const UNDOC_COMMIT = "7469dcc40a7109b29e26922e284a77205535ee3b";
@@ -148,7 +186,7 @@ export const FILE_LIBRARIES: FileLibrary[] = [
 
 /** What the stamp of a library says: its version and the checksums of what was downloaded. */
 const stampOf = (lib: Library | FileLibrary) =>
-  `${lib.version} ${"files" in lib ? lib.files.map((f) => f.sha256).join(" ") : lib.sha256}\n`;
+  `${lib.version} ${("files" in lib ? lib.files : [lib, ...(lib.extra ?? [])]).map((f) => f.sha256).join(" ")}\n`;
 
 export async function isPresent(lib: Library | FileLibrary, vendor: string): Promise<boolean> {
   return (await readStamp(join(vendor, lib.dir))) === stampOf(lib);
@@ -182,6 +220,8 @@ export async function fetchLibrary(lib: Library, vendor: string): Promise<void> 
   }
   const stamp = stampOf(lib);
   const files = untar(await download(lib.url, lib.sha256));
+  const extra = lib.extra ?? [];
+  const extraContents = await Promise.all(extra.map((f) => download(f.url, f.sha256)));
   await rm(dir, { recursive: true, force: true });
   let count = 0;
   let bytes = 0;
@@ -200,6 +240,12 @@ export async function fetchLibrary(lib: Library, vendor: string): Promise<void> 
   const missing = lib.expect.filter((path) => !written.has(path));
   if (missing.length > 0) {
     throw new Error(`${lib.url} has no ${missing.join(", ")}`);
+  }
+  for (const [i, f] of extra.entries()) {
+    await mkdir(dirname(join(dir, f.to)), { recursive: true });
+    await Bun.write(join(dir, f.to), extraContents[i]!);
+    count++;
+    bytes += extraContents[i]!.length;
   }
   await writeStamp(dir, stamp);
   console.log(`ok ${lib.dir} ${lib.version} (${count} files, ${(bytes / 2 ** 20).toFixed(1)} MiB)`);

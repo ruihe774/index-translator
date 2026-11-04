@@ -92,6 +92,26 @@ test("Markdown output is rendered while it streams: finished blocks stay in plac
   await expect(app.output.locator("p strong")).toHaveText("结束");
 });
 
+test("equations in Markdown are MathML; one Temml cannot read is shown as written", async ({ app, mock }) => {
+  await mock.set({ chunks: ["# 公式\n\n", "设 $x^2$ 与 $5 和 $10。\n\n", "$$\n\\frac{a}{b}\n$$\n\n", "错误：$x^$"] });
+  await app.open();
+  await app.text.fill("# Equations\n\nLet $x^2$ and $5 and $10.\n\n$$\n\\frac{a}{b}\n$$\n\nBad: $x^$");
+  await app.translate.click();
+  await expect(app.meta).toContainText("generated");
+
+  // Both views: the inline equation and the display one are MathML, with their TeX kept in an annotation.
+  for (const view of [app.output, app.page.locator("#source-view")]) {
+    await expect(view.locator("p > span.math > math")).toHaveCount(1);
+    await expect(view.locator("div.math-display > math[display=block] mfrac")).toHaveCount(1);
+    await expect(view.locator("annotation").first()).toHaveText("x^2");
+    // Dollars that open nothing stay text; a trailing ^ (a TypeError in Temml, not a ParseError) is the source.
+    await expect(view.locator("p").nth(0)).toContainText("$10");
+    await expect(view.locator(".math-source")).toHaveText("$x^$");
+  }
+  // Noto Sans Math, from beside Temml's stylesheet.
+  await expect.poll(() => app.page.evaluate(() => document.fonts.check("16px 'NotoSans Math'", "∑"))).toBe(true);
+});
+
 test("an empty submission shows a field error and sends nothing", async ({ app, mock }) => {
   await app.open();
   await app.translate.click();

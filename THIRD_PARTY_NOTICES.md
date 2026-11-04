@@ -26,6 +26,8 @@ names them and says where the full texts are. The AppImage carries this file in
 | [pdf-inspector](https://github.com/firecrawl/pdf-inspector), its WebAssembly build (the `pdf-inspector` branch of this app's repository, built by wasm-pack from [ruihe774/pdf-inspector@6402ae1](https://github.com/ruihe774/pdf-inspector/commit/6402ae13641fa07a25336568aec948796c6b5bc5), upstream 1.25.2 plus two changes not yet upstream, pinned by commit in `scripts/fetch_web_libs.ts`) | Runs in the browser: the text of a PDF page as Markdown | MIT, Copyright (c) 2026 Firecrawl; the binary embeds CMaps derived from Adobe's CMap resources (BSD 3-Clause, Copyright 1990-2009 Adobe Systems Incorporated) | `public/vendor/pdf-inspector/LICENSE` |
 | [pdf.js](https://github.com/mozilla/pdf.js) (`pdfjs-dist`, the legacy build), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: the page thumbnails of a PDF | Apache-2.0, Copyright Mozilla Foundation | `public/vendor/pdfjs/LICENSE` |
 | Data and decoders that come with pdf.js: Adobe's CMaps (`cmaps/`), the Foxit Symbol and Dingbats fonts (`standard_fonts/`), the OpenJPEG, JBIG2 (PDFium) and qcms decoders compiled to WebAssembly (`wasm/`), an ICC profile (`iccs/`) | Used by pdf.js for PDFs that need them | Each under its own license: BSD 3-Clause (CMaps, Foxit fonts, JBIG2), BSD 2-Clause (OpenJPEG), MIT (qcms), CC0 (the profile), and Apache-2.0, BSD and MIT for Mozilla's glue code | The `LICENSE*` files in those four directories under `public/vendor/pdfjs/` |
+| [Temml](https://github.com/ronkok/Temml) 0.14.0 (`temml` on npm: its ES module build, which includes Temml's ports of the mhchem and physics packages, and its stylesheet for Noto Sans Math), pinned in `scripts/fetch_web_libs.ts` | Runs in the browser: equations in Markdown (TeX) as MathML | MIT, Copyright (c) 2020 Ron Kok. Temml is derived from KaTeX (MIT, Copyright (c) 2013-2020 Khan Academy and other contributors), whose notice its license file does not repeat; its mhchem port is of MathJax's mhchem extension, Apache-2.0, Copyright (c) 2011-2015 The MathJax Consortium and (c) 2015-2018 Martin Hensel (the notice is in the module) | `public/vendor/temml/LICENSE` |
+| [Noto Sans Math](https://github.com/notofonts/math) 3.000 (`NotoSansMath-Regular.ttf`, the TrueType build Temml's stylesheet names, from [notofonts/notofonts.github.io@55773c3](https://github.com/notofonts/notofonts.github.io/commit/55773c3eb233b5a0eaa07de6226da189b136b4f0)), pinned by checksum in `scripts/fetch_web_libs.ts`, used unchanged | The font of the equations | SIL Open Font License 1.1, Copyright 2022 The Noto Project Authors | `public/vendor/temml/NotoSansMath-OFL.txt` |
 | [undoc](https://github.com/iyulab/undoc), its WebAssembly build with only the docx format (the `undoc` branch of this app's repository, built by wasm-pack from [iyulab/undoc@3a9dbbb](https://github.com/iyulab/undoc/commit/3a9dbbb911b30e944323402d30278e0629444885), pinned by commit in `scripts/fetch_web_libs.ts`) | Runs in the browser: the text of a Word (.docx) document as Markdown | MIT, Copyright (c) 2025 iyulab; the binary links Rust crates, each under MIT or under MIT or Apache-2.0 at the user's choice (among them zip, quick-xml, cfb, serde_json and wasm-bindgen), whose texts come with each crate | `public/vendor/undoc/LICENSE` |
 
 `libaudiocpp.so` is built from audio.cpp's source with two changes of ours, in this app's repository:
@@ -41,9 +43,10 @@ Not included in the AppImage and taken from the system: the C and C++ runtime li
 the Vulkan loader (CUDA AppImages: the NVIDIA driver) and the GPU driver, `curl` (used by `fetch`), and the browser that opens web pages
 for translation (Chrome, Chromium, Edge or Brave; the system WebKit on macOS).
 
-The web app (`public/`) loads no fonts or scripts from the network. Its only third-party code is the
-two PDF libraries and undoc above, in `public/vendor/`: files of this app's own server, downloaded by
-`scripts/fetch_web_libs.ts` (they are not in the repository) and packed into the AppImage.
+The web app (`public/`) loads no fonts or scripts from the network. Its only third-party code and
+fonts are the two PDF libraries, Temml with Noto Sans Math and undoc above, in `public/vendor/`:
+files of this app's own server, downloaded by `scripts/fetch_web_libs.ts` (they are not in the
+repository) and packed into the AppImage.
 `prompts/` holds the four NativeLong prompt templates of
 [bilibili/Index-Translate](https://github.com/bilibili/Index-Translate) (Apache-2.0).
 

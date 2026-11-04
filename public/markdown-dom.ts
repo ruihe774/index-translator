@@ -1,7 +1,7 @@
 // Writes the translation into the output element as it streams: as plain text, or rendered from
 // Markdown when the source looked like Markdown (subtitles: subtitle-dom.ts). Elements are built with
 // the DOM API only; no string from the model is ever parsed as HTML. The source preview is rendered
-// the same way.
+// the same way. Equations are MathML, built by Temml (`math.ts`).
 //
 // Each top-level element carries `data-line`, the index of its first line in the text (one span
 // per line for plain text, one element per block for Markdown), so scrolling can be synced by line.
@@ -9,6 +9,7 @@
 import type { Format } from "./format.ts";
 import { LINK_NOTE, linkProblem, type LinkReference } from "./links.ts";
 import { type Align, type Block, type Inline, MarkdownStream, type ParsedBlock } from "./markdown.ts";
+import { equation } from "./math.ts";
 import { prefersReducedMotion } from "./media-query.ts";
 import { subtitleOutput } from "./subtitle-dom.ts";
 
@@ -83,6 +84,10 @@ function inlineNodes(nodes: Inline[]): Child[] {
         // Shown as a link: the page loads nothing from other origins.
         return link(n.href, n.title, [document.createTextNode(n.alt || n.href)]);
       }
+      case "math": {
+        const mark = n.display ? "$$" : "$";
+        return equation(n.tex, n.display, mark + n.tex + mark);
+      }
     }
   });
 }
@@ -141,6 +146,12 @@ function blockNode(b: Block, tight = false): Child[] {
     }
     case "hr": {
       return [el("hr")];
+    }
+    case "math": {
+      // An open one (its `$$` has not come) is shown as written until it closes: half an equation is an error.
+      const box = equation(b.open ? undefined : b.tex, true, `$$\n${b.tex}${b.open ? "" : "\n$$"}`, true);
+      keyboardScrollable(box, "Equation");
+      return [box];
     }
     case "list": {
       const list = el(b.ordered ? "ol" : "ul");
@@ -302,6 +313,9 @@ function markdownOutput(target: HTMLElement, reduced: boolean): Streamed {
  */
 const KEPT_ATTRS = new Set(["href", "title", "lang", "dir", "start", "type", "checked", "disabled", "align"]);
 
+/** MathML keeps its attributes and classes (Temml's own); only its `<math>` and what is in it. */
+const KEPT_TREE = "math";
+
 /**
  * The rendered output as HTML for the clipboard: the tree as shown without the page's own marks.
  * Markdown's table alignment is a class in the page, so it becomes the cell's `align` attribute.
@@ -319,6 +333,9 @@ export function clipboardHtml(root: HTMLElement): string {
     const align = ["left", "center", "right"].find((a) => el.classList.contains(`align-${a}`));
     if (align) {
       el.setAttribute("align", align);
+    }
+    if (el.closest(KEPT_TREE)) {
+      continue;
     }
     if (el.dataset.linkProblem) {
       // The link check writes its note into `title`, replacing whatever the Markdown gave it.

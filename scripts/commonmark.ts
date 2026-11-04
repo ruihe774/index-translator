@@ -82,6 +82,9 @@ function inline(nodes: Inline[]): string {
         case "image": {
           return `<img src="${url(n.href)}" alt="${esc(n.alt)}"${n.title ? ` title="${esc(n.title)}"` : ""} />`;
         }
+        case "math": {
+          return `<span class="math">${esc(n.tex)}</span>`;
+        } // an extension; not in the CommonMark examples
       }
     })
     .join("");
@@ -114,6 +117,9 @@ function blocks(bs: Block[], tight = false): string {
         case "table": {
           return "<table></table>\n";
         } // GFM; not in the CommonMark examples
+        case "math": {
+          return `<div class="math">${esc(b.tex)}</div>\n`;
+        }
       }
     })
     .join("");

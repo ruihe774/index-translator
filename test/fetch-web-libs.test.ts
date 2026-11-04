@@ -36,11 +36,36 @@ describe("the pinned libraries", () => {
     }
   });
 
+  test("Temml: the ES module and the Noto Sans Math stylesheet, with the font it names beside it", () => {
+    const { place, extra } = lib("temml");
+    expect(place("dist/temml.mjs")).toBe("temml.mjs");
+    expect(place("dist/Temml-NotoSans.css")).toBe("Temml-NotoSans.css");
+    expect(place("LICENSE")).toBe("LICENSE");
+    for (const left of [
+      "dist/temml.js",
+      "dist/temml.cjs",
+      "dist/temml.min.js",
+      "dist/Temml-Local.css",
+      "dist/Temml.woff2",
+      "src/Parser.js",
+      "contrib/mhchem/mhchem.js",
+      "package.json",
+    ]) {
+      expect(place(left)).toBeUndefined();
+    }
+    expect(extra?.map((f) => f.to)).toStrictEqual(["NotoSansMath-Regular.ttf", "NotoSansMath-OFL.txt"]);
+  });
+
   test("every file a library is expected to give is one it places, and the pins are whole", () => {
     for (const l of LIBRARIES) {
       expect(l.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(l.url).toContain(l.version);
       expect(l.expect).toContain("LICENSE");
+      for (const file of l.extra ?? []) {
+        expect(file.sha256).toMatch(/^[0-9a-f]{64}$/);
+        // Pinned by commit, not by a branch.
+        expect(file.url).toMatch(/\/[0-9a-f]{40}\//);
+      }
     }
   });
 });

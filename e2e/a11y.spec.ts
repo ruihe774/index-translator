@@ -597,21 +597,24 @@ const overflow = (page: Page) =>
 
 const COLUMNS = Array.from({ length: 12 }, (_, i) => `column${i}`);
 const TABLE = `| ${COLUMNS.join(" | ")} |\n| ${COLUMNS.map(() => "-").join(" | ")} |\n| ${COLUMNS.map((_, i) => i).join(" | ")} |`;
+const EQUATION = `$$\n${Array.from({ length: 40 }, (_, i) => `x_{${i}}`).join(" + ")} = \\frac{a}{b}\n$$`;
 const MD_SOURCE = [
   "# Title",
-  "A paragraph with *emphasis*, `code` and [a link](https://a.example).",
+  "A paragraph with *emphasis*, `code`, $e^{i\\pi} + 1 = 0$ and [a link](https://a.example).",
   "- [x] done\n- [ ] todo",
   "> quoted text",
   TABLE,
   `\`\`\`\n${"x".repeat(300)}\n\`\`\``,
+  EQUATION,
 ].join("\n\n");
 const MD_OUTPUT = [
   "# 标题",
-  "一段带有*强调*、`code`和[链接](https://a.example)的文字。",
+  "一段带有*强调*、`code`、$e^{i\\pi} + 1 = 0$和[链接](https://a.example)的文字。",
   "- [x] 完成\n- [ ] 待办",
   "> 引用的文字",
   TABLE,
   `\`\`\`\n${"y".repeat(300)}\n\`\`\``,
+  EQUATION,
 ].join("\n\n");
 
 for (const scheme of ["light", "dark"] as const) {
@@ -749,7 +752,7 @@ test("subtitle tables fit 320 px: nothing overflows and the end time goes under 
   expect(results.violations).toStrictEqual([]);
 });
 
-test("rendered Markdown: wide tables and code blocks are reachable by keyboard, nothing overflows at 320 px", async ({
+test("rendered Markdown: wide tables, code blocks and equations are reachable by keyboard, nothing overflows at 320 px", async ({
   app,
   mock,
 }) => {

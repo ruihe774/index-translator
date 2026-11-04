@@ -164,4 +164,23 @@
   .align-right {
     text-align: right;
   }
+
+  /* Equations (math.ts). Temml's own stylesheet (css/temml.css) sets the MathML; a display equation
+     is a block of its own that scrolls sideways when it is wider than the pane. */
+  div.math {
+    margin-block: 0 0.75rem;
+    padding-block: 0.25rem;
+    overflow-x: auto;
+  }
+
+  /* An equation shown as its TeX: while Temml loads, without it, or when it cannot read it. */
+  .math-source {
+    font-family: "Cascadia Mono", Menlo, "Noto Sans Mono", monospace;
+    font-size: 0.9em;
+  }
+
+  div.math > .math-source {
+    display: block;
+    white-space: pre-wrap;
+  }
 }
