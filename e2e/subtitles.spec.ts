@@ -134,7 +134,7 @@ const reply = (prefix: string, first: number, count: number) =>
 
 test("a long file goes in overlapping parts, put together into one translation", async ({ app, mock }) => {
   // 150 cues: cues 1–100, then 85–150 (16 overlap); the translation passes to the second part at cue 93.
-  await mock.set({ replies: [reply("甲", 1, 100), reply("乙", 85, 66)], delayMs: 5 });
+  await mock.set({ replies: [reply("甲", 1, 100), reply("乙", 85, 66)], delayMs: 20 });
   await app.open();
   await app.from.selectOption("en");
   await app.text.fill(many(150));
