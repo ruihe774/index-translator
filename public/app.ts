@@ -14,6 +14,7 @@ import type { ViewSwitch } from "./elements/view-switch.ts";
 import type { VoiceSettings } from "./elements/voice-settings.ts";
 import { initEngineStatus } from "./engine-status.ts";
 import { type Format, formatOf } from "./format.ts";
+import { initFullView } from "./full-view.ts";
 import { initHistory } from "./history-state.ts";
 import { type HistoryEntry, newId, restoredAlignment } from "./history.ts";
 import { fillLanguages } from "./languages.ts";
@@ -318,18 +319,22 @@ function onOutputLink(e: MouseEvent) {
 outputEl.addEventListener("click", onOutputLink);
 outputEl.addEventListener("auxclick", onOutputLink);
 
-function wireSwitch(el: ViewSwitch, side: keyof typeof views, show: () => void) {
-  el.addEventListener("change", () => {
-    if (side === "source") {
-      views.source.format = formatOf(textInput.value);
-    }
-    views[side].view = el.value as View;
-    // The source is read only from Preview: its Raw text box is for writing.
-    if (side === "source" && el.value === "raw") {
-      speech.stop("source");
-    }
-    show();
-  });
+/** Shows one side as Raw or Preview, as its switch (or full view) asks. */
+function chooseView(side: Side, view: View) {
+  if (side === "source") {
+    views.source.format = formatOf(textInput.value);
+  }
+  views[side].view = view;
+  // The source is read only from Preview: its Raw text box is for writing.
+  if (side === "source" && view === "raw") {
+    speech.stop("source");
+  }
+  if (side === "source") {
+    showSource();
+  } else {
+    showOutput();
+    sync.refresh();
+  }
 }
 
 // ---- matched blocks and sentences ------------------------------------------------------------
@@ -354,8 +359,9 @@ const sync = initSyncState({
   rebuildOutput: showOutput,
 });
 
+const paneSwitch = $<ViewSwitch>("pane-switch");
 /** One column: the panels side by side in a row that scrolls sideways; pane-carousel.ts. */
-const panes = initPaneCarousel($("workspace"), $<ViewSwitch>("pane-switch"), (side) =>
+const panes = initPaneCarousel($("workspace"), paneSwitch, (side) =>
   sync.follow(side === "source" ? "output" : "source"),
 );
 
@@ -434,6 +440,16 @@ const engine = initEngineStatus({
 
 // ---- follow the stream -----------------------------------------------------------------------
 
+/** Scrolls the side's pane to its end, or the page while the side is in full view. */
+function scrollToEnd(side: Side, area: HTMLElement) {
+  if (fullView.side === side) {
+    const page = document.scrollingElement ?? document.documentElement;
+    page.scrollTop = page.scrollHeight;
+  } else {
+    area.scrollTop = area.scrollHeight;
+  }
+}
+
 /** While a translation streams, the output stays scrolled to its end until the user scrolls. */
 let following = true;
 const stopFollowing = () => void (following = false);
@@ -444,7 +460,7 @@ for (const type of ["wheel", "touchmove", "pointerdown", "keydown"]) {
 // arrives; the content does.
 new MutationObserver(() => {
   if (state.running && following) {
-    outputArea.scrollTop = outputArea.scrollHeight;
+    scrollToEnd("output", outputArea);
   }
 }).observe(outputEl, { childList: true, subtree: true, characterData: true });
 
@@ -455,7 +471,7 @@ for (const type of ["wheel", "touchmove", "pointerdown", "keydown"]) {
 }
 new MutationObserver(() => {
   if (transcribing && followingSource) {
-    sourceArea.scrollTop = sourceArea.scrollHeight;
+    scrollToEnd("source", sourceArea);
   }
 }).observe(sourceView, { childList: true, subtree: true, characterData: true });
 
@@ -963,6 +979,28 @@ const speech: SpeechUi = initSpeechUi({
   reading: () => media.pause(),
 });
 
+/** One side alone on the page, scrolled by the page; full-view.ts. */
+const fullView = initFullView({
+  open: { source: $<HTMLButtonElement>("full-source"), output: $<HTMLButtonElement>("full-output") },
+  exit: $<HTMLButtonElement>("full-view-exit"),
+  bar: paneSwitch.parentElement!,
+  paneSwitch,
+  carousel: panes,
+  panes: {
+    source: { view: sourceView, area: sourceArea },
+    output: { view: outputEl, area: outputArea },
+  },
+  previewing: (side) =>
+    side === "source" ? !sourceArea.hidden : views.output.view === "preview" && state.translation.length > 0,
+  showable: (side) => side === "output" || (textInput.value.length > 0 && sourceImage.file === null),
+  preview: (side) => chooseView(side, "preview"),
+  alignment: () => sync.active(),
+  entering() {
+    speech.stop();
+    media.pause();
+  },
+});
+
 // ---- wiring ----------------------------------------------------------------------------------
 
 form.addEventListener("submit", (e) => {
@@ -983,11 +1021,8 @@ textInput.addEventListener("input", () => {
   sync.refresh();
   refreshSoon();
 });
-wireSwitch(sourceSwitch, "source", showSource);
-wireSwitch(outputSwitch, "output", () => {
-  showOutput();
-  sync.refresh();
-});
+sourceSwitch.addEventListener("change", () => chooseView("source", sourceSwitch.value as View));
+outputSwitch.addEventListener("change", () => chooseView("output", outputSwitch.value as View));
 clearBtn.addEventListener("click", clearAll);
 for (const el of [glossaryInput, hardInput, softInput, genreInput]) {
   el.addEventListener("input", refreshSoon);
@@ -1033,6 +1068,7 @@ bindRender(
     outputSwitch,
     after: () => {
       speech.refresh();
+      fullView.refresh();
       history.setBusy(state.running !== null);
       openUi.setBusy(state.running !== null);
     },

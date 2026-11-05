@@ -243,7 +243,7 @@ test("the speech controls are reached in order and focus does not get lost when 
     await app.page.keyboard.press("Tab");
     order.push(await app.page.evaluate(() => document.activeElement?.id ?? ""));
   }
-  expect(order).toStrictEqual(["listen-source", "prev-source", "pause-source", "next-source", "clear"]);
+  expect(order).toStrictEqual(["full-source", "listen-source", "prev-source", "pause-source", "next-source"]);
   await app.page.keyboard.press("Shift+Tab");
   await app.page.keyboard.press("Shift+Tab");
   await app.page.keyboard.press("Shift+Tab");
@@ -341,7 +341,7 @@ test("skip link is first in the tab order and the whole form is reachable in rea
       await app.page.evaluate(() => document.activeElement?.id || document.activeElement?.textContent?.trim() || ""),
     );
   }
-  expect(names.slice(0, 10)).toStrictEqual([
+  expect(names.slice(0, 11)).toStrictEqual([
     "Skip to main content",
     "engine",
     "from",
@@ -349,6 +349,7 @@ test("skip link is first in the tab order and the whole form is reachable in rea
     "Raw",
     "Preview",
     "text",
+    "full-source",
     "listen-source",
     "clear",
     "translate",
@@ -647,6 +648,25 @@ for (const scheme of ["light", "dark"] as const) {
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
     await app.page.mouse.move(0, 0);
+
+    // Full view of each side, with the bar on top (full-view.ts), at both widths.
+    for (const size of [
+      { width: 1280, height: 720 },
+      { width: 320, height: 640 },
+    ]) {
+      await app.page.setViewportSize(size);
+      await app.page.getByRole("button", { name: "Show the translation in full view" }).click();
+      await expect(app.page.getByRole("button", { name: "Exit full view" })).toBeFocused();
+      results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+      expect(results.violations).toStrictEqual([]);
+      await SWITCH(app.page, "Shown panel", "Source text").click();
+      await expect(app.page.locator("#source-view")).toBeVisible();
+      results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+      expect(results.violations).toStrictEqual([]);
+      await app.page.keyboard.press("Escape");
+      await expect(app.page.getByRole("button", { name: "Show the source text in full view" })).toBeFocused();
+    }
+    await app.page.setViewportSize({ width: 1280, height: 720 });
 
     // Raw on both sides.
     await SWITCH(app.page, "Source view", "Raw").click();

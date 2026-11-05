@@ -11,8 +11,13 @@ import { prefersReducedMotion } from "./media-query.ts";
 import type { Side } from "./state.ts";
 
 export interface PaneCarousel {
-  /** Brings the panel of `side` into view, where the panels do not fit side by side. */
-  show(side: Side): void;
+  /** Brings the panel of `side` into view, where the panels do not fit side by side; at once with `instant`. */
+  show(side: Side, instant?: boolean): void;
+  /**
+   * While held (full view, full-view.ts) the row shows one panel or none and its scrolling says nothing:
+   * the switch is not moved by it and no panel is announced as arriving.
+   */
+  hold(held: boolean): void;
 }
 
 const other = (side: Side): Side => (side === "source" ? "output" : "source");
@@ -28,6 +33,7 @@ export function initPaneCarousel(
 ): PaneCarousel {
   let resting: Side = "source";
   let moving = false;
+  let held = false;
 
   /** How far the row scrolls; 0 when both panels fit. */
   const reach = () => row.scrollWidth - row.clientWidth;
@@ -43,6 +49,9 @@ export function initPaneCarousel(
   row.addEventListener(
     "scroll",
     () => {
+      if (held) {
+        return;
+      }
       const side = restingSide();
       if (side) {
         moving = false;
@@ -56,14 +65,30 @@ export function initPaneCarousel(
     { passive: true },
   );
 
-  function show(side: Side) {
+  function show(side: Side, instant = false) {
+    if (held) {
+      return;
+    }
+    if (instant) {
+      // No scroll event comes when the row is already there, and none in between when it jumps.
+      resting = side;
+      moving = false;
+    }
     if (reach() > 1) {
-      row.scrollTo({ left: side === "source" ? 0 : reach(), behavior: prefersReducedMotion() ? "auto" : "smooth" });
+      row.scrollTo({
+        left: side === "source" ? 0 : reach(),
+        behavior: instant || prefersReducedMotion() ? "auto" : "smooth",
+      });
     }
   }
 
   // The click has already moved the pressed button; the row follows and confirms it on arrival.
   paneSwitch.addEventListener("change", () => show(paneSwitch.value as Side));
 
-  return { show };
+  return {
+    show,
+    hold(on) {
+      held = on;
+    },
+  };
 }

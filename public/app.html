@@ -82,6 +82,17 @@
             </div>
 
             <div class="panel-foot">
+              <button
+                type="button"
+                id="full-source"
+                class="icon"
+                aria-label="Show the source text in full view"
+                aria-disabled="true"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z" />
+                </svg>
+              </button>
               <speech-controls
                 id="speech-source"
                 class="speech"
@@ -121,6 +132,17 @@
             </div>
 
             <div class="panel-foot">
+              <button
+                type="button"
+                id="full-output"
+                class="icon"
+                aria-label="Show the translation in full view"
+                aria-disabled="true"
+              >
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M21 11V3h-8l3.29 3.29-10 10L3 13v8h8l-3.29-3.29 10-10z" />
+                </svg>
+              </button>
               <speech-controls
                 id="speech-output"
                 class="speech"
@@ -137,10 +159,19 @@
             <ul id="notes" class="notes" aria-live="polite"></ul>
           </section>
         </div>
-        <view-switch id="pane-switch" class="view-switch pane-switch" role="group" aria-label="Shown panel">
-          <button type="button" data-value="source" aria-pressed="true">Source text</button>
-          <button type="button" data-value="output" aria-pressed="false">Translation</button>
-        </view-switch>
+        <div class="pane-bar">
+          <button type="button" id="full-view-exit" class="icon" aria-label="Exit full view" hidden>
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path
+                d="M22 3.41 16.71 8.7 20 12h-8V4l3.29 3.29L20.59 2zM2 20.59 7.29 15.3 4 12h8v8l-3.29-3.29L3.41 22z"
+              />
+            </svg>
+          </button>
+          <view-switch id="pane-switch" class="view-switch pane-switch" role="group" aria-label="Shown panel">
+            <button type="button" data-value="source" aria-pressed="true">Source text</button>
+            <button type="button" data-value="output" aria-pressed="false">Translation</button>
+          </view-switch>
+        </div>
 
         <section class="settings" aria-labelledby="settings-heading">
           <div class="settings-head">

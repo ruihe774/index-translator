@@ -1,0 +1,140 @@
+/* Full view (full-view.ts): one side's rendered text alone on the page, in a reading column that the page
+   scrolls, under a bar with the Source / Translation switch and Exit at every width. The root's
+   `data-full-view` names the side. Read-from and Play-from gutters are hidden: neither works without
+   the pane scrolling. */
+:root[data-full-view] {
+  /* Plain white or near black behind the text and the bar, without the page's tint. */
+  --bg: light-dark(#ffffff, #101010);
+  /* Grey text too, short of pure black and white: at full contrast letters seem to glow for some readers. */
+  --text: light-dark(#1a1a1a, #e6e6e6);
+  --muted: light-dark(#595959, #a8a8a8);
+  /* The wide screen's reading size at every width: the text has the whole screen, not a pane of it. */
+  --text-size: 1.25rem;
+
+  /* Focus moves and anchors land below the bar. */
+  scroll-padding-block-start: calc(var(--standalone-top, 0px) + 5rem);
+
+  body {
+    padding-block-start: 0;
+  }
+
+  .site-header,
+  main > .history,
+  form > .settings {
+    display: none;
+  }
+
+  main {
+    inline-size: auto;
+    margin: 0;
+  }
+
+  /* Exit at the start (first in the markup, so also first in the tab order), the switch at the end, out of
+     the way of the text; both at the 0.75 the switch has outside full view (`css/pane-carousel.css`). The
+     scale leaves their layout box at full size: the margins take the height back, and Exit's column may be
+     narrower than its box, which is scaled towards the start. */
+  .pane-bar {
+    position: sticky;
+    inset-block-start: 0;
+    z-index: 2;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: center;
+    gap: var(--gap);
+    align-self: stretch;
+    /* Also where an installed app puts the switch below the panels (`css/standalone.css`). */
+    order: -1;
+    transform: none;
+    margin: 0;
+    /* Installed, the room left for the status bar is the top padding by itself (`css/standalone.css`). */
+    padding: var(--standalone-top, 0.5rem) var(--gutter) 0.5rem;
+    background: var(--bg);
+    border-block-end: 1px solid var(--divider);
+
+    /* In grey, so that no colour draws the eye from the text; the bar's own background is the page's. The
+       contrasts are in A11Y-ACCEPTANCE.md (full view pass). */
+    > * {
+      transform: scale(0.75);
+      margin-block: calc(var(--target) * -0.125);
+      filter: grayscale(1);
+    }
+
+    > #full-view-exit {
+      justify-self: start;
+      transform-origin: left center;
+    }
+
+    > .pane-switch {
+      transform-origin: right center;
+    }
+  }
+
+  .workspace {
+    display: block;
+    margin: 0;
+    padding: 0;
+    overflow: visible;
+  }
+
+  .panel {
+    display: block;
+    padding: 0;
+    background: none;
+    border: 0;
+    box-shadow: none;
+  }
+
+  &[data-full-view="source"] .panel.result,
+  &[data-full-view="output"] .panel.source,
+  .panel > :not(.source-field, .output-area),
+  .source-field > :not(#source-area),
+  .read-gutter {
+    display: none;
+  }
+
+  .source-field {
+    display: block;
+  }
+
+  .output-area {
+    /* Inline code, code blocks and table headers (`css/markdown.css`) are filled with `--surface`, which in
+       light mode is the white of the page: a grey step from it instead (`#efefef` / `#1f1f1f`). */
+    --surface: color-mix(in srgb, var(--text) 7%, var(--bg));
+
+    display: block;
+    block-size: auto;
+    max-inline-size: 48rem;
+    margin-inline: auto;
+    overflow: visible;
+    background: none;
+    border: 0;
+    border-radius: 0;
+
+    &:has(> .output.subtitles) {
+      max-inline-size: 72rem;
+    }
+
+    /* At least 1.5rem from the screen's edges at any width, as in the wide panes (`css/forms.css`), and a
+       subtitle row reaching 0.75rem into it, as there (`css/subtitles.css`). Also over a gutter's room
+       (`css/speech.css`), whose buttons are hidden. */
+    > .output {
+      padding-inline: 1.5rem;
+      --row-reach: 0.75rem;
+    }
+  }
+}
+
+/* Printed: the text alone, black on white. Browsers print in the light scheme; `color-scheme` only makes sure
+   of it (every `light-dark()` takes its light side), since dark mode's light text on white paper would be
+   near invisible. */
+@media print {
+  :root[data-full-view] {
+    color-scheme: light;
+    --bg: #ffffff;
+    --text: #000000;
+
+    .pane-bar {
+      display: none;
+    }
+  }
+}
