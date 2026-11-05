@@ -7,7 +7,7 @@
   :root {
     --standalone-top: max(env(safe-area-inset-top, 0px), 2rem);
     --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 4rem);
-    --pane-height: clamp(16rem, calc(100svh - 12rem - var(--standalone-top) - var(--standalone-bottom) + 1rem), 48rem);
+    --pane-height: clamp(16rem, calc(100svh - 10rem - var(--standalone-top) - var(--standalone-bottom)), 48rem);
   }
 
   body {
@@ -16,6 +16,11 @@
 
   main {
     padding-block-end: 1rem;
+  }
+
+  .pane-switch {
+    order: 0;
+    margin-block-end: 2rem;
   }
 }
 
@@ -38,6 +43,12 @@
     :root {
       --pane-height: max(4rem, calc(100svh - 9.75rem - var(--standalone-top) - var(--standalone-bottom)));
     }
+  }
+
+  .pane-switch {
+    order: 0;
+    margin-block-start: 0;
+    margin-block-end: 1rem;
   }
 }
 

@@ -1,0 +1,66 @@
+/* One column (below 54rem): the two panels stay side by side in a row that scrolls sideways, one
+   panel to a screen (pane-carousel.ts); `--peek` is how much of the next one shows. The row reaches
+   into the page gutters, so a panel slides out to the screen's edge and its shadow is not cut off.
+   Code blocks, tables and equations in the panes scroll on their own and never hand a swipe on to
+   the row. The switch does what a swipe does; it is not shown where both panels are. */
+@media (max-width: 53.99rem) {
+  .workspace {
+    /* The containing block of the panels' absolutely positioned `.sr-only` text, so that the row clips
+       it: in the panel out of view it would otherwise widen the page. */
+    position: relative;
+    --peek: 0rem;
+    --bleed-block: 0.5rem;
+
+    grid-template-columns: none;
+    grid-auto-flow: column;
+    grid-auto-columns: calc(100% - var(--peek));
+    margin: calc(-1 * var(--bleed-block)) calc(-1 * var(--gutter));
+    padding: var(--bleed-block) var(--gutter);
+    scroll-padding-inline: var(--gutter);
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x mandatory;
+
+    > .panel {
+      scroll-snap-align: start;
+      scroll-snap-stop: always;
+    }
+
+    > .panel.result {
+      scroll-snap-align: end;
+    }
+
+    .output pre,
+    .output .table-scroll,
+    .output div.math,
+    #meta,
+    #count {
+      overscroll-behavior-x: contain;
+    }
+  }
+}
+
+.pane-switch {
+  align-self: center;
+  order: -1;
+  transform: scale(0.75);
+  transform-origin: top center;
+  margin-block-end: -1rem;
+
+  /* 8ic can usually confortably hold these text labels ("Source text" and "Translation") with room. */
+  > button {
+    min-inline-size: 8ic;
+  }
+}
+
+@media (min-width: 54rem) {
+  .pane-switch {
+    display: none;
+  }
+}
+
+@media (min-width: 40rem) {
+  .pane-switch {
+    margin-block-start: -2.5rem;
+  }
+}

@@ -2,7 +2,7 @@
 <html lang="en">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
     <meta name="color-scheme" content="light dark" />
     <meta name="theme-color" content="#1f4e79" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
@@ -35,7 +35,7 @@
 
     <main id="main" tabindex="-1">
       <form id="form" novalidate>
-        <div class="workspace">
+        <div id="workspace" class="workspace">
           <section class="panel source" aria-labelledby="source-heading">
             <h2 id="source-heading" class="sr-only">Source text</h2>
             <div class="pane-head">
@@ -134,6 +134,10 @@
             <ul id="notes" class="notes" aria-live="polite"></ul>
           </section>
         </div>
+        <view-switch id="pane-switch" class="view-switch pane-switch" role="group" aria-label="Shown panel">
+          <button type="button" data-value="source" aria-pressed="true">Source text</button>
+          <button type="button" data-value="output" aria-pressed="false">Translation</button>
+        </view-switch>
 
         <section class="settings" aria-labelledby="settings-heading">
           <div class="settings-head">

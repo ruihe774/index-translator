@@ -13,6 +13,8 @@ export interface Pane {
   lineAt(e: MouseEvent): number | null;
   /** Viewport y of the top of `line`, or of the nearest rendered line before it. */
   lineTop(line: number): number | null;
+  /** Line of the text at the top of what the pane shows, or null if it shows none. */
+  topLine(): number | null;
 }
 
 /** A rendered view whose elements carry `data-line` (see `lineElements`). */
@@ -34,6 +36,11 @@ export function viewPane(view: HTMLElement, scroller: HTMLElement): Pane {
       }
       best ??= elements[0] ?? null;
       return best ? best.getBoundingClientRect().top : null;
+    },
+    topLine() {
+      const { top } = scroller.getBoundingClientRect();
+      const shown = lineElements(view).find((el) => el.getBoundingClientRect().bottom > top);
+      return shown ? Number(shown.dataset.line) : null;
     },
   };
 }
@@ -106,6 +113,21 @@ export function textareaPane(area: HTMLTextAreaElement): Pane {
     lineTop(line) {
       return area.getBoundingClientRect().top + textareaOffset(area, line) - area.scrollTop;
     },
+    topLine() {
+      // The last line that starts at or above the top of the content shown, found by halving.
+      const top = area.scrollTop + parseFloat(getComputedStyle(area).paddingTop);
+      let low = 0;
+      let high = area.value.split("\n").length - 1;
+      while (low < high) {
+        const mid = Math.ceil((low + high) / 2);
+        if (textareaOffset(area, mid) <= top) {
+          low = mid;
+        } else {
+          high = mid - 1;
+        }
+      }
+      return low;
+    },
   };
 }
 
@@ -148,7 +170,15 @@ export function syncFrom(e: MouseEvent, from: Pane, to: Pane, a: Alignment, side
     return false;
   }
   const line = from.lineAt(e);
-  const match = line === null ? null : counterpart(a, side, line);
+  return line !== null && syncLine(line, from, to, a, side);
+}
+
+/**
+ * Scrolls `to` so that the block holding `line` in `from`, the pane of `side`, starts at the same height
+ * as its counterpart in `to`. Nothing moves for a block with no counterpart.
+ */
+export function syncLine(line: number, from: Pane, to: Pane, a: Alignment, side: Side): boolean {
+  const match = counterpart(a, side, line);
   if (!match) {
     return false;
   }

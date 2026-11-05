@@ -24,7 +24,16 @@ import {
 import { MAX_TEXTS } from "./segment.ts";
 import { postAlign, type SentenceAligner } from "./sentence-align.ts";
 import { type Side, state } from "./state.ts";
-import { clearLinked, hoveredLine, markLinked, type Pane, syncFrom, textareaPane, viewPane } from "./sync-scroll.ts";
+import {
+  clearLinked,
+  hoveredLine,
+  markLinked,
+  type Pane,
+  syncFrom,
+  syncLine,
+  textareaPane,
+  viewPane,
+} from "./sync-scroll.ts";
 
 export interface SyncStateDeps {
   textInput: HTMLTextAreaElement;
@@ -44,6 +53,8 @@ export interface SyncState {
   active(): Alignment | null;
   /** Marks the panes as synced (or not) for `active`. */
   refresh(): void;
+  /** Scrolls the other pane to the counterpart of the block at the top of the pane of `from`. */
+  follow(from: Side): void;
   /** Checks the output's links against the source, when the check was set for this translation. */
   applyLinkCheck(): void;
   /** Sets the matching of a source and its translation. */
@@ -89,6 +100,18 @@ export function initSyncState(d: SyncStateDeps): SyncState {
     const a = active();
     if (a) {
       syncFrom(e, sourcePane(), viewPane(outputEl, outputArea), a, "source");
+    }
+  }
+
+  function follow(from: Side) {
+    const a = active();
+    if (!a) {
+      return;
+    }
+    const panes = { source: sourcePane(), output: viewPane(outputEl, outputArea) };
+    const line = panes[from].topLine();
+    if (line !== null) {
+      syncLine(line, panes[from], panes[from === "source" ? "output" : "source"], a, from);
     }
   }
 
@@ -164,6 +187,7 @@ export function initSyncState(d: SyncStateDeps): SyncState {
   return {
     active,
     refresh,
+    follow,
     applyLinkCheck,
     set(source, translation, alignment) {
       synced = { source, translation, alignment };

@@ -220,6 +220,11 @@ http://127.0.0.1:3000/). Pick languages, paste text, click **Translate**. Each s
 
 Translation starts only when you click **Translate**; it does not run while you type.
 
+On a phone or another narrow screen, your text and the translation sit side by side, one to a screen:
+swipe sideways, or tap **Source text** or **Translation** under them, to go from one to the other. Clicking
+**Translate** brings the translation in. When the paragraphs are matched (see
+[Check a translation](#check-a-translation)), the side you go to opens at the paragraph you were reading.
+
 If the text you enter is written in Markdown (headings, lists, code blocks, tables, links and so
 on), the translation is shown formatted, as it arrives, and after you click **Translate** your text
 is shown formatted too. Each side has **Raw** and **Preview** buttons to switch between the

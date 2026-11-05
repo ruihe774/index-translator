@@ -262,7 +262,9 @@ test("the speech controls are reached in order and focus does not get lost when 
   expect(await app.page.evaluate(() => document.activeElement?.id)).toBe("listen-source");
 });
 
-test("two columns on a desktop viewport, one column at 320 px without horizontal scrolling", async ({ app }) => {
+test("two columns on a desktop viewport, one panel to a screen at 320 px without horizontal page scrolling", async ({
+  app,
+}) => {
   await app.page.setViewportSize({ width: 1280, height: 800 });
   await app.open();
   const source = await app.text.boundingBox();
@@ -275,9 +277,11 @@ test("two columns on a desktop viewport, one column at 320 px without horizontal
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth,
   );
   expect(overflow).toBeLessThanOrEqual(0);
-  const stacked = await app.page.locator("#output-area").boundingBox();
+  // The translation panel waits beside the source, past the screen's edge (pane-carousel.ts).
+  const beside = await app.page.locator("#output-area").boundingBox();
   const field = await app.text.boundingBox();
-  expect(stacked!.y).toBeGreaterThan(field!.y + field!.height);
+  expect(Math.abs(beside!.y - field!.y)).toBeLessThan(1);
+  expect(beside!.x).toBeGreaterThan(field!.x + field!.width);
 });
 
 test("text spacing overrides clip nothing", async ({ app }) => {

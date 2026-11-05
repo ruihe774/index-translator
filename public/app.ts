@@ -35,6 +35,7 @@ import {
 } from "./messages.ts";
 import { sourcePlaceholder } from "./open-file.ts";
 import { initOpenUi } from "./open-ui.ts";
+import { initPaneCarousel } from "./pane-carousel.ts";
 import { alignBlocks, mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
 import { clearEnabled, copyEnabled, createRender, restoreFocusAfter } from "./render.ts";
 import {
@@ -352,6 +353,11 @@ const sync = initSyncState({
   rebuildOutput: showOutput,
 });
 
+/** One column: the panels side by side in a row that scrolls sideways; pane-carousel.ts. */
+const panes = initPaneCarousel($("workspace"), $<ViewSwitch>("pane-switch"), (side) =>
+  sync.follow(side === "source" ? "output" : "source"),
+);
+
 const sentenceHover = initSentenceHover(
   [
     { scroller: sourceArea, view: sourceView, side: "source" },
@@ -478,10 +484,14 @@ function addNote(text: string): HTMLLIElement {
 function showInterruption(stopped: boolean, message = "") {
   const { note } = interruption(state.translation, stopped);
   metaEl.show([message, note ?? (stopped ? "Stopped." : "")].filter(Boolean).join(" "), !stopped);
+  if (!stopped) {
+    panes.show("output");
+  }
 }
 
 function fail(message: string) {
   metaEl.show(message, true);
+  panes.show("output");
 }
 
 /** What one Translate press works from, once the input and the form are known to be good. */
@@ -592,6 +602,7 @@ function startTranslation(job: Job): Run {
   showSourceAs(job.format, job.format === "plain" ? "raw" : "preview");
   outputEl.lang = toSelect.value;
   stopBtn.focus();
+  panes.show("output");
   metaEl.show(`Translating with ${modelLabel(job.model)}…`);
   return run;
 }

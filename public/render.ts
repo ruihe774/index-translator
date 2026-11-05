@@ -44,7 +44,9 @@ export function restoreFocusAfter(within: Element, to: HTMLElement, change: () =
   const had = hasFocus(within) || document.activeElement === document.body;
   change();
   if (had) {
-    to.focus();
+    // `to` takes the place of what was hidden, so nothing needs scrolling; on one column the row of
+    // panels would otherwise slide back to `to`'s panel (pane-carousel.ts).
+    to.focus({ preventScroll: true });
   }
 }
 
