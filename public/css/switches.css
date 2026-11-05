@@ -47,8 +47,9 @@
     }
 
     &[aria-pressed="true"] {
-      color: var(--on-accent);
-      background: var(--accent);
+      /* The accent's hue, paler than the primary action (Translate), which is solid. */
+      color: var(--text);
+      background: color-mix(in srgb, var(--accent) 24%, var(--surface-sunken));
       border-color: var(--accent);
     }
 
