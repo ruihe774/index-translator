@@ -1267,7 +1267,7 @@ paths:
 components:
   responses:
     PushUnavailable:
-      description: Push notifications are off (`push_unavailable`); the server was not started with `PUSH=1`.
+      description: Push notifications are off (`push_unavailable`); the server was started without `PUSH_CONTACT`.
       content:
         application/json:
           schema:
@@ -1904,7 +1904,7 @@ components:
           type: object
           description: |
             Web Push for jobs that end while nobody reads them (`PUT /translations/{id}/push`,
-            `PUT /transcriptions/{id}/push`); off unless the server was started with `PUSH=1`.
+            `PUT /transcriptions/{id}/push`); off unless the server was started with `PUSH_CONTACT`.
           required: [status]
           properties:
             status:

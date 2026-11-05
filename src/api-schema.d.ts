@@ -973,7 +973,7 @@ export interface components {
             };
             /**
              * @description Web Push for jobs that end while nobody reads them (`PUT /translations/{id}/push`,
-             *     `PUT /transcriptions/{id}/push`); off unless the server was started with `PUSH=1`.
+             *     `PUT /transcriptions/{id}/push`); off unless the server was started with `PUSH_CONTACT`.
              */
             push?: {
                 /** @enum {string} */
@@ -1307,7 +1307,7 @@ export interface components {
         };
     };
     responses: {
-        /** @description Push notifications are off (`push_unavailable`); the server was not started with `PUSH=1`. */
+        /** @description Push notifications are off (`push_unavailable`); the server was started without `PUSH_CONTACT`. */
         PushUnavailable: {
             headers: {
                 [name: string]: unknown;

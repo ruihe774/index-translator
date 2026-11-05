@@ -130,7 +130,7 @@ describe("push", () => {
     await reader.cancel();
   });
 
-  test("without PUSH=1 subscribing is a 503", async () => {
+  test("without PUSH_CONTACT subscribing is a 503", async () => {
     const res = await start(off.server.url.origin);
     const id = res.headers.get("x-translation-id")!;
     const refused = await subscribe(id, subscription, off.server.url.origin);

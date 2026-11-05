@@ -1,4 +1,4 @@
-// Web Push (`PUSH=1`): a notification when a resumable job ends while nobody reads its events (a phone
+// Web Push (`PUSH_CONTACT`): a notification when a resumable job ends while nobody reads its events (a phone
 // that left the page, a closed tab). The browser chose the push service when the page subscribed; the
 // server only POSTs to the subscription's endpoint, the payload encrypted to the subscription's keys
 // (RFC 8291, `aes128gcm`) and signed with a VAPID key of its own (RFC 8292). No account with any
@@ -231,4 +231,4 @@ export class Preview {
   }
 }
 
-export const webPush: PushLauncher = async (cfg) => (cfg.push ? createPushSender(cfg.pushContact) : undefined);
+export const webPush: PushLauncher = async (cfg) => (cfg.pushContact ? createPushSender(cfg.pushContact) : undefined);

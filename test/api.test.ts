@@ -78,7 +78,7 @@ describe("metadata endpoints", () => {
         upload_types: ["audio/wav"],
       },
       webpage: { status: "unavailable", error: "no domains are allowed; list them in ALLOWED_WEBPAGE_DOMAINS" },
-      push: { status: "unavailable", error: "push notifications are off; start the server with PUSH=1" },
+      push: { status: "unavailable", error: "push notifications are off; start the server with PUSH_CONTACT set" },
     });
   });
 

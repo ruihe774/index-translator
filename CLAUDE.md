@@ -93,7 +93,7 @@ No npm runtime dependencies; no build step for the web app.
 
 ### Web Push
 
-- **Web Push** (`src/push.ts`, opt-in `PUSH=1`): a resumable job may hold a subscription (`PUT /translations/{id}/push`, `/transcriptions/{id}/push`); `finishJob` sends one `PushMessage` when the job ends done or failed with no reader attached (never for a cancel), TTL its keep time. Its `text` is the error's message, or the result's ends: `Preview` keeps the first and last pieces of what `JobKind.textOf` takes from each event (`delta`, `segment`), cut by grapheme (`Intl.Segmenter`), back to a space when a cut splits a word (pieces are tokens), shown whole when short. Payload encryption is RFC 8291 `aes128gcm` (`test/push.test.ts` pins the RFC's example), the token VAPID (RFC 8292) with `PUSH_CONTACT` as `sub`; all WebCrypto, no account with any push service. The VAPID key lives in memory: a restart changes `/health` `push.public_key`. The server POSTs to a client-given URL, so endpoints are limited to the browsers' push services (`PUSH_HOSTS`), https, default port. `startApp`'s seventh argument is the `PushLauncher` (tests pass a recorder). The Windows launcher has no switch for it yet (needs a Windows build).
+- **Web Push** (`src/push.ts`, opt-in: on only when `PUSH_CONTACT` is set): a resumable job may hold a subscription (`PUT /translations/{id}/push`, `/transcriptions/{id}/push`); `finishJob` sends one `PushMessage` when the job ends done or failed with no reader attached (never for a cancel), TTL its keep time. Its `text` is the error's message, or the result's ends: `Preview` keeps the first and last pieces of what `JobKind.textOf` takes from each event (`delta`, `segment`), cut by grapheme (`Intl.Segmenter`), back to a space when a cut splits a word (pieces are tokens), shown whole when short. Payload encryption is RFC 8291 `aes128gcm` (`test/push.test.ts` pins the RFC's example), the token VAPID (RFC 8292) with `PUSH_CONTACT` as `sub`; all WebCrypto, no account with any push service. The VAPID key lives in memory: a restart changes `/health` `push.public_key`. The server POSTs to a client-given URL, so endpoints are limited to the browsers' push services (`PUSH_HOSTS`), https, default port. `startApp`'s seventh argument is the `PushLauncher` (tests pass a recorder). The Windows launcher has no switch for it yet (needs a Windows build).
 
 ### Web pages
 
@@ -109,7 +109,7 @@ arguments fail startup. Non-obvious ones:
 - `ALLOWED_WEBPAGE_DOMAINS`: hosts `POST /webpage` may open: `name`, `*.name` (subdomains only) or a bare `*` (allowed here); empty (the default) turns it off
 - `GPU_LAYERS`: `all`, a count, or `0` for CPU. `MTP=0`: no multi-token prediction. `SPEECH=0`: reading aloud unavailable, libaudiocpp never loaded. `SPEECH_BACKEND=cpu` is far slower than real time
 - `SPEECH_MODEL_DIR` / `SEPARATION_MODEL_DIR` / `TRANSCRIBE_MODEL_DIR` hold one GGUF each; no separation model means no separation. `VOICES_DIR` holds one `*.wav` per voice. `TRANSCRIBE=0`: `/transcriptions` unavailable
-- `PUSH=1`: Web Push on (off by default: it reaches the browser vendor's push service). `PUSH_CONTACT`: the VAPID `sub`, `mailto:` or `https:`
+- `PUSH_CONTACT`: the VAPID `sub`, a URI (`mailto:`, `https:`, ...); setting it turns Web Push on, unset is off (it reaches the browser vendor's push service); no default
 - `SEGMENT=0`: `/segment` unavailable; `ALIGN=0`: `/align` unavailable (both off: ONNX Runtime is never loaded). `ONNXRUNTIME_DIR`, `SEGMENT_MODEL_DIR` (`model.onnx`, `tokenizer.json`), `ALIGN_MODEL_DIR` (`model.onnx`, `vocab.txt`, `dense.safetensors`); `SEGMENT_THREADS` and `SEGMENT_IDLE_UNLOAD` are also LaBSE's
 
 ## API
@@ -121,7 +121,7 @@ Spec: `docs/openapi.yaml` (served at `/api/v1/openapi.yaml`). After editing it r
 - `POST /segment` (`{ texts }` → `{ texts: [{ offsets, probabilities }] }`): at most 256 texts and `MAX_SEGMENT_CHARS` (20,000) UTF-16 units in all.
 - `POST /align` (`{ unit?, source, target }` → `{ pairs: [{ source, target, similarity }] }`, every item in exactly one pair, in order): at most 256 items a side; sentences at most `MAX_ALIGN_CHARS` (20,000) in all; `503 align_unavailable`, failures `502 segment_error`.
 - `POST /transcriptions` (WAV or Ogg body, `?separate=`) answers an event stream (`start`, `stage`, `segment`, `done`; `X-Transcription-Id`); `GET` / `DELETE /transcriptions/{id}`; `/health` `transcribe`. Errors before the stream: 400, 413, 415, 429, `503 transcribe_unavailable`; in it, `speech_error` or `cancelled`. The mock answers like the worker.
-- `PUT /translations/{id}/push`, `PUT /transcriptions/{id}/push` (`PushSubscription.toJSON()` → 204): `503 push_unavailable` without `PUSH=1`; `/health` `push` carries `public_key`.
+- `PUT /translations/{id}/push`, `PUT /transcriptions/{id}/push` (`PushSubscription.toJSON()` → 204): `503 push_unavailable` without `PUSH_CONTACT`; `/health` `push` carries `public_key`.
 - `POST /speech` answers WAV, or with `Accept: audio/ogg` (named, not `*/*`) an Ogg Opus stream; speed is `duration_factor` = 1/speed, range 0.5 to 2. `POST /voices` limits: `validateSample` in `src/speech.ts`. `DELETE /voices/{id}` forgets an uploaded voice only (an installed one is a 404).
 
 ## Models

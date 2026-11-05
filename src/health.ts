@@ -92,7 +92,7 @@ export function createStatus(d: HealthDeps) {
         webpage: webpageStatus ? { status: "unavailable", error: webpageStatus } : { status: "available" },
         push: d.push
           ? { status: "available", public_key: d.push.publicKey }
-          : { status: "unavailable", error: "push notifications are off; start the server with PUSH=1" },
+          : { status: "unavailable", error: "push notifications are off; start the server with PUSH_CONTACT set" },
       },
       engine.state === "ready" ? 200 : 503,
     );

@@ -81,7 +81,7 @@ interface Job {
   preview?: Preview;
 }
 
-/** `push` is undefined when Web Push is off (`PUSH`). */
+/** `push` is undefined when Web Push is off (`PUSH_CONTACT`). */
 export function createJobs<E extends EventMap>(kind: JobKind, push?: PushSender) {
   const jobs = new Map<string, Job>();
 
@@ -259,7 +259,7 @@ export function createJobs<E extends EventMap>(kind: JobKind, push?: PushSender)
   /** `PUT /<noun>s/{id}/push`: the subscription to notify if the job ends unread; the last one sent wins. */
   async function subscribe(job: Job, req: Request): Promise<Response> {
     if (!push) {
-      throw unavailable("push_unavailable", "push notifications are off; start the server with PUSH=1");
+      throw unavailable("push_unavailable", "push notifications are off; start the server with PUSH_CONTACT set");
     }
     job.push = parseSubscription(await parseBody(req));
     return new Response(null, { status: 204 });

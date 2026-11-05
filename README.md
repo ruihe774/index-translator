@@ -547,7 +547,7 @@ browser clears it too.
 
 ### Notifications
 
-Started with `PUSH=1`, the app can tell you when a translation or a transcription finishes (or fails)
+Started with `PUSH_CONTACT` set, the app can tell you when a translation or a transcription finishes (or fails)
 while you are away from the page: a locked phone, another app, another tab. The first time you click
 **Translate** or **Transcribe**, the browser asks whether the app may show notifications; if you allow
 it, a job that ends while the page is not reading it shows one, and clicking it brings the page back,
@@ -617,8 +617,7 @@ closed); flags work as above.
 | `MTP` | on | `0` turns multi-token prediction off. Where the whole model is on a GPU with 16 GiB of memory or more, Index-Translate-9B guesses a few words ahead and checks them in one step, which writes text translations about one and a half times as fast for a little more GPU memory. The translation can differ in a word here and there from one written a word at a time. Images, and smaller GPUs, are translated a word at a time. |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
-| `PUSH` | off | `1` lets the app [notify you](#notifications) through your browser's push service when a job ends while you are away |
-| `PUSH_CONTACT` | the maintainer's address | `mailto:` or `https:` address a push service can reach you at; sent with every notification |
+| `PUSH_CONTACT` | off | A URI (`mailto:you@example.com`, `https://example.com/contact`, ...) a push service can reach you at, sent with every notification. Setting it lets the app [notify you](#notifications) through your browser's push service when a job ends while you are away |
 | `ALLOWED_WEBPAGE_DOMAINS` | none (off) | Sites whose pages the app may fetch for translation, comma separated: `example.com`, `*.example.com` (its subdomains) or `*` (any site) |
 | `MODELS_DIR` | `models/`; AppImage: `~/.local/share/index-translator/models`; Windows installer: `models\` in the install folder | Folder with the models; `fetch` downloads into it |
 | `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices`; Windows installer: `voices\` in the install folder | Folder with the voice recordings (`.wav`) |

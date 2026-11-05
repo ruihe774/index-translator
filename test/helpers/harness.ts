@@ -154,8 +154,7 @@ export function config(overrides: Partial<Config> = {}): Config {
     segmentIdleUnload: 0,
     align: true,
     alignModelDir: "/nonexistent/labse",
-    push: false,
-    pushContact: "mailto:test@example.com",
+    pushContact: undefined,
     ...overrides,
   };
 }
