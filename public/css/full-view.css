@@ -3,6 +3,9 @@
    `data-full-view` names the side. Read-from and Play-from gutters are hidden: neither works without
    the pane scrolling. */
 :root[data-full-view] {
+  /* No pink sentence mark (its underline stays) and no blue paragraph shade on hover. */
+  --sentence-mark: transparent;
+
   /* Plain white or near black behind the text and the bar, without the page's tint. */
   --bg: light-dark(#ffffff, #101010);
   /* Grey text too, short of pure black and white: at full contrast letters seem to glow for some readers. */
@@ -128,6 +131,11 @@
 /* Printed: the text alone, black on white. Browsers print in the light scheme; `color-scheme` only makes sure
    of it (every `light-dark()` takes its light side), since dark mode's light text on white paper would be
    near invisible. */
+:root[data-full-view] .synced [data-line]:hover,
+:root[data-full-view] .synced .linked {
+  background: none;
+}
+
 @media print {
   :root[data-full-view] {
     color-scheme: light;
