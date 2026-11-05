@@ -48,7 +48,8 @@
     margin: 0;
     /* Installed, the room left for the status bar is the top padding by itself (`css/standalone.css`). */
     padding: var(--standalone-top, 0.5rem) var(--gutter) 0.5rem;
-    background: var(--bg);
+    background: transparent;
+    backdrop-filter: blur(0.5rem);
     border-block-end: 1px solid var(--divider);
 
     /* In grey, so that no colour draws the eye from the text; the bar's own background is the page's. The
@@ -136,5 +137,11 @@
     .pane-bar {
       display: none;
     }
+  }
+}
+
+@media (prefers-reduced-transparency) {
+  :root[data-full-view] .pane-bar {
+    background: var(--bg);
   }
 }
