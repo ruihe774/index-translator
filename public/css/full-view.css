@@ -15,7 +15,7 @@
   --text-size: 1.25rem;
 
   /* Focus moves and anchors land below the bar. */
-  scroll-padding-block-start: calc(var(--standalone-top, 0px) + 5rem);
+  scroll-padding-block-start: 5rem;
 
   body {
     padding-block-start: 0;
@@ -50,7 +50,7 @@
     transform: none;
     margin: 0;
     /* Installed, the room left for the status bar is the top padding by itself (`css/standalone.css`). */
-    padding: var(--standalone-top, 0.5rem) var(--gutter) 0.5rem;
+    padding: 0.5rem var(--gutter) 0.5rem;
     background: transparent;
     backdrop-filter: blur(0.5rem);
     border-block-end: 1px solid var(--divider);
@@ -148,7 +148,7 @@
   }
 }
 
-@media (prefers-reduced-transparency) {
+@media (prefers-reduced-transparency) or (display-mode: standalone) {
   :root[data-full-view] .pane-bar {
     background: var(--bg);
   }
