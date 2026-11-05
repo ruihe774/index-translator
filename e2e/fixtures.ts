@@ -120,7 +120,10 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
     );
     await page.coverage.startJSCoverage({ resetOnNavigation: false });
     await use(page);
-    await coverage.add(await page.coverage.stopJSCoverage());
+    // A test that closes its page on purpose leaves nothing to stop; its coverage is lost with it.
+    if (!page.isClosed()) {
+      await coverage.add(await page.coverage.stopJSCoverage());
+    }
   },
   // Worker n talks to the n-th server of `e2e/playwright.config.ts` (ports step by 2).
   baseURL: ({}, use, testInfo) => use(`http://127.0.0.1:${portsOf(testInfo.parallelIndex).app}`),
