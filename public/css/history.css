@@ -25,7 +25,12 @@
   }
 }
 
+/* Two lines of the source, with the browser's own ellipsis; history-ui.ts keeps only its opening in the page. */
 .history-text {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
   overflow-wrap: anywhere;
 }
 

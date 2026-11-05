@@ -22,12 +22,31 @@ export interface HistoryUi {
   setBusy(busy: boolean): void;
 }
 
-const SNIPPET = 120;
+/**
+ * Characters of a text the list holds. CSS shows two lines of it (`.history-text`) with its own
+ * ellipsis; the cut here keeps the page from holding whole documents and a screen reader from
+ * reading one, so it is well past what two lines show.
+ */
+const SNIPPET = 300;
+/** Characters of the text in the Restore and Delete labels, which name the entry. */
+const LABEL = 40;
 
-function snippet(text: string): string {
+const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+
+/**
+ * The first `max` characters of `text` with its white space collapsed, followed by "…" when there is
+ * more. Characters as a reader sees them (an emoji or a letter with its marks is one); only what is
+ * kept is segmented, as a history entry can be a whole document.
+ */
+export function snippet(text: string, max: number): string {
   const flat = text.replaceAll(/\s+/g, " ").trim();
-  // eslint-disable-next-line @typescript-eslint/no-misused-spread -- splitting by code point is the point here
-  return flat.length > SNIPPET ? `${[...flat].slice(0, SNIPPET).join("")}…` : flat;
+  let count = 0;
+  for (const { index } of graphemes.segment(flat)) {
+    if (count++ === max) {
+      return `${flat.slice(0, index).trimEnd()}…`;
+    }
+  }
+  return flat;
 }
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
@@ -51,13 +70,13 @@ export function initHistoryUi(d: HistoryUiDeps): HistoryUi {
     const text = document.createElement("p");
     text.className = "history-text";
     text.dir = "auto";
-    text.textContent = snippet(e.source);
+    text.textContent = snippet(e.source, SNIPPET);
     // The language of a stored text is only known when it was chosen; a guess is left to the browser.
     if (e.from !== "auto") {
       text.lang = e.from;
     }
 
-    const label = `from ${dateTime.format(e.at)}, ${snippet(e.source).slice(0, 40)}`;
+    const label = `from ${dateTime.format(e.at)}, ${snippet(e.source, LABEL)}`;
     const actions = document.createElement("div");
     actions.className = "history-actions";
     // Links, not buttons: they act on the page without a navigation, so the href is only a fallback
