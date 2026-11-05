@@ -16,4 +16,10 @@
   math {
     font-family: "Noto Sans Math WOFF2", math;
   }
+
+  /* cjk.css sets the font of every element whose language is ja or zh, <mi> and <mo> included, which
+     would beat the one inherited from `math`. Temml's script letters keep their own (`math .mathscr`). */
+  math :not(.mathscr) {
+    font-family: inherit;
+  }
 }

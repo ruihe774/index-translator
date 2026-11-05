@@ -110,6 +110,11 @@ test("equations in Markdown are MathML; one Temml cannot read is shown as writte
   }
   // Noto Sans Math, from beside Temml's stylesheet.
   await expect.poll(() => app.page.evaluate(() => document.fonts.check("16px 'Noto Sans Math WOFF2'", "∑"))).toBe(true);
+  // The output is Chinese, and cjk.css must not give the MathML its own font (it matches <mi> and <mn> too).
+  await expect(app.output).toHaveAttribute("lang", /^zh/);
+  for (const tag of ["mi", "mn"]) {
+    await expect(app.output.locator(`math ${tag}`).first()).toHaveCSS("font-family", /^"Noto Sans Math WOFF2"/);
+  }
 });
 
 test("an empty submission shows a field error and sends nothing", async ({ app, mock }) => {
