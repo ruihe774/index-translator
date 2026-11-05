@@ -43,6 +43,8 @@ describe("loadConfig defaults", () => {
       segmentIdleUnload: 300,
       align: true,
       alignModelDir: join(root, "models", "labse"),
+      push: false,
+      pushContact: "mailto:misakikasumi@outlook.com",
     });
   });
 
@@ -72,6 +74,13 @@ describe("loadConfig defaults", () => {
     expect(() => loadConfig({ SPEECH_IDLE_UNLOAD: "soon" })).toThrow("SPEECH_IDLE_UNLOAD");
     expect(loadConfig({ SPEECH_BACKEND: "cuda" }).speechBackend).toBe("cuda");
     expect(() => loadConfig({ SPEECH_BACKEND: "cuada" })).toThrow("SPEECH_BACKEND");
+  });
+
+  test("push is opt-in, with a mailto: or https: contact", () => {
+    expect(loadConfig({ PUSH: "1" }).push).toBe(true);
+    expect(loadConfig({ PUSH: "yes" }).push).toBe(false);
+    expect(loadConfig({ PUSH_CONTACT: "https://example.com/contact" }).pushContact).toBe("https://example.com/contact");
+    expect(() => loadConfig({ PUSH_CONTACT: "admin@example.com" })).toThrow(/PUSH_CONTACT/);
   });
 
   test("MTP=0 turns multi-token prediction off", () => {

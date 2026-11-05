@@ -44,6 +44,16 @@ function speechBackend(env: Env): SpeechBackend {
   return backend;
 }
 
+const DEFAULT_PUSH_CONTACT = "mailto:misakikasumi@outlook.com";
+
+function pushContact(env: Env): string {
+  const raw = env.PUSH_CONTACT || DEFAULT_PUSH_CONTACT;
+  if (!/^(mailto:[^@\s]+@[^@\s]+|https:\/\/\S+)$/.test(raw)) {
+    throw new Error(`PUSH_CONTACT must be a mailto: or https: address, got "${raw}"`);
+  }
+  return raw;
+}
+
 export interface Config {
   host: string;
   port: number;
@@ -106,6 +116,10 @@ export interface Config {
   align: boolean;
   /** Directory holding LaBSE's `model.onnx`, `vocab.txt` and `dense.safetensors`. */
   alignModelDir: string;
+  /** Web Push when a resumable job ends with nobody reading it (src/push.ts); opt-in: it reaches the browser's push service. */
+  push: boolean;
+  /** The VAPID `sub` claim: how a push service reaches whoever runs the server (`mailto:` or `https:`). */
+  pushContact: string;
 }
 
 /** Every setting, by its environment variable; the command-line flag is the lowercase name with dashes (`--port`). */
@@ -141,6 +155,8 @@ export const SETTING_NAMES = [
   "SEGMENT_IDLE_UNLOAD",
   "ALIGN",
   "ALIGN_MODEL_DIR",
+  "PUSH",
+  "PUSH_CONTACT",
   "DEV_RELOAD",
   "OPEN_BROWSER",
 ] as const;
@@ -244,6 +260,8 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     segmentIdleUnload: int(env, "SEGMENT_IDLE_UNLOAD", 300),
     align: env.ALIGN !== "0",
     alignModelDir: dir(env, "ALIGN_MODEL_DIR", join(modelsDir, "labse")),
+    push: env.PUSH === "1",
+    pushContact: pushContact(env),
   };
 }
 
@@ -282,6 +300,8 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   SEGMENT_IDLE_UNLOAD: "seconds without segmentation (or alignment) before its model is freed; 0 never (default 300)",
   ALIGN: "0 turns matching the sentences of a source and its translation off (default on)",
   ALIGN_MODEL_DIR: "directory with the sentence alignment model (default MODELS_DIR/labse)",
+  PUSH: "1 sends a browser notification through its push service when a job ends while the page is away (default off)",
+  PUSH_CONTACT: `how push services reach you, a mailto: or https: address (default ${DEFAULT_PUSH_CONTACT})`,
   DEV_RELOAD: "1 reloads open pages when public/ changes (development)",
   OPEN_BROWSER: "0 does not open the web app at startup (default on)",
 };

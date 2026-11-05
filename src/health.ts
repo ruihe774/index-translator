@@ -11,6 +11,7 @@ import type { Engine } from "./llama";
 import { defaultModelSpec, MODELS } from "./models";
 import { uploadTypes } from "./opus-file";
 import { launchMode } from "./preflight";
+import type { PushSender } from "./push";
 import type { SlotQueue } from "./queue";
 import { MAX_ALIGN_CHARS, MAX_SEGMENT_CHARS, missingSegmentModels, type Segmenter } from "./segment";
 import {
@@ -34,6 +35,8 @@ export interface HealthDeps {
   queue: SlotQueue;
   /** Why `POST /webpage` cannot be used, or undefined when it can. */
   webpageProblem(): Promise<string | undefined>;
+  /** Undefined when Web Push is off. */
+  push: PushSender | undefined;
 }
 
 export function createStatus(d: HealthDeps) {
@@ -87,6 +90,9 @@ export function createStatus(d: HealthDeps) {
         align: { status: segmenter.aligner.state, error: segmenter.aligner.error, max_chars: MAX_ALIGN_CHARS },
         transcribe: transcribeStatus(),
         webpage: webpageStatus ? { status: "unavailable", error: webpageStatus } : { status: "available" },
+        push: d.push
+          ? { status: "available", public_key: d.push.publicKey }
+          : { status: "unavailable", error: "push notifications are off; start the server with PUSH=1" },
       },
       engine.state === "ready" ? 200 : 503,
     );

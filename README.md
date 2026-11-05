@@ -206,7 +206,8 @@ http://127.0.0.1:3000/). Pick languages, paste text, click **Translate**. Each s
   [Translate subtitles](#translate-subtitles) · [Translate a web page](#translate-a-web-page) ·
   [Transcribe a recording](#transcribe-a-recording-preview)
 - [Read it aloud](#read-it-aloud) · [Check a translation](#check-a-translation)
-- [Choose a model](#choose-a-model) · [Glossary and constraints](#glossary-and-constraints) · [History](#history)
+- [Choose a model](#choose-a-model) · [Glossary and constraints](#glossary-and-constraints) · [History](#history) ·
+  [Notifications](#notifications)
 
 ### Translate text
 
@@ -421,7 +422,8 @@ Transcription is also available [over the API](#use-it-from-other-programs). Det
   for it to finish.
 - **Leaving the page:** a transcription does not stop when the connection drops. Its events can be
   read again for 30 minutes after it ends (`GET /api/v1/transcriptions/{id}/events`), and
-  `DELETE` cancels it. The page reconnects by itself when it comes back.
+  `DELETE` cancels it. The page reconnects by itself when it comes back. Closing or reloading the
+  page stops the transcription.
 
 ### Read it aloud
 
@@ -543,6 +545,33 @@ history** all of them. The history lives in your browser's local storage only: t
 receives or stores it, and it is not shared between browsers. Clearing the site's data in the
 browser clears it too.
 
+### Notifications
+
+Started with `PUSH=1`, the app can tell you when a translation or a transcription finishes (or fails)
+while you are away from the page: a locked phone, another app, another tab. The first time you click
+**Translate** or **Transcribe**, the browser asks whether the app may show notifications; if you allow
+it, a job that ends while the page is not reading it shows one, and clicking it brings the page back,
+which picks up the result. A translation is kept 10 minutes after it ends, a transcription 30.
+
+Closing the tab, reloading the page or leaving it stops its translation or transcription, since a new
+page could not show the result; so does Stop. If your phone closes the app on its own while it is in
+the background, the job runs on and the notification still comes, but opening it starts afresh.
+
+- **Off by default.** A notification goes from the app through your browser maker's push service
+  (Google's for Chrome, Microsoft's for Edge, Mozilla's for Firefox, Apple's for Safari), so both the app's computer and
+  your device need internet access. The message is encrypted: the push service learns only that a
+  job ended, and when. No account or key is needed.
+- **What it shows:** the first and last few words of the translation or transcript (all of it
+  when it is short), or why it failed. Your device may show it on the lock screen; its
+  notification settings decide that.
+- **Where it works:** Chrome, Edge and Firefox, on the app's own computer (`127.0.0.1` or
+  `localhost`) or over HTTPS. On iPhone and iPad (iOS 16.4 or later) only the app added to the Home
+  Screen from an HTTPS address. Not over plain HTTP from another device, nor in browsers without a
+  push service (Brave unless enabled in its settings, some Chromium builds).
+- **Restarting the app** makes the browser subscribe again with the next job; nothing is stored.
+- Deny the browser's request, or turn notifications off in the site's settings, and the app never
+  asks again.
+
 
 ## Use it from other programs
 
@@ -588,6 +617,8 @@ closed); flags work as above.
 | `MTP` | on | `0` turns multi-token prediction off. Where the whole model is on a GPU with 16 GiB of memory or more, Index-Translate-9B guesses a few words ahead and checks them in one step, which writes text translations about one and a half times as fast for a little more GPU memory. The translation can differ in a word here and there from one written a word at a time. Images, and smaller GPUs, are translated a word at a time. |
 | `MAX_QUEUE` | `8` | Requests that may wait while another is running. Beyond this, the app reports that the translator is busy. |
 | `SPEECH` | on | `0` turns reading aloud off |
+| `PUSH` | off | `1` lets the app [notify you](#notifications) through your browser's push service when a job ends while you are away |
+| `PUSH_CONTACT` | the maintainer's address | `mailto:` or `https:` address a push service can reach you at; sent with every notification |
 | `ALLOWED_WEBPAGE_DOMAINS` | none (off) | Sites whose pages the app may fetch for translation, comma separated: `example.com`, `*.example.com` (its subdomains) or `*` (any site) |
 | `MODELS_DIR` | `models/`; AppImage: `~/.local/share/index-translator/models`; Windows installer: `models\` in the install folder | Folder with the models; `fetch` downloads into it |
 | `VOICES_DIR` | `voices/`; AppImage: `~/.local/share/index-translator/voices`; Windows installer: `voices\` in the install folder | Folder with the voice recordings (`.wav`) |

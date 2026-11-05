@@ -52,6 +52,7 @@ import {
 } from "./parse";
 import { LANGUAGES } from "./prompt";
 import { watchPublic } from "./public-watch";
+import { type PushLauncher, webPush } from "./push";
 import { createQosLease, isLoopback, type QosSetter, windowsQos } from "./qos";
 import type { Ticket } from "./queue";
 import { soxrResampler } from "./resample";
@@ -158,7 +159,6 @@ export interface App {
   stop(): Promise<void>;
 }
 
-// eslint-disable-next-line @typescript-eslint/require-await -- a bad config rejects here, where callers await it, instead of throwing
 export async function startApp(
   cfg: Config,
   launch: Launcher = launchNative,
@@ -166,6 +166,7 @@ export async function startApp(
   fetchPageUnlimited: WebpageFetcher = webViewFetcher(),
   launchSegmenter: SegmentLauncher = nativeSegmenter,
   setQos: QosSetter | undefined = windowsQos(),
+  launchPush: PushLauncher = webPush,
 ): Promise<App> {
   const access = compileAccess(cfg);
   const engine = new Engine(cfg, launch);
@@ -181,8 +182,9 @@ export async function startApp(
   };
   const defaultModel = defaultModelSpec(cfg);
   const translator = createTranslator(cfg, engine, lines.translations);
-  const jobs = createJobs<TranslateEvents>(TRANSLATION_JOBS);
-  const transcriptions = createJobs<TranscriptionEvents>(TRANSCRIPTION_JOBS);
+  const push = await launchPush(cfg);
+  const jobs = createJobs<TranslateEvents>(TRANSLATION_JOBS, push);
+  const transcriptions = createJobs<TranscriptionEvents>(TRANSCRIPTION_JOBS, push);
   const speechResponse = createSpeechResponder(cfg);
 
   // Load the default model before the first request arrives; requests that come earlier wait in line.
@@ -198,7 +200,15 @@ export async function startApp(
     return fetchPage.problem();
   }
 
-  const status = createStatus({ cfg, engine, speech, segmenter, queue: lines.translations.queue, webpageProblem });
+  const status = createStatus({
+    cfg,
+    engine,
+    speech,
+    segmenter,
+    queue: lines.translations.queue,
+    webpageProblem,
+    push,
+  });
   const qos = createQosLease(setQos);
 
   /** `GET /health`; `visible=true` from this machine renews HighQoS (src/qos.ts), from elsewhere it is ignored. */

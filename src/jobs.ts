@@ -3,9 +3,13 @@
 // connection drops (iOS cuts it when the page leaves the screen). Each kind of job says how long one
 // runs on with nobody reading it, if it is ever cancelled for that, and how long a finished one is
 // kept; a job whose client did not ask for `resumable` is cancelled as soon as its connection closes.
+// A resumable job may carry a push subscription (`PUT /<noun>s/{id}/push`): when it ends with nobody
+// reading it, the browser is sent a notification (src/push.ts).
 
-import type { TranslateEvents } from "./api";
-import { ApiError, methodNotAllowed, toApiError } from "./http";
+import type { DeltaEvent, PushMessage, TranscriptSegment, TranslateEvents } from "./api";
+import { ApiError, methodNotAllowed, toApiError, unavailable } from "./http";
+import { parseBody } from "./parse";
+import { parseSubscription, Preview, type PushSender, type Subscription } from "./push";
 import type { Ticket } from "./queue";
 import type { RunEvent } from "./translate";
 
@@ -14,7 +18,7 @@ const KEEPALIVE_MS = 15_000;
 /** What sets one kind of job apart. */
 export interface JobKind {
   /** In paths, messages and the id header: `translation` is `/translations/{id}` and `x-translation-id`. */
-  noun: string;
+  noun: PushMessage["job"];
   /** How long a running job goes on with nobody reading it; undefined: until it ends. */
   graceMs: number | undefined;
   /** How long a finished job can still be read. */
@@ -23,6 +27,8 @@ export interface JobKind {
   maxKept: number;
   /** `DELETE` also forgets a finished job (otherwise it only cancels a running one). */
   deleteForgets: boolean;
+  /** The part of the result an event carries, for the notification's preview. */
+  textOf(event: string, data: unknown): string | undefined;
 }
 
 /** A translation runs on for 2 minutes without a reader (a phone in the background) and is kept 10 minutes. */
@@ -32,6 +38,7 @@ export const TRANSLATION_JOBS: JobKind = {
   keepMs: 10 * 60_000,
   maxKept: 16,
   deleteForgets: false,
+  textOf: (event, data) => (event === "delta" ? (data as DeltaEvent).text : undefined),
 };
 
 /**
@@ -44,6 +51,8 @@ export const TRANSCRIPTION_JOBS: JobKind = {
   keepMs: 30 * 60_000,
   maxKept: 16,
   deleteForgets: true,
+  // Segments carry no whitespace at either end.
+  textOf: (event, data) => (event === "segment" ? `${(data as TranscriptSegment).text}\n` : undefined),
 };
 
 /** The events of a kind of job, by name; every kind has `queued` and `error` (with at least `cancelled` among its codes). */
@@ -66,9 +75,14 @@ interface Job {
   timer?: ReturnType<typeof setTimeout>;
   /** `DELETE` asked to forget it once it has ended. */
   forget?: boolean;
+  /** Where to send a notification if it ends with nobody reading it. */
+  push?: Subscription;
+  /** The result's ends for that notification; kept from the start, as the subscription may come late. */
+  preview?: Preview;
 }
 
-export function createJobs<E extends EventMap>(kind: JobKind) {
+/** `push` is undefined when Web Push is off (`PUSH`). */
+export function createJobs<E extends EventMap>(kind: JobKind, push?: PushSender) {
   const jobs = new Map<string, Job>();
 
   function dropJob(job: Job) {
@@ -92,9 +106,15 @@ export function createJobs<E extends EventMap>(kind: JobKind) {
     }
   }
 
-  function finishJob(job: Job) {
+  function finishJob(job: Job, outcome: PushMessage["outcome"] | "cancelled", error?: string) {
     job.finished = true;
     clearTimeout(job.timer);
+    // Nobody to tell of a cancel: the user stopped it, or nobody came back within the grace period.
+    if (push && job.push && !job.reader && outcome !== "cancelled") {
+      const text = outcome === "error" ? error : job.preview?.text();
+      const message: PushMessage = { job: kind.noun, id: job.id, outcome, ...(text && { text }) };
+      void push.send(job.push, JSON.stringify(message), kind.keepMs / 1000);
+    }
     job.closeReader?.();
     if (!job.resumable || job.forget) {
       return dropJob(job);
@@ -189,8 +209,15 @@ export function createJobs<E extends EventMap>(kind: JobKind) {
       frames: [],
       finished: false,
       abort: new AbortController(),
+      preview: push && new Preview(),
     };
     const emit: Emit<E> = (event, data) => {
+      if (job.preview) {
+        const text = kind.textOf(event, data);
+        if (text) {
+          job.preview.add(text);
+        }
+      }
       const frame = `id: ${job.frames.length + 1}\nevent: ${event}\ndata: ${JSON.stringify(data)}\n\n`;
       job.frames.push(frame);
       job.reader?.(frame);
@@ -201,9 +228,12 @@ export function createJobs<E extends EventMap>(kind: JobKind) {
     job.abort.signal.addEventListener("abort", () => ticket.leave());
 
     void (async () => {
+      let outcome: PushMessage["outcome"] | "cancelled" = "done";
+      let message: string | undefined;
       try {
         await run(ticket, job.abort.signal, emit);
       } catch (e) {
+        outcome = job.abort.signal.aborted ? "cancelled" : "error";
         if (job.abort.signal.aborted) {
           // A reader of a resumable job (now or later) learns why the stream stops; for any other job nobody is left.
           if (job.resumable) {
@@ -211,22 +241,35 @@ export function createJobs<E extends EventMap>(kind: JobKind) {
           }
         } else {
           const error = toApiError(e);
+          ({ message } = error);
           // Only what the stream can fail with (prepare, the engine) gets here; the codes are the event's.
           emit("error", { code: error.code, message: error.message, details: error.details } as E["error"]);
         }
       } finally {
         ticket.leave();
-        finishJob(job);
+        finishJob(job, outcome, message);
       }
     })();
 
     return readJob(job, 0, signal);
   }
 
-  const path = new RegExp(`^/${kind.noun}s/([0-9a-f-]{36})(/events)?$`);
+  const path = new RegExp(`^/${kind.noun}s/([0-9a-f-]{36})(/events|/push)?$`);
 
-  /** `/<noun>s/{id}` (DELETE cancels, or forgets) and `/<noun>s/{id}/events` (GET reads again). */
-  function route(rest: string, req: Request, url: URL): Response | undefined {
+  /** `PUT /<noun>s/{id}/push`: the subscription to notify if the job ends unread; the last one sent wins. */
+  async function subscribe(job: Job, req: Request): Promise<Response> {
+    if (!push) {
+      throw unavailable("push_unavailable", "push notifications are off; start the server with PUSH=1");
+    }
+    job.push = parseSubscription(await parseBody(req));
+    return new Response(null, { status: 204 });
+  }
+
+  /**
+   * `/<noun>s/{id}` (DELETE cancels, or forgets), `/<noun>s/{id}/events` (GET reads again) and
+   * `/<noun>s/{id}/push` (PUT subscribes).
+   */
+  function route(rest: string, req: Request, url: URL): Response | Promise<Response> | undefined {
     const m = path.exec(rest);
     if (!m) {
       return undefined;
@@ -234,6 +277,9 @@ export function createJobs<E extends EventMap>(kind: JobKind) {
     const job = jobs.get(m[1]!);
     if (!job?.resumable) {
       throw new ApiError(404, "not_found", `no such ${kind.noun} (it may have expired)`);
+    }
+    if (m[2] === "/push") {
+      return req.method === "PUT" ? subscribe(job, req) : methodNotAllowed("PUT");
     }
     if (m[2]) {
       if (req.method !== "GET") {

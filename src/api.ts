@@ -34,6 +34,8 @@ export type AlignUnit = Schemas["AlignUnit"];
 export type Alignment = Schemas["Alignment"];
 export type AlignedPair = Schemas["AlignedPair"];
 export type Webpage = Schemas["Webpage"];
+export type PushSubscriptionJson = Schemas["PushSubscription"];
+export type PushMessage = Schemas["PushMessage"];
 
 /** The error envelope of every error response. */
 export type ErrorResponse = Schemas["Error"];

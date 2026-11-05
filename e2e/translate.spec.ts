@@ -49,6 +49,17 @@ test("streams the translation as it arrives and lets the user stop it", async ({
   await expect.poll(async () => (await mock.state()).aborted).toBeGreaterThan(0);
 });
 
+test("closing the page cancels its translation on the server", async ({ app, mock }) => {
+  await mock.set({ chunks: ["one ", "two ", "three ", "four ", "five "], delayMs: 300 });
+  await app.open();
+  await app.text.fill("Count to five");
+  await app.translate.click();
+  await expect(app.output).toContainText("one");
+  // Without the cancel, a resumable translation runs on for two minutes with nobody reading it.
+  await app.page.close();
+  await expect.poll(async () => (await mock.state()).aborted).toBeGreaterThan(0);
+});
+
 test("the output follows the stream to its end until the user scrolls", async ({ app, mock }) => {
   const line = (n: number) => `line ${n}\n`;
   await mock.set({ chunks: Array.from({ length: 80 }, (_, i) => line(i)), delayMs: 40 });

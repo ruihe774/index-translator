@@ -722,6 +722,48 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /translations/{id}/push:
+    put:
+      tags: [translation]
+      operationId: subscribeTranslation
+      summary: Be notified when the translation ends unread
+      description: |
+        Attaches a Web Push subscription (`PushSubscription.toJSON()` of a subscription made with
+        `public_key` from `push` in `GET /health`) to a translation started with `resumable: true`. If it ends, done or failed,
+        while no connection is reading its events, the server sends one push message
+        (`PushMessage`, encrypted as RFC 8291 says) to the subscription's endpoint. A cancelled
+        translation sends none. A second subscription replaces the first. The endpoint must be the
+        `https` address of a browser's push service (Google's, Mozilla's, Apple's or
+        Microsoft's), since the server makes the request.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscription"
+      responses:
+        "204":
+          description: Subscribed (a translation that has already ended sends nothing).
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/PushUnavailable"
   /transcriptions:
     post:
       tags: [transcription]
@@ -919,6 +961,48 @@ paths:
           $ref: "#/components/responses/NotFound"
         "500":
           $ref: "#/components/responses/InternalError"
+  /transcriptions/{id}/push:
+    put:
+      tags: [transcription]
+      operationId: subscribeTranscription
+      summary: Be notified when the transcription ends unread
+      description: |
+        Attaches a Web Push subscription (`PushSubscription.toJSON()` of a subscription made with
+        `public_key` from `push` in `GET /health`) to a transcription. If it ends, done or failed,
+        while no connection is reading its events, the server sends one push message
+        (`PushMessage`, encrypted as RFC 8291 says) to the subscription's endpoint. A cancelled
+        transcription sends none. A second subscription replaces the first. The endpoint must be the
+        `https` address of a browser's push service (Google's, Mozilla's, Apple's or
+        Microsoft's), since the server makes the request.
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PushSubscription"
+      responses:
+        "204":
+          description: Subscribed (a transcription that has already ended sends nothing).
+        "400":
+          $ref: "#/components/responses/InvalidRequest"
+        "403":
+          $ref: "#/components/responses/Forbidden"
+        "404":
+          $ref: "#/components/responses/NotFound"
+        "413":
+          $ref: "#/components/responses/TooLarge"
+        "415":
+          $ref: "#/components/responses/UnsupportedMediaType"
+        "500":
+          $ref: "#/components/responses/InternalError"
+        "503":
+          $ref: "#/components/responses/PushUnavailable"
   /tokenize:
     post:
       tags: [translation]
@@ -1182,6 +1266,12 @@ paths:
           $ref: "#/components/responses/InternalError"
 components:
   responses:
+    PushUnavailable:
+      description: Push notifications are off (`push_unavailable`); the server was not started with `PUSH=1`.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
     InvalidRequest:
       description: |
         The body is not a JSON object, a field is invalid (`invalid_request`), or the model
@@ -1810,6 +1900,68 @@ components:
             error:
               type: string
               description: Why fetching web pages is `unavailable`.
+        push:
+          type: object
+          description: |
+            Web Push for jobs that end while nobody reads them (`PUT /translations/{id}/push`,
+            `PUT /transcriptions/{id}/push`); off unless the server was started with `PUSH=1`.
+          required: [status]
+          properties:
+            status:
+              type: string
+              enum: [available, unavailable]
+            public_key:
+              type: string
+              description: |
+                The server's VAPID public key (uncompressed P-256, base64url): the
+                `applicationServerKey` to subscribe with. Present when `available`. It changes
+                when the server restarts, and a subscription made with another key is refused by
+                the push service.
+            error:
+              type: string
+              description: Why push is `unavailable`.
+    PushSubscription:
+      type: object
+      description: A Web Push subscription as `PushSubscription.toJSON()` gives it; other members are ignored.
+      required: [endpoint, keys]
+      properties:
+        endpoint:
+          type: string
+          format: uri
+          examples: ["https://fcm.googleapis.com/fcm/send/abc123"]
+        keys:
+          type: object
+          required: [p256dh, auth]
+          properties:
+            p256dh:
+              type: string
+              description: The browser's P-256 public key, uncompressed, base64url.
+            auth:
+              type: string
+              description: The 16-byte authentication secret, base64url.
+    PushMessage:
+      type: object
+      description: |
+        The payload of a push message (JSON, after decryption): which job ended, and how. Its
+        result is read with `GET /translations/{id}/events` or `GET /transcriptions/{id}/events`
+        while the server keeps the job.
+      required: [job, id, outcome]
+      properties:
+        job:
+          type: string
+          enum: [translation, transcription]
+        id:
+          type: string
+        outcome:
+          type: string
+          enum: [done, error]
+        text:
+          type: string
+          description: |
+            For `done`, the result's opening and closing words (whitespace collapsed, joined by
+            ` … `), or all of it when it is short; absent when the result is empty. For `error`,
+            the error's message.
+          examples: ["Once upon a time there was a small village by the … and they lived happily ever after."]
     WebpageRequest:
       type: object
       required: [url]
@@ -2139,6 +2291,7 @@ components:
                 - webpage_error
                 - webpage_unavailable
                 - forbidden_webpage
+                - push_unavailable
                 - not_found
                 - method_not_allowed
                 - unsupported_media_type

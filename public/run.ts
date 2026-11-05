@@ -3,6 +3,7 @@
 
 import { API, ApiFailure, failureOf } from "./api.ts";
 import { type Done, modelLabel } from "./messages.ts";
+import { notifyWhenDone } from "./push.ts";
 import { onPageWake, pageVisible, resumableEvents, TRANSLATION_ID_HEADER } from "./resume.ts";
 import type { ModelId } from "./select-model.ts";
 
@@ -40,7 +41,11 @@ export class Run {
     this.cancelSent = false;
   }
 
-  private cancel() {
+  /**
+   * Tells the server to stop the job, without touching the page: on Stop, and when the page is closed for good,
+   * after which nothing could show what the job produces (or the notification it would send).
+   */
+  cancel() {
     // The server keeps a resumable translation or a transcription running without a reader, so it is told to stop.
     if (this.cancelUrl && !this.cancelSent) {
       this.cancelSent = true;
@@ -87,7 +92,10 @@ export async function streamTranslation(run: Run, body: string, model: ModelId, 
         throw await failureOf(res);
       }
       run.jobId ??= res.headers.get(TRANSLATION_ID_HEADER);
-      run.cancelUrl ??= run.jobId && `${API}/translations/${run.jobId}`;
+      if (run.jobId && !run.cancelUrl) {
+        run.cancelUrl = `${API}/translations/${run.jobId}`;
+        void notifyWhenDone(run.cancelUrl);
+      }
       return res;
     },
   });

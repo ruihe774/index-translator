@@ -38,6 +38,7 @@ import { sourcePlaceholder } from "./open-file.ts";
 import { initOpenUi } from "./open-ui.ts";
 import { initPaneCarousel } from "./pane-carousel.ts";
 import { alignBlocks, mismatchMessage, paragraphMismatch } from "./paragraphs.ts";
+import { askForNotifications, configurePush } from "./push.ts";
 import { clearEnabled, copyEnabled, createRender, restoreFocusAfter } from "./render.ts";
 import {
   buildImageRequest,
@@ -435,6 +436,7 @@ const engine = initEngineStatus({
     openUi.setMedia(health.transcribe?.status === "available");
     boundaries.configure(health.segment);
     aligner.configure(health.align);
+    configurePush(health.push);
   },
 });
 
@@ -1005,10 +1007,19 @@ const fullView = initFullView({
 
 form.addEventListener("submit", (e) => {
   e.preventDefault();
+  askForNotifications();
   void translate();
 });
 // One listener for every run: Stop acts on whichever translation or page fetch is current.
 stopBtn.addEventListener("click", () => state.running?.stop());
+// A page that is closed, reloaded or left (not one the browser keeps for Back, nor one only hidden or suspended)
+// takes its run with it: a new page cannot pick the job up, so it is cancelled rather than left to finish unseen
+// and send a notification that leads nowhere. The request is `keepalive`, so it outlives the page.
+addEventListener("pagehide", (e) => {
+  if (!e.persisted) {
+    state.running?.cancel();
+  }
+});
 // The twin only forwards, so every flow that listens to Stop (web page, transcription) hears it.
 stopOutputBtn.addEventListener("click", () => stopBtn.click());
 

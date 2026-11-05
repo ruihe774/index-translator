@@ -24,6 +24,7 @@ import {
   type Recording,
 } from "./media-file.ts";
 import { megabytes } from "./open-file.ts";
+import { askForNotifications, notifyWhenDone } from "./push.ts";
 import { restoreFocusAfter } from "./render.ts";
 import { onPageWake, pageVisible, resumableEvents, TRANSCRIPTION_ID_HEADER } from "./resume.ts";
 import { Run } from "./run.ts";
@@ -245,7 +246,10 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
           throw await failureOf(res);
         }
         run.jobId ??= res.headers.get(TRANSCRIPTION_ID_HEADER);
-        run.cancelUrl ??= run.jobId && `${API}/transcriptions/${run.jobId}`;
+        if (run.jobId && !run.cancelUrl) {
+          run.cancelUrl = `${API}/transcriptions/${run.jobId}`;
+          void notifyWhenDone(run.cancelUrl);
+        }
         return res;
       },
     });
@@ -370,6 +374,8 @@ export function initTranscribeFlow(d: TranscribeFlowDeps): TranscribeFlow {
       if (answer !== "transcribe") {
         return null;
       }
+      // Still the dialog button's click, which a permission prompt needs.
+      askForNotifications();
       void transcribe(file, probe, fields.track(), fields.separate(), fields.timed(), limits, ogg);
       return { text: `Opened ${file.name} to transcribe it.`, error: false };
     },

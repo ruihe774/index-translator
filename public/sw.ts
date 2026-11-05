@@ -6,15 +6,26 @@
 // the rest is a slower first render, and the app is no use without its server anyway. (Downloading every
 // missing or outdated file at low priority right after the list arrives is written but switched off, see
 // `prefetch`.)
-// On loopback (development, or the app on its own machine) the worker does nothing.
+// On loopback (development, or the app on its own machine) the worker caches nothing.
+// On every origin it shows the notification of a push message (src/push.ts, public/push.ts): a job
+// that ended while no page was reading it.
+
+import type { PushMessage } from "../src/api.ts";
 
 /** The part of the service worker scope that is used (the DOM library has no `webworker` types). */
 interface WorkerScope {
   location: Location;
-  clients: { claim(): Promise<void> };
+  registration: ServiceWorkerRegistration;
+  clients: {
+    claim(): Promise<void>;
+    matchAll(options: { type: "window"; includeUncontrolled: boolean }): Promise<WindowClient[]>;
+    openWindow(url: string): Promise<unknown>;
+  };
   skipWaiting(): Promise<void>;
   addEventListener(type: "install" | "activate", listener: (event: WorkerEvent) => void): void;
   addEventListener(type: "fetch", listener: (event: FetchEvent) => void): void;
+  addEventListener(type: "push", listener: (event: PushEvent) => void): void;
+  addEventListener(type: "notificationclick", listener: (event: NotificationEvent) => void): void;
 }
 interface WorkerEvent extends Event {
   waitUntil(promise: Promise<unknown>): void;
@@ -22,6 +33,16 @@ interface WorkerEvent extends Event {
 interface FetchEvent extends WorkerEvent {
   request: Request;
   respondWith(response: Promise<Response>): void;
+}
+interface PushEvent extends WorkerEvent {
+  data: { json(): unknown } | null;
+}
+interface NotificationEvent extends WorkerEvent {
+  notification: Notification;
+}
+interface WindowClient {
+  url: string;
+  focus(): Promise<unknown>;
 }
 
 /** URL path → ETag, as src/static.ts lists it. */
@@ -106,6 +127,39 @@ function startSync(): Sync {
   const done = manifest.then((m) => (m ? prefetch(m) : undefined)).catch(() => {});
   return { manifest, done };
 }
+
+const TITLES: Record<PushMessage["job"], Record<PushMessage["outcome"], string>> = {
+  translation: { done: "Translation finished", error: "Translation failed" },
+  transcription: { done: "Transcription finished", error: "Transcription failed" },
+};
+
+// Chrome counts a push that shows no notification against the site, so every message shows one.
+sw.addEventListener("push", (event) => {
+  let message: PushMessage | undefined;
+  try {
+    message = event.data?.json() as PushMessage | undefined;
+  } catch {}
+  const title = (message && TITLES[message.job]?.[message.outcome]) ?? "A job ended";
+  event.waitUntil(
+    sw.registration.showNotification(title, {
+      body: message?.text ?? "Open Index Translator to see it.",
+      icon: "/icons/icon-192.png",
+      // A second message about the same job replaces the first.
+      tag: message?.id ?? "job",
+    }),
+  );
+});
+
+// The page reconnects to the job by itself when it is shown again (resume.ts), so a click only brings it up.
+sw.addEventListener("notificationclick", (event) => {
+  event.notification.close();
+  event.waitUntil(
+    sw.clients.matchAll({ type: "window", includeUncontrolled: true }).then((windows) => {
+      const page = windows.find((w) => new URL(w.url).origin === sw.location.origin);
+      return page ? page.focus() : sw.clients.openWindow("/");
+    }),
+  );
+});
 
 if (onLoopback(sw.location.hostname)) {
   // No fetch handler: every request goes to the server. Anything an earlier version cached is dropped.

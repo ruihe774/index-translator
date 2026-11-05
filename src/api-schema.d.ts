@@ -302,6 +302,32 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/translations/{id}/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Be notified when the translation ends unread
+         * @description Attaches a Web Push subscription (`PushSubscription.toJSON()` of a subscription made with
+         *     `public_key` from `push` in `GET /health`) to a translation started with `resumable: true`. If it ends, done or failed,
+         *     while no connection is reading its events, the server sends one push message
+         *     (`PushMessage`, encrypted as RFC 8291 says) to the subscription's endpoint. A cancelled
+         *     translation sends none. A second subscription replaces the first. The endpoint must be the
+         *     `https` address of a browser's push service (Google's, Mozilla's, Apple's or
+         *     Microsoft's), since the server makes the request.
+         */
+        put: operations["subscribeTranslation"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/transcriptions": {
         parameters: {
             query?: never;
@@ -389,6 +415,32 @@ export interface paths {
          *     is forgotten at once. Either way its id then answers `404`.
          */
         delete: operations["deleteTranscription"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/transcriptions/{id}/push": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Be notified when the transcription ends unread
+         * @description Attaches a Web Push subscription (`PushSubscription.toJSON()` of a subscription made with
+         *     `public_key` from `push` in `GET /health`) to a transcription. If it ends, done or failed,
+         *     while no connection is reading its events, the server sends one push message
+         *     (`PushMessage`, encrypted as RFC 8291 says) to the subscription's endpoint. A cancelled
+         *     transcription sends none. A second subscription replaces the first. The endpoint must be the
+         *     `https` address of a browser's push service (Google's, Mozilla's, Apple's or
+         *     Microsoft's), since the server makes the request.
+         */
+        put: operations["subscribeTranscription"];
+        post?: never;
+        delete?: never;
         options?: never;
         head?: never;
         patch?: never;
@@ -919,6 +971,56 @@ export interface components {
                 /** @description Why fetching web pages is `unavailable`. */
                 error?: string;
             };
+            /**
+             * @description Web Push for jobs that end while nobody reads them (`PUT /translations/{id}/push`,
+             *     `PUT /transcriptions/{id}/push`); off unless the server was started with `PUSH=1`.
+             */
+            push?: {
+                /** @enum {string} */
+                status: "available" | "unavailable";
+                /**
+                 * @description The server's VAPID public key (uncompressed P-256, base64url): the
+                 *     `applicationServerKey` to subscribe with. Present when `available`. It changes
+                 *     when the server restarts, and a subscription made with another key is refused by
+                 *     the push service.
+                 */
+                public_key?: string;
+                /** @description Why push is `unavailable`. */
+                error?: string;
+            };
+        };
+        /** @description A Web Push subscription as `PushSubscription.toJSON()` gives it; other members are ignored. */
+        PushSubscription: {
+            /**
+             * Format: uri
+             * @example https://fcm.googleapis.com/fcm/send/abc123
+             */
+            endpoint: string;
+            keys: {
+                /** @description The browser's P-256 public key, uncompressed, base64url. */
+                p256dh: string;
+                /** @description The 16-byte authentication secret, base64url. */
+                auth: string;
+            };
+        };
+        /**
+         * @description The payload of a push message (JSON, after decryption): which job ended, and how. Its
+         *     result is read with `GET /translations/{id}/events` or `GET /transcriptions/{id}/events`
+         *     while the server keeps the job.
+         */
+        PushMessage: {
+            /** @enum {string} */
+            job: "translation" | "transcription";
+            id: string;
+            /** @enum {string} */
+            outcome: "done" | "error";
+            /**
+             * @description For `done`, the result's opening and closing words (whitespace collapsed, joined by
+             *     ` … `), or all of it when it is short; absent when the result is empty. For `error`,
+             *     the error's message.
+             * @example Once upon a time there was a small village by the … and they lived happily ever after.
+             */
+            text?: string;
         };
         WebpageRequest: {
             /**
@@ -1104,7 +1206,7 @@ export interface components {
                  *     (see `ErrorEvent`): a client that closed its connection never sees a response.
                  * @enum {string}
                  */
-                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "transcribe_unavailable" | "segment_error" | "segment_unavailable" | "align_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
+                code: "invalid_request" | "unsupported_language_pair" | "input_too_long" | "body_too_large" | "image_too_large" | "image_unavailable" | "queue_full" | "engine_error" | "engine_unavailable" | "speech_error" | "speech_unavailable" | "transcribe_unavailable" | "segment_error" | "segment_unavailable" | "align_unavailable" | "webpage_error" | "webpage_unavailable" | "forbidden_webpage" | "push_unavailable" | "not_found" | "method_not_allowed" | "unsupported_media_type" | "forbidden_origin" | "forbidden_host" | "internal_error";
                 /** @description For people, not for programs; its wording can change. Go by `code`. */
                 message: string;
                 details?: components["schemas"]["ErrorDetails"];
@@ -1205,6 +1307,15 @@ export interface components {
         };
     };
     responses: {
+        /** @description Push notifications are off (`push_unavailable`); the server was not started with `PUSH=1`. */
+        PushUnavailable: {
+            headers: {
+                [name: string]: unknown;
+            };
+            content: {
+                "application/json": components["schemas"]["Error"];
+            };
+        };
         /**
          * @description The body is not a JSON object, a field is invalid (`invalid_request`), or the model
          *     does not accept the request (`unsupported_language_pair`). `details.field` names the
@@ -1373,6 +1484,8 @@ export type Timings = components['schemas']['Timings'];
 export type Limits = components['schemas']['Limits'];
 export type Language = components['schemas']['Language'];
 export type Health = components['schemas']['Health'];
+export type PushSubscription = components['schemas']['PushSubscription'];
+export type PushMessage = components['schemas']['PushMessage'];
 export type WebpageRequest = components['schemas']['WebpageRequest'];
 export type Webpage = components['schemas']['Webpage'];
 export type SpeechStatus = components['schemas']['SpeechStatus'];
@@ -1399,6 +1512,7 @@ export type TranscriptionStageEvent = components['schemas']['TranscriptionStageE
 export type TranscriptSegment = components['schemas']['TranscriptSegment'];
 export type TranscriptionDoneEvent = components['schemas']['TranscriptionDoneEvent'];
 export type TranscriptionErrorEvent = components['schemas']['TranscriptionErrorEvent'];
+export type ResponsePushUnavailable = components['responses']['PushUnavailable'];
 export type ResponseInvalidRequest = components['responses']['InvalidRequest'];
 export type ResponseTooLarge = components['responses']['TooLarge'];
 export type ResponseQueueFull = components['responses']['QueueFull'];
@@ -1904,6 +2018,37 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    subscribeTranslation: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscription"];
+            };
+        };
+        responses: {
+            /** @description Subscribed (a translation that has already ended sends nothing). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["InvalidRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["PushUnavailable"];
+        };
+    };
     transcribe: {
         parameters: {
             query?: {
@@ -2040,6 +2185,37 @@ export interface operations {
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
             500: components["responses"]["InternalError"];
+        };
+    };
+    subscribeTranscription: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PushSubscription"];
+            };
+        };
+        responses: {
+            /** @description Subscribed (a transcription that has already ended sends nothing). */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            400: components["responses"]["InvalidRequest"];
+            403: components["responses"]["Forbidden"];
+            404: components["responses"]["NotFound"];
+            413: components["responses"]["TooLarge"];
+            415: components["responses"]["UnsupportedMediaType"];
+            500: components["responses"]["InternalError"];
+            503: components["responses"]["PushUnavailable"];
         };
     };
     tokenize: {
