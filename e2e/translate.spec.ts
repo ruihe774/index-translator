@@ -109,7 +109,7 @@ test("equations in Markdown are MathML; one Temml cannot read is shown as writte
     await expect(view.locator(".math-source")).toHaveText("$x^$");
   }
   // Noto Sans Math, from beside Temml's stylesheet.
-  await expect.poll(() => app.page.evaluate(() => document.fonts.check("16px 'NotoSans Math'", "∑"))).toBe(true);
+  await expect.poll(() => app.page.evaluate(() => document.fonts.check("16px 'Noto Sans Math WOFF2'", "∑"))).toBe(true);
 });
 
 test("an empty submission shows a field error and sends nothing", async ({ app, mock }) => {

@@ -3,7 +3,7 @@
    The fonts and reduced motion are in no layer. Temml's stylesheet for equations (css/temml.css) is
    loaded by math.ts with the first equation; its layer comes after the components so that the page's
    rules for text (fonts by language in cjk.css) do not reach into the MathML. */
-@layer base, layout, components, temml, utilities;
+@layer base, layout, components, temml, temml-font, utilities;
 
 @import url("css/fonts.css");
 @import url("css/base.css") layer(base);

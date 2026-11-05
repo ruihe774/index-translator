@@ -2,3 +2,18 @@
    put there by scripts/fetch_web_libs.ts), in its own layer. Not imported by style.css: math.ts links
    it with the first equation, so a page without equations loads neither it nor the font. */
 @import url("../vendor/temml/Temml-NotoSans.css") layer(temml);
+
+/* The stylesheet's @font-face names a TrueType file we do not fetch. A second @font-face of its family
+   would not replace it (the browser tries both and asks for the missing file), so the WOFF2 copy has a
+   family of its own, which `math` takes instead; the stylesheet's is never used, so never loaded. A
+   sibling layer: a sublayer would rank below the rules written directly in `temml`. */
+@layer temml-font {
+  @font-face {
+    font-family: "Noto Sans Math WOFF2";
+    src: url("../vendor/temml/NotoSansMath-Regular.woff2") format("woff2");
+  }
+
+  math {
+    font-family: "Noto Sans Math WOFF2", math;
+  }
+}

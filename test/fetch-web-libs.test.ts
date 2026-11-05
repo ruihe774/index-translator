@@ -53,7 +53,7 @@ describe("the pinned libraries", () => {
     ]) {
       expect(place(left)).toBeUndefined();
     }
-    expect(extra?.map((f) => f.to)).toStrictEqual(["NotoSansMath-Regular.ttf", "NotoSansMath-OFL.txt"]);
+    expect(extra?.map((f) => f.to)).toStrictEqual(["NotoSansMath-Regular.woff2", "NotoSansMath-OFL.txt"]);
   });
 
   test("every file a library is expected to give is one it places, and the pins are whole", () => {

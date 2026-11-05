@@ -38,6 +38,9 @@ export interface PinnedFile {
   sha256: string;
 }
 
+const NOTO_SANS_MATH_COMMIT = "892704d2b948102bb4893891024376611936d7c0";
+const NOTO_SANS_MATH_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${NOTO_SANS_MATH_COMMIT}`;
+
 export const LIBRARIES: Library[] = [
   {
     dir: "pdfjs",
@@ -98,13 +101,14 @@ export const LIBRARIES: Library[] = [
       return dist?.[1];
     },
     expect: ["temml.mjs", "Temml-NotoSans.css", "LICENSE"],
-    // The TrueType build Temml's stylesheet names (its author found the WOFF2 one renders worse),
-    // the same bytes as Temml's own site serves, from the Noto project's build repository.
+    // The font Temml's stylesheet names, as WOFF2 (a third of the TrueType file's size; its author found
+    // another WOFF2 build rendered worse, but this one is lossless: the `noto-sans-math` branch holds the
+    // compressed copy and the command). public/css/temml.css points the stylesheet's @font-face at it.
     extra: [
       {
-        to: "NotoSansMath-Regular.ttf",
-        url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/55773c3eb233b5a0eaa07de6226da189b136b4f0/fonts/NotoSansMath/full/ttf/NotoSansMath-Regular.ttf",
-        sha256: "7283c396e9b22699bb542d9631030dc804a7e5b954f193d8f8f5b5f1162fbc61",
+        to: "NotoSansMath-Regular.woff2",
+        url: `${NOTO_SANS_MATH_RAW}/NotoSansMath-Regular.woff2`,
+        sha256: "e1df868ca99c3e745b89a042661ff4245c2c342c9c66146f445d1224a79c8f71",
       },
       {
         to: "NotoSansMath-OFL.txt",
