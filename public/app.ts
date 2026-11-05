@@ -101,6 +101,7 @@ const softInput = $<HTMLTextAreaElement>("soft");
 const genreInput = $<HTMLInputElement>("genre");
 const translateBtn = $<HTMLButtonElement>("translate");
 const stopBtn = $<HTMLButtonElement>("stop");
+const stopOutputBtn = $<HTMLButtonElement>("stop-output");
 const copyBtn = $<HTMLButtonElement>("copy");
 const clearBtn = $<HTMLButtonElement>("clear");
 const sourceSwitch = $<ViewSwitch>("source-switch");
@@ -601,8 +602,9 @@ function startTranslation(job: Job): Run {
   clearResult(job.format);
   showSourceAs(job.format, job.format === "plain" ? "raw" : "preview");
   outputEl.lang = toSelect.value;
-  stopBtn.focus();
   panes.show("output");
+  // On one column the translation is what shows, and its Stop is the one that can take focus.
+  (stopOutputBtn.offsetParent ? stopOutputBtn : stopBtn).focus({ preventScroll: true });
   metaEl.show(`Translating with ${modelLabel(job.model)}…`);
   return run;
 }
@@ -969,6 +971,8 @@ form.addEventListener("submit", (e) => {
 });
 // One listener for every run: Stop acts on whichever translation or page fetch is current.
 stopBtn.addEventListener("click", () => state.running?.stop());
+// The twin only forwards, so every flow that listens to Stop (web page, transcription) hears it.
+stopOutputBtn.addEventListener("click", () => stopBtn.click());
 
 textInput.addEventListener("input", () => {
   if (!textError.hidden && textInput.value.trim()) {
@@ -1022,6 +1026,7 @@ bindRender(
   createRender({
     translate: translateBtn,
     stop: stopBtn,
+    stopOutput: stopOutputBtn,
     clear: clearBtn,
     copy: copyBtn,
     sourceSwitch,

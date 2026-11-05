@@ -41,6 +41,11 @@ button {
   --button-min-inline-size: 6.5rem;
 }
 
+/* Stop's twin beside Copy is for one column only (css/phone.css), where Translate brings the translation in. */
+#stop-output {
+  display: none;
+}
+
 @media (prefers-reduced-motion: no-preference) {
   button {
     transition: background-color 0.15s;

@@ -97,6 +97,15 @@
     }
   }
 
+  /* While a translation runs the translation panel shows Stop where Copy (disabled then) sits. */
+  #stop-output {
+    display: revert;
+
+    &:not([hidden]) ~ #copy {
+      display: none;
+    }
+  }
+
   /* The Model switch has three buttons and must stay on one row in fonts wider than the
      design font (the CI runner's fallback is one). */
   #model-switch > button {

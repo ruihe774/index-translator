@@ -11,6 +11,8 @@ import { state } from "./state.ts";
 export interface RenderTargets {
   translate: HTMLElement;
   stop: HTMLElement;
+  /** Stop's twin in the translation's own actions, shown on one column only (css/phone.css). */
+  stopOutput: HTMLElement;
   clear: HTMLElement;
   copy: HTMLElement;
   sourceSwitch: ViewSwitch;
@@ -71,6 +73,7 @@ export function createRender(t: RenderTargets): () => void {
     t.sourceSwitch.disabled = !hasText;
     t.outputSwitch.disabled = !hasOutput;
     setHidden(t.stop, !running);
+    setHidden(t.stopOutput, !running);
     setHidden(t.clear, running);
     t.after();
   };

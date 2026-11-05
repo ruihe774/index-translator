@@ -133,3 +133,32 @@ test("the panel coming in shows the counterpart of what the other one showed", a
   );
   expect(Math.abs(offset)).toBeLessThan(4);
 });
+
+test("one column: the translation panel has its own Stop in Copy's place, two columns keep Copy", async ({
+  app,
+  mock,
+}) => {
+  await mock.set({ chunks: [THINK, "一", "二", "三"], delayMs: 500 });
+  await app.page.setViewportSize(PHONE);
+  await app.open();
+  const stop = app.page.locator("#stop-output");
+  await expect(stop).toBeHidden();
+  await expect(app.copy).toBeVisible();
+  await app.text.fill("Hello");
+  await app.translate.click();
+  await resting(app, "output");
+  await expect(stop).toBeVisible();
+  await expect(app.copy).toBeHidden();
+  await expect(stop).toBeFocused();
+  await stop.click();
+  await expect(app.meta).toHaveText(/stopped/i);
+  await expect(stop).toBeHidden();
+  await expect(app.copy).toBeVisible();
+
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  await app.text.fill("Hello again");
+  await app.translate.click();
+  await expect(app.page.locator("#stop")).toBeVisible();
+  await expect(stop).toBeHidden();
+  await expect(app.copy).toBeVisible();
+});
