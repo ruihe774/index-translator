@@ -111,73 +111,13 @@ export const NO_H264 = "Playwright's WebKit cannot decode H.264";
 /** WebKit on macOS behaves as Safari does: neither Tab nor a click reaches or focuses buttons and links by default. */
 export const macWebkit = (browserName: string) => browserName === "webkit" && process.platform === "darwin";
 
-/**
- * TEMPORARY diagnostic, run in the page before its scripts: logs focus moves, presses and clicks, and every
- * `focus()` call with its caller, each with the element that has focus, into `window.focusLog`.
- */
-function recordFocus() {
-  const log: string[] = [];
-  (window as unknown as { focusLog: string[] }).focusLog = log;
-  const start = performance.now();
-  const name = (n: EventTarget | null): string => {
-    if (!(n instanceof Element)) {
-      return n instanceof Node ? n.nodeName : n === null ? "none" : "window";
-    }
-    const label = n.getAttribute("aria-label") ?? n.textContent?.trim().slice(0, 24) ?? "";
-    return `${n.localName}${n.id ? `#${n.id}` : ""}[${label}]`;
-  };
-  const add = (what: string) =>
-    log.push(`${Math.round(performance.now() - start)} ms ${what}; active ${name(document.activeElement)}`);
-  const listen = () => {
-    for (const type of ["focusin", "focusout", "mousedown", "click"]) {
-      window.addEventListener(
-        type,
-        (e) => {
-          add(`${type} ${name(e.target)}${e instanceof FocusEvent ? ` related ${name(e.relatedTarget)}` : ""}`);
-        },
-        true,
-      );
-    }
-  };
-  listen();
-  // index.html writes the app with `document.open()`, which removes every listener on the window.
-  const open = Object.getOwnPropertyDescriptor(Document.prototype, "open")!.value as (
-    this: Document,
-    ...args: unknown[]
-  ) => unknown;
-  Document.prototype.open = function reopen(this: Document, ...args: unknown[]) {
-    const opened = open.apply(this, args);
-    listen();
-    return opened;
-  } as typeof Document.prototype.open;
-  const original = Object.getOwnPropertyDescriptor(HTMLElement.prototype, "focus")!.value as (
-    this: HTMLElement,
-    options?: FocusOptions,
-  ) => void;
-  HTMLElement.prototype.focus = function focus(this: HTMLElement, options?: FocusOptions) {
-    add(`focus() on ${name(this)} from ${new Error("caller").stack?.split("\n")[1]?.trim() ?? "?"}`);
-    original.call(this, options);
-    add(`after focus() on ${name(this)}`);
-  };
-}
-
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
-  page: async ({ page, browserName }, use, testInfo) => {
+  page: async ({ page, browserName }, use) => {
     if (macWebkit(browserName)) {
       // Safari's Tab skips buttons and links; with Option held it visits them, as the page's users with the setting do.
       const press = page.keyboard.press.bind(page.keyboard);
       page.keyboard.press = (key, options) =>
         press(key === "Tab" ? "Alt+Tab" : key === "Shift+Tab" ? "Alt+Shift+Tab" : key, options);
-      // TEMPORARY diagnostic: why focus does not reach the button a test expects on macOS WebKit in CI.
-      await page.addInitScript(recordFocus);
-      await use(page);
-      if (testInfo.status !== testInfo.expectedStatus && !page.isClosed()) {
-        const log = await page.evaluate(() => (window as unknown as { focusLog?: string[] }).focusLog).catch(() => {});
-        const text = (log ?? ["(no focus log)"]).join("\n");
-        console.log(`focus log of "${testInfo.title}" (attempt ${testInfo.retry + 1}):\n${text}`);
-        await testInfo.attach("focus-log", { body: text, contentType: "text/plain" });
-      }
-      return;
     }
     // Coverage comes from Chromium's CDP; Firefox and WebKit run without it.
     if (!coverage || browserName !== "chromium") {
