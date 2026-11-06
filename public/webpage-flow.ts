@@ -104,6 +104,7 @@ export function initWebpageFlow(d: WebpageFlowDeps): WebpageFlow {
           { value: "text", label: "Translate as text" },
           { value: "fetch", label: "Fetch page" },
         ],
+        returnTo: d.translateButton,
       });
       return answer === "fetch" || answer === "text" ? answer : "cancel";
     },

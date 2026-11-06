@@ -3,6 +3,7 @@
 // to what had it; Cancel comes first and has the initial focus.
 
 import { linkPrompt } from "./links.ts";
+import { focusIsNowhere } from "./render.ts";
 import { focusableWhenScrolling } from "./scroll-focus.ts";
 
 /** A button of the dialog besides Cancel; the last one is the primary action. */
@@ -27,6 +28,11 @@ export interface DialogPrompt {
   closeLabel?: string;
   /** Form controls to fill in before choosing, shown above the buttons; the caller reads them afterwards. */
   fields?: HTMLElement;
+  /**
+   * Where focus goes when the dialog closes and the browser returned it nowhere (`focusIsNowhere`): in Safari
+   * the button that asked never had focus, so the dialog gives it back to `<main>`.
+   */
+  returnTo?: HTMLElement;
 }
 
 interface Parts {
@@ -122,6 +128,10 @@ export function ask(prompt: DialogPrompt): Promise<string> {
         return;
       }
       dialog.removeEventListener("close", onClose);
+      if (prompt.returnTo && focusIsNowhere()) {
+        // As the dialog's own return would: nothing needs scrolling (see `restoreFocusAfter`).
+        prompt.returnTo.focus({ preventScroll: true });
+      }
       resolve(answer);
     };
     dialog.addEventListener("close", onClose);

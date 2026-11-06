@@ -520,8 +520,9 @@ test.describe("PDF", () => {
 
     await thumbnail(app.page, 2).click();
     await expect(box(app.page)).toHaveValue(/Mountains/);
-    await close.focus(); // Safari does not focus a clicked button; Close hands its focus to Open
-    await close.click();
+    // From the keyboard: a click focuses no button in Safari, so there would be no focus to keep.
+    await close.focus();
+    await close.press("Enter");
     await expect(app.page.locator("#pdf-pages")).toBeHidden();
     await expect(note(app.page)).toBeHidden();
     await expect(box(app.page)).toHaveValue(/Mountains/);

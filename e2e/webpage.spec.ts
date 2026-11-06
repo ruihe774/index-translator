@@ -68,8 +68,6 @@ test("Translate as text translates the address; Cancel and Escape do nothing", a
   await openReady(app);
   await app.text.fill("https://example.com/");
 
-  // Focus first: Safari does not focus a clicked button, so the dialog would have nothing to give focus back to.
-  await app.translate.focus();
   await app.translate.click();
   await dialog(app.page).getByRole("button", { name: "Cancel" }).click();
   await expect(dialog(app.page)).toBeHidden();
@@ -151,7 +149,6 @@ test("Stop ends a fetch that takes long", async ({ app, mock }) => {
   await app.text.pressSequentially("/");
   await frames(app.page); // a handler that would put the count back runs within a frame or two
   await expect(count(app.page)).toHaveText("Fetching the page…");
-  await app.stop.focus(); // Safari does not focus a clicked button; Stop hands its focus to Translate
   await app.stop.click();
   await expect(status(app.page)).toHaveText("Stopped.");
   await expect(count(app.page)).toHaveText("10 letters");

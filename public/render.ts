@@ -39,11 +39,21 @@ export function hasFocus(...within: Element[]): boolean {
 }
 
 /**
- * Runs `change`, which hides `within`, and then puts focus on `to` if it was in `within` (or nowhere,
- * on the body, as after a hidden button lost it). The check comes first: a hidden button loses focus.
+ * Whether focus is nowhere the reader put it: on the body, as after a hidden button lost it, or on `<main>`
+ * (`tabindex="-1"`, the skip link's target), where Safari puts it when a button is clicked: Safari focuses
+ * no clicked button, but its nearest focusable ancestor.
+ */
+export function focusIsNowhere(): boolean {
+  const active = document.activeElement;
+  return active === null || active === document.body || active.localName === "main";
+}
+
+/**
+ * Runs `change`, which hides `within`, and then puts focus on `to` if it was in `within` (or nowhere, see
+ * `focusIsNowhere`). The check comes first: a hidden button loses focus.
  */
 export function restoreFocusAfter(within: Element, to: HTMLElement, change: () => void) {
-  const had = hasFocus(within) || document.activeElement === document.body;
+  const had = hasFocus(within) || focusIsNowhere();
   change();
   if (had) {
     // `to` takes the place of what was hidden, so nothing needs scrolling; on one column the row of

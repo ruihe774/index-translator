@@ -101,7 +101,6 @@ test("Stop keeps what was written and gives the box back", async ({ app, mock })
   await pick(app.page, "tone.webm", "video/webm");
   await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
   await expect(rows(app.page, "#source-view")).toHaveCount(1);
-  await app.stop.focus(); // Safari does not focus a clicked button; Stop hands its focus to Translate
   await app.stop.click();
   // The server stops at its next check (here the next segment, 0.8 s on): until then the page says so.
   await expect(app.page.locator("#count")).toContainText(
