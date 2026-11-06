@@ -486,7 +486,8 @@ test("the link dialog needs no horizontal scrolling at 320 px and its buttons ar
   expect(box!.x).toBeGreaterThanOrEqual(0);
   expect(box!.x + box!.width).toBeLessThanOrEqual(320);
   for (const b of await dialog.getByRole("button").all()) {
-    expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+    // Firefox lays out 2.75rem as 43.99997 px on some machines: layout units are 1/64 px.
+    expect((await b.boundingBox())!.height).toBeGreaterThanOrEqual(44 - 0.01);
   }
 });
 
