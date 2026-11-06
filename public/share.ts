@@ -18,7 +18,7 @@ export function shareTypeFor(markdown: boolean, nav: Sharer = navigator): ShareT
   }
   const accepts = (type: ShareType) => {
     try {
-      return nav.canShare!({ files: [new File([""], "translation.md", { type })] });
+      return nav.canShare!({ files: [new File([""], "text.md", { type })] });
     } catch {
       return false;
     }
@@ -29,9 +29,14 @@ export function shareTypeFor(markdown: boolean, nav: Sharer = navigator): ShareT
   return accepts("text/plain") ? "text/plain" : null;
 }
 
-/** Shares `text` as a file of `type`. Resolves false when the reader dismissed the sheet. */
-export async function shareText(text: string, type: ShareType, nav: Sharer = navigator): Promise<boolean> {
-  const file = new File([text], type === "text/markdown" ? "translation.md" : "translation.txt", { type });
+/** Shares `text` as a file of `type` named `name` plus its extension. Resolves false when the reader dismissed the sheet. */
+export async function shareText(
+  text: string,
+  type: ShareType,
+  name: "source" | "translation",
+  nav: Sharer = navigator,
+): Promise<boolean> {
+  const file = new File([text], `${name}${type === "text/markdown" ? ".md" : ".txt"}`, { type });
   try {
     await nav.share!({ files: [file] });
     return true;

@@ -495,7 +495,7 @@ export function initFullView(d: FullViewDeps): FullView {
     const type = shareTypeFor(markdown);
     if (type) {
       // A failed share (not a dismissed sheet) has nothing to say that the sheet has not shown.
-      void shareText(text, type).catch(() => {});
+      void shareText(text, type, current === "source" ? "source" : "translation").catch(() => {});
     }
   });
   // The carousel hears the change too and, held, does nothing.
