@@ -221,6 +221,9 @@ async function uploaded(page: Page, channels: number) {
  * Linux the decoder never answers `flush()` and the page waits for it (the page sets no timeout).
  */
 const NO_SURROUND = "WebKit cannot decode 6-channel Opus";
+// Playwright's WebKit on Linux plays media through GStreamer without an H.264 decoder (an H.264 MP4 fails
+// too), so tracks.mkv shows no picture there; Safari decodes H.264.
+const NO_H264 = "Playwright's WebKit cannot decode H.264";
 
 test.describe("re-encoded in the browser", () => {
   test.beforeEach(async ({ mock }) => {
@@ -351,7 +354,9 @@ const playFrom = (page: Page) => page.getByRole("toolbar", { name: "Play the rec
 test("the video plays above its transcript with the transcribed track, the cue at the playhead marked", async ({
   app,
   mock,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", NO_H264);
   await mock.set({ speech: { segments: SEGMENTS } });
   await app.open();
   await pick(app.page, "tracks.mkv", "video/x-matroska");
@@ -405,6 +410,7 @@ test("the video carries the transcript, its translation and both as caption trac
   mock,
   browserName,
 }) => {
+  test.skip(browserName === "webkit", NO_H264);
   // Firefox's video controls turn the tracks that are not showing to disabled, which hides their cues until
   // picked; what the reader sees is the showing track.
   const tracks = async () =>
@@ -476,7 +482,11 @@ test("the video carries the transcript, its translation and both as caption trac
   await expect(app.page.locator("#source-media video")).toHaveCount(0);
 });
 
-test("a track this browser cannot play from the file is played from the recording sent", async ({ app, mock }) => {
+test("a track this browser cannot play from the file is played from the recording sent", async ({
+  app,
+  mock,
+  browserName,
+}) => {
   await mock.set({ speech: { segments: SEGMENTS } });
   // A browser without AAC in its media elements; WebCodecs still decodes it for the upload.
   await app.page.addInitScript(() => {
@@ -500,7 +510,10 @@ test("a track this browser cannot play from the file is played from the recordin
   await expect(note(app.page)).toHaveText(/^tracks\.mkv: transcribed/);
   await playFrom(app.page).nth(2).click();
   await expect(rows(app.page, "#source-view").nth(2)).toHaveAttribute("aria-current", "time");
-  expect(Math.abs((await pitch(app.page, "#source-media audio")) - 660)).toBeLessThan(30);
+  // WebKit's analyser hears nothing from the player (the loudest bin is 0 Hz).
+  if (browserName !== "webkit") {
+    expect(Math.abs((await pitch(app.page, "#source-media audio")) - 660)).toBeLessThan(30);
+  }
 });
 
 test("Read aloud's column takes the place of the player's, and one sound stops the other", async ({ app, mock }) => {
