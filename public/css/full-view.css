@@ -304,19 +304,7 @@
   /* The group backs the picture with the full view's page colour, which the area leaves to the page: else the
      page under the group shows through. */
   &::view-transition-group(full-zoom) {
-    background: light-dark(#ffffff, #101010);
-    animation-duration: 0.35s;
-    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
-  }
-
-  /* The two pictures, each at its own size, fade into each other (the browser's own opacity animations, summed
-     by its `plus-lighter` blend) while the box moves, on the group's curve. */
-  &::view-transition-old(full-zoom),
-  &::view-transition-new(full-zoom) {
-    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
-    block-size: 100%;
-    object-fit: none;
-    object-position: left top;
+    background: var(--bg);
   }
 
   /* Leaving, the box also cuts what the picture holds beyond the area's own (a wide table, the rest of a long
