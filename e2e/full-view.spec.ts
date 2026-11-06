@@ -512,6 +512,10 @@ for (const [state, scrollTop] of [
     browserName,
   }) => {
     test.skip(browserName === "firefox", "Playwright's Firefox screenshots leave out view transitions");
+    test.skip(
+      browserName === "webkit" && scrollTop === 0,
+      "WebKit leaves out a named element's new picture while the page is scrolled less than about a screen",
+    );
     await app.page.setViewportSize({ width: 1280, height: 800 });
     await translated(app, mock);
     await openOutput(app).click();
