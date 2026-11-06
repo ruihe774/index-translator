@@ -9,12 +9,16 @@ export const cstr = (s: string) => new TextEncoder().encode(`${s}\0`);
 
 /**
  * The file name of the shared library `name`: `lib<name>.so` (or the platform's suffix) and `<name>.dll` on
- * Windows. `soVersion` is the SONAME's version that follows the suffix on Linux (`libsoxr.so.0`), ignored on Windows.
+ * Windows. `soVersion` is the SONAME's version, after the suffix on Linux (`libsoxr.so.0`) and before it on macOS
+ * (`libsoxr.0.dylib`; only the e2e mock server runs there), ignored on Windows.
  */
-export const libName = (name: string, soVersion?: number) =>
-  process.platform === "win32"
-    ? `${name}.${suffix}`
-    : `lib${name}.${suffix}${soVersion === undefined ? "" : `.${soVersion}`}`;
+export const libName = (name: string, soVersion?: number) => {
+  const version = soVersion === undefined ? "" : `.${soVersion}`;
+  if (process.platform === "win32") {
+    return `${name}.${suffix}`;
+  }
+  return process.platform === "darwin" ? `lib${name}${version}.${suffix}` : `lib${name}.${suffix}${version}`;
+};
 
 /** The path of library `name` inside `dir`. */
 export const libraryFile = (dir: string, name: string, soVersion?: number) => join(dir, libName(name, soVersion));

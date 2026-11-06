@@ -42,7 +42,6 @@ function bind(dir: string) {
     opus_get_version_string: { args: [], returns: "ptr" },
     opus_strerror: { args: ["i32"], returns: "ptr" },
     opus_encoder_create: { args: ["i32", "i32", "i32", "ptr"], returns: "ptr" },
-    opus_encoder_ctl: { args: ["ptr", "i32", "i32"], returns: "i32" },
     opus_encode_float: { args: ["ptr", "ptr", "i32", "ptr", "i32"], returns: "i32" },
     opus_encoder_destroy: { args: ["ptr"], returns: "void" },
     opus_decoder_create: { args: ["i32", "i32", "ptr"], returns: "ptr" },
@@ -51,11 +50,36 @@ function bind(dir: string) {
   });
   // opus_encoder_ctl is variadic, which bun:ffi does not declare. Its one extra argument is an int or a pointer,
   // and on x86-64 (System V and Windows) and on Linux's aarch64 a variadic argument of either is passed where a
-  // fixed one would be, so the same function is bound once for each: above with an int, here with a pointer
-  // (a second handle of the library, which the loader counts and does not load again).
-  const out = dlopen(path, { opus_encoder_ctl: { args: ["ptr", "i32", "ptr"], returns: "i32" } });
-  return { ...lib.symbols, opus_encoder_ctl_out: out.symbols.opus_encoder_ctl };
+  // fixed one would be, so the same function is bound once for each, with an int and with a pointer (each a
+  // handle of the library, which the loader counts and does not load again). Apple's arm64 passes every variadic
+  // argument on the stack, so there six unused arguments fill the registers x2 to x7 and push the value to the
+  // first stack slot, where `va_arg` reads it (only the e2e mock server runs on macOS).
+  if (APPLE_ARM64) {
+    const set = dlopen(path, {
+      opus_encoder_ctl: { args: ["ptr", "i32", "i64", "i64", "i64", "i64", "i64", "i64", "i32"], returns: "i32" },
+    }).symbols.opus_encoder_ctl;
+    const get = dlopen(path, {
+      opus_encoder_ctl: { args: ["ptr", "i32", "i64", "i64", "i64", "i64", "i64", "i64", "ptr"], returns: "i32" },
+    }).symbols.opus_encoder_ctl;
+    return {
+      ...lib.symbols,
+      opus_encoder_ctl: (encoder: Parameters<typeof set>[0], request: number, value: number) =>
+        set(encoder, request, 0, 0, 0, 0, 0, 0, value),
+      opus_encoder_ctl_out: (encoder: Parameters<typeof get>[0], request: number, out: Int32Array) =>
+        get(encoder, request, 0, 0, 0, 0, 0, 0, out),
+    };
+  }
+  const set = dlopen(path, { opus_encoder_ctl: { args: ["ptr", "i32", "i32"], returns: "i32" } });
+  const get = dlopen(path, { opus_encoder_ctl: { args: ["ptr", "i32", "ptr"], returns: "i32" } });
+  return {
+    ...lib.symbols,
+    opus_encoder_ctl: set.symbols.opus_encoder_ctl,
+    opus_encoder_ctl_out: get.symbols.opus_encoder_ctl,
+  };
 }
+
+/** Apple's arm64, whose variadic arguments are all on the stack. */
+const APPLE_ARM64 = process.platform === "darwin" && process.arch === "arm64";
 
 type Lib = ReturnType<typeof bind>;
 type Encoder = NonNullable<ReturnType<Lib["opus_encoder_create"]>>;

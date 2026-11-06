@@ -96,8 +96,7 @@ jobs:
 
   # The browser tests (end to end, integration, accessibility) on the mock engines, one job per browser. WebKit runs on
   # macOS, which is closer to Safari than Playwright's Linux build. Only Chromium measures coverage (it comes from
-  # Chromium's CDP). The libraries the speech tests use are built on Linux only (their build scripts support Linux and
-  # Windows); without them those tests skip.
+  # Chromium's CDP). libopus and libsoxr are built on both runners (on macOS for the mock server only).
   e2e:
     name: Browser tests (${{ matrix.browser }})
     strategy:
@@ -106,12 +105,15 @@ jobs:
         include:
           - browser: chromium
             runner: ubuntu-24.04
+            arch: x64
             script: e2e:coverage
           - browser: firefox
             runner: ubuntu-24.04
+            arch: x64
             script: e2e:firefox
           - browser: webkit
             runner: macos-15
+            arch: arm64
             script: e2e:webkit
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 30
@@ -130,29 +132,33 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
-      # The speech tests encode Opus on the server (libopus, resampled with libsoxr), and the browser decodes it.
+      # The speech tests encode Opus on the server (libopus, resampled with libsoxr), and the browser decodes it;
+      # uploads and recordings are sent as Ogg Opus only when the server has libopus. Built on macOS too, so
+      # WebKit takes the Opus paths Safari takes against a real server.
       - name: Cache libopus
-        if: ${{ runner.os == 'Linux' }}
         id: opus
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-ubuntu-24.04-x64-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
-
-      - name: Build libopus
-        if: ${{ runner.os == 'Linux' && steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+          key: opus-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
 
       - name: Cache libsoxr
-        if: ${{ runner.os == 'Linux' }}
         id: soxr
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-ubuntu-24.04-x64-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+
+      - name: Install Ninja
+        if: ${{ runner.os == 'macOS' && (steps.opus.outputs.cache-hit != 'true' || steps.soxr.outputs.cache-hit != 'true') }}
+        run: command -v ninja || brew install ninja
+
+      - name: Build libopus
+        if: ${{ steps.opus.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_libopus.ts
 
       - name: Build libsoxr
-        if: ${{ runner.os == 'Linux' && steps.soxr.outputs.cache-hit != 'true' }}
+        if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
         run: bun scripts/build_soxr.ts
 
       - name: Install ${{ matrix.browser }}

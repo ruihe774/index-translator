@@ -8,10 +8,11 @@
 // machine of an architecture. None of the neural parts (deep PLC, DRED, OSCE) is built: they need model
 // weights that are not in the repository, and the speech stream is not sent over a lossy link.
 //
-// Needs git, cmake (3.16 or later), ninja and a C compiler. On Windows, Visual Studio 2022 or later (or its Build
-// Tools) with the "Desktop development with C++" workload; the result is opus.dll. Building needs no administrator
-// rights.
+// Needs git, cmake (3.16 or later), ninja and a C compiler; also builds on macOS, for the e2e mock server. On
+// Windows, Visual Studio 2022 or later (or its Build Tools) with the "Desktop development with C++" workload; the
+// result is opus.dll. Building needs no administrator rights.
 
+import { existsSync } from "node:fs";
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -80,13 +81,11 @@ await run(["cmake", "--build", build], undefined, buildEnv);
 // Built before the existing copy is replaced.
 await rm(dest, { recursive: true, force: true });
 await mkdir(dest, { recursive: true });
-// On Linux the file is libopus.so.0.<minor>.<patch> with links libopus.so.0 and libopus.so; the copy is named as its
-// SONAME.
-const built = windows
-  ? join(build, "opus.dll")
-  : (await Array.fromAsync(new Bun.Glob("libopus.so.0.*").scan({ cwd: build, absolute: true })))[0];
-if (!built) {
-  throw new Error("the build left no libopus.so.0.*");
+// On Linux the file is libopus.so.0.<minor>.<patch> with links libopus.so.0 and libopus.so (on macOS, where only the
+// e2e mock server runs, libopus.0.<minor>.<patch>.dylib and libopus.0.dylib); the copy is the SONAME's link followed.
+const built = windows ? join(build, "opus.dll") : opusLibraryPath(build);
+if (!existsSync(built)) {
+  throw new Error(`the build left no ${built}`);
 }
 await cp(built, opusLibraryPath(dest), { dereference: true });
 await cp(join(source, "COPYING"), join(dest, "COPYING"));

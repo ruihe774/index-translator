@@ -10,6 +10,9 @@ describe("ffi-util", () => {
   test("libName follows the platform and puts the SONAME version after the suffix", () => {
     if (process.platform === "win32") {
       expect(libName("soxr", 0)).toBe("soxr.dll");
+    } else if (process.platform === "darwin") {
+      expect(libName("llama")).toBe("libllama.dylib");
+      expect(libName("soxr", 0)).toBe("libsoxr.0.dylib");
     } else {
       expect(libName("llama")).toStartWith("libllama.");
       expect(libName("soxr", 0)).toMatch(/^libsoxr\.\w+\.0$/);

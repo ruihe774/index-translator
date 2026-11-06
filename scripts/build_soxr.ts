@@ -9,10 +9,11 @@
 // built here before libaudiocpp, so audio.cpp is always handed this one, never another that is
 // installed.
 //
-// Needs git, cmake (3.5 or later), ninja and a C compiler. On Windows, Visual Studio 2022 or later (or its Build Tools)
-// with the "Desktop development with C++" workload; the result is soxr.dll. Building needs no administrator
-// rights.
+// Needs git, cmake (3.5 or later), ninja and a C compiler; also builds on macOS, for the e2e mock server. On
+// Windows, Visual Studio 2022 or later (or its Build Tools) with the "Desktop development with C++" workload; the
+// result is soxr.dll. Building needs no administrator rights.
 
+import { existsSync } from "node:fs";
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -84,13 +85,12 @@ await run(["cmake", "--build", build], undefined, buildEnv);
 // Built before the existing copy is replaced.
 await rm(dest, { recursive: true, force: true });
 await mkdir(dest, { recursive: true });
-// On Linux the file is named libsoxr.so.0.1.2 with links libsoxr.so.0 and libsoxr.so; the copy is
-// named as its SONAME, which is what audio.cpp asks for. On Windows soxr's CMakeLists puts the DLL in bin.
-const built = windows
-  ? join(build, "bin", "soxr.dll")
-  : (await Array.fromAsync(new Bun.Glob("src/libsoxr.so.0.*").scan({ cwd: build, absolute: true })))[0];
-if (!built) {
-  throw new Error("the build left no libsoxr.so.0.*");
+// On Linux the file is named libsoxr.so.0.1.2 with links libsoxr.so.0 and libsoxr.so (on macOS, where only the e2e
+// mock server runs, libsoxr.0.1.2.dylib and libsoxr.0.dylib); the copy is the SONAME's link followed, which is what
+// audio.cpp asks for. On Windows soxr's CMakeLists puts the DLL in bin.
+const built = windows ? join(build, "bin", "soxr.dll") : soxrLibraryPath(join(build, "src"));
+if (!existsSync(built)) {
+  throw new Error(`the build left no ${built}`);
 }
 await cp(built, soxrLibraryPath(dest), { dereference: true });
 await cp(join(source, "LICENCE"), join(dest, "LICENCE"));

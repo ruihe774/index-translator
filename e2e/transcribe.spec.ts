@@ -197,7 +197,7 @@ async function transcribe(page: Page, name: string, track?: string | RegExp) {
 
 /**
  * What a track the page re-encoded is sent as: Ogg Opus with `channels` where the browser encodes Opus, else the
- * mono 44.1 kHz WAV (WebKit on macOS has no Opus encoder; the page's fallback is tested without AudioEncoder).
+ * mono 44.1 kHz WAV (the page's fallback is tested without AudioEncoder).
  */
 async function uploaded(page: Page, channels: number) {
   const opus = await page.evaluate(
@@ -224,6 +224,13 @@ const NO_SURROUND = "WebKit cannot decode 6-channel Opus";
 // Playwright's WebKit on Linux plays media through GStreamer without an H.264 decoder (an H.264 MP4 fails
 // too), so tracks.mkv shows no picture there; Safari decodes H.264.
 const NO_H264 = "Playwright's WebKit cannot decode H.264";
+/**
+ * WebKit's AudioDecoder on Linux (GStreamer), given a first chunk with a negative timestamp (an MP3's or Opus's
+ * codec delay), holds every frame until `flush()`, then outputs them in reverse order at `-|timestamp|`, so all
+ * but one frame land before 0. Safari on macOS decodes them in order.
+ */
+const linuxWebkit = (browserName: string) => browserName === "webkit" && process.platform === "linux";
+const NEGATIVE_START = "WebKit on Linux decodes a track that starts before 0 backwards";
 
 test.describe("re-encoded in the browser", () => {
   test.beforeEach(async ({ mock }) => {
@@ -270,6 +277,7 @@ test.describe("re-encoded in the browser", () => {
       const expected = browserName === "webkit" && channels === 1 && track !== "PCM" ? 2 : channels;
       // WebKit's AudioDecoder has no Vorbis or FLAC; the disabled radio for an undecodable codec is tested above.
       test.skip(browserName === "webkit" && (track === "Vorbis" || track === "FLAC"), "WebKit cannot decode it");
+      test.skip(linuxWebkit(browserName) && track === "MP3", NEGATIVE_START);
       await app.open();
       await transcribe(app.page, "codecs.mkv", new RegExp(`^${track} \\(English\\)`));
       const [r] = await sent(mock);
@@ -278,7 +286,12 @@ test.describe("re-encoded in the browser", () => {
     });
   }
 
-  test("without libopus on the server, Opus is decoded and sent as a mono 44.1 kHz WAV", async ({ app, mock }) => {
+  test("without libopus on the server, Opus is decoded and sent as a mono 44.1 kHz WAV", async ({
+    app,
+    mock,
+    browserName,
+  }) => {
+    test.skip(linuxWebkit(browserName), NEGATIVE_START);
     await app.page.route("**/api/v1/health*", async (route) => {
       const res = await route.fetch();
       const health = (await res.json()) as { transcribe?: { upload_types: string[] } };

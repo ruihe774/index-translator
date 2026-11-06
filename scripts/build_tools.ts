@@ -64,7 +64,9 @@ export const windows = process.platform === "win32";
 /** What to install when a build tool is missing, for the message. */
 export const TOOLS_HINT = windows
   ? "on Windows: install Git, CMake (https://cmake.org/download/, add it to the PATH), Ninja (winget install Ninja-build.Ninja), Visual Studio 2022 or later, or its Build Tools, with the 'Desktop development with C++' workload, and the Vulkan SDK (https://vulkan.lunarg.com/sdk/home, for glslc)"
-  : "on Debian and Ubuntu: sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers";
+  : process.platform === "darwin"
+    ? "on macOS (libopus and libsoxr only, for the e2e mock server): xcode-select --install; brew install cmake ninja"
+    : "on Debian and Ubuntu: sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers";
 
 /** The build tools every engine needs on the PATH, on both systems. */
 export const BUILD_TOOLS = ["git", "cmake", "ninja"];
