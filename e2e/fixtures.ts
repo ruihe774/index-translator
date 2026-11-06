@@ -103,8 +103,9 @@ export { CHAT, DOCUMENT } from "../test/helpers/harness";
 const coverage = COVERAGE ? new CoverageReport(REPORT) : undefined;
 
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
-  page: async ({ page }, use) => {
-    if (!coverage) {
+  page: async ({ page, browserName }, use) => {
+    // Coverage comes from Chromium's CDP; Firefox and WebKit run without it.
+    if (!coverage || browserName !== "chromium") {
       await use(page);
       return;
     }

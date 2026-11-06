@@ -1,8 +1,8 @@
 # Frontend tests (Playwright)
 
 `bun run e2e` starts `e2e/mock-server.ts` (the real app on the fake models from
-`test/helpers/mock-engine.ts`, which re-exports one file per mock) and runs the specs in Chromium. No
-GPU or model files are needed. The ports and server timeouts are in `ports.ts`, shared by the config,
+`test/helpers/mock-engine.ts`, which re-exports one file per mock) and runs the specs in Chromium, Firefox and WebKit
+(`bun run e2e:chromium`, `e2e:firefox`, `e2e:webkit` run one). No GPU or model files are needed. The ports and server timeouts are in `ports.ts`, shared by the config,
 the mock server and `fixtures.ts`.
 
 Waiting: no `waitForTimeout` where something can be observed. Use `expect.poll` or a web-first
@@ -18,7 +18,7 @@ comment saying why.
   with a tenth of a second of silence and records what it was asked to say (`speech` in `/mock`).
   The Record tests use Chromium's fake microphone: `e2e/playwright.config.ts` passes
   `--use-fake-device-for-media-stream --use-fake-ui-for-media-stream` (a tone, prompt accepted);
-  the denial test stubs `getUserMedia`.
+  the denial test stubs `getUserMedia`. They are skipped in Firefox and WebKit.
 - `open.spec.ts`: the Open button. Text and Markdown files are given as buffers; the PDF tests open
   `test/fixtures/sample.pdf` (three pages, written by `make_sample_pdf.py` beside it) and the Word
   tests `test/fixtures/sample.docx` (written by `make_sample_docx.py`) with the real libraries from
@@ -33,14 +33,27 @@ comment saying why.
   `test/webpage.test.ts` (`bun test`).
 - `integration.spec.ts`: real page, API stubbed with `page.route`, for error codes and SSE framing.
 
-Setup: `bun install`, then `bunx playwright install chromium`, or set `CHROMIUM_PATH` to an
-existing Chromium. Env: `E2E_PORT` (3100), `E2E_CONTROL_PORT` (3101), `E2E_WORKERS` (a third of
+Setup: `bun install`, then `bunx playwright install chromium firefox webkit` (only the ones you run; WebKit on Linux
+needs system libraries, `--with-deps` or `playwright install-deps`), or set `CHROMIUM_PATH` to an existing Chromium
+(it applies to the Chromium project only). Env: `E2E_PORT` (3100), `E2E_CONTROL_PORT` (3101), `E2E_WORKERS` (a third of
 the CPUs, at most 6; `1` runs serially). Each worker has its own mock server, app and control ports
 stepping by 2 from those two (worker n: `E2E_PORT + 2n`), so tests run in parallel; a test that needs
 state outside its `mock` fixture would break that. `bun test` ignores this directory (see `bunfig.toml`).
 
-Coverage: `bun run e2e:coverage` (`E2E_COVERAGE=1`) writes `coverage/e2e-web/` (the page, `lcov-report/` for HTML) and
+Coverage: `bun run e2e:coverage` (`E2E_COVERAGE=1`, Chromium only: the page's coverage comes from Chromium's CDP) writes `coverage/e2e-web/` (the page, `lcov-report/` for HTML) and
 `coverage/e2e-server/<n>/lcov.info` (one per mock server). It always starts its own servers.
+
+## Browsers
+
+Chromium is the reference: every spec passes there. Firefox and WebKit run the same specs; what a browser lacks is
+skipped with a reason (`test.skip(browserName …)`: the fake microphone, the clipboard permissions, Vorbis and FLAC
+in WebKit's decoder), and a spec that fails there is left failing when the cause is the app, not the test. Some
+failures are known and open: the Firefox caption tracks and Vorbis decode, and in WebKit the video in Matroska and
+several `AudioDecoder` paths. Write a new spec for all three: no Chromium-only API (`page.coverage`, CDP, the
+clipboard permissions) outside a `browserName` guard.
+
+In CI (`.github/workflows/ci.yml`, job `e2e`) each browser is a job; WebKit runs on macOS, the others on Linux. The
+libopus and libsoxr builds are Linux only, so on macOS the specs that use them skip.
 
 ## Page load measurements (`bun run e2e:perf`)
 

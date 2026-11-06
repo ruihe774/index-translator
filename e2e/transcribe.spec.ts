@@ -199,12 +199,12 @@ test.describe("re-encoded in the browser", () => {
     await mock.set({ speech: { segments: SEGMENTS.slice(0, 1) } });
   });
 
-  test("AAC with a gap: decoded, the gap filled, sent as Ogg Opus", async ({ app, mock }) => {
+  test("AAC with a gap: decoded, the gap filled, sent as Ogg Opus", async ({ app, mock, browserName }) => {
     await app.open();
     await transcribe(app.page, "gap.mka");
     // A second of tone, half a second missing, a second of tone: the times stay the file's.
     const [r] = await sent(mock);
-    expect(r).toMatchObject({ type: "audio/ogg", channels: 1 });
+    expect(r).toMatchObject({ type: "audio/ogg", channels: browserName === "webkit" ? 2 : 1 });
     expect(r!.seconds).toBeGreaterThan(2.45);
     expect(r!.seconds).toBeLessThan(2.6);
   });
@@ -233,11 +233,15 @@ test.describe("re-encoded in the browser", () => {
     ["MP3", 1],
     ["PCM", 1],
   ] as const) {
-    test(`a ${track} track is sent as Ogg Opus`, async ({ app, mock }) => {
+    test(`a ${track} track is sent as Ogg Opus`, async ({ app, mock, browserName }) => {
+      // WebKit's decoder upmixes mono to stereo (Chromium's keeps the track's channels); PCM is not decoded.
+      const expected = browserName === "webkit" && channels === 1 && track !== "PCM" ? 2 : channels;
+      // WebKit's AudioDecoder has no Vorbis or FLAC; the disabled radio for an undecodable codec is tested above.
+      test.skip(browserName === "webkit" && (track === "Vorbis" || track === "FLAC"), "WebKit cannot decode it");
       await app.open();
       await transcribe(app.page, "codecs.mkv", new RegExp(`^${track} \\(English\\)`));
       const [r] = await sent(mock);
-      expect(r).toMatchObject({ type: "audio/ogg", channels });
+      expect(r).toMatchObject({ type: "audio/ogg", channels: expected });
       expect(r!.seconds).toBeCloseTo(2, 1);
     });
   }
@@ -500,7 +504,8 @@ test("while the transcript grows, the play-from buttons already there stay (no b
   app,
   mock,
 }) => {
-  await mock.set({ speech: { segments: SEGMENTS, segmentDelayMs: 400 } });
+  // Long enough that the poll, which steps by up to a second, sees the state with one button.
+  await mock.set({ speech: { segments: SEGMENTS, segmentDelayMs: 1000 } });
   await app.open();
   await pick(app.page, "tone.webm", "video/webm");
   await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();

@@ -39,7 +39,7 @@ export default defineConfig({
   workers: WORKERS,
   forbidOnly: !!process.env.CI,
   retries: process.env.CI ? 1 : 0,
-  reporter: process.env.CI ? [["dot"], ["html", { open: "never", outputFolder: at("../playwright-report") }]] : "dot",
+  reporter: process.env.CI ? [["dot"], ["html", { open: "never", outputFolder: at("../playwright-report") }]] : "line",
   use: {
     trace: "retain-on-failure",
     // The page keeps language choices in localStorage; each test gets a fresh context.
@@ -59,6 +59,8 @@ export default defineConfig({
         },
       },
     },
+    { name: "firefox", use: { ...devices["Desktop Firefox"] } },
+    { name: "webkit", use: { ...devices["Desktop Safari"] } },
   ],
   webServer: Array.from({ length: WORKERS }, (_, i) => ({
     command: server(i),

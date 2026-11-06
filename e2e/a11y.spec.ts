@@ -182,7 +182,8 @@ for (const scheme of ["light", "dark"] as const) {
 }
 
 for (const scheme of ["light", "dark"] as const) {
-  test(`the voice-clone group passes axe in ${scheme} mode in its error states`, async ({ app }) => {
+  test(`the voice-clone group passes axe in ${scheme} mode in its error states`, async ({ app, browserName }) => {
+    test.skip(browserName !== "chromium", "stubs getUserMedia, which Firefox and WebKit lack here (no secure page)");
     await app.page.emulateMedia({ colorScheme: scheme });
     await app.page.addInitScript(() => {
       navigator.mediaDevices.getUserMedia = () =>

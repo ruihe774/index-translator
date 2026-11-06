@@ -243,8 +243,13 @@ for (const [orientation, size] of [
     const barBox = async () => (await app.page.locator(".pane-bar").boundingBox())!;
     const output = (await app.output.boundingBox())!;
     expect((await barBox()).y).toBeLessThan(output.y);
-    await app.page.mouse.wheel(0, 3000);
-    await expect.poll(() => app.page.evaluate(() => scrollY)).toBeGreaterThan(1000);
+    // Firefox limits how far one wheel event goes, so it is repeated.
+    await expect
+      .poll(async () => {
+        await app.page.mouse.wheel(0, 3000);
+        return app.page.evaluate(() => scrollY);
+      })
+      .toBeGreaterThan(1000);
     expect((await barBox()).y).toBeLessThanOrEqual(1);
   });
 }

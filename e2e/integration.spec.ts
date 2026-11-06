@@ -3,6 +3,8 @@
 // These cover what the mock engine cannot produce on demand: error envelopes, status codes, an
 // unreachable server, SSE framing and the health polling.
 
+import type { BrowserContext } from "@playwright/test";
+
 import type { TranslateRequest } from "../src/api";
 import { type AppPage, expect, test } from "./fixtures";
 
@@ -182,8 +184,17 @@ test("health: an unreachable server and an engine error", async ({ app }) => {
   await expect(app.engine).toHaveText("Engine error: no GPU.");
 });
 
-test("copy puts the translation on the clipboard", async ({ app, context }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+// Only Chromium has these permissions (Firefox and WebKit throw "Unknown permission").
+const WEBKIT_CLIPBOARD = "Playwright's WebKit has no clipboard grant, so readText() is refused";
+const grantClipboard = async (context: BrowserContext, browserName: string) => {
+  if (browserName === "chromium") {
+    await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  }
+};
+
+test("copy puts the translation on the clipboard", async ({ app, context, browserName }) => {
+  test.skip(browserName === "webkit", WEBKIT_CLIPBOARD);
+  await grantClipboard(context, browserName);
   await stubTranslate(
     app,
     200,
@@ -201,8 +212,10 @@ test("copy puts the translation on the clipboard", async ({ app, context }) => {
 test("Markdown source: the output is rendered, unsafe links stay text, and copy keeps the raw Markdown as plain text and the rendered tree as HTML", async ({
   app,
   context,
+  browserName,
 }) => {
-  await context.grantPermissions(["clipboard-read", "clipboard-write"]);
+  test.skip(browserName === "webkit", WEBKIT_CLIPBOARD);
+  await grantClipboard(context, browserName);
   const md =
     "# 标题\n\n- **一**\n- [链接](https://example.com)\n- [坏](javascript:alert(1))\n\n```js\nlet a = 1;\n```\n\n" +
     "| 左 | 右 |\n| :-- | --: |\n| 甲 | 乙 |\n\n<b>原样</b>";
@@ -246,8 +259,11 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   });
   expect(copiedHtml).toContain('dir="auto"');
   expect(copiedHtml).toContain(">标题</h3>");
-  // The browser normalizes the rendered target; there is no other, so the unsafe link stayed text.
-  expect([...copiedHtml.matchAll(/href="([^"]*)"/g)].map((m) => m[1])).toEqual(["https://example.com/"]);
+  // Chromium normalizes the rendered target to `https://example.com/`, Firefox keeps it; there is no other, so the
+  // unsafe link stayed text.
+  expect([...copiedHtml.matchAll(/href="([^"]*)"/g)].map((m) => m[1].replace(/\/$/, ""))).toEqual([
+    "https://example.com",
+  ]);
   expect(copiedHtml).toContain("<code>let a = 1;</code>");
   // Markdown table alignment survives as the cell's `align`, while page classes do not survive at all.
   expect(copiedHtml).toContain('<th align="left">左</th>');

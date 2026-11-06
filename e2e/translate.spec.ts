@@ -74,10 +74,14 @@ test("the output follows the stream to its end until the user scrolls", async ({
   expect(await gap()).toBeLessThanOrEqual(2);
 
   await area.hover();
-  await app.page.mouse.wheel(0, -100_000);
   // The wheel animation may stop a few pixels short of the top; what matters is that it stays away
-  // from the end while more text arrives.
-  await expect.poll(() => area.evaluate((el) => el.scrollTop)).toBeLessThan(100);
+  // from the end while more text arrives. Firefox limits how far one wheel event goes, so it is repeated.
+  await expect
+    .poll(async () => {
+      await app.page.mouse.wheel(0, -100_000);
+      return area.evaluate((el) => el.scrollTop);
+    })
+    .toBeLessThan(100);
   await expect(app.output).toContainText("line 79");
   await expect(app.stop).toBeHidden();
   expect(await area.evaluate((el) => el.scrollTop)).toBeLessThan(100);
@@ -124,7 +128,7 @@ test("equations in Markdown are MathML; one Temml cannot read is shown as writte
   // The output is Chinese, and cjk.css must not give the MathML its own font (it matches <mi> and <mn> too).
   await expect(app.output).toHaveAttribute("lang", /^zh/);
   for (const tag of ["mi", "mn"]) {
-    await expect(app.output.locator(`math ${tag}`).first()).toHaveCSS("font-family", /^"Noto Sans Math WOFF2"/);
+    await expect(app.output.locator(`math ${tag}`).first()).toHaveCSS("font-family", /^"?Noto Sans Math WOFF2/);
   }
 });
 

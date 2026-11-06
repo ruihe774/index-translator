@@ -51,8 +51,7 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
-      # The speech tests encode Opus on the server (libopus, resampled with libsoxr), decode it with libopus, and the
-      # browser decodes it.
+      # The speech tests encode Opus on the server (libopus, resampled with libsoxr) and decode it with libopus.
       - name: Cache libopus
         id: opus
         uses: actions/cache@v6
@@ -95,15 +94,77 @@ jobs:
       - name: Markdown conformance
         run: bun scripts/commonmark.ts
 
-      - name: Install Chromium
-        run: bunx playwright install --with-deps chromium
+  # The browser tests (end to end, integration, accessibility) on the mock engines, one job per browser. WebKit runs on
+  # macOS, which is closer to Safari than Playwright's Linux build. Only Chromium measures coverage (it comes from
+  # Chromium's CDP). The libraries the speech tests use are built on Linux only (their build scripts support Linux and
+  # Windows); without them those tests skip.
+  e2e:
+    name: Browser tests (${{ matrix.browser }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - browser: chromium
+            runner: ubuntu-24.04
+            script: e2e:coverage
+          - browser: firefox
+            runner: ubuntu-24.04
+            script: e2e:firefox
+          - browser: webkit
+            runner: macos-15
+            script: e2e:webkit
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
 
-      - name: Browser tests (end to end, integration, accessibility)
-        run: bun run e2e:coverage
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install the development tools
+        run: bun install --frozen-lockfile
+
+      # The PDF tests run the two PDF libraries in the browser and the Word tests undoc; all are pinned by
+      # checksum in the script.
+      - name: Fetch the web app's libraries
+        run: bun scripts/fetch_web_libs.ts
+
+      # The speech tests encode Opus on the server (libopus, resampled with libsoxr), and the browser decodes it.
+      - name: Cache libopus
+        if: ${{ runner.os == 'Linux' }}
+        id: opus
+        uses: actions/cache@v6
+        with:
+          path: vendor/opus
+          key: opus-ubuntu-24.04-x64-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libopus
+        if: ${{ runner.os == 'Linux' && steps.opus.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_libopus.ts
+
+      - name: Cache libsoxr
+        if: ${{ runner.os == 'Linux' }}
+        id: soxr
+        uses: actions/cache@v6
+        with:
+          path: vendor/soxr
+          key: soxr-ubuntu-24.04-x64-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+
+      - name: Build libsoxr
+        if: ${{ runner.os == 'Linux' && steps.soxr.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_soxr.ts
+
+      - name: Install ${{ matrix.browser }}
+        run: bunx playwright install --with-deps ${{ matrix.browser }}
+
+      - name: Browser tests
+        run: bun run ${{ matrix.script }}
 
       # The web app (Chromium's coverage mapped to public/*.ts), then the server under the mock engine (one
       # report per mock server, so many as there are Playwright workers); Codecov merges them.
       - name: Upload browser test coverage (web app)
+        if: ${{ matrix.browser == 'chromium' }}
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -112,6 +173,7 @@ jobs:
           fail_ci_if_error: ${{ github.event.pull_request.head.repo.fork != true }}
 
       - name: Upload browser test coverage (server)
+        if: ${{ matrix.browser == 'chromium' }}
         uses: codecov/codecov-action@v7
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
@@ -123,7 +185,7 @@ jobs:
         if: ${{ failure() }}
         uses: actions/upload-artifact@v7
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.browser }}
           path: |
             playwright-report/
             test-results/

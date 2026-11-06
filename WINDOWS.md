@@ -12,7 +12,7 @@ There is no `bunx` (Bun's install gives only `bun.exe`); use `npx` (comes with N
 - Unit and integration: `bun test` (all pass; the speech and llama engines are mocked, no GPU or `.dll` needed).
 - Typecheck: part of `bun run lint:ts`.
 - e2e: run Playwright with Node, not Bun: `node node_modules/@playwright/test/cli.js test -c e2e/playwright.config.ts`
-  (add `--reporter=line` for compact output). `bun run e2e` starts Playwright under Bun, which
+  (add `--project=chromium` for one browser). `bun run e2e` starts Playwright under Bun, which
   prints nothing and exits 0 without running the tests here; do not trust its result.
 - Chromium comes from Playwright's download (`npx playwright install chromium`) or `CHROMIUM_PATH`.
 - `bun run lint:ts` (`bun lint --type-aware --type-check`) reports zero problems on Linux (`maxWarnings = 0` in `bunfig.toml`); it has not been run on Windows since that change.

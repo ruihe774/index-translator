@@ -129,9 +129,10 @@ test.describe("images", () => {
     await app.page.evaluate((data) => {
       const t = new DataTransfer();
       t.items.add(new File([new Uint8Array(data)], "menu.png", { type: "image/png" }));
-      document
-        .getElementById("text")!
-        .dispatchEvent(new ClipboardEvent("paste", { clipboardData: t, bubbles: true, cancelable: true }));
+      // A plain Event: Firefox ignores `clipboardData` in ClipboardEvent's constructor.
+      const paste = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, "clipboardData", { value: t });
+      document.getElementById("text")!.dispatchEvent(paste);
     }, bytes);
     await expect(picture(app.page)).toBeVisible();
   });
@@ -141,9 +142,10 @@ test.describe("images", () => {
     await app.page.evaluate(() => {
       const t = new DataTransfer();
       t.items.add(new File(["Pasted text\n"], "paste.txt", { type: "text/plain" }));
-      document
-        .getElementById("text")!
-        .dispatchEvent(new ClipboardEvent("paste", { clipboardData: t, bubbles: true, cancelable: true }));
+      // A plain Event: Firefox ignores `clipboardData` in ClipboardEvent's constructor.
+      const paste = new Event("paste", { bubbles: true, cancelable: true });
+      Object.defineProperty(paste, "clipboardData", { value: t });
+      document.getElementById("text")!.dispatchEvent(paste);
     });
     await expect(app.text).toHaveValue("Pasted text\n");
   });

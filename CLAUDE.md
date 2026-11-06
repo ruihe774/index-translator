@@ -14,8 +14,8 @@ Use Bun canary (`bun --revision` must end in `-canary…`; `lint:ts` needs its b
 Run `bun install` before `lint:*` or `e2e` when `node_modules` is missing or stale.
 
 - Run: `bun src/server.ts` (`--help` lists every setting). Dev: `bun run dev` (also `ALLOWED_WEBPAGE_DOMAINS='*'`)
-- Test: `bun test` (mock engine, no GPU). E2E/a11y: `bun run e2e` (Playwright, mock engine; `e2e/README.md`; `bunx playwright install chromium` or `CHROMIUM_PATH`)
-- Coverage: `bun run test:coverage`, `bun run e2e:coverage`; workers are not measured. Page load times on a throttled link: `bun run e2e:perf` (asserts nothing)
+- Test: `bun test` (mock engine, no GPU). E2E/a11y: `bun run e2e` (Playwright, mock engine, Chromium, Firefox and WebKit; `e2e:chromium`, `e2e:firefox`, `e2e:webkit` run one; `e2e/README.md`; `bunx playwright install chromium firefox webkit` or `CHROMIUM_PATH`)
+- Coverage: `bun run test:coverage`, `bun run e2e:coverage` (Chromium only); workers are not measured. Page load times on a throttled link: `bun run e2e:perf` (asserts nothing)
 - Lint and typecheck: `bun run lint:ts` (`bun lint`: builtin linter and type checker, no `tsc`; each file uses its nearest `tsconfig.json`; config under `[lint]` in `bunfig.toml`). Errors and warnings stay at zero. Suppress with `// eslint-disable-next-line <rule> -- <why>` (a `: <why>` suffix suppresses nothing). **If a change introduces lint errors or warnings, tell the user which rules failed, even if you then fix them** (the user audits the rules).
 - JS browser support: `bun run lint:es` (ESLint with `eslint-plugin-browser-compat` against `.browserslistrc` and `eslint-plugin-es-x` up to `ES_EDITION` in `scripts/lint_es.ts`). It lints what `public/*.ts` becomes under `Bun.Transpiler`: `bun:*` and `*.json` imports are errors. Bun strips comments, so `eslint-disable` in `public/` does nothing: an exception goes in `scripts/lint_es.ts` (`settings.polyfills` or a rule override) with a comment why.
 - Format: `bun run format:write` / `format:check` (120 columns; Markdown is hand-formatted). DO NOT USE prettier
