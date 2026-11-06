@@ -84,6 +84,55 @@ test("full view: the page scrolls one side; the switch brings the other in at it
   await expect.poll(() => topBlock(app, "#source-view")).toBe("20");
 });
 
+test("full view: a wide table grows beyond the reading column, centred, without page overflow", async ({
+  app,
+  mock,
+}) => {
+  const row = (cell: string) =>
+    `| ${Array.from({ length: 16 }, (_, i) => `${cell} ${i} ${"word ".repeat(4)}`).join(" | ")} |`;
+  const table = `${row("head")}\n${Array.from({ length: 16 }, () => "---")
+    .join(" | ")
+    .replace(/^/, "| ")
+    .replace(/$/, " |")}\n${row("cell")}`;
+  await mock.set({ chunks: [THINK, `# 表\n\n${table}\n`] });
+  await app.page.setViewportSize({ width: 2400, height: 800 });
+  await app.open();
+  await app.text.fill(`# Table\n\n${table}\n`);
+  await app.translate.click();
+  await expect(app.output.locator("table")).toBeVisible();
+  await expect(app.copy).toHaveAttribute("aria-disabled", "false");
+  await openOutput(app).click();
+
+  const measure = () =>
+    app.page.evaluate(() => {
+      const scroll = document.querySelector("#output > .table-scroll")!.getBoundingClientRect();
+      const area = document.querySelector("#output-area")!.getBoundingClientRect();
+      const root = document.documentElement;
+      return { scroll, area, overflow: root.scrollWidth - root.clientWidth, width: root.clientWidth };
+    });
+  const wide = await measure();
+  expect(wide.scroll.width).toBeGreaterThan(wide.area.width + 100);
+  expect(wide.scroll.left).toBeGreaterThanOrEqual(0);
+  expect(wide.scroll.right).toBeLessThanOrEqual(wide.width);
+  expect(wide.scroll.left + wide.scroll.right).toBeCloseTo(wide.area.left + wide.area.right, 0);
+  expect(wide.overflow).toBeLessThanOrEqual(0);
+  // At most 96rem: twice the column.
+  expect(wide.scroll.width).toBeLessThanOrEqual(1536 + 1);
+  expect(wide.scroll.width).toBeGreaterThan(1536 - 1);
+
+  // Less room than that: the page's width less the gutters.
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  const medium = await measure();
+  expect(medium.scroll.width).toBeCloseTo(medium.width - 32, 0);
+  expect(medium.overflow).toBeLessThanOrEqual(0);
+
+  // Narrow: the column's own width, the table scrolling inside it.
+  await app.page.setViewportSize(PHONE);
+  const narrow = await measure();
+  expect(narrow.scroll.width).toBeLessThanOrEqual(narrow.width);
+  expect(narrow.overflow).toBeLessThanOrEqual(0);
+});
+
 test("full view: Back leaves it and stays on the page", async ({ app, mock }) => {
   await app.page.setViewportSize({ width: 1280, height: 800 });
   await translated(app, mock);

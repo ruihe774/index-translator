@@ -30,6 +30,8 @@
   main {
     inline-size: auto;
     margin: 0;
+    /* For a table's `cqw`: the page's width without its scrollbar, which `100vw` would include. */
+    container-type: inline-size;
   }
 
   /* Exit at the start (first in the markup, so also first in the tab order), the switch at the end, out of
@@ -129,6 +131,22 @@
       padding-inline: 1.5rem;
       --row-reach: 0.75rem;
     }
+
+    /* A table is not set for comfortable reading: it takes the room its columns want, up to the page's
+       width less the gutters, at most 96rem (twice the column) and at least the column, growing on both sides of the centred column. Only a
+       top-level one: in a list or quote the column's middle is not its container's. */
+    > .output.markdown > .table-scroll {
+      inline-size: max-content;
+      min-inline-size: 100%;
+      max-inline-size: max(100%, min(96rem, calc(100cqw - 2 * var(--gutter))));
+      position: relative;
+      inset-inline-start: 50%;
+      translate: -50%;
+
+      &:dir(rtl) {
+        translate: 50%;
+      }
+    }
   }
 }
 
@@ -148,6 +166,13 @@
 
     .pane-bar {
       display: none;
+    }
+
+    /* On paper a table keeps to the column, or the page would cut it off. */
+    .output-area > .output.markdown > .table-scroll:is(*, :dir(rtl)) {
+      inline-size: auto;
+      inset-inline-start: 0;
+      translate: none;
     }
   }
 }
