@@ -102,6 +102,8 @@ test("full view: a wide table grows beyond the reading column, centred, without 
   await expect(app.output.locator("table")).toBeVisible();
   await expect(app.copy).toHaveAttribute("aria-disabled", "false");
   await openOutput(app).click();
+  // Entering is a view transition's update, which runs on the next frame.
+  await expect(exit(app)).toBeVisible();
 
   const measure = () =>
     app.page.evaluate(() => {

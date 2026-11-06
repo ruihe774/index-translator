@@ -13,6 +13,9 @@
 // when that stops being so, full view goes to the source. Moving between the three is a view transition
 // where the browser has one: the blocks in view slide to their new places, those of a side coming in
 // or going out slide from or to its end of the strip [source | translation].
+// Entering and leaving (Exit and Escape; Back and a view that cannot be shown any more leave at once) zoom
+// the pane: the area of the side moves between its place in the panel and the reading column, the old
+// picture and the new fading into each other as it does.
 // Exit, Escape and Back leave: entering pushes a history entry (the same URL), so Back on a phone
 // does not leave the page. Leaving puts the page back where it was and the pane on the block that
 // was at the top.
@@ -208,23 +211,51 @@ export function initFullView(d: FullViewDeps): FullView {
     named.clear();
   }
 
-  /** Runs `update` as a view transition of the blocks in view, where the browser has them and motion is welcome. */
-  function transition(update: () => void) {
+  /**
+   * Runs `update` as a view transition where the browser has them and motion is welcome. Moving between the
+   * views, the blocks in view each move by themselves; entering and leaving (`zoom`), the side's area does,
+   * as one picture (css/full-view.css), so no block is named.
+   */
+  function transition(update: () => void, zoom?: { area: HTMLElement; direction: "in" | "out" }) {
     if (!("startViewTransition" in document) || prefersReducedMotion()) {
       update();
       return;
     }
-    nameBlocks();
+    if (zoom) {
+      zoom.area.style.setProperty("view-transition-name", "full-zoom");
+      root.dataset.zoom = zoom.direction;
+    } else {
+      nameBlocks();
+    }
     const t = document.startViewTransition(() => {
       update();
-      nameBlocks();
+      if (!zoom) {
+        nameBlocks();
+      }
     });
     // A transition skipped (by the next one) rejects `ready`; the change itself is made all the same.
     t.ready.catch(() => {});
-    void t.finished.then(unnameBlocks, unnameBlocks);
+    const done = () => {
+      unnameBlocks();
+      if (zoom) {
+        zoom.area.style.removeProperty("view-transition-name");
+        // A later transition has set its own by now.
+        if (root.dataset.zoom === zoom.direction && !document.querySelector("[style*='full-zoom']")) {
+          delete root.dataset.zoom;
+        }
+      }
+    };
+    void t.finished.finally(done).catch(() => {});
   }
 
   function enter(side: Side) {
+    if (current || !d.previewing(side)) {
+      return;
+    }
+    transition(() => change(side), { area: d.panes[side].area, direction: "in" });
+  }
+
+  function change(side: Side) {
     if (current || !d.previewing(side)) {
       return;
     }
@@ -249,7 +280,20 @@ export function initFullView(d: FullViewDeps): FullView {
     d.exit.focus({ preventScroll: true });
   }
 
-  function leave() {
+  /** Leaves with the zoom, or at once (`animate` false) where the page is leaving of itself. */
+  function leave(animate = false) {
+    if (!current) {
+      return;
+    }
+    if (animate) {
+      const { area } = d.panes[current === "both" ? entered : current];
+      transition(() => drop(), { area, direction: "out" });
+    } else {
+      drop();
+    }
+  }
+
+  function drop() {
     if (!current) {
       return;
     }
@@ -377,7 +421,7 @@ export function initFullView(d: FullViewDeps): FullView {
       }
     });
   }
-  d.exit.addEventListener("click", leave);
+  d.exit.addEventListener("click", () => leave(true));
   d.share.addEventListener("click", () => {
     if (!current || current === "both") {
       return;
@@ -416,7 +460,7 @@ export function initFullView(d: FullViewDeps): FullView {
   document.addEventListener("keydown", (e) => {
     // A modal dialog (the link dialog) takes Escape for itself.
     if (current && e.key === "Escape" && !e.defaultPrevented && !document.querySelector("dialog[open]")) {
-      leave();
+      leave(true);
     }
   });
   window.addEventListener("popstate", () => {

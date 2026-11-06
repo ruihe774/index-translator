@@ -288,6 +288,50 @@
   }
 }
 
+/* Entering and leaving (full-view.ts `transition`, `data-zoom` on the root): the side's area, named `full-zoom`,
+   opens from its place in the panel to the reading column, or closes back to it: the old and the new picture,
+   each drawn at its own size from the top left and cut to the box, never scaled, fade into each other as the
+   box moves. Entering decelerates, leaving accelerates. The rest of the page changes at once, under it. */
+:root[data-zoom] {
+  &::view-transition-old(root) {
+    display: none;
+  }
+
+  &::view-transition-new(root) {
+    animation: none;
+  }
+
+  /* The group backs the picture with the full view's page colour, which the area leaves to the page: else the
+     page under the group shows through. */
+  &::view-transition-group(full-zoom) {
+    background: light-dark(#ffffff, #101010);
+    animation-duration: 0.35s;
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+  }
+
+  /* The two pictures, each at its own size, fade into each other (the browser's own opacity animations, summed
+     by its `plus-lighter` blend) while the box moves, on the group's curve. */
+  &::view-transition-old(full-zoom),
+  &::view-transition-new(full-zoom) {
+    animation-timing-function: cubic-bezier(0.2, 0, 0, 1);
+    block-size: 100%;
+    object-fit: none;
+    object-position: left top;
+  }
+
+  /* Leaving, the box also cuts what the picture holds beyond the area's own (a wide table, the rest of a long
+     text), which the browser draws outside it. Entering, that shows. */
+  &[data-zoom="out"]::view-transition-group(full-zoom) {
+    overflow: clip;
+  }
+
+  &[data-zoom="out"]::view-transition-group(full-zoom),
+  &[data-zoom="out"]::view-transition-old(full-zoom),
+  &[data-zoom="out"]::view-transition-new(full-zoom) {
+    animation-timing-function: ease-in;
+  }
+}
+
 /* Printed: the text alone, black on white. Browsers print in the light scheme; `color-scheme` only makes sure
    of it (every `light-dark()` takes its light side), since dark mode's light text on white paper would be
    near invisible. */
