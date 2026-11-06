@@ -68,7 +68,11 @@
       transform-origin: left center;
     }
 
-    > .pane-switch {
+    /* Share and the switch scale as one, so that Share sits against the switch's visible edge. */
+    > .pane-bar-end {
+      display: flex;
+      align-items: center;
+      gap: var(--gap);
       transform-origin: right center;
     }
   }

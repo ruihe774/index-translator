@@ -167,10 +167,19 @@
               />
             </svg>
           </button>
-          <view-switch id="pane-switch" class="view-switch pane-switch" role="group" aria-label="Shown panel">
-            <button type="button" data-value="source" aria-pressed="true">Source text</button>
-            <button type="button" data-value="output" aria-pressed="false">Translation</button>
-          </view-switch>
+          <div class="pane-bar-end">
+            <button type="button" id="full-view-share" class="icon" aria-label="Share the text" hidden>
+              <svg viewBox="0 0 24 24" aria-hidden="true">
+                <path
+                  d="M12 2 7.5 6.5l1.41 1.41L11 5.83V15h2V5.83l2.09 2.08L16.5 6.5zM5 10v11h14V10h-3v2h1v7H7v-7h1v-2z"
+                />
+              </svg>
+            </button>
+            <view-switch id="pane-switch" class="view-switch pane-switch" role="group" aria-label="Shown panel">
+              <button type="button" data-value="source" aria-pressed="true">Source text</button>
+              <button type="button" data-value="output" aria-pressed="false">Translation</button>
+            </view-switch>
+          </div>
         </div>
 
         <section class="settings" aria-labelledby="settings-heading">

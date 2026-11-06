@@ -17,6 +17,7 @@ import { lineElements } from "./dom.ts";
 import type { ViewSwitch } from "./elements/view-switch.ts";
 import type { PaneCarousel } from "./pane-carousel.ts";
 import { type Alignment, counterpart } from "./paragraphs.ts";
+import { shareText, shareTypeFor } from "./share.ts";
 import type { Side } from "./state.ts";
 import { viewPane } from "./sync-scroll.ts";
 
@@ -24,6 +25,8 @@ export interface FullViewDeps {
   /** The button in each panel's foot that opens its full view. */
   open: Record<Side, HTMLButtonElement>;
   exit: HTMLButtonElement;
+  /** Shares the text shown; hidden unless `share` says it can. */
+  share: HTMLButtonElement;
   /** The bar the switch and Exit sit in; the text starts below it. */
   bar: HTMLElement;
   paneSwitch: ViewSwitch;
@@ -39,6 +42,8 @@ export interface FullViewDeps {
   alignment(): Alignment | null;
   /** Called before the page changes: stops reading aloud and pauses the player. */
   entering(): void;
+  /** The text of the side and whether it is Markdown, for the share button. */
+  content(side: Side): { text: string; markdown: boolean };
 }
 
 export interface FullView {
@@ -94,6 +99,11 @@ export function initFullView(d: FullViewDeps): FullView {
     }
   }
 
+  /** Shows the share button when the browser can share the side's text in some type. */
+  function showShare(side: Side) {
+    d.share.hidden = shareTypeFor(d.content(side).markdown) === null;
+  }
+
   function enter(side: Side) {
     if (current || !d.previewing(side)) {
       return;
@@ -107,6 +117,7 @@ export function initFullView(d: FullViewDeps): FullView {
     root.dataset.fullView = side;
     d.paneSwitch.value = side;
     d.exit.hidden = false;
+    showShare(side);
     history.pushState({ fullView: true }, "");
     pushed = true;
     page.scrollTop = 0;
@@ -126,6 +137,7 @@ export function initFullView(d: FullViewDeps): FullView {
     current = null;
     delete root.dataset.fullView;
     d.exit.hidden = true;
+    d.share.hidden = true;
     for (const b of d.paneSwitch.querySelectorAll("button")) {
       b.removeAttribute("aria-disabled");
     }
@@ -164,6 +176,7 @@ export function initFullView(d: FullViewDeps): FullView {
     // First: the render that `preview` runs must find the side shown showable, so it does not leave.
     current = to;
     root.dataset.fullView = to;
+    showShare(to);
     if (!d.previewing(to)) {
       d.preview(to);
     }
@@ -183,6 +196,17 @@ export function initFullView(d: FullViewDeps): FullView {
     });
   }
   d.exit.addEventListener("click", leave);
+  d.share.addEventListener("click", () => {
+    if (!current) {
+      return;
+    }
+    const { text, markdown } = d.content(current);
+    const type = shareTypeFor(markdown);
+    if (type) {
+      // A failed share (not a dismissed sheet) has nothing to say that the sheet has not shown.
+      void shareText(text, type).catch(() => {});
+    }
+  });
   // The carousel hears the change too and, held, does nothing.
   d.paneSwitch.addEventListener("change", () => {
     if (current) {

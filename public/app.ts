@@ -985,7 +985,8 @@ const speech: SpeechUi = initSpeechUi({
 const fullView = initFullView({
   open: { source: $<HTMLButtonElement>("full-source"), output: $<HTMLButtonElement>("full-output") },
   exit: $<HTMLButtonElement>("full-view-exit"),
-  bar: paneSwitch.parentElement!,
+  share: $<HTMLButtonElement>("full-view-share"),
+  bar: paneSwitch.closest<HTMLElement>(".pane-bar")!,
   paneSwitch,
   carousel: panes,
   panes: {
@@ -997,6 +998,10 @@ const fullView = initFullView({
   showable: (side) => side === "output" || (textInput.value.length > 0 && sourceImage.file === null),
   preview: (side) => chooseView(side, "preview"),
   alignment: () => sync.active(),
+  content: (side) =>
+    side === "source"
+      ? { text: textInput.value, markdown: views.source.format === "markdown" }
+      : { text: state.translation, markdown: views.output.format === "markdown" },
   entering() {
     speech.stop();
     media.pause();

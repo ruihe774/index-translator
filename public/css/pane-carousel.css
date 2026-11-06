@@ -49,6 +49,12 @@
   margin-block-end: -1rem;
 }
 
+/* Wraps full view's Share and the switch (css/full-view.css); until then the switch alone. */
+.pane-bar-end {
+  display: flex;
+  justify-content: center;
+}
+
 /* 8ic can usually confortably hold these text labels ("Source text" and "Translation") with room. */
 .pane-switch > button {
   min-inline-size: 8ic;
