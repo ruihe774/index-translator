@@ -289,7 +289,7 @@ test("the disabled Translate button does not react to hover", async ({ app, mock
   await app.translate.click();
   await expect(app.translate).toHaveAttribute("aria-disabled", "true");
   await app.page.mouse.move(0, 0);
-  await transitionsDone(app.translate); // the colour change is a 0.15 s transition
+  await transitionsDone(app.translate); // the colour change is a 0.1 s transition
   const away = await bg();
   await app.translate.hover();
   await transitionsDone(app.translate);

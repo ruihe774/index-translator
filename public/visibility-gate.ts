@@ -2,7 +2,7 @@ import { prefersReducedMotion } from "./media-query.ts";
 
 const showPage = () => {
   if (!prefersReducedMotion()) {
-    document.body.style.transition = "opacity 100ms ease-out";
+    document.body.style.transition = "opacity 0.1s ease-out";
   }
   document.body.style.opacity = "1";
 };

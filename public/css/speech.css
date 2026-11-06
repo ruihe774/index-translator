@@ -39,7 +39,7 @@ button.icon {
      button's name ("Preparing the audio…"); without the animation (reduced motion) the glyph is static. */
   @media (prefers-reduced-motion: no-preference) {
     &[data-state="loading"] .when-loading {
-      animation: speech-spin 0.8s linear infinite;
+      animation: speech-spin 1s linear infinite;
     }
   }
 }

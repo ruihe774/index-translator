@@ -48,6 +48,6 @@ button {
 
 @media (prefers-reduced-motion: no-preference) {
   button {
-    transition: background-color 0.15s;
+    transition: background-color 0.1s;
   }
 }

@@ -220,7 +220,7 @@
    translation on the end. The bar keeps still above it (`.pane-bar`). Only where `view-transition-class` is understood
    are the sides told apart; elsewhere the browser's own fade. */
 ::view-transition-group(*) {
-  animation-duration: 0.25s;
+  animation-duration: 0.1s;
 }
 
 /* Fast at the start, so the click answers at once, and settling into place. Set on each part rather than

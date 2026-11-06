@@ -50,7 +50,7 @@
   border-radius: var(--bar-size); /* it slides away from the start, so both ends show */
 
   @media (prefers-reduced-motion: no-preference) {
-    animation: engine-bar 1.4s ease-in-out infinite alternate;
+    animation: engine-bar 1.5s ease-in-out infinite alternate;
   }
 }
 
