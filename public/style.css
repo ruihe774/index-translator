@@ -29,5 +29,4 @@
 @import url("css/phone.css") layer(components);
 @import url("css/standalone.css") layer(components);
 @import url("css/full-view.css") layer(components);
-@import url("css/reduced-motion.css");
 @import url("css/utilities.css") layer(utilities);

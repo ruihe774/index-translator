@@ -42,8 +42,10 @@ main {
   flex: 1;
   padding-block-end: 2rem;
   /* The cap is what animates, not `inline-size`: the width itself also changes with the window, which must not
-     animate. `reduced-motion.css` shortens the transition to nothing. */
-  transition: --page-cap 500ms ease-out;
+     animate. */
+  @media (prefers-reduced-motion: no-preference) {
+    transition: --page-cap 500ms ease-out;
+  }
 
   > form {
     display: flex;
