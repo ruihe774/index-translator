@@ -1,6 +1,8 @@
 // Full view (full-view.ts): one side's rendered text alone on the page, scrolled by the page, under a bar
 // with the Source / Translation switch and Exit.
 
+import type { Page } from "@playwright/test";
+
 import { type AppPage, expect, test, THINK } from "./fixtures";
 
 const PHONE = { width: 360, height: 740 };
@@ -427,3 +429,117 @@ test("full view side by side: unavailable without matched blocks, and for subtit
   await openOutput(app).click();
   await expect(both(app)).toHaveAttribute("aria-disabled", "true");
 });
+
+/**
+ * Runs `act`, whose click starts a view transition, and holds that transition halfway: every animation of its
+ * pseudo-elements paused at half its duration, until `release`.
+ */
+async function holdTransition(app: AppPage, act: () => Promise<void>) {
+  await app.page.evaluate(() => {
+    const start = document.startViewTransition.bind(document);
+    document.startViewTransition = ((update: () => void) => {
+      document.startViewTransition = start;
+      const t = start(update);
+      (window as unknown as { held: Promise<void> }).held = t.ready.then(() => {
+        for (const a of document.getAnimations()) {
+          const effect = a.effect as KeyframeEffect;
+          if (effect.pseudoElement?.startsWith("::view-transition")) {
+            a.pause();
+            a.currentTime = Number(effect.getComputedTiming().duration) / 2;
+          }
+        }
+      });
+      return t;
+    }) as typeof document.startViewTransition;
+  });
+  await act();
+  await app.page.waitForFunction(() => "held" in window);
+  await app.page.evaluate(() => (window as unknown as { held: Promise<void> }).held);
+  return async () => {
+    await app.page.evaluate(() => {
+      delete (window as { held?: unknown }).held;
+      for (const a of document.getAnimations()) {
+        a.finish();
+      }
+    });
+    await expect(app.page.locator("[style*='view-transition-name']")).toHaveCount(0);
+  };
+}
+
+/**
+ * The share of the pixels of `during` (PNG) that lie outside what `before` and `after` show at the same place,
+ * by more than a little in some channel: low when `during` is a blend of the two, high where something else
+ * covers them or they are missing. Decoded in `decoder`, a blank page (the app's CSP refuses `data:` pictures).
+ */
+function outsideBlend(decoder: Page, before: Buffer, during: Buffer, after: Buffer) {
+  return decoder.evaluate(
+    async (pngs) => {
+      const [b, d, a] = await Promise.all(
+        pngs.map(async (png) => {
+          const bytes = Uint8Array.from(atob(png), (c) => c.charCodeAt(0));
+          const bitmap = await createImageBitmap(new Blob([bytes], { type: "image/png" }));
+          const context = new OffscreenCanvas(bitmap.width, bitmap.height).getContext("2d")!;
+          context.drawImage(bitmap, 0, 0);
+          return context.getImageData(0, 0, bitmap.width, bitmap.height).data;
+        }),
+      );
+      let outside = 0;
+      for (let i = 0; i < d!.length; i += 4) {
+        for (let c = i; c < i + 3; c++) {
+          if (d![c]! < Math.min(b![c]!, a![c]!) - 40 || d![c]! > Math.max(b![c]!, a![c]!) + 40) {
+            outside++;
+            break;
+          }
+        }
+      }
+      return outside / (d!.length / 4);
+    },
+    [before, during, after].map((png) => png.toString("base64")),
+  );
+}
+
+// The bar is sticky: in flow at the top of the page before it scrolls, held to the top of the screen after. Either
+// way, halfway through a view transition between the views, each of its buttons looks like a blend of how it
+// looked before and after, not covered by the blocks moving nor faded out.
+for (const [state, scrollTop] of [
+  ["in flow", 0],
+  ["stuck", 1500],
+] as const) {
+  test(`full view: the bar and its buttons stay shown during a view transition (bar ${state})`, async ({
+    app,
+    mock,
+    context,
+    browserName,
+  }) => {
+    test.skip(browserName === "firefox", "Playwright's Firefox screenshots leave out view transitions");
+    await app.page.setViewportSize({ width: 1280, height: 800 });
+    await translated(app, mock);
+    await openOutput(app).click();
+    await expect(both(app)).toHaveAttribute("aria-disabled", "false");
+    await expect(app.page.locator("[style*='view-transition-name']")).toHaveCount(0);
+    await app.page.evaluate((top) => scrollTo(0, top), scrollTop);
+    expect(await app.page.evaluate(() => scrollY)).toBe(scrollTop);
+    await expect(bar(app)).toBeInViewport();
+
+    const decoder = await context.newPage();
+    const views = ["Source text", "Side by side", "Translation"];
+    const names = ["Exit full view", ...views];
+    const buttons = [exit(app), ...views.map((name) => bar(app).getByRole("button", { name, exact: true }))];
+    for (const target of ["Side by side", "Source text", "Translation"]) {
+      // The bar does not move, whatever the page under it does.
+      const boxes = await Promise.all(buttons.map(async (b) => (await b.boundingBox())!));
+      const shoot = () => Promise.all(boxes.map((clip) => app.page.screenshot({ clip, animations: "allow" })));
+      const before = await shoot();
+      const release = await holdTransition(app, () =>
+        press(bar(app).getByRole("button", { name: target, exact: true })),
+      );
+      const during = await shoot();
+      await release();
+      const after = await shoot();
+      for (const [i, name] of names.entries()) {
+        const share = await outsideBlend(decoder, before[i]!, during[i]!, after[i]!);
+        expect(share, `${name}, going to ${target}`).toBeLessThan(0.05);
+      }
+    }
+  });
+}
