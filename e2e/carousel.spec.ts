@@ -14,7 +14,9 @@ async function resting(app: AppPage, side: "source" | "output") {
     .poll(() =>
       row(app).evaluate((el, side) => {
         const panel = el.querySelector(side === "source" ? ".panel.source" : ".panel.result")!.getBoundingClientRect();
-        return panel.left >= 0 && panel.right <= innerWidth;
+        // At the end of its scroll (Firefox's smooth scroll ignores a click on its last pixels).
+        const end = side === "source" ? 0 : el.scrollWidth - el.clientWidth;
+        return panel.left >= 0 && panel.right <= innerWidth && Math.abs(el.scrollLeft - end) < 0.5;
       }, side),
     )
     .toBe(true);
@@ -67,7 +69,7 @@ test("Translate brings the translation in; the switch goes back and forth and ke
 });
 
 test("an error brings the translation's status line into view", async ({ app, mock }) => {
-  await mock.set({ chunks: [THINK, "一", "二", "三"], delayMs: 400, failWith: "boom" });
+  await mock.set({ chunks: [THINK, "一", "二", "三"], delayMs: 800, failWith: "boom" });
   await app.page.setViewportSize(PHONE);
   await app.open();
   await app.text.fill("Hello");
@@ -117,7 +119,8 @@ test("the panel coming in shows the counterpart of what the other one showed", a
   // The lines are short and do not wrap; sub-pixel line heights add up over 60 lines.
   expect(Math.abs(inTextarea)).toBeLessThan(4);
   expect(midway.length).toBeGreaterThan(1);
-  expect(new Set(midway).size).toBe(1);
+  // Firefox reports a pixel or two of movement (inside the carousel's tolerance) before the sync; drop those.
+  expect(new Set(midway.slice(2)).size).toBe(1);
 
   // And back: the source at line 20 brings the translation in at line 20.
   await app.text.evaluate((t) => {

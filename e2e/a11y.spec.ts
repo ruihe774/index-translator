@@ -594,9 +594,13 @@ const SWITCH = (page: Page, group: string, name: string) =>
 // Waits for the button fades axe would read mid-blend, but not for endless ones (a spinner).
 const settle = (page: Page) =>
   page.waitForFunction(() =>
-    document
-      .getAnimations()
-      .every((a) => a.playState !== "running" || a.effect?.getComputedTiming().iterations === Infinity),
+    document.getAnimations().every(
+      (a) =>
+        a.playState !== "running" ||
+        a.effect?.getComputedTiming().iterations === Infinity ||
+        // Firefox starts transitions on elements with no box (a closed dialog) and never ticks them.
+        !(a.effect as KeyframeEffect | null)?.target?.checkVisibility(),
+    ),
   );
 
 const overflow = (page: Page) =>

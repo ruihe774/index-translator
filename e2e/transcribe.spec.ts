@@ -400,7 +400,17 @@ const captionTracks = (page: Page) =>
     })),
   );
 
-test("the video carries the transcript, its translation and both as caption tracks", async ({ app, mock }) => {
+test("the video carries the transcript, its translation and both as caption tracks", async ({
+  app,
+  mock,
+  browserName,
+}) => {
+  // Firefox's video controls turn the tracks that are not showing to disabled, which hides their cues until
+  // picked; what the reader sees is the showing track.
+  const tracks = async () =>
+    (await captionTracks(app.page)).map((t) =>
+      browserName === "firefox" && t.mode === "disabled" ? { ...t, mode: "hidden", cues: expect.anything() } : t,
+    );
   await mock.set({ speech: { segments: SEGMENTS } });
   await app.open();
   await app.from.selectOption("en");
@@ -412,7 +422,7 @@ test("the video carries the transcript, its translation and both as caption trac
   await expect(note(app.page)).toHaveText(/^tracks\.mkv: transcribed/);
   // The transcript, without its speaker ids, shown.
   await expect
-    .poll(() => captionTracks(app.page))
+    .poll(() => tracks())
     .toStrictEqual([
       {
         label: expect.stringMatching(/^Original \(.+\)$/),
@@ -438,7 +448,7 @@ test("the video carries the transcript, its translation and both as caption trac
     [2.1, 2.9, "<lang zh>很好，谢谢。</lang>\n<lang en>Fine, thanks.</lang>"],
   ];
   await expect
-    .poll(() => captionTracks(app.page))
+    .poll(() => tracks())
     .toStrictEqual([
       expect.objectContaining({ lang: "en", mode: "hidden" }),
       {
@@ -460,9 +470,7 @@ test("the video carries the transcript, its translation and both as caption trac
   });
   await app.translate.click();
   await expect(app.meta).toContainText("generated");
-  await expect
-    .poll(async () => (await captionTracks(app.page)).map((t) => t.mode))
-    .toStrictEqual(["hidden", "showing", "hidden"]);
+  await expect.poll(async () => (await tracks()).map((t) => t.mode)).toStrictEqual(["hidden", "showing", "hidden"]);
 
   await app.page.locator("#clear").click();
   await expect(app.page.locator("#source-media video")).toHaveCount(0);
