@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 import type { Page } from "@playwright/test";
 
-import { expect, type Mock, test, THINK } from "./fixtures";
+import { expect, type Mock, NO_H264, test, THINK } from "./fixtures";
 
 const MEDIA = join(import.meta.dirname, "..", "test", "fixtures", "media");
 
@@ -221,9 +221,6 @@ async function uploaded(page: Page, channels: number) {
  * Linux the decoder never answers `flush()` and the page waits for it (the page sets no timeout).
  */
 const NO_SURROUND = "WebKit cannot decode 6-channel Opus";
-// Playwright's WebKit on Linux plays media through GStreamer without an H.264 decoder (an H.264 MP4 fails
-// too), so tracks.mkv shows no picture there; Safari decodes H.264.
-const NO_H264 = "Playwright's WebKit cannot decode H.264";
 /**
  * WebKit's AudioDecoder on Linux (GStreamer), given a first chunk with a negative timestamp (an MP3's or Opus's
  * codec delay), holds every frame until `flush()`, then outputs them in reverse order at `-|timestamp|`, so all
@@ -240,9 +237,10 @@ test.describe("re-encoded in the browser", () => {
   test("AAC with a gap: decoded, the gap filled, sent as Ogg Opus", async ({ app, mock, browserName }) => {
     await app.open();
     await transcribe(app.page, "gap.mka");
-    // A second of tone, half a second missing, a second of tone: the times stay the file's.
+    // A second of tone, half a second missing, a second of tone: the times stay the file's. WebKit's decoder on
+    // Linux upmixes the mono AAC to stereo; macOS's keeps it mono.
     const [r] = await sent(mock);
-    expect(r).toMatchObject(await uploaded(app.page, browserName === "webkit" ? 2 : 1));
+    expect(r).toMatchObject(await uploaded(app.page, linuxWebkit(browserName) ? 2 : 1));
     expect(r!.seconds).toBeGreaterThan(2.45);
     expect(r!.seconds).toBeLessThan(2.6);
   });

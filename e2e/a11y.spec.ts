@@ -7,7 +7,7 @@ import { join } from "node:path";
 import { AxeBuilder } from "@axe-core/playwright";
 import type { Page } from "@playwright/test";
 
-import { expect, test, THINK, transitionsDone } from "./fixtures";
+import { expect, NO_H264, test, THINK, transitionsDone } from "./fixtures";
 
 const WCAG_TAGS = ["wcag2a", "wcag2aa", "wcag21a", "wcag21aa", "wcag22aa"];
 
@@ -1022,7 +1022,8 @@ function pickMedia(page: Page, name: string) {
 }
 
 for (const scheme of ["light", "dark"] as const) {
-  test(`the transcription dialog and a transcript pass axe in ${scheme} mode`, async ({ app, mock }) => {
+  test(`the transcription dialog and a transcript pass axe in ${scheme} mode`, async ({ app, mock, browserName }) => {
+    test.skip(browserName === "webkit", NO_H264);
     await app.page.emulateMedia({ colorScheme: scheme });
     await mock.set({ speech: { segments: TRANSCRIPT } });
     await app.open();
@@ -1052,7 +1053,9 @@ const PLAY_FROM = (page: Page) => page.getByRole("toolbar", { name: "Play the re
 test("the player and its play-from column: one tab stop, arrows, 24 px targets, nothing overflows at 320 px", async ({
   app,
   mock,
+  browserName,
 }) => {
+  test.skip(browserName === "webkit", NO_H264);
   await app.page.setViewportSize({ width: 320, height: 640 });
   await mock.set({ speech: { segments: TRANSCRIPT } });
   await app.open();

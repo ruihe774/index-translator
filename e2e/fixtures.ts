@@ -102,6 +102,12 @@ export { CHAT, DOCUMENT } from "../test/helpers/harness";
 // Under `E2E_COVERAGE` every page measures its JS; globalTeardown merges the workers' data (`e2e/coverage.ts`).
 const coverage = COVERAGE ? new CoverageReport(REPORT) : undefined;
 
+/**
+ * Playwright's WebKit plays media without an H.264 decoder, on Linux (GStreamer; an H.264 MP4 fails too) and on
+ * macOS, so tracks.mkv shows no picture there; Safari decodes H.264.
+ */
+export const NO_H264 = "Playwright's WebKit cannot decode H.264";
+
 /** WebKit on macOS behaves as Safari does: neither Tab nor a click reaches or focuses buttons and links by default. */
 export const macWebkit = (browserName: string) => browserName === "webkit" && process.platform === "darwin";
 
