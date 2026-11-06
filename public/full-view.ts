@@ -142,9 +142,13 @@ export function initFullView(d: FullViewDeps): FullView {
     }
   }
 
-  /** Shows the share button when one side is shown and the browser can share its text in some type. */
+  /**
+   * Shows the share button when the browser can share text in some type, so it does not come and go with the view;
+   * side by side has two texts and none to pick, so there it is disabled.
+   */
   function showShare(shown: Shown) {
-    d.share.hidden = shown === "both" || shareTypeFor(d.content(shown).markdown) === null;
+    d.share.hidden = shareTypeFor(d.content(shown === "both" ? "source" : shown).markdown) === null;
+    setAttr(d.share, "aria-disabled", String(shown === "both"));
   }
 
   /** Marks the buttons of what cannot be shown now, as the switch sees them. */
@@ -373,6 +377,7 @@ export function initFullView(d: FullViewDeps): FullView {
     delete root.dataset.fullView;
     d.exit.hidden = true;
     d.share.hidden = true;
+    d.share.removeAttribute("aria-disabled");
     d.paneSwitch.value = side;
     for (const b of d.paneSwitch.querySelectorAll("button")) {
       b.removeAttribute("aria-disabled");
@@ -488,7 +493,7 @@ export function initFullView(d: FullViewDeps): FullView {
   }
   d.exit.addEventListener("click", () => leave(true));
   d.share.addEventListener("click", () => {
-    if (!current || current === "both") {
+    if (!current || current === "both" || d.share.getAttribute("aria-disabled") === "true") {
       return;
     }
     const { text, markdown } = d.content(current);

@@ -292,7 +292,8 @@ test("full view side by side: matched blocks in line, the block at the top kept,
   const output = (await app.output.boundingBox())!;
   expect(source.x + source.width).toBeLessThanOrEqual(output.x + 1);
   expect(await app.page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
-  await expect(app.page.locator("#full-view-share")).toBeHidden();
+  // Share stays where it was, disabled: two texts, none to pick.
+  await expect(app.page.locator("#full-view-share")).toHaveAttribute("aria-disabled", "true");
 
   await press(bar(app).getByRole("button", { name: "Source text" }));
   await expect(app.output).toBeHidden();
