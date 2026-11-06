@@ -299,7 +299,8 @@ async function decode(
     while (ready.length > 0) {
       const d = ready.shift()!;
       try {
-        if (!timeline.full) {
+        // Firefox's Vorbis decoder outputs an empty first block, and `copyTo` throws on it.
+        if (!timeline.full && d.numberOfFrames > 0) {
           await timeline.add(d.timestamp, planesOf(d), d.sampleRate);
         }
       } finally {
