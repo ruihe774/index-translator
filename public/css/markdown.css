@@ -137,10 +137,6 @@
     tr > :first-child {
       border-inline-start: 0;
     }
-
-    th {
-      min-inline-size: 4ic;
-    }
   }
 
   th,
@@ -154,6 +150,7 @@
   }
 
   th {
+    min-inline-size: 4ic;
     background: var(--surface);
   }
 
