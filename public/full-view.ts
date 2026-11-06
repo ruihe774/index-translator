@@ -89,6 +89,13 @@ function placeAt(view: HTMLElement, top: number): Place | null {
   return null;
 }
 
+/** The part of an area on the screen: how far below the area's top it starts, its height, and the area's height. */
+interface OnScreen {
+  offset: number;
+  height: number;
+  whole: number;
+}
+
 const SIDES = ["source", "output"] as const;
 
 const sidesOf = (shown: Shown): readonly Side[] => (shown === "both" ? SIDES : [shown]);
@@ -211,6 +218,50 @@ export function initFullView(d: FullViewDeps): FullView {
     named.clear();
   }
 
+  /** The part of `area` on screen while in full view; null out of full view or when all of it is. */
+  function onScreen(area: HTMLElement): OnScreen | null {
+    if (!current) {
+      return null;
+    }
+    const box = area.getBoundingClientRect();
+    const top = Math.max(box.top, 0);
+    const height = Math.min(box.bottom, innerHeight) - top;
+    return height > 0 && (top > box.top || height < box.height)
+      ? { offset: top - box.top, height, whole: box.height }
+      : null;
+  }
+
+  /**
+   * Moves the picture of full view up in the zoom's box (css/full-view.css) by where the part on screen starts:
+   * as a share of the picture's own height, which holds at every width the box scales it to. Null: not moved.
+   */
+  function shiftZoom(part: OnScreen | null) {
+    if (part) {
+      root.style.setProperty("--zoom-shift", `${(-100 * part.offset) / part.whole}%`);
+    } else {
+      root.style.removeProperty("--zoom-shift");
+    }
+  }
+
+  /**
+   * Ends the zoom's box in full view at the part of the area on screen, not at the whole area: scrolled, the
+   * area's top is far above the screen, and the box would sweep there in a moment like a fast scroll.
+   */
+  function fitZoom(end: "old" | "new", part: OnScreen) {
+    const effect = document
+      .getAnimations()
+      .map((a) => a.effect as KeyframeEffect | null)
+      .find((e) => e?.pseudoElement === "::view-transition-group(full-zoom)");
+    const frames = effect?.getKeyframes();
+    if (!effect || frames?.length !== 2) {
+      return;
+    }
+    const full = end === "new" ? frames[1]! : frames[0]!;
+    full.transform = `${full.transform} translateY(${part.offset}px)`;
+    full.height = `${part.height}px`;
+    effect.setKeyframes(frames);
+  }
+
   /**
    * Runs `update` as a view transition where the browser has them and motion is welcome. Moving between the
    * views, the blocks in view each move by themselves; entering and leaving (`zoom`), the side's area does,
@@ -221,9 +272,13 @@ export function initFullView(d: FullViewDeps): FullView {
       update();
       return;
     }
+    // Leaving, full view is the old picture, measured now; entering, the new one, measured after the change.
+    let part: OnScreen | null = null;
     if (zoom) {
       zoom.area.style.setProperty("view-transition-name", "full-zoom");
       root.dataset.zoom = zoom.direction;
+      part = zoom.direction === "out" ? onScreen(zoom.area) : null;
+      shiftZoom(part);
     } else {
       nameBlocks();
     }
@@ -231,10 +286,19 @@ export function initFullView(d: FullViewDeps): FullView {
       update();
       if (!zoom) {
         nameBlocks();
+      } else if (zoom.direction === "in") {
+        part = onScreen(zoom.area);
+        shiftZoom(part);
       }
     });
     // A transition skipped (by the next one) rejects `ready`; the change itself is made all the same.
-    t.ready.catch(() => {});
+    t.ready
+      .then(() => {
+        if (zoom && part) {
+          fitZoom(zoom.direction === "in" ? "new" : "old", part);
+        }
+      })
+      .catch(() => {});
     const done = () => {
       unnameBlocks();
       if (zoom) {
@@ -242,6 +306,7 @@ export function initFullView(d: FullViewDeps): FullView {
         // A later transition has set its own by now.
         if (root.dataset.zoom === zoom.direction && !document.querySelector("[style*='full-zoom']")) {
           delete root.dataset.zoom;
+          shiftZoom(null);
         }
       }
     };

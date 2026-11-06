@@ -289,9 +289,10 @@
 }
 
 /* Entering and leaving (full-view.ts `transition`, `data-zoom` on the root): the side's area, named `full-zoom`,
-   opens from its place in the panel to the reading column, or closes back to it: the old and the new picture,
-   each drawn at its own size from the top left and cut to the box, never scaled, fade into each other as the
-   box moves. Entering decelerates, leaving accelerates. The rest of the page changes at once, under it. */
+   opens from its place in the panel to the part of the reading column on screen, or closes back to it: the old
+   and the new picture, each scaled to the box's width from the top left and cut to its height, fade into each
+   other as the box moves. Entering decelerates, leaving accelerates. The rest of the page changes at once,
+   under it. */
 :root[data-zoom] {
   &::view-transition-old(root) {
     display: none;
@@ -305,12 +306,22 @@
      page under the group shows through. */
   &::view-transition-group(full-zoom) {
     background: var(--bg);
+    /* In full view the box is the part of the area on screen (full-view.ts `fitZoom`): the text above and
+       below it stays out. */
+    overflow-y: clip;
   }
 
-  /* Leaving, the box also cuts what the picture holds beyond the area's own (a wide table, the rest of a long
-     text), which the browser draws outside it. Entering, that shows. */
+  /* Leaving, the box also cuts what the picture holds beyond the area's own sideways (a wide table), which the
+     browser draws outside it. Entering, that shows. */
   &[data-zoom="out"]::view-transition-group(full-zoom) {
     overflow: clip;
+  }
+
+  /* The picture of full view starts at the part of the text on screen, where the box starts too: moved up
+     by a share of its own height (`--zoom-shift`, full-view.ts), right at every width it is scaled to. */
+  &[data-zoom="in"]::view-transition-new(full-zoom),
+  &[data-zoom="out"]::view-transition-old(full-zoom) {
+    translate: 0 var(--zoom-shift, 0);
   }
 
   &[data-zoom="out"]::view-transition-group(full-zoom),
