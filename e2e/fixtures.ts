@@ -102,8 +102,17 @@ export { CHAT, DOCUMENT } from "../test/helpers/harness";
 // Under `E2E_COVERAGE` every page measures its JS; globalTeardown merges the workers' data (`e2e/coverage.ts`).
 const coverage = COVERAGE ? new CoverageReport(REPORT) : undefined;
 
+/** WebKit on macOS behaves as Safari does: neither Tab nor a click reaches or focuses buttons and links by default. */
+export const macWebkit = (browserName: string) => browserName === "webkit" && process.platform === "darwin";
+
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
   page: async ({ page, browserName }, use) => {
+    if (macWebkit(browserName)) {
+      // Safari's Tab skips buttons and links; with Option held it visits them, as the page's users with the setting do.
+      const press = page.keyboard.press.bind(page.keyboard);
+      page.keyboard.press = (key, options) =>
+        press(key === "Tab" ? "Alt+Tab" : key === "Shift+Tab" ? "Alt+Shift+Tab" : key, options);
+    }
     // Coverage comes from Chromium's CDP; Firefox and WebKit run without it.
     if (!coverage || browserName !== "chromium") {
       await use(page);

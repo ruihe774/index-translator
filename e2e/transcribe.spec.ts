@@ -9,7 +9,7 @@ import { join } from "node:path";
 
 import type { Page } from "@playwright/test";
 
-import { expect, type Mock, test, THINK } from "./fixtures";
+import { expect, macWebkit, type Mock, test, THINK } from "./fixtures";
 
 const MEDIA = join(import.meta.dirname, "..", "test", "fixtures", "media");
 
@@ -101,6 +101,7 @@ test("Stop keeps what was written and gives the box back", async ({ app, mock })
   await pick(app.page, "tone.webm", "video/webm");
   await dialog(app.page).getByRole("button", { name: "Transcribe" }).click();
   await expect(rows(app.page, "#source-view")).toHaveCount(1);
+  await app.stop.focus(); // Safari does not focus a clicked button; Stop hands its focus to Translate
   await app.stop.click();
   // The server stops at its next check (here the next segment, 0.8 s on): until then the page says so.
   await expect(app.page.locator("#count")).toContainText(
@@ -194,6 +195,30 @@ async function transcribe(page: Page, name: string, track?: string | RegExp) {
   await expect(note(page)).toContainText(`${name}: transcribed`);
 }
 
+/**
+ * What a track the page re-encoded is sent as: Ogg Opus with `channels` where the browser encodes Opus, else the
+ * mono 44.1 kHz WAV (WebKit on macOS has no Opus encoder; the page's fallback is tested without AudioEncoder).
+ */
+async function uploaded(page: Page, channels: number) {
+  const opus = await page.evaluate(
+    async (n) =>
+      typeof AudioEncoder !== "undefined" &&
+      (
+        await AudioEncoder.isConfigSupported({
+          codec: "opus",
+          sampleRate: 48_000,
+          numberOfChannels: n,
+          bitrate: 96_000,
+        })
+      ).supported === true,
+    channels,
+  );
+  return opus ? { type: "audio/ogg", channels } : { type: "audio/wav", channels: 1, sampleRate: 44_100 };
+}
+
+/** WebKit on macOS cannot decode 6-channel Opus and says so when the file is opened: no dialog follows. */
+const NO_SURROUND = "macOS WebKit refuses 6-channel Opus when the file is opened";
+
 test.describe("re-encoded in the browser", () => {
   test.beforeEach(async ({ mock }) => {
     await mock.set({ speech: { segments: SEGMENTS.slice(0, 1) } });
@@ -204,12 +229,13 @@ test.describe("re-encoded in the browser", () => {
     await transcribe(app.page, "gap.mka");
     // A second of tone, half a second missing, a second of tone: the times stay the file's.
     const [r] = await sent(mock);
-    expect(r).toMatchObject({ type: "audio/ogg", channels: browserName === "webkit" ? 2 : 1 });
+    expect(r).toMatchObject(await uploaded(app.page, browserName === "webkit" ? 2 : 1));
     expect(r!.seconds).toBeGreaterThan(2.45);
     expect(r!.seconds).toBeLessThan(2.6);
   });
 
-  test("5.1 Opus is mixed down to stereo", async ({ app, mock }) => {
+  test("5.1 Opus is mixed down to stereo", async ({ app, mock, browserName }) => {
+    test.skip(macWebkit(browserName), NO_SURROUND);
     await app.open();
     await transcribe(app.page, "surround.mkv");
     const [r] = await sent(mock);
@@ -241,7 +267,7 @@ test.describe("re-encoded in the browser", () => {
       await app.open();
       await transcribe(app.page, "codecs.mkv", new RegExp(`^${track} \\(English\\)`));
       const [r] = await sent(mock);
-      expect(r).toMatchObject({ type: "audio/ogg", channels: expected });
+      expect(r).toMatchObject(await uploaded(app.page, expected));
       expect(r!.seconds).toBeCloseTo(2, 1);
     });
   }
@@ -265,7 +291,8 @@ test.describe("re-encoded in the browser", () => {
     expect(mkv!.seconds).toBeCloseTo(3, 1);
   });
 
-  test("without the codecs' dequeue event, the waits fall back to a task", async ({ app, mock }) => {
+  test("without the codecs' dequeue event, the waits fall back to a task", async ({ app, mock, browserName }) => {
+    test.skip(macWebkit(browserName), NO_SURROUND);
     await app.page.addInitScript(() => {
       for (const codec of [AudioDecoder, AudioEncoder]) {
         delete (codec.prototype as { ondequeue?: unknown }).ondequeue;
@@ -278,7 +305,8 @@ test.describe("re-encoded in the browser", () => {
     expect(r!.seconds).toBeCloseTo(2, 1);
   });
 
-  test("without AudioEncoder, a re-encoded track goes as WAV", async ({ app, mock }) => {
+  test("without AudioEncoder, a re-encoded track goes as WAV", async ({ app, mock, browserName }) => {
+    test.skip(macWebkit(browserName), NO_SURROUND);
     await app.page.addInitScript(() => {
       Object.defineProperty(window, "AudioEncoder", { value: undefined });
     });
