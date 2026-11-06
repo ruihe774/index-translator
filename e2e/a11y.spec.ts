@@ -663,8 +663,18 @@ for (const scheme of ["light", "dark"] as const) {
       await expect(app.page.locator("#source-view")).toBeVisible();
       results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
       expect(results.violations).toStrictEqual([]);
+      // Side by side, where both columns fit.
+      if (size.width >= 864) {
+        await SWITCH(app.page, "Shown panel", "Side by side").click();
+        await expect(app.output).toBeVisible();
+        await expect(app.page.locator("#source-view")).toBeVisible();
+        results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
+        expect(results.violations).toStrictEqual([]);
+      }
       await app.page.keyboard.press("Escape");
-      await expect(app.page.getByRole("button", { name: "Show the source text in full view" })).toBeFocused();
+      // From side by side, back to the side full view was opened on.
+      const opened = size.width >= 864 ? "translation" : "source text";
+      await expect(app.page.getByRole("button", { name: `Show the ${opened} in full view` })).toBeFocused();
     }
     await app.page.setViewportSize({ width: 1280, height: 720 });
 

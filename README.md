@@ -232,8 +232,11 @@ is shown formatted too. Each side has **Raw** and **Preview** buttons to switch 
 Markdown source and the formatted view; **Raw** on your side brings back the text box for editing.
 The **Full view** button (the diagonal arrows, next to Read aloud) shows a side's formatted text alone
 on the page, in a reading column that scrolls with the page. **Source text** and **Translation** stay
-at the top, on any screen, to go from one to the other at the matching paragraph. Leave with the
-button beside them, Escape, or the browser's Back. Reading aloud stops when you open it.
+at the top, on any screen, to go from one to the other at the matching paragraph. On a wide screen,
+**Side by side** between them (a page split by a dashed line) shows both in two columns, each paragraph beside its translation; a
+paragraph the translation left out has an empty space beside it. It is available once the paragraphs
+of a finished translation are matched, and not for subtitles. Leave with the button at the other end
+of the bar, Escape, or the browser's Back. Reading aloud stops when you open it.
 **Copy translation** copies the Markdown source as plain text and, when the translation is shown
 formatted, also puts the formatted text on the clipboard as rich text. Links open in a new tab;
 images are shown as links and are not loaded.

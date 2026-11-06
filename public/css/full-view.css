@@ -56,6 +56,8 @@
     background: transparent;
     backdrop-filter: blur(0.5rem);
     border-block-end: 1px solid var(--divider);
+    /* Its own picture in a view transition, which keeps it still above the blocks moving (below). */
+    view-transition-name: full-view-bar;
 
     /* In grey, so that no colour draws the eye from the text; the bar's own background is the page's. The
        contrasts are in A11Y-ACCEPTANCE.md (full view pass). */
@@ -147,6 +149,142 @@
         translate: 50%;
       }
     }
+  }
+}
+
+/* Side by side (`data-full-view="both"`, side-by-side.ts): both views in two columns of one grid whose rows
+   are the blocks', every block in its counterpart's row. Each box between the workspace and a view is a
+   subgrid of those rows, so a row is as tall as the taller of its two cells and both stay in line however
+   the text wraps. full-view.ts sets each block's `grid-row` and the count of rows (`--rows`). Grid items'
+   margins do not collapse, so a heading after a paragraph stands a little further off than in one column. */
+:root[data-full-view="both"] {
+  .workspace {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-rows: repeat(var(--rows, 1), auto);
+    gap: 0;
+    max-inline-size: 96rem;
+    margin-inline: auto;
+  }
+
+  /* Each spans every row; placed in turn, the source panel takes the first column and the translation's the second. */
+  .panel,
+  .source-field,
+  .output-area,
+  .output-area > .output {
+    display: grid;
+    grid-row: 1 / -1;
+    grid-template-rows: subgrid;
+  }
+
+  .output-area {
+    max-inline-size: none;
+    margin-inline: 0;
+
+    /* The placeholder, and anything else beside the view, would take a row of its own. */
+    > :not(.output) {
+      display: none;
+    }
+
+    > .output {
+      /* A row is as tall as its taller cell: the shorter keeps its own height, at the top. */
+      > * {
+        align-self: start;
+      }
+
+      /* A wide table keeps to its column, scrolling inside it, or it would cover the other. */
+      &.markdown > .table-scroll:is(*, :dir(rtl)) {
+        inline-size: auto;
+        inset-inline-start: 0;
+        translate: none;
+      }
+    }
+  }
+}
+
+/* Side by side is offered only in full view and where both columns fit. */
+:root:not([data-full-view]) .pane-switch > [data-value="both"] {
+  display: none;
+}
+
+@media (max-width: 53.99rem) {
+  .pane-switch > [data-value="both"] {
+    display: none;
+  }
+}
+
+/* Moving between Source text, Side by side and Translation (full-view.ts `transition`): each block in view
+   slides to its new place, as its own picture at its own size (not stretched to the new box, which would
+   squeeze its letters where the column narrows), the old one fading into the new. A side going out or
+   coming in alone slides towards or from its end of the strip: the source on the start side, the
+   translation on the end. The bar keeps still above it (`.pane-bar`). Only where `view-transition-class` is understood
+   are the sides told apart; elsewhere the browser's own fade. */
+::view-transition-group(*) {
+  animation-duration: 0.25s;
+}
+
+/* Fast at the start, so the click answers at once, and settling into place. Set on each part rather than
+   left to inherit from the group. */
+::view-transition-group(*),
+::view-transition-image-pair(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation-timing-function: ease-out;
+}
+
+/* Each picture fills the moving box but is drawn at its own size from the top left, cut to that box; so the
+   box can move as a whole, and a side going out slides away uncut (a clip on the image pair would cut it
+   at the box's edge). */
+::view-transition-old(*.source),
+::view-transition-new(*.source),
+::view-transition-old(*.output),
+::view-transition-new(*.output) {
+  block-size: 100%;
+  object-fit: none;
+  object-position: left top;
+}
+
+::view-transition-old(*.source):only-child {
+  animation-name: full-view-out-start;
+}
+
+::view-transition-new(*.source):only-child {
+  animation-name: full-view-in-start;
+}
+
+::view-transition-old(*.output):only-child {
+  animation-name: full-view-out-end;
+}
+
+::view-transition-new(*.output):only-child {
+  animation-name: full-view-in-end;
+}
+
+@keyframes full-view-out-start {
+  to {
+    opacity: 0;
+    translate: -24rem;
+  }
+}
+
+@keyframes full-view-in-start {
+  from {
+    opacity: 0;
+    translate: -24rem;
+  }
+}
+
+@keyframes full-view-out-end {
+  to {
+    opacity: 0;
+    translate: 24rem;
+  }
+}
+
+@keyframes full-view-in-end {
+  from {
+    opacity: 0;
+    translate: 24rem;
   }
 }
 

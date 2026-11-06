@@ -40,6 +40,8 @@ const config: Linter.Config[] = [
     // `AudioDecoder` and `EncodedAudioChunk` (`transcode.ts`) re-encode a recording to transcribe only where
     // `browserDecodes` says the browser has them and decodes the track; elsewhere the track is refused with that
     // reason. Firefox has them from 130, Safari from 26.
+    // `document.startViewTransition` (`transition` in full-view.ts) animates moving between full view's three
+    // views where it exists; elsewhere they change at once, as before. Firefox has it from 144, Safari from 18.
     settings: {
       polyfills: [
         "Highlight",
@@ -49,6 +51,7 @@ const config: Linter.Config[] = [
         "AudioData",
         "AudioDecoder",
         "EncodedAudioChunk",
+        "document.startViewTransition",
       ],
     },
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },

@@ -993,11 +993,14 @@ const fullView = initFullView({
     source: { view: sourceView, area: sourceArea },
     output: { view: outputEl, area: outputArea },
   },
+  workspace: $("workspace"),
   previewing: (side) =>
     side === "source" ? !sourceArea.hidden : views.output.view === "preview" && state.translation.length > 0,
   showable: (side) => side === "output" || (textInput.value.length > 0 && sourceImage.file === null),
   preview: (side) => chooseView(side, "preview"),
   alignment: () => sync.active(),
+  sideBySide: () =>
+    sync.active() !== null && views.source.format !== "subtitles" && views.output.format !== "subtitles",
   content: (side) =>
     side === "source"
       ? { text: textInput.value, markdown: views.source.format === "markdown" }
