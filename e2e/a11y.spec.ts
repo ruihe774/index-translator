@@ -50,13 +50,14 @@ for (const scheme of ["light", "dark"] as const) {
     });
     await expect(app.engine).toHaveAttribute("title", "Engine loading a model…");
     await expect(app.engine.locator(".bar[data-first].indeterminate")).toHaveCount(1);
+    await transitionsDone(app.page.locator("body").or(app.translate));
     let results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
 
     loading = false;
     await app.page.reload();
     await expect(app.engine.locator(".bar:not(.indeterminate)")).toHaveCount(1);
-    await transitionsDone(app.translate); // enabling Translate fades its colour in
+    await transitionsDone(app.page.locator("body").or(app.translate)); // the page fades in; enabling Translate fades its colour in
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
     expect(await app.page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
@@ -65,7 +66,7 @@ for (const scheme of ["light", "dark"] as const) {
     await app.page.reload();
     await expect(app.engine.locator(".bar.tight")).toHaveCount(1);
     await expect(app.engine).toHaveAttribute("title", /VRAM 7\.5 \/ 8\.0 GiB, free memory is tight\.$/);
-    await transitionsDone(app.translate);
+    await transitionsDone(app.page.locator("body").or(app.translate));
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
 
@@ -76,7 +77,7 @@ for (const scheme of ["light", "dark"] as const) {
     await expect(app.engine).toHaveText("The local server in your computer cannot be reached.");
     await expect(app.engine).toHaveClass("problem");
     await expect(app.engine).toHaveCSS("font-weight", "700");
-    await transitionsDone(app.translate);
+    await transitionsDone(app.page.locator("body").or(app.translate));
     results = await new AxeBuilder({ page: app.page }).withTags(WCAG_TAGS).analyze();
     expect(results.violations).toStrictEqual([]);
   });

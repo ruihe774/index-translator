@@ -227,6 +227,7 @@ const NO_SURROUND = "WebKit cannot decode 6-channel Opus";
  */
 const linuxWebkit = (browserName: string) => browserName === "webkit" && process.platform === "linux";
 const NEGATIVE_START = "WebKit on Linux decodes a track that starts before 0 backwards";
+const NO_SEEK = "WebKit on Linux sometimes ignores a seek in an Ogg blob (it plays from the start)";
 
 test.describe("re-encoded in the browser", () => {
   test.beforeEach(async ({ mock }) => {
@@ -497,6 +498,7 @@ test("a track this browser cannot play from the file is played from the recordin
   mock,
   browserName,
 }) => {
+  test.skip(linuxWebkit(browserName), NO_SEEK);
   await mock.set({ speech: { segments: SEGMENTS } });
   // A browser without AAC in its media elements; WebCodecs still decodes it for the upload.
   await app.page.addInitScript(() => {

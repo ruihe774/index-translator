@@ -60,7 +60,9 @@ export default defineConfig({
       },
     },
     { name: "firefox", use: { ...devices["Desktop Firefox"] } },
-    { name: "webkit", use: { ...devices["Desktop Safari"] } },
+    // Desktop Safari is 2 dppx, where the page scales its root font to 90% (`css/tokens.css`) and the size checks
+    // (44 px, 24 px) would measure that; the other two projects run at 1.
+    { name: "webkit", use: { ...devices["Desktop Safari"], deviceScaleFactor: 1 } },
   ],
   webServer: Array.from({ length: WORKERS }, (_, i) => ({
     command: server(i),
