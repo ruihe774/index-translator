@@ -85,8 +85,8 @@ is the shortcut's target. The launcher's commands run in the install directory, 
 `bun.exe` there first, so the user needs no Bun on the `PATH`.
 
 - Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`), `build_soxr.ts`, `build_libopus.ts` and
-  `build_bun.ts` (the packed `bun.exe`, a minimal build of Bun; it needs LLVM 23.1.1, Go, NASM, Ruby and Perl from
-  Scoop beside Visual Studio, see the head of the script), the web app's PDF
+  `build_bun.ts` (the packed `bun.exe`, a minimal build of Bun; it needs LLVM 23.1, NASM and Perl beside Visual
+  Studio, see the head of the script), the web app's PDF
   libraries fetched (`fetch_web_libs.ts`, packed with `public\`), `fetch_onnxruntime.ts` (Microsoft's
   `onnxruntime.dll`, which runs the sentence segmentation model) and the launcher's MSVC
   tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads

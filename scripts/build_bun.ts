@@ -12,10 +12,10 @@
 // `bun test`) still need Bun canary, not this build.
 //
 // Needs what Bun's own build needs (https://bun.com/docs/project/contributing): Bun to run the build scripts, git,
-// cmake, ninja, LLVM 23.1 (clang, lld), Rust through rustup (it installs the pinned nightly), Go and Ruby. On
-// Windows (https://bun.com/docs/project/building-windows): Visual Studio 2022 or later with the "Desktop
-// development with C++" workload, and LLVM 23.1.1, Go, rustup, NASM, Ruby and Perl from Scoop (not Strawberry Perl,
-// whose tools on the PATH break the build). WebKit comes prebuilt; it and the build caches go to ~/.bun/build-cache
+// cmake, ninja, LLVM 23.1 (clang, lld), Rust through rustup (it installs the pinned nightly), Perl, and on x86-64
+// NASM. On Windows (https://bun.com/docs/project/building-windows) also Visual Studio 2022 or later with the "Desktop
+// development with C++" workload, LLVM 23.1 in C:\Program Files\LLVM (`choco install llvm --version=23.1.3`) and
+// NASM on the PATH; Strawberry Perl's MinGW tools (C:\Strawberry\c\bin) must not be on it. WebKit comes prebuilt; it and the build caches go to ~/.bun/build-cache
 // (BUN_BUILD_CACHE_DIR). Building needs no administrator rights.
 
 import { existsSync } from "node:fs";
@@ -54,7 +54,7 @@ export function bunPath(dir: string): string {
 }
 
 if (import.meta.main) {
-  // Bun's own configure step checks the rest (LLVM's version, Rust, Go, ...) and says what is missing.
+  // Bun's own configure step checks the rest (LLVM's version, Rust, Perl, NASM, ...) and says what is missing.
   await requireTools(["git"], "install git");
   // On Windows the build runs in the environment of a Developer Command Prompt, as Bun's scripts/vs-shell.ps1 sets up.
   const buildEnv = windows ? (await msvc()).env : undefined;
