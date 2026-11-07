@@ -46,15 +46,11 @@ import {
   windows,
 } from "./build_tools";
 
-/**
- * A commit on main after v0.9.2, not a release (transcription is a preview), with one change on top:
- * Flash Attention for RoFormer on Vulkan, from a fork until it is merged upstream (then pin main again).
- * Written to VERSION and the build log as `main-<short id>`.
- */
-const TAG = "main-3a0dd44+vkfa-49e75c2";
-/** Fetched by this id, so the source is what was reviewed. */
-const COMMIT = "49e75c2facb50c54a7bbc28bbddd9ab1563c5f59";
-const REPO = "https://github.com/ruihe774/audio.cpp.git";
+/** Release v0.9.4 (it includes the Vulkan Flash Attention change for RoFormer). Written to VERSION and the build log. */
+const TAG = "v0.9.4";
+/** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
+const COMMIT = "f7ac446fb75e594a6913c846bea6c85b637f6ac0";
+const REPO = "https://github.com/0xShug0/audio.cpp.git";
 /**
  * audio.cpp's CMake names of the model families to compile in; all of them take about ten times as long.
  * `roformer` holds Mel-Band RoFormer (used) and BS-RoFormer, which share their code. Silero VAD is part

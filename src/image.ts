@@ -39,14 +39,21 @@ export class ImageRejected extends Error {
   }
 }
 
+/** `std::nearbyint` in the default rounding mode: halves go to the even neighbour. */
+function roundHalfEven(x: number): number {
+  const down = Math.floor(x);
+  const diff = x - down;
+  return diff < 0.5 ? down : diff > 0.5 ? down + 1 : down % 2 === 0 ? down : down + 1;
+}
+
 /**
  * The size libmtmd would resize a `width` × `height` image to: `img_tool::calc_size_preserved_ratio`
  * ("smart resize") in mtmd-image.cpp, with its `float` arithmetic (`fround`) so that the result is the
- * same number to the pixel. A target the encoder does not recognise as its own is resampled again.
+ * same number to the pixel. The Qwen-VL encoders set `image_round_half_even` (Python's `round()`), hence `roundHalfEven`. A target the encoder does not recognise as its own is resampled again.
  */
 export function engineSize(width: number, height: number): { width: number; height: number } {
   const f = Math.fround;
-  const round = (x: number) => Math.round(f(x / PATCH_ALIGN)) * PATCH_ALIGN;
+  const round = (x: number) => roundHalfEven(f(x / PATCH_ALIGN)) * PATCH_ALIGN;
   const ceil = (x: number) => Math.ceil(f(x / PATCH_ALIGN)) * PATCH_ALIGN;
   const floor = (x: number) => Math.floor(f(x / PATCH_ALIGN)) * PATCH_ALIGN;
   let w = Math.max(PATCH_ALIGN, round(width));

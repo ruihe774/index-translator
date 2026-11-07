@@ -70,7 +70,7 @@ describe("prepareImage", () => {
     // A long screenshot: many pixels on one side, few in all. Only rounded to the grid of 32.
     const long = await new Bun.Image(PNG).resize(400, 9000).png().bytes();
     await expect(new Bun.Image(await prepareImage(long)).metadata()).resolves.toMatchObject({
-      width: 416,
+      width: 384,
       height: 8992,
     });
 
@@ -101,7 +101,7 @@ describe("prepareImage", () => {
   });
 
   test("engineSize is libmtmd's calc_size_preserved_ratio for the Qwen3-VL encoder", () => {
-    // Computed with a copy of the C++ function at the pinned llama.cpp (174,818 sizes, no difference).
+    // Computed with a copy of the C++ function at the pinned llama.cpp (29,536 sizes at v0.9.0, no difference).
     const cases: [number, number, number, number][] = [
       [1, 1, 96, 96],
       [100, 100, 96, 96],
@@ -110,6 +110,7 @@ describe("prepareImage", () => {
       [3024, 4032, 1760, 2336],
       [8000, 8000, 2048, 2048],
       [50, 20_000, 64, 20_000],
+      [80, 112, 64, 128], // halves round to even: 2.5 → 2, 3.5 → 4
     ];
     for (const [w, h, rw, rh] of cases) {
       expect(engineSize(w, h)).toStrictEqual({ width: rw, height: rh });

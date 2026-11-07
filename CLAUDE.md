@@ -23,7 +23,7 @@ Run `bun install` before `lint:*` or `e2e` when `node_modules` is missing or sta
 
 Setup (Linux and Windows; `build_soxr.ts` and `build_libopus.ts` also build on macOS, for the e2e mock server of CI's WebKit job):
 - `bun scripts/build_llama.ts`: libllama, libmtmd, Vulkan, one CPU backend (AVX2 on x86-64, Armv8.2-A+dotprod+fp16 on aarch64, unless `--native`), `libllama-shim.so` into `vendor/llama.cpp` (`--shim` only recompiles `src/llama-shim.c` and `src/llama-shim-ext.cpp`; a build from before MTP lacks `include/llama-ext.h` and needs the full build)
-- `bun scripts/build_audiocpp.ts`: `vendor/audio.cpp/libaudiocpp.so` from the pinned commit (a commit on main, plus a Vulkan Flash Attention change for RoFormer from `ruihe774/audio.cpp` until upstream merges it) plus `scripts/patches/audiocpp-abort.patch` and `audiocpp-custom-output.patch`, in that order (AVX2 unless `--native`), and Silero VAD's weights beside it
+- `bun scripts/build_audiocpp.ts`: `vendor/audio.cpp/libaudiocpp.so` from the pinned release (v0.9.4) plus `scripts/patches/audiocpp-abort.patch` and `audiocpp-custom-output.patch`, in that order (AVX2 unless `--native`), and Silero VAD's weights beside it
 - `bun scripts/build_soxr.ts`: `vendor/soxr/libsoxr.so.0` (`soxr.dll`); required, opened before libaudiocpp (see Invariants)
 - `bun scripts/build_libopus.ts`: `vendor/opus/libopus.so.0` (`opus.dll`) from the pinned commit; the speech stream's Opus encoder (without it speech is WAV) and the Ogg Opus upload decoder (without it uploads are WAV only)
 - `bun scripts/fetch_models.ts`: models (about 19.2 GiB) and example voices; `--model <id>`, `HF_ENDPOINT`. Includes `sat-3l-sm` (`/segment`), `labse` (`/align`) and `moss-transcribe-diarize` (`/transcriptions`)
