@@ -669,9 +669,11 @@ jobs:
           retention-days: 7
 
   # The Bun the installer packs, as `bun` above, built on Windows (https://bun.com/docs/project/building-windows).
+  # Visual Studio 2022 (MSVC 14.44), as Bun's own CI: WebKit's prebuilt is built for it, and with VS 2026's MSVC 14.51
+  # Bun's objects return std::partial_ordering differently from WebKit's, so the GC's parallel markers hang.
   bun-windows:
     name: Bun, minimal (Windows)
-    runs-on: windows-2025-vs2026
+    runs-on: windows-2022
     timeout-minutes: 240
     steps:
       - uses: actions/checkout@v7
@@ -685,7 +687,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/bun
-          key: bun-windows-vs2026-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
 
       # Visual Studio with the C++ tools, Git, CMake, Ninja, Perl and rustup are on the runner image. Bun's build also
       # needs NASM and LLVM 23.1 (the image has 20), from Chocolatey; LLVM goes to C:\Program Files\LLVM, where Bun's
@@ -800,7 +802,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: vendor/bun
-          key: bun-windows-vs2026-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
           fail-on-cache-miss: true
 
       - name: Build the installer
