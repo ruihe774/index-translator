@@ -10,8 +10,16 @@
 }
 
 .placeholder {
-  padding: 0.75rem;
+  /* The text box's metrics (forms.css), so its placeholder and this one share a baseline. */
+  padding: 0.5rem var(--output-pad);
+  font-size: max(16px, var(--text-size));
+  line-height: var(--text-leading);
   color: var(--muted);
+
+  /* The glyphs at the text box placeholder's size, on the baseline of this line box. */
+  > span {
+    font-size: 1rem;
+  }
 }
 
 .notes {
