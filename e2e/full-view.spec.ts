@@ -61,8 +61,12 @@ test("full view: the page scrolls one side; the switch brings the other in at it
   expect(await app.page.evaluate(() => document.documentElement.scrollHeight - innerHeight)).toBeGreaterThan(1000);
   expect(await app.page.evaluate(() => document.documentElement.scrollWidth - innerWidth)).toBeLessThanOrEqual(0);
 
+  // Block 20 partly under the bar: its counterpart comes in as far under it (as on the carousel).
   await app.page.locator("#output > [data-line]", { hasText: "段落 20：" }).evaluate((el) => {
-    scrollBy(0, el.getBoundingClientRect().top - document.querySelector(".pane-bar")!.getBoundingClientRect().bottom);
+    scrollBy(
+      0,
+      el.getBoundingClientRect().top - document.querySelector(".pane-bar")!.getBoundingClientRect().bottom + 20,
+    );
   });
   await expect.poll(() => topBlock(app, "#output")).toBe("20");
   await expect(bar(app)).toBeInViewport();
@@ -76,6 +80,13 @@ test("full view: the page scrolls one side; the switch brings the other in at it
   await expect(app.page.locator("#output")).toBeHidden();
   await expect(app.page.locator('#source-switch [data-value="preview"]')).toHaveAttribute("aria-pressed", "true");
   await expect.poll(() => topBlock(app, "#source-view")).toBe("20");
+  // WebKit rounds the scroll position to a pixel.
+  const under = await app.page
+    .locator("#source-view > [data-line]", { hasText: "Paragraph 20:" })
+    .evaluate(
+      (el) => el.getBoundingClientRect().top - document.querySelector(".pane-bar")!.getBoundingClientRect().bottom,
+    );
+  expect(Math.abs(under + 20)).toBeLessThanOrEqual(1);
 
   await app.page.keyboard.press("Escape");
   await expect(bar(app)).toBeHidden();
@@ -280,8 +291,12 @@ test("full view side by side: matched blocks in line, the block at the top kept,
   await openOutput(app).click();
   await expect(both(app)).toBeVisible();
   await expect(both(app)).toHaveAttribute("aria-disabled", "false");
+  // Block 20 partly under the bar: its counterpart comes in as far under it (as on the carousel).
   await app.page.locator("#output > [data-line]", { hasText: "段落 20：" }).evaluate((el) => {
-    scrollBy(0, el.getBoundingClientRect().top - document.querySelector(".pane-bar")!.getBoundingClientRect().bottom);
+    scrollBy(
+      0,
+      el.getBoundingClientRect().top - document.querySelector(".pane-bar")!.getBoundingClientRect().bottom + 20,
+    );
   });
   await expect.poll(() => topBlock(app, "#output")).toBe("20");
 

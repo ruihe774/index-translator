@@ -4,8 +4,9 @@
 //
 // Each panel's foot has the button that opens it, enabled while that side shows Preview. In full view
 // the switch is shown at any width; going to a side shows it in Preview (the page's `preview`), and the
-// side coming in is scrolled to the counterpart of the block at the top of the other (as on the
-// carousel, pane-carousel.ts), or to the same share of its length while the blocks are not matched.
+// side coming in is scrolled so that the counterpart of the block at the top of the other starts as far
+// above or below the bar as that block did (as on the carousel, pane-carousel.ts), or to the same share
+// of its length while the blocks are not matched.
 //
 // Side by side shows both in two columns, each block in the grid row of its counterpart (side-by-side.ts;
 // the panes are subgrids of the workspace, css/full-view.css), keeping the block at the top where it was.
@@ -402,7 +403,8 @@ export function initFullView(d: FullViewDeps): FullView {
 
   /**
    * Shows `to` in place of what is shown. A side that stays shown keeps the block at the top where it
-   * was; a side coming in alone is scrolled to the counterpart of the block at the top of the other.
+   * was; a side coming in alone is scrolled so that the counterpart of the block at the top of the other
+   * starts where that block did.
    */
   function show(to: Shown, kept?: Place | null) {
     const from = current!;
@@ -417,10 +419,17 @@ export function initFullView(d: FullViewDeps): FullView {
       const place = kept === undefined ? placeAt(d.panes[side].view, barBottom()) : kept;
       target = place && { side, place };
     } else if (scrolled) {
-      const place = placeAt(d.panes[from as Side].view, barBottom());
+      // As syncLine (sync-scroll.ts) on the carousel: the counterpart starts as far from the bar as the
+      // own group does, so a block read halfway down stays read halfway down.
+      const { view, area } = d.panes[from as Side];
+      const place = placeAt(view, barBottom());
       const a = d.alignment();
       const match = place && a ? counterpart(a, from as Side, place.line) : null;
-      target = match && { side: to as Side, place: { line: match.other.from, offset: 0 } };
+      const top = match && viewPane(view, area).lineTop(match.own.from);
+      target =
+        match && top !== null
+          ? { side: to as Side, place: { line: match.other.from, offset: top - barBottom() } }
+          : null;
     }
     // First: the render that `preview` runs must find what is shown showable, so it does not leave.
     current = to;
