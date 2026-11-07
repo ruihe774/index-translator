@@ -10,6 +10,8 @@ import { focusableWhenScrolling } from "./scroll-focus.ts";
 export interface DialogChoice {
   value: string;
   label: string;
+  /** Makes the choice a link that opens in a new tab (`window.open` does nothing in a standalone app). */
+  href?: string;
 }
 
 export interface DialogPrompt {
@@ -83,6 +85,17 @@ function button(value: string, label: string, primary: boolean): HTMLButtonEleme
   return b;
 }
 
+function anchor(value: string, label: string, href: string): HTMLAnchorElement {
+  const a = document.createElement("a");
+  a.className = "button primary";
+  a.href = href;
+  a.target = "_blank";
+  a.rel = "noopener noreferrer";
+  a.dataset.value = value;
+  a.textContent = label;
+  return a;
+}
+
 /** Asks `prompt`; resolves the value of the choice taken, or "cancel" (Cancel, Escape). */
 export function ask(prompt: DialogPrompt): Promise<string> {
   parts ??= build();
@@ -109,14 +122,17 @@ export function ask(prompt: DialogPrompt): Promise<string> {
   fields.hidden = !prompt.fields;
   const cancel = button("cancel", prompt.closeLabel ?? "Cancel", false);
   cancel.autofocus = true;
-  const choices = prompt.choices.map((c, i) => button(c.value, c.label, i === prompt.choices.length - 1));
+  const choices = prompt.choices.map((c, i) =>
+    c.href === undefined ? button(c.value, c.label, i === prompt.choices.length - 1) : anchor(c.value, c.label, c.href),
+  );
   row.replaceChildren(cancel, ...choices);
   // Escape leaves "cancel"; a button says what it was.
   let answer = "cancel";
   for (const b of [cancel, ...choices]) {
     b.addEventListener("click", () => {
-      answer = b.value;
-      dialog.close(b.value);
+      // A link is not cancelled: the browser follows it as the dialog closes.
+      answer = b instanceof HTMLAnchorElement ? (b.dataset.value ?? "") : b.value;
+      dialog.close(answer);
     });
   }
   const turn = ++asked;
@@ -139,15 +155,14 @@ export function ask(prompt: DialogPrompt): Promise<string> {
   });
 }
 
-/** Asks whether to open `href`; resolves true to open it. Escape and Cancel resolve false. */
-export async function confirmLink(href: string, paired: boolean): Promise<boolean> {
+/** Asks whether to open `href`; the confirming button is a link that opens it in a new tab. */
+export async function confirmLink(href: string, paired: boolean): Promise<void> {
   const prompt = linkPrompt(paired);
-  const answer = await ask({
+  await ask({
     title: prompt.title,
     message: prompt.message,
     target: href,
-    choices: [{ value: "open", label: prompt.open }],
+    choices: [{ value: "open", label: prompt.open, href }],
     warn: !paired,
   });
-  return answer === "open";
 }

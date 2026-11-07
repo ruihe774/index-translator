@@ -307,12 +307,8 @@ test("output links ask for confirmation, with other wording for links that do no
   await expect(app.output.locator("a[data-link-problem=mismatch]")).toHaveCount(1);
 
   const dialog = app.page.locator("dialog.link-dialog");
-  const open = app.page.evaluate(() => {
-    const w = globalThis as any;
-    w.opened = [];
-    w.open = (url: string) => w.opened.push(url);
-  });
-  await open;
+  // The Open button is a link to a new tab: check its attributes, and keep the click from leaving.
+  await app.page.route("https://a.example/", (route) => route.abort());
 
   await app.output.getByRole("link", { name: "甲" }).click();
   await expect(dialog).toBeVisible();
@@ -320,14 +316,18 @@ test("output links ask for confirmation, with other wording for links that do no
   await expect(dialog).toContainText("https://a.example");
   await dialog.getByRole("button", { name: "Cancel" }).click();
   await expect(dialog).toBeHidden();
-  expect(await app.page.evaluate(() => (globalThis as any).opened)).toStrictEqual([]);
 
   await app.output.getByRole("link", { name: "乙" }).click();
   await expect(dialog.getByRole("heading")).toHaveText("Open this unverified link?");
-  await dialog.getByRole("button", { name: "Open anyway" }).click();
+  await expect(dialog.getByRole("button", { name: "Open anyway" })).toHaveCount(0);
+  const openAnyway = dialog.getByRole("link", { name: "Open anyway" });
+  await expect(openAnyway).toHaveAttribute("href", "https://a.example/");
+  await expect(openAnyway).toHaveAttribute("target", "_blank");
+  await expect(openAnyway).toHaveAttribute("rel", "noopener noreferrer");
+  const popup = app.page.waitForEvent("popup");
+  await openAnyway.click();
+  await (await popup).close();
   await expect(dialog).toBeHidden();
-  // The `close` event that resolves the dialog is queued after the dialog is already hidden.
-  await expect.poll(() => app.page.evaluate(() => (globalThis as any).opened)).toStrictEqual(["https://a.example/"]);
 
   // A target absent from the source is disabled and opens nothing.
   await expect(app.output.locator("a[aria-disabled=true]")).toHaveText(/丙/);

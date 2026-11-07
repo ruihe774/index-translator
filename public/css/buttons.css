@@ -1,4 +1,5 @@
-button {
+button,
+a.button {
   min-block-size: var(--target);
   min-inline-size: var(--button-min-inline-size, var(--target));
   padding: 0.5rem 1.25rem;
@@ -9,6 +10,15 @@ button {
   border: 1px solid var(--border);
   border-radius: var(--radius-md);
   cursor: pointer;
+
+  /* A link that looks like a button (the link dialog's Open: window.open fails in a standalone app). */
+  &:is(a) {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-sizing: border-box;
+    text-decoration: none;
+  }
 
   &:hover:not([aria-disabled="true"]) {
     background: color-mix(in srgb, var(--accent) var(--shade-hover), var(--surface-sunken));

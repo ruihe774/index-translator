@@ -310,12 +310,7 @@ function onOutputLink(e: MouseEvent) {
     return;
   }
   e.preventDefault();
-  const href = a.getAttribute("href") ?? "";
-  void confirmLink(href, a.dataset.linkPaired === "true").then((ok) => {
-    if (ok) {
-      window.open(a.href, "_blank", "noopener,noreferrer");
-    }
-  });
+  void confirmLink(a.href, a.dataset.linkPaired === "true");
 }
 outputEl.addEventListener("click", onOutputLink);
 outputEl.addEventListener("auxclick", onOutputLink);
