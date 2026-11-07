@@ -10,6 +10,12 @@
   inline-size: 7rem;
   block-size: var(--pane-height);
   padding: var(--strip-pad);
+
+  @media (width < 54rem) {
+    --strip-pad: 0.25rem;
+    inline-size: 4.5rem;
+  }
+
   background: var(--surface-sunken);
   border: 1px solid var(--border);
   border-radius: var(--radius-md);

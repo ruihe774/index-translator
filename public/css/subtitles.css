@@ -12,10 +12,10 @@
      (below). */
   --rule: linear-gradient(var(--divider), var(--divider));
   /* Wider than the text by `--row-reach` at the start (the gap to a gutter's buttons, else as much of
-     the pane's padding as there is) and 0.5rem at the end, given back as the first and last cells'
-     padding: a shaded row (being read, playing, hovered) reaches the buttons by its own background,
-     and the text stays where it was. */
-  --reach: var(--row-reach, 0.75rem);
+     the pane's padding as there is, up to 0.75rem) and 0.5rem at the end, given back as the first and
+     last cells' padding: a shaded row (being read, playing, hovered) reaches the buttons by its own
+     background, and the text stays where it was. */
+  --reach: var(--row-reach, min(0.75rem, var(--output-pad)));
   inline-size: calc(100% + var(--reach) + 0.5rem);
   margin-inline: calc(-1 * var(--reach)) -0.5rem;
   border-collapse: collapse;
@@ -53,6 +53,13 @@
     tbody > tr + tr > td {
       background: none;
       border-block-start: 1px solid CanvasText;
+    }
+  }
+
+  /* One column: a cue's end time goes under its start, so the cue's text keeps most of the width. */
+  .cue-end {
+    @media (width < 54rem) {
+      display: block;
     }
   }
 

@@ -1,7 +1,6 @@
 .output {
   flex: 1;
   padding-block: 0.75rem;
-  line-height: 1.6;
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 

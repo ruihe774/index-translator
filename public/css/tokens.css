@@ -32,11 +32,15 @@
   --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.75rem));
   --target: 2.75rem;
   --gap: 1rem;
+  /* Between the form's sections (the panels, Model and options) and before the history below it. */
+  --section-gap: 1.5rem;
   /* Side by side: the panes fill the screen height, so "Model and options" lies below the fold.
      The reserve is the header, panel chrome (padding, language row, button row) and the form gap. */
   --pane-height: clamp(16rem, calc(100svh - 17rem), 72rem);
-  /* Reading size of the text areas. */
+  /* Reading size, line height and side padding of the text areas (the source box and both views). */
   --text-size: 1.25rem;
+  --text-leading: 1.6;
+  --output-pad: 1.5rem;
   --gutter: 1rem;
   --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
   /* Per language, so Han characters get Japanese or Chinese glyph forms, not the first CJK font's. */
@@ -51,13 +55,16 @@
     0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
 }
 
-/* Below 54rem (one column, phone.css): compact. Smaller margins and padding, 1rem text, and the panes take the
+/* Below 54rem (one column): compact. Smaller margins and padding, 1rem text, and the panes take the
    height the chrome leaves, so they show about twice the lines. Targets keep --target (WCAG 2.5.8). */
 @media (width < 54rem) {
   :root {
     --gap: 0.5rem;
+    --section-gap: 0.75rem;
     --gutter: 0.5rem;
     --text-size: 1rem;
+    --text-leading: 1.5;
+    --output-pad: 0.5rem;
     /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
     --radius: calc(var(--radius-md) + 0.5rem + 1px);
     --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.5rem));

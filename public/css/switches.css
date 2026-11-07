@@ -1,28 +1,53 @@
+/* A pane's language select and its buttons stay on one line (the From row has the Open button and would
+   otherwise wrap alone with a wide font): the select gives way. */
 .pane-head {
   display: flex;
-  flex-wrap: wrap;
   align-items: end;
   gap: var(--gap);
 
-  > .language {
-    flex: 1 1 6rem;
+  > :not(.language) {
+    flex: none;
   }
 
-  /* Two columns: the header rows of both panes stay on one line (the From row has the Open button
-     and would otherwise wrap alone with a wide font), the select gives way. */
-  @media (width >= 54rem) {
-    flex-wrap: nowrap;
+  > .language {
+    flex: 1 1 0;
+    min-inline-size: 0;
 
-    > :not(.language) {
-      flex: none;
+    & select {
+      min-inline-size: 0;
     }
+  }
+
+  /* One column: the label beside its select, smaller, so that the head is one row of buttons. */
+  @media (width < 54rem) {
+    align-items: center;
 
     > .language {
-      min-inline-size: 0;
+      flex-direction: row;
+      align-items: center;
+    }
 
-      & select {
-        min-inline-size: 0;
-      }
+    .language label {
+      flex: none;
+      font-size: 0.75rem;
+    }
+
+    .language select {
+      --chevron-gap: 0.5rem;
+      padding-inline-start: 0.5rem;
+    }
+
+    #open {
+      padding-inline: 0.5rem;
+    }
+  }
+
+  /* Too narrow for the select and the switch side by side: the switch drops below. */
+  @media (width <= 22rem) {
+    flex-wrap: wrap;
+
+    > .language {
+      flex-basis: 100%;
     }
   }
 }
@@ -32,8 +57,16 @@
   flex-wrap: wrap;
   max-inline-size: 100%;
 
+  @media (width < 54rem) {
+    flex: none;
+  }
+
   > button {
     padding-inline: 0.875rem;
+
+    @media (width < 54rem) {
+      padding-inline: 0.5rem;
+    }
 
     &:not(:first-child) {
       margin-inline-start: -1px;
@@ -74,5 +107,11 @@
 
   .short {
     display: inline;
+  }
+
+  /* The Model switch has three buttons and must stay on one row in fonts wider than the
+     design font (the CI runner's fallback is one). */
+  #model-switch > button {
+    padding-inline: 0.25rem;
   }
 }

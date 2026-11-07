@@ -1,6 +1,6 @@
-/* The form above has its own 1.5rem gap; the history sits outside it. */
+/* The form above has its own gap between sections; the history sits outside it. */
 .history {
-  margin-block-start: 1.5rem;
+  margin-block-start: var(--section-gap);
 }
 
 .history-list {

@@ -25,6 +25,11 @@
     block-size: min(calc(var(--pane-height) * 0.4), 20rem);
     background: #000;
     border-radius: var(--radius-sm);
+
+    /* The transcript keeps most of a phone's pane. */
+    @media (width < 54rem) {
+      block-size: min(calc(var(--pane-height) * 0.3), 14rem);
+    }
   }
 
   /* No picture this browser decodes: the controls alone, as for audio. */

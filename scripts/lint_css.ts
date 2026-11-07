@@ -23,7 +23,7 @@ if (files.length === 0) {
 /** Every width a media query may name, with where and why. 54rem is `TWO_COLUMNS` in public/media-query.ts. */
 const BREAKPOINTS: Record<string, string> = {
   "54rem": "one column or two: the page's breakpoint",
-  "22rem": "phone.css: the language select and the Raw/Preview switch no longer fit on one row",
+  "22rem": "switches.css: the language select and the Raw/Preview switch no longer fit on one row",
   "40rem": "pane-carousel.css: the switch's bar moves up beside the site header",
   "44rem": "standalone.css: an installed app in landscape takes two columns",
 };

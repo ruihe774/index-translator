@@ -11,8 +11,10 @@
   /* Grey text too, short of pure black and white: at full contrast letters seem to glow for some readers. */
   --text: light-dark(#1a1a1a, #e6e6e6);
   --muted: light-dark(#595959, #a8a8a8);
-  /* The wide screen's reading size at every width: the text has the whole screen, not a pane of it. */
+  /* The wide screen's reading size and side padding at every width: the text has the whole screen, not a
+     pane of it. */
   --text-size: 1.25rem;
+  --output-pad: 1.5rem;
 
   /* The bar's height: its padding and border, and the controls' `--target` scaled to 0.75 (see `.pane-bar`). */
   --bar-height: calc(1rem + 1px + var(--target) * 0.75);
@@ -131,12 +133,10 @@
       max-inline-size: 72rem;
     }
 
-    /* At least 1.5rem from the screen's edges at any width, as in the wide panes (`css/forms.css`), and a
-       subtitle row reaching 0.75rem into it, as there (`css/subtitles.css`). Also over a gutter's room
-       (`css/speech.css`), whose buttons are hidden. */
+    /* The padding of the wide panes at any width (above), also over a gutter's room (`css/speech.css`),
+       whose buttons are hidden. */
     > .output {
-      padding-inline: 1.5rem;
-      --row-reach: 0.75rem;
+      padding-inline: var(--output-pad);
     }
 
     /* A table is not set for comfortable reading: it takes the room its columns want, up to the page's

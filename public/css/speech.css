@@ -54,12 +54,16 @@ button.icon {
 .output .speaking {
   background: color-mix(in srgb, var(--accent) 24%, transparent);
   /* The shade starts where the gutter ends and meets the current button (solid, so the block is
-     not marked by shade alone, 1.4.1): square at that edge, rounded at the other. */
+     not marked by shade alone, 1.4.1): square at that edge, rounded at the other. The gutter is on
+     the left whatever the text's direction (below), so these sides are physical too. */
   border-radius: 0 var(--radius-min) var(--radius-min) 0;
-  /* The padding is taken back out of the layout by the negative margin (the pane has at least
-     0.75rem of side padding), so the text does not move. */
-  padding-inline: 0.75rem 0.5rem;
-  margin-inline: -0.75rem -0.5rem;
+  /* The padding is taken back out of the layout by the negative margin, so the text does not move:
+     on the left into the gutter's room, on the right into the pane's padding (`--output-pad`, at
+     least 0.5rem). */
+  padding-left: 0.75rem;
+  padding-right: 0.5rem;
+  margin-left: -0.75rem;
+  margin-right: -0.5rem;
 
   @media (forced-colors: active) {
     outline: 2px solid Highlight;
@@ -75,7 +79,7 @@ button.icon {
   --read-gutter: 2rem;
   /* The height of a plain text line of the output (`--text-size` times its line-height), which the
      button's glyph is centred on; a block starting with a heading is not matched. */
-  --first-line: calc(var(--text-size) * 1.6);
+  --first-line: calc(var(--text-size) * var(--text-leading));
 
   &.with-gutter > .output {
     padding-left: calc(var(--read-gutter) + 0.375rem + 0.75rem);

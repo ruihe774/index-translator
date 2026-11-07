@@ -24,12 +24,20 @@ main {
   gap: 0.25rem 1.5rem;
   padding-block: 1.25rem 1rem;
 
+  @media (width < 54rem) {
+    padding-block: 0.5rem;
+  }
+
   h1 {
     display: flex;
     align-items: center;
     gap: 0.5rem;
     font-size: 1.5rem;
     font-weight: 650;
+
+    @media (width < 54rem) {
+      font-size: 1.25rem;
+    }
   }
 
   .logo {
@@ -41,6 +49,11 @@ main {
 main {
   flex: 1;
   padding-block-end: 2rem;
+
+  @media (width < 54rem) {
+    padding-block-end: 1rem;
+  }
+
   /* The cap is what animates, not `inline-size`: the width itself also changes with the window, which must not
      animate. */
   @media (prefers-reduced-motion: no-preference) {
@@ -50,7 +63,7 @@ main {
   > form {
     display: flex;
     flex-direction: column;
-    gap: 1.5rem;
+    gap: var(--section-gap);
   }
 }
 
@@ -59,7 +72,7 @@ main:has(.output.subtitles) {
   --page-cap: 160rem;
 }
 
-/* One column; two from 54rem, the one breakpoint of the page (`phone.css` is its other side). */
+/* One column; two from 54rem, the one breakpoint of the page. */
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);

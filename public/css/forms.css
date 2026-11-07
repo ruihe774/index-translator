@@ -89,18 +89,12 @@ textarea {
   }
 }
 
-/* Text areas: larger type and roomier side padding on wide screens. */
+/* Text areas: reading size, and roomier side padding on wide screens (tokens.css). */
 #text,
 .output {
   font-size: var(--text-size);
-  padding-inline: 0.75rem;
-}
-
-@media (width >= 54rem) {
-  #text,
-  .output {
-    padding-inline: 1.5rem;
-  }
+  line-height: var(--text-leading);
+  padding-inline: var(--output-pad);
 }
 
 /* Source text box, source preview and translation: one size and position. */

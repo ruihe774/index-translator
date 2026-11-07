@@ -39,11 +39,28 @@ button {
 
   /* Clear, Stop and Translate share one width, so swapping Clear for Stop moves nothing. */
   --button-min-inline-size: 6.5rem;
+
+  @media (width < 54rem) {
+    --button-min-inline-size: 5rem;
+
+    > button {
+      padding-inline: 0.75rem;
+    }
+  }
 }
 
-/* Stop's twin beside Copy is for one column only (css/phone.css), where Translate brings the translation in. */
+/* Stop's twin beside Copy is for one column only, where Translate brings the translation in: while a
+   translation runs it takes the place of Copy (disabled then). */
 #stop-output {
-  display: none;
+  @media (width >= 54rem) {
+    display: none;
+  }
+
+  @media (width < 54rem) {
+    &:not([hidden]) ~ #copy {
+      display: none;
+    }
+  }
 }
 
 @media (prefers-reduced-motion: no-preference) {

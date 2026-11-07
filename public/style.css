@@ -27,7 +27,6 @@
 @import url("css/markdown.css") layer(components);
 @import url("css/subtitles.css") layer(components);
 @import url("css/cjk.css") layer(components);
-@import url("css/phone.css") layer(components);
 @import url("css/standalone.css") layer(components);
 @import url("css/full-view.css") layer(components);
 @import url("css/utilities.css") layer(utilities);

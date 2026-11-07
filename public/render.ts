@@ -11,7 +11,7 @@ import { state } from "./state.ts";
 export interface RenderTargets {
   translate: HTMLElement;
   stop: HTMLElement;
-  /** Stop's twin in the translation's own actions, shown on one column only (css/phone.css). */
+  /** Stop's twin in the translation's own actions, shown on one column only (css/buttons.css). */
   stopOutput: HTMLElement;
   clear: HTMLElement;
   copy: HTMLElement;
