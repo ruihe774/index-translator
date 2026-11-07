@@ -19,6 +19,8 @@ export interface State {
   languagesReady: boolean;
   /** The source text as in the text box. */
   source: string;
+  /** The source text the last translation started from (`null` before any); Translate is plain while it is still the text. */
+  translatedSource: string | null;
   /** An image stands in place of the text box and is what Translate sends. */
   image: boolean;
   /** Why nothing can be read aloud at all (not installed, no voices); empty when it can. */
@@ -34,6 +36,7 @@ export const state: State = {
   translation: "",
   languagesReady: false,
   source: "",
+  translatedSource: null,
   image: false,
   speechProblem: "Checking whether reading aloud is available…",
   speaking: null,

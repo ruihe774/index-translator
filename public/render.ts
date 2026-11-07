@@ -67,6 +67,14 @@ export function clearEnabled(): boolean {
   return state.source.length > 0 || state.image || state.translation.length > 0;
 }
 
+/** Whether Translate has something new to do: an image, or text that is not what was last translated. */
+export function translateIsNew(): boolean {
+  if (state.image) {
+    return true;
+  }
+  return state.source.length > 0 && !(state.translation.length > 0 && state.source === state.translatedSource);
+}
+
 /** Whether Copy has a finished translation to copy. */
 export function copyEnabled(): boolean {
   return state.translation.length > 0 && state.running === null;
@@ -78,13 +86,15 @@ export function createRender(t: RenderTargets): () => void {
     const hasText = state.source.length > 0;
     const hasOutput = state.translation.length > 0;
     setAttr(t.translate, "aria-disabled", String(running || !state.languagesReady));
+    t.translate.classList.toggle("primary", translateIsNew());
     setAttr(t.clear, "aria-disabled", String(!clearEnabled()));
     setAttr(t.copy, "aria-disabled", String(!copyEnabled()));
     t.sourceSwitch.disabled = !hasText;
     t.outputSwitch.disabled = !hasOutput;
     setHidden(t.stop, !running);
     setHidden(t.stopOutput, !running);
-    setHidden(t.clear, running);
+    // The reading's own controls (pause, previous, next) are shown while it runs; Clear gives way.
+    setHidden(t.clear, running || state.speaking !== null);
     t.after();
   };
 }

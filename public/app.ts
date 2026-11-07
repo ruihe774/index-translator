@@ -615,7 +615,7 @@ function startTranslation(job: Job): Run {
   store(KEYS.to, toSelect.value);
   speech.stop();
   const run = new Run();
-  setState({ running: run });
+  setState({ running: run, translatedSource: textInput.value });
   following = true;
   clearResult(job.format);
   showSourceAs(job.format, job.format === "plain" ? "raw" : "preview");
@@ -939,7 +939,7 @@ function restoreEntry(entry: HistoryEntry) {
   clearResult(format);
   showSourceAs(format, format === "plain" ? "raw" : "preview");
   outputEl.lang = toSelect.value;
-  setState({ translation: entry.translation });
+  setState({ translation: entry.translation, translatedSource: entry.source });
   showOutput();
   placeholderEl.hidden = true;
   refreshSelection();

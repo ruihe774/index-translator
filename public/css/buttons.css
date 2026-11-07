@@ -37,6 +37,9 @@ button {
   flex-wrap: wrap;
   gap: var(--gap);
 
+  /* The buttons stay at the end of the row when they wrap onto a line of their own. */
+  margin-inline-start: auto;
+
   /* Clear, Stop and Translate share one width, so swapping Clear for Stop moves nothing. */
   --button-min-inline-size: 6.5rem;
 
