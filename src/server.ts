@@ -19,7 +19,13 @@ if (problem) {
 if (cfg.devReload) {
   await import("./dev-watch");
 }
-const app = await startApp(cfg);
+const app = await startApp(cfg).catch((e: unknown) => {
+  if (e instanceof Error && (e as { code?: string }).code === "EADDRINUSE") {
+    console.error(`[server] cannot start. Port ${cfg.port} on ${cfg.host} is already in use.`);
+    process.exit(1);
+  }
+  throw e;
+});
 console.error(
   `[server] listening on ${String(app.server.url)} (default model ${cfg.defaultModel}, context ${cfg.ctxSize})`,
 );
