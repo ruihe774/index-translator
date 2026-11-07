@@ -112,17 +112,6 @@ main:has(.output.subtitles) {
   gap: var(--gap);
 }
 
-/* Like `#meta` (`chrome.css`): a long image name or message scrolls sideways instead of wrapping. */
-#count {
-  flex: 1 1 0;
-  min-inline-size: 0;
-  block-size: var(--target);
-  line-height: var(--target);
-  white-space: nowrap;
-  overflow: auto hidden;
-  font-variant-numeric: tabular-nums;
-}
-
 .speech-settings {
   display: flex;
   flex-wrap: wrap;

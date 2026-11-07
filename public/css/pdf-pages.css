@@ -89,14 +89,14 @@
       inline-size: 1.75rem;
       block-size: 1.75rem;
       margin: auto;
-      border: 0.25rem solid color-mix(in srgb, var(--accent) 25%, transparent);
+      border: 0.25rem solid var(--spinner-track);
       border-block-start-color: var(--accent);
       border-radius: 50%;
     }
 
     @media (prefers-reduced-motion: no-preference) {
       .picture::after {
-        animation: speech-spin 1s linear infinite;
+        animation: spin 1s linear infinite;
       }
     }
   }

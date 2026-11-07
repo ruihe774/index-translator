@@ -60,7 +60,7 @@
   }
 
   tr.cue-playing {
-    background: color-mix(in srgb, var(--accent) 18%, transparent);
+    background: color-mix(in srgb, var(--accent) var(--shade-playing), transparent);
 
     @media (forced-colors: active) {
       outline: 2px solid Highlight;
@@ -77,6 +77,6 @@
 
   /* Also being read aloud: the darker shade of that. */
   tr.speaking.cue-playing {
-    background: color-mix(in srgb, var(--accent) 24%, transparent);
+    background: color-mix(in srgb, var(--accent) var(--shade-current), transparent);
   }
 }

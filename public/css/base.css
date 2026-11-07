@@ -52,6 +52,14 @@ a {
   outline-offset: 2px;
 }
 
+/* Busy: a glyph or a ring turning (speech.css, panes.css, pdf-pages.css), each only where motion is not
+   reduced; a ring's track is `--spinner-track`, its turning part the accent. */
+@keyframes spin {
+  to {
+    rotate: 360deg;
+  }
+}
+
 [hidden] {
   display: none !important;
 }

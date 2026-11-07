@@ -47,7 +47,7 @@
   .pane-bar {
     position: fixed;
     inset: 0 0 auto;
-    z-index: 2;
+    z-index: var(--z-bar);
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
@@ -138,21 +138,31 @@
     > .output {
       padding-inline: var(--output-pad);
     }
+  }
 
-    /* A table is not set for comfortable reading: it takes the room its columns want, up to the page's
-       width less the gutters, at most 96rem (twice the column) and at least the column, growing on both sides of the centred column. Only a
-       top-level one: in a list or quote the column's middle is not its container's. */
-    > .output.markdown > .table-scroll {
-      inline-size: max-content;
-      min-inline-size: 100%;
-      max-inline-size: max(100%, min(96rem, calc(100cqw - 2 * var(--gutter))));
-      position: relative;
-      inset-inline-start: 50%;
-      translate: -50%;
+  /* No blue paragraph shade on hover (`css/sync-scroll.css`; the sentence mark is off above). */
+  .synced [data-line]:hover,
+  .synced .linked {
+    background: none;
+  }
+}
 
-      &:dir(rtl) {
-        translate: 50%;
-      }
+/* A table is not set for comfortable reading: it takes the room its columns want, up to the page's width less
+   the gutters, at most 96rem (twice the column) and at least the column, growing on both sides of the centred
+   column. Only a top-level one: in a list or quote the column's middle is not its container's. Not side by
+   side, where a wide table keeps to its column and scrolls inside it, and not on paper, where the page would
+   cut it off. */
+@media screen {
+  :root[data-full-view]:not([data-full-view="both"]) .output-area > .output.markdown > .table-scroll {
+    inline-size: max-content;
+    min-inline-size: 100%;
+    max-inline-size: max(100%, min(96rem, calc(100cqw - 2 * var(--gutter))));
+    position: relative;
+    inset-inline-start: 50%;
+    translate: -50%;
+
+    &:dir(rtl) {
+      translate: 50%;
     }
   }
 }
@@ -195,13 +205,6 @@
       /* A row is as tall as its taller cell: the shorter keeps its own height, at the top. */
       > * {
         align-self: start;
-      }
-
-      /* A wide table keeps to its column, scrolling inside it, or it would cover the other. */
-      &.markdown > .table-scroll:is(*, :dir(rtl)) {
-        inline-size: auto;
-        inset-inline-start: 0;
-        translate: none;
       }
     }
   }
@@ -344,11 +347,6 @@
 /* Printed: the text alone, black on white. Browsers print in the light scheme; `color-scheme` only makes sure
    of it (every `light-dark()` takes its light side), since dark mode's light text on white paper would be
    near invisible. */
-:root[data-full-view] .synced [data-line]:hover,
-:root[data-full-view] .synced .linked {
-  background: none;
-}
-
 @media print {
   :root[data-full-view] {
     color-scheme: light;
@@ -357,13 +355,6 @@
 
     .pane-bar {
       display: none;
-    }
-
-    /* On paper a table keeps to the column, or the page would cut it off. */
-    .output-area > .output.markdown > .table-scroll:is(*, :dir(rtl)) {
-      inline-size: auto;
-      inset-inline-start: 0;
-      translate: none;
     }
   }
 }

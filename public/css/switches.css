@@ -79,17 +79,12 @@
       border-end-end-radius: var(--radius-min);
     }
 
-    &[aria-pressed="true"] {
-      /* The accent's hue, paler than the primary action (Translate), which is solid. */
+    /* The accent's hue, paler than the primary action (Translate), which is solid. A disabled one looks
+       like any disabled button (buttons.css). */
+    &[aria-pressed="true"]:not([aria-disabled="true"]) {
       color: var(--text);
-      background: color-mix(in srgb, var(--accent) 24%, var(--surface-sunken));
+      background: color-mix(in srgb, var(--accent) var(--shade-current), var(--surface-sunken));
       border-color: var(--accent);
-    }
-
-    &[aria-disabled="true"] {
-      color: var(--muted);
-      background: var(--surface-sunken);
-      border: 1px dashed var(--border);
     }
   }
 }

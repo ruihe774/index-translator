@@ -4,6 +4,11 @@
   white-space: normal;
 }
 
+/* A cue cell's padding above and below its text, which a read-from button's glyph also keeps (below). */
+.output-area:has(> .output.subtitles) {
+  --cue-pad-block: 0.375rem;
+}
+
 .cue-table {
   /* The lines are 1px backgrounds, not borders: then a cell's box is its row's, which the gutter's
      buttons are measured by. A collapsed border moves the cells' boxes and is painted half into the
@@ -34,7 +39,7 @@
 
   /* The number, time and speaker are smaller than the text: their first lines share its baseline. */
   td {
-    padding: 0.375rem 0.75rem 0.375rem 0;
+    padding: var(--cue-pad-block) 0.75rem var(--cue-pad-block) 0;
     vertical-align: baseline;
   }
 
@@ -102,7 +107,7 @@
    button starts under the line, as the row's shade shows, and ends at the next row's. Not a clip-path,
    which would cut off the focus ring. */
 .output-area:has(> .output.subtitles) button.read-from {
-  padding-block-start: calc(0.375rem + (var(--first-line) - 1.25rem) / 2 - 1px);
+  padding-block-start: calc(var(--cue-pad-block) + var(--read-icon-top));
   border-width: 1px 0 0;
   background-clip: padding-box;
 }

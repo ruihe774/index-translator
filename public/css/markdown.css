@@ -81,7 +81,7 @@
   }
 
   code {
-    font-family: "Cascadia Mono", Menlo, "Noto Sans Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
     padding: 0.1em 0.3em;
     background: var(--surface);
@@ -176,7 +176,7 @@
 
   /* An equation shown as its TeX: while Temml loads, without it, or when it cannot read it. */
   .math-source {
-    font-family: "Cascadia Mono", Menlo, "Noto Sans Mono", monospace;
+    font-family: var(--font-mono);
     font-size: 0.9em;
   }
 

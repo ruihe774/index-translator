@@ -21,6 +21,17 @@
   --warn-bg: light-dark(#fff4d6, #3a2e0a);
   --warn-text: light-dark(#4a3500, #ffe9a8);
   --warn-border: light-dark(#8a6100, #c9a227);
+  /* Shades of the accent by what they mark, from faint to strong, each mixed into what it sits on. They
+     are kept apart: the contrasts in A11Y-ACCEPTANCE.md were measured on each (and the sentence mark's
+     colour above on the linked one). */
+  --shade-hover: 14%;
+  --shade-linked: 16%;
+  --shade-playing: 18%;
+  --shade-current: 24%;
+  /* The faint ring a busy spinner turns on (base.css `spin`). */
+  --spinner-track: color-mix(in srgb, var(--accent) 25%, transparent);
+  /* A solid accent fill under the pointer. */
+  --accent-hover: color-mix(in srgb, var(--accent) 88%, var(--text));
 
   /* Concentric corners: an outer radius is the inner radius plus the gap
      (padding + border) between the two edges. Siblings in the same container
@@ -43,6 +54,7 @@
   --output-pad: 1.5rem;
   --gutter: 1rem;
   --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
+  --font-mono: "Cascadia Mono", Menlo, "Noto Sans Mono", monospace;
   /* Per language, so Han characters get Japanese or Chinese glyph forms, not the first CJK font's. */
   --font-ja:
     "Han Punctuation JP", system-ui, "Segoe UI", "Noto Sans", "Hiragino Sans", "Yu Gothic UI", "Meiryo",
@@ -53,6 +65,15 @@
   --shadow:
     0 1px 2px light-dark(rgb(20 30 60 / 0.08), rgb(0 0 0 / 0.4)),
     0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
+  /* Glyphs in square buttons. */
+  --icon-size: 1.5rem;
+
+  /* What stacks over what, lowest first: the read-from column over its pane's text, full view's bar over
+     the page, the skip link over the bar, the drop frame over everything. */
+  --z-gutter: 1;
+  --z-bar: 2;
+  --z-skip-link: 3;
+  --z-drop: 4;
 }
 
 /* Below 54rem (one column): compact. Smaller margins and padding, 1rem text, and the panes take the
@@ -68,16 +89,20 @@
     /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
     --radius: calc(var(--radius-md) + 0.5rem + 1px);
     --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.5rem));
-    /* The height is 100svh minus 12rem, kept between 16rem and 72rem. 1rem of the 12rem keeps the button row clear of iOS Safari's floating toolbar, which overlays the page and is not part of any safe-area inset; more would push the next panel's controls under it. */
+    /* The height the header, the panel switch and the panel's own rows leave: 100vh minus 14rem where the
+       browser shows no toolbar (`svh` equals `vh`), and 100svh minus 12rem where it does, whichever is
+       less; kept between 16rem and 72rem. 1rem of the 12rem keeps the button row clear of iOS Safari's
+       floating toolbar, which overlays the page and is not part of any safe-area inset; more would push
+       the next panel's controls under it. */
     --pane-height: clamp(16rem, calc(min(100svh - 12rem, 100vh - 14rem)), 72rem);
   }
 }
 
 /* Installed on a phone's home screen (iOS 26, standalone.css): the page is drawn under the status bar, where the
    system blurs it, and down to the home indicator, and `env(safe-area-inset-*)` is not reliable
-   there (0 on affected versions, WebKit bug 301994). So fixed room is left at the top (the
-   Dynamic Island's 59pt) and the bottom (34pt), and the panes are shorter by that much. Portrait
-   only; in landscape the real insets are used (next block). */
+   there (0 on affected versions, WebKit bug 301994). So each inset has a floor, 2rem at the top and
+   3rem at the bottom, and the panes are shorter by that much. In landscape the floors are 0.5rem
+   (next block). */
 @media (display-mode: standalone) and (orientation: portrait) {
   :root {
     --standalone-top: max(env(safe-area-inset-top, 0px), 2rem);

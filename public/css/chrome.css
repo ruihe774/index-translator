@@ -65,12 +65,13 @@
   font-size: 0.875rem;
 }
 
-/* The status line scrolls sideways instead of wrapping. Its box is as tall as a button, so a
-   classic scrollbar (when the platform draws one) lands in the empty space under the centred
-   text and the row never changes height. Overlay scrollbars are up to the platform; the
-   scrollbar properties that would style them are not supported in every browser in
-   `.browserslistrc`. */
-#meta {
+/* The status line, and the letter count beside the source's buttons, scroll sideways instead of
+   wrapping (a long image name or message). The box is as tall as a button, so a classic scrollbar
+   (when the platform draws one) lands in the empty space under the centred text and the row never
+   changes height. Overlay scrollbars are up to the platform; the scrollbar properties that would
+   style them are not supported in every browser in `.browserslistrc`. */
+#meta,
+#count {
   display: block;
   flex: 1 1 0;
   min-inline-size: 0;
@@ -90,7 +91,7 @@
   position: absolute;
   inset-inline-start: 0.5rem;
   inset-block-start: -4rem;
-  z-index: 10;
+  z-index: var(--z-skip-link);
   padding: 0.75rem 1rem;
   background: var(--surface);
   border: 2px solid var(--focus);

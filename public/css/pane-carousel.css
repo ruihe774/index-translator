@@ -67,8 +67,8 @@
   min-inline-size: var(--target);
 
   svg {
-    inline-size: 1.5rem;
-    block-size: 1.5rem;
+    inline-size: var(--icon-size);
+    block-size: var(--icon-size);
     fill: currentcolor;
   }
 }

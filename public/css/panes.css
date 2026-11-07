@@ -23,7 +23,7 @@
     inline-size: 2.5rem;
     block-size: 2.5rem;
     margin: auto;
-    border: 0.3rem solid color-mix(in srgb, var(--accent) 25%, transparent);
+    border: 0.3rem solid var(--spinner-track);
     border-block-start-color: var(--accent);
     border-radius: 50%;
     pointer-events: none;
@@ -31,7 +31,7 @@
 
   @media (prefers-reduced-motion: no-preference) {
     &[aria-busy="true"]::after {
-      animation: speech-spin 1s linear infinite;
+      animation: spin 1s linear infinite;
     }
   }
 
@@ -65,5 +65,5 @@ html.dropping::after {
   inset: 0.5rem;
   border: 3px dashed var(--accent);
   pointer-events: none;
-  z-index: 1000;
+  z-index: var(--z-drop);
 }

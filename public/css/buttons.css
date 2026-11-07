@@ -11,7 +11,7 @@ button {
   cursor: pointer;
 
   &:hover:not([aria-disabled="true"]) {
-    background: color-mix(in srgb, var(--accent) 14%, var(--surface-sunken));
+    background: color-mix(in srgb, var(--accent) var(--shade-hover), var(--surface-sunken));
   }
 
   &.primary {
@@ -20,7 +20,7 @@ button {
     border-color: var(--accent);
 
     &:hover:not([aria-disabled="true"]) {
-      background: color-mix(in srgb, var(--accent) 88%, var(--text));
+      background: var(--accent-hover);
     }
   }
 
