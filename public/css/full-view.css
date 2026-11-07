@@ -16,8 +16,8 @@
   --text-size: 1.25rem;
   --output-pad: 1.5rem;
 
-  /* The bar's height: its padding and border, and the controls' `--target` scaled to 0.75 (see `.pane-bar`). */
-  --bar-height: calc(1rem + 1px + var(--target) * 0.75);
+  /* The bar's height: its padding and border, and the controls' `--target` scaled (see `.pane-bar`). */
+  --bar-height: calc(1rem + 1px + var(--target) * var(--bar-scale));
 
   /* Focus moves and anchors land below the bar. */
   scroll-padding-block-start: calc(var(--bar-height) + 0.5rem);
@@ -41,8 +41,8 @@
   }
 
   /* Exit at the start (first in the markup, so also first in the tab order), the switch at the end, out of
-     the way of the text; both at the 0.75 the switch has outside full view (`css/pane-carousel.css`). The
-     scale leaves their layout box at full size: the margins take the height back, and Exit's column may be
+     the way of the text; each scaled as the whole bar is outside full view (`css/pane-bar.css`). The scale
+     leaves their layout box at full size: the margins take the height back, and Exit's column may be
      narrower than its box, which is scaled towards the start. */
   .pane-bar {
     position: fixed;
@@ -52,11 +52,6 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--gap);
-    align-self: stretch;
-    /* Also where an installed app puts the switch below the panels (`css/standalone.css`). */
-    order: -1;
-    transform: none;
-    margin: 0;
     /* No extra room for the status bar when installed: the bar's background is opaque there (below), so iOS
        blurs it as it does any other page. */
     padding: 0.5rem var(--gutter) 0.5rem;
@@ -69,8 +64,8 @@
     /* In grey, so that no colour draws the eye from the text; the bar's own background is the page's. The
        contrasts are in A11Y-ACCEPTANCE.md (full view pass). */
     > * {
-      transform: scale(0.75);
-      margin-block: calc(var(--target) * -0.125);
+      transform: scale(var(--bar-scale));
+      margin-block: calc(var(--target) * (var(--bar-scale) - 1) / 2);
       filter: grayscale(1);
     }
 
@@ -81,9 +76,6 @@
 
     /* Share and the switch scale as one, so that Share sits against the switch's visible edge. */
     > .pane-bar-end {
-      display: flex;
-      align-items: center;
-      gap: var(--gap);
       transform-origin: right center;
     }
   }

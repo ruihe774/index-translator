@@ -1,0 +1,61 @@
+/* The bar of the panel switch (`#pane-switch`: Source text, Side by side, Translation), which also holds full
+   view's Exit and Share, hidden until then. Outside full view it serves the one-column carousel
+   (pane-carousel.ts), below; full view fixes it to the top at every width (full-view.css).
+
+   Its controls are drawn at `--bar-scale` of their size, so that they draw less of the eye than the panels; a
+   target stays about 33 px, over the 24 px of WCAG 2.5.8. A transform leaves the layout box at full size, so
+   negative margins take the difference back. `zoom: var(--bar-scale)` would do both in one, once every
+   browser in `.browserslistrc` has it (Firefox from 126; `bun run lint:css` tells). */
+
+/* Share and the switch, scaled as one in full view. */
+.pane-bar-end {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--gap);
+}
+
+/* 8ic can usually confortably hold these text labels ("Source text" and "Translation") with room. */
+.pane-switch > button {
+  min-inline-size: 8ic;
+}
+
+/* Side by side (full-view.css): a page split by a dashed line, as wide as the glyph and the padding. */
+.pane-switch > [data-value="both"] {
+  display: inline-grid;
+  place-items: center;
+  min-inline-size: var(--target);
+
+  svg {
+    inline-size: var(--icon-size);
+    block-size: var(--icon-size);
+    fill: currentcolor;
+  }
+}
+
+/* Outside full view: above the panels, which it follows in the markup, scaled towards its top; the bottom
+   margin takes back the room the scale leaves and a little of the form's gap. Not shown where both panels
+   are. */
+:root:not([data-full-view]) .pane-bar {
+  align-self: center;
+  order: -1;
+  transform: scale(var(--bar-scale));
+  transform-origin: top center;
+  margin-block-end: -1rem;
+
+  /* Where the site header is one row, the bar moves up into it, between the title and the engine status
+     (which is lifted over it while pointed at or focused, chrome.css). */
+  @media (width >= 40rem) {
+    margin-block-start: -2.5rem;
+  }
+
+  /* Installed: below the panels, above the site header at the foot of the page (standalone.css). */
+  @media (display-mode: standalone) {
+    order: 0;
+    margin-block: 0 2rem;
+  }
+
+  @media (width >= 54rem), (display-mode: standalone) and (orientation: landscape) and (width >= 44rem) {
+    display: none;
+  }
+}

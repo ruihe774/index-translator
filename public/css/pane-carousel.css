@@ -2,7 +2,7 @@
    side by side in a row that scrolls sideways, one panel to a screen (pane-carousel.ts); `--peek` is how much
    of the next one shows. The row reaches into the page gutters, so a panel slides out to the screen's edge
    and its shadow is not cut off. Code blocks, tables and equations in the panes scroll on their own and never
-   hand a swipe on to the row. The switch does what a swipe does; it is not shown where both panels are. */
+   hand a swipe on to the row. The switch does what a swipe does (pane-bar.css). */
 @media (width < 54rem) and (not ((display-mode: standalone) and (orientation: landscape) and (width >= 44rem))) {
   .workspace {
     /* The containing block of the panels' absolutely positioned `.sr-only` text, so that the row clips
@@ -37,50 +37,5 @@
     #count {
       overscroll-behavior-x: contain;
     }
-  }
-}
-
-/* The switch's bar; it also holds full view's Exit (css/full-view.css), hidden until then. */
-.pane-bar {
-  align-self: center;
-  order: -1;
-  transform: scale(0.75);
-  transform-origin: top center;
-  margin-block-end: -1rem;
-}
-
-/* Wraps full view's Share and the switch (css/full-view.css); until then the switch alone. */
-.pane-bar-end {
-  display: flex;
-  justify-content: center;
-}
-
-/* 8ic can usually confortably hold these text labels ("Source text" and "Translation") with room. */
-.pane-switch > button {
-  min-inline-size: 8ic;
-}
-
-/* Full view's Side by side (css/full-view.css): a page split by a dashed line, as wide as the glyph and the padding. */
-.pane-switch > [data-value="both"] {
-  display: inline-grid;
-  place-items: center;
-  min-inline-size: var(--target);
-
-  svg {
-    inline-size: var(--icon-size);
-    block-size: var(--icon-size);
-    fill: currentcolor;
-  }
-}
-
-@media (width >= 54rem), (display-mode: standalone) and (orientation: landscape) and (width >= 44rem) {
-  .pane-bar {
-    display: none;
-  }
-}
-
-@media (width >= 40rem) {
-  .pane-bar {
-    margin-block-start: -2.5rem;
   }
 }

@@ -23,6 +23,7 @@
 @import url("css/sentence.css") layer(components);
 @import url("css/switches.css") layer(components);
 @import url("css/pane-carousel.css") layer(components);
+@import url("css/pane-bar.css") layer(components);
 @import url("css/output.css") layer(components);
 @import url("css/markdown.css") layer(components);
 @import url("css/subtitles.css") layer(components);

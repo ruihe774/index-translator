@@ -67,10 +67,14 @@
     0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
   /* Glyphs in square buttons. */
   --icon-size: 1.5rem;
+  /* The panel switch's bar (pane-bar.css, full-view.css) draws its controls at three quarters of their size. */
+  --bar-scale: 0.75;
 
-  /* What stacks over what, lowest first: the read-from column over its pane's text, full view's bar over
-     the page, the skip link over the bar, the drop frame over everything. */
+  /* What stacks over what, lowest first: the read-from column over its pane's text, the engine status over
+     the panel switch beside it while it is pointed at or focused, full view's bar over the page, the skip
+     link over the bar, the drop frame over everything. */
   --z-gutter: 1;
+  --z-engine: 1;
   --z-bar: 2;
   --z-skip-link: 3;
   --z-drop: 4;

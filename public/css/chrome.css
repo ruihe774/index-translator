@@ -1,5 +1,14 @@
 .engine {
   color: var(--muted);
+
+  /* From 40rem the panel switch moves up beside it (pane-bar.css) and is drawn over it; a long status
+     (rather than the short bar) runs under the switch. Lifted over it, on the page's colour, while
+     pointed at or focused. */
+  &:is(:hover, :focus-within) {
+    position: relative;
+    z-index: var(--z-engine);
+    background: var(--bg);
+  }
 }
 
 .engine a {

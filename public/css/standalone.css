@@ -25,10 +25,4 @@
     order: 1;
     padding-block: 0 max(1rem, var(--standalone-bottom, 0px));
   }
-
-  .pane-bar {
-    order: 0;
-    margin-block-start: 0;
-    margin-block-end: 2rem;
-  }
 }
