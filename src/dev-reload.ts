@@ -55,7 +55,11 @@ export function createDevReload(watcher: PublicWatcher) {
   const boot = Date.now();
   let changes = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
-  watcher.subscribe(() => {
+  watcher.subscribe((filename) => {
+    // Editors' swap and backup files (`.x.swp`) are dot files; saving them is not a change to the page.
+    if (filename?.split(/[\\/]/).some((part) => part.startsWith("."))) {
+      return;
+    }
     changes++;
     clearTimeout(timer);
     timer = setTimeout(() => send("event: reload\ndata: \n\n"), DEBOUNCE_MS);

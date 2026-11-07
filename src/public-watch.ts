@@ -6,18 +6,18 @@ import { watch } from "node:fs";
 export interface PublicWatcher {
   /** False when the directory cannot be watched; a consumer then cannot know when files change. */
   readonly watching: boolean;
-  /** Calls `listener` on every change under the directory (unfiltered and undebounced). */
-  subscribe(listener: () => void): void;
+  /** Calls `listener` on every change under the directory (unfiltered and undebounced) with its relative path. */
+  subscribe(listener: (filename: string | null) => void): void;
   close(): void;
 }
 
 export function watchPublic(publicDir: string): PublicWatcher {
-  const listeners = new Set<() => void>();
+  const listeners = new Set<(filename: string | null) => void>();
   let watcher: ReturnType<typeof watch> | undefined;
   try {
-    watcher = watch(publicDir, { recursive: true }, () => {
+    watcher = watch(publicDir, { recursive: true }, (_event, filename) => {
       for (const listener of listeners) {
-        listener();
+        listener(filename);
       }
     });
   } catch {

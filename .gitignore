@@ -11,3 +11,4 @@
 /dist/
 /packaging/windows/launcher.exe
 /coverage/
+*.sw[a-p]
