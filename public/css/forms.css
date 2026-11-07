@@ -48,6 +48,7 @@ select {
 textarea::placeholder {
   color: var(--muted);
   opacity: 1;
+  font-size: 1rem;
 }
 
 textarea {
