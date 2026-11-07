@@ -31,7 +31,7 @@
 
 import { lineElements } from "./dom.ts";
 import type { ViewSwitch } from "./elements/view-switch.ts";
-import { prefersReducedMotion } from "./media-query.ts";
+import { prefersReducedMotion, TWO_COLUMNS } from "./media-query.ts";
 import type { PaneCarousel } from "./pane-carousel.ts";
 import { type Alignment, counterpart } from "./paragraphs.ts";
 import { shareText, shareTypeFor } from "./share.ts";
@@ -117,7 +117,7 @@ export function initFullView(d: FullViewDeps): FullView {
   const root = document.documentElement;
   const page = document.scrollingElement ?? root;
   /** Where both columns fit; css/full-view.css shows Side by side by the same query. */
-  const wide = matchMedia("(min-width: 54rem)");
+  const wide = matchMedia(TWO_COLUMNS);
   let current: Shown | null = null;
   /** The side full view was opened on, which leaving side by side goes back to. */
   let entered: Side = "source";

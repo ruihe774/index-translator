@@ -1,0 +1,100 @@
+/* The page's custom properties on `:root`, and every context that changes them: below the breakpoint and
+   installed as an app. Each context is one block, in cascade order (an installed app is also below or above
+   the breakpoint). Full view's (`:root[data-full-view]`) stay in full-view.css with the rules they go with. */
+:root {
+  color-scheme: light dark;
+
+  --bg: light-dark(#f3f5fa, #101217);
+  --surface: light-dark(#ffffff, #1a1d25);
+  --surface-sunken: light-dark(#eceff6, #14161c);
+  --text: light-dark(#1b1f2a, #ebedf3);
+  --muted: light-dark(#4a5163, #b3b9c7);
+  --border: light-dark(#767c8c, #8b92a3);
+  --divider: light-dark(#d3d8e3, #2c303b);
+  --accent: light-dark(#1a56db, #8ab4f8);
+  /* The sentence under the pointer, over the accent shade of its paragraph: another hue, and in light mode a
+     tint paler than that shade, so that text and links on both keep their contrast (see sentence.css). */
+  --sentence-mark: light-dark(rgb(255 217 248 / 0.7), rgb(232 121 249 / 0.1));
+  --on-accent: light-dark(#ffffff, #0a1a33);
+  --focus: light-dark(#1a56db, #8ab4f8);
+  --error: light-dark(#b3261e, #ff8a80);
+  --warn-bg: light-dark(#fff4d6, #3a2e0a);
+  --warn-text: light-dark(#4a3500, #ffe9a8);
+  --warn-border: light-dark(#8a6100, #c9a227);
+
+  /* Concentric corners: an outer radius is the inner radius plus the gap
+     (padding + border) between the two edges. Siblings in the same container
+     share one radius, and no corner is ever square (--radius-min floor). */
+  --radius-min: 0.25rem;
+  --radius-sm: 0.5rem;
+  --radius-md: calc(var(--radius-sm) + 0.5rem + 1px);
+  --radius: calc(var(--radius-md) + 1rem + 1px);
+  --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.75rem));
+  --target: 2.75rem;
+  --gap: 1rem;
+  /* Side by side: the panes fill the screen height, so "Model and options" lies below the fold.
+     The reserve is the header, panel chrome (padding, language row, button row) and the form gap. */
+  --pane-height: clamp(16rem, calc(100svh - 17rem), 72rem);
+  /* Reading size of the text areas. */
+  --text-size: 1.25rem;
+  --gutter: 1rem;
+  --font: system-ui, "Segoe UI", "Noto Sans", "Noto Sans CJK SC", sans-serif;
+  /* Per language, so Han characters get Japanese or Chinese glyph forms, not the first CJK font's. */
+  --font-ja:
+    "Han Punctuation JP", system-ui, "Segoe UI", "Noto Sans", "Hiragino Sans", "Yu Gothic UI", "Meiryo",
+    "Noto Sans CJK JP", "Noto Sans JP", sans-serif;
+  --font-zh:
+    "Han Punctuation SC", system-ui, "Segoe UI", "Noto Sans", "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC",
+    "Noto Sans SC", sans-serif;
+  --shadow:
+    0 1px 2px light-dark(rgb(20 30 60 / 0.08), rgb(0 0 0 / 0.4)),
+    0 2px 8px light-dark(rgb(20 30 60 / 0.06), rgb(0 0 0 / 0.3));
+}
+
+/* Below 54rem (one column, phone.css): compact. Smaller margins and padding, 1rem text, and the panes take the
+   height the chrome leaves, so they show about twice the lines. Targets keep --target (WCAG 2.5.8). */
+@media (width < 54rem) {
+  :root {
+    --gap: 0.5rem;
+    --gutter: 0.5rem;
+    --text-size: 1rem;
+    /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
+    --radius: calc(var(--radius-md) + 0.5rem + 1px);
+    --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.5rem));
+    /* The height is 100svh minus 12rem, kept between 16rem and 72rem. 1rem of the 12rem keeps the button row clear of iOS Safari's floating toolbar, which overlays the page and is not part of any safe-area inset; more would push the next panel's controls under it. */
+    --pane-height: clamp(16rem, calc(min(100svh - 12rem, 100vh - 14rem)), 72rem);
+  }
+}
+
+/* Installed on a phone's home screen (iOS 26, standalone.css): the page is drawn under the status bar, where the
+   system blurs it, and down to the home indicator, and `env(safe-area-inset-*)` is not reliable
+   there (0 on affected versions, WebKit bug 301994). So fixed room is left at the top (the
+   Dynamic Island's 59pt) and the bottom (34pt), and the panes are shorter by that much. Portrait
+   only; in landscape the real insets are used (next block). */
+@media (display-mode: standalone) and (orientation: portrait) {
+  :root {
+    --standalone-top: max(env(safe-area-inset-top, 0px), 2rem);
+    --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 3rem);
+    --pane-height: clamp(16rem, calc(100svh - 10rem - var(--standalone-top) - var(--standalone-bottom)), 72rem);
+  }
+}
+
+/* Installed, landscape: the panel fills the screen height minus the safe insets. */
+@media (display-mode: standalone) and (orientation: landscape) {
+  :root {
+    --standalone-top: max(env(safe-area-inset-top, 0px), 0.5rem);
+    --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem);
+    /* The panel's own chrome only: padding, the two control rows, the gaps between and the two 1px
+       borders (7.625rem with the 0.5rem gap of the narrow layout); "Model and options" lies below
+       the fold. */
+    --pane-height: clamp(16rem, calc(100svh - 7.625rem - var(--standalone-top) - var(--standalone-bottom)), 72rem);
+  }
+
+  /* Two columns from 44rem (standalone.css). */
+  @media (width >= 44rem) {
+    :root {
+      /* Two columns: the language label stands over its select, so the head row is 4.3rem, not 2.75rem. */
+      --pane-height: clamp(16rem, calc(100svh - 11.25rem - var(--standalone-top) - var(--standalone-bottom)), 72rem);
+    }
+  }
+}

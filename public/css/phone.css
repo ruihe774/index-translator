@@ -1,18 +1,6 @@
-/* Below 54rem (one column): compact. Smaller margins and padding, 1rem text, the language select and
-   the Raw/Preview switch share one row, and the panes take the height the chrome leaves, so
-   they show about twice the lines. Targets keep --target (WCAG 2.5.8). */
-@media (max-width: 53.99rem) {
-  :root {
-    --gap: 0.5rem;
-    --gutter: 0.5rem;
-    --text-size: 1rem;
-    /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
-    --radius: calc(var(--radius-md) + 0.5rem + 1px);
-    --radius-in-output: max(var(--radius-min), calc(var(--radius-md) - 0.5rem));
-    /* The height is 100svh minus 12rem, kept between 16rem and 72rem. 1rem of the 12rem keeps the button row clear of iOS Safari's floating toolbar, which overlays the page and is not part of any safe-area inset; more would push the next panel's controls under it. */
-    --pane-height: clamp(16rem, calc(min(100svh - 12rem, 100vh - 14rem)), 72rem);
-  }
-
+/* Below 54rem (one column): compact. Smaller margins and padding (the sizes themselves are in
+   tokens.css), and the language select and the Raw/Preview switch share one row. */
+@media (width < 54rem) {
   .site-header {
     padding-block: 0.5rem;
 
@@ -113,7 +101,7 @@
   }
 
   /* Too narrow for the select and the switch side by side: the switch drops below. */
-  @media (max-width: 22rem) {
+  @media (width <= 22rem) {
     .pane-head {
       flex-wrap: wrap;
 

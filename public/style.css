@@ -6,6 +6,7 @@
 @layer base, layout, components, temml, temml-font, utilities;
 
 @import url("css/fonts.css");
+@import url("css/tokens.css") layer(base);
 @import url("css/base.css") layer(base);
 @import url("css/layout.css") layer(layout);
 @import url("css/chrome.css") layer(components);
