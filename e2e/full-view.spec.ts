@@ -566,3 +566,103 @@ for (const [state, scrollTop] of [
     }
   });
 }
+
+/**
+ * A finger swiping sideways from `from` to `to` (viewport x) at height `y`, as touch events on what is there;
+ * false where the browser cannot build a `Touch`.
+ */
+function swipe(app: AppPage, from: number, to: number, y: number) {
+  return app.page.evaluate(
+    ({ from, to, y }) => {
+      const target = document.elementFromPoint(from, y)!;
+      const at = (x: number) => new Touch({ identifier: 1, target, clientX: x, clientY: y });
+      try {
+        at(from);
+      } catch {
+        // WebKit has `Touch` without a constructor, Firefox not at all.
+        return false;
+      }
+      const send = (type: string, x: number, down: boolean) =>
+        target.dispatchEvent(
+          new TouchEvent(type, {
+            bubbles: true,
+            cancelable: true,
+            touches: down ? [at(x)] : [],
+            changedTouches: [at(x)],
+          }),
+        );
+      send("touchstart", from, true);
+      send("touchmove", (from + to) / 2, true);
+      send("touchmove", to, true);
+      send("touchend", to, false);
+      return true;
+    },
+    { from, to, y },
+  );
+}
+
+test("full view: a sideways swipe goes to the view next to it on the switch, side by side included", async ({
+  app,
+  mock,
+}) => {
+  await app.page.setViewportSize({ width: 1280, height: 800 });
+  await translated(app, mock);
+  await openSource(app).evaluate((b: HTMLElement) => b.click());
+  // The source is in Raw: open the translation's full view, then swipe right towards the source.
+  await openOutput(app).click();
+  await expect(both(app)).toHaveAttribute("aria-disabled", "false");
+  const pressed = (name: string) =>
+    expect(bar(app).getByRole("button", { name, exact: true })).toHaveAttribute("aria-pressed", "true");
+  test.skip(!(await swipe(app, 600, 600, 400)), "no Touch constructor in this browser");
+
+  await swipe(app, 500, 700, 400);
+  await pressed("Side by side");
+  await swipe(app, 500, 700, 400);
+  await pressed("Source text");
+  // Nothing further that way.
+  await swipe(app, 500, 700, 400);
+  await pressed("Source text");
+  await swipe(app, 700, 500, 400);
+  await pressed("Side by side");
+
+  // Too short, mostly up or down, or from the edge of the screen (the system's Back): no change.
+  await swipe(app, 700, 660, 400);
+  await swipe(app, 1270, 900, 400);
+  await pressed("Side by side");
+
+  await swipe(app, 700, 500, 400);
+  await pressed("Translation");
+  await expect(app.page.locator("#source-view")).toBeHidden();
+});
+
+test("full view on one column: a swipe goes between the two sides, but not one in a code block that scrolls", async ({
+  app,
+  mock,
+}) => {
+  await app.page.setViewportSize(PHONE);
+  const code = "```\n" + "long_line_of_code ".repeat(20) + "\n```";
+  await mock.set({ chunks: [THINK, "段落\n\n", code] });
+  await app.open();
+  await app.text.fill("Paragraph\n\n" + code);
+  await app.translate.click();
+  await expect(app.copy).toHaveAttribute("aria-disabled", "false");
+  await openOutput(app).click();
+  await expect(bar(app)).toBeVisible();
+  test.skip(!(await swipe(app, 180, 180, 300)), "no Touch constructor in this browser");
+
+  // Once the zoom's pictures are gone, the touch lands on the code block, not on them.
+  await expect(app.page.locator("html")).not.toHaveAttribute("data-zoom");
+  const pre = (await app.page.locator("#output pre").boundingBox())!;
+  await swipe(app, 100, 300, pre.y + pre.height / 2);
+  // A switch would be made in the transition's update, a frame or more later.
+  await app.page.waitForTimeout(300);
+  await expect(bar(app).getByRole("button", { name: "Translation" })).toHaveAttribute("aria-pressed", "true");
+
+  const para = (await app.page.locator("#output > [data-line]").first().boundingBox())!;
+  await swipe(app, 100, 300, para.y + para.height / 2);
+  await expect(bar(app).getByRole("button", { name: "Source text" })).toHaveAttribute("aria-pressed", "true");
+  await expect(app.page.locator("#source-view")).toBeVisible();
+  // Side by side is not offered at one column: left goes straight back.
+  await swipe(app, 300, 100, para.y + para.height / 2);
+  await expect(bar(app).getByRole("button", { name: "Translation" })).toHaveAttribute("aria-pressed", "true");
+});

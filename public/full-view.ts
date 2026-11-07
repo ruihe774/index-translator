@@ -17,6 +17,11 @@
 // Entering and leaving (Exit and Escape; Back and a view that cannot be shown any more leave at once) zoom
 // the pane: the area of the side moves between its place in the panel and the reading column, the old
 // picture and the new fading into each other as it does.
+// On a touch screen a sideways swipe does what the switch's next button that way does (swipe.ts): the finger
+// moving left goes towards the translation, as the carousel's row would. It is told apart from a scroll on
+// release, so the touches are only watched, never held: a swipe on a pinch-zoomed page pans it, one starting
+// in a code block, table or equation that scrolls sideways scrolls it, and one from a side of the screen is
+// the system's Back, which leaves.
 // Exit, Escape and Back leave: entering pushes a history entry (the same URL), so Back on a phone
 // does not leave the page. Leaving puts the page back where it was and the pane on the block that
 // was at the top.
@@ -32,6 +37,7 @@ import { type Alignment, counterpart } from "./paragraphs.ts";
 import { shareText, shareTypeFor } from "./share.ts";
 import { sideBySideRows } from "./side-by-side.ts";
 import type { Side } from "./state.ts";
+import { moveTrack, startTrack, swipeOf, type TouchTrack } from "./swipe.ts";
 import { viewPane } from "./sync-scroll.ts";
 
 export interface FullViewDeps {
@@ -492,6 +498,84 @@ export function initFullView(d: FullViewDeps): FullView {
       }
     });
   }
+
+  /** The view next to the one shown in the switch's order (left to right) towards `by`, skipping what cannot be shown. */
+  function next(by: 1 | -1): Shown | null {
+    const order = [...d.paneSwitch.querySelectorAll("button")].map((b) => b.dataset.value as Shown);
+    for (let i = order.indexOf(current!) + by; i >= 0 && i < order.length; i += by) {
+      if (showable(order[i]!)) {
+        return order[i]!;
+      }
+    }
+    return null;
+  }
+
+  /** Whether `el` or a box around it scrolls sideways (a code block, a table, an equation). */
+  function inSidewaysScroller(el: Element | null) {
+    for (; el && el !== root; el = el.parentElement) {
+      if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  const zoomed = () => (visualViewport?.scale ?? 1) > 1.01;
+
+  /** The one finger on the screen since it touched down in full view, while it may still be a swipe. */
+  let finger: { id: number; track: TouchTrack } | null = null;
+  document.addEventListener(
+    "touchstart",
+    (e) => {
+      const [t] = e.touches;
+      const free =
+        current &&
+        e.touches.length === 1 &&
+        !zoomed() &&
+        !document.querySelector("dialog[open]") &&
+        !inSidewaysScroller(e.target as Element);
+      finger = free && t ? { id: t.identifier, track: startTrack(t.clientX, t.clientY, e.timeStamp) } : null;
+    },
+    { passive: true },
+  );
+  document.addEventListener(
+    "touchmove",
+    (e) => {
+      const t = finger && e.touches.length === 1 ? e.touches[0] : undefined;
+      if (finger && t?.identifier === finger.id) {
+        moveTrack(finger.track, t.clientX, t.clientY, e.timeStamp);
+      } else {
+        finger = null;
+      }
+    },
+    { passive: true },
+  );
+  document.addEventListener(
+    "touchend",
+    (e) => {
+      const t = [...e.changedTouches].find((c) => c.identifier === finger?.id);
+      const track = t && finger?.track;
+      finger = null;
+      if (!track || !current || zoomed()) {
+        return;
+      }
+      moveTrack(track, t.clientX, t.clientY, e.timeStamp);
+      const way = swipeOf(track, innerWidth);
+      const to = way && next(way === "left" ? 1 : -1);
+      if (to) {
+        switchTo(to);
+      }
+    },
+    { passive: true },
+  );
+  // The system took the touch (its back gesture) or the browser did.
+  document.addEventListener(
+    "touchcancel",
+    () => {
+      finger = null;
+    },
+    { passive: true },
+  );
 
   for (const side of SIDES) {
     d.open[side].addEventListener("click", () => {

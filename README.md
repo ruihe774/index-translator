@@ -235,7 +235,8 @@ on the page, in a reading column that scrolls with the page. **Source text** and
 at the top, on any screen, to go from one to the other at the matching paragraph. On a wide screen,
 **Side by side** between them (a page split by a dashed line) shows both in two columns, each paragraph beside its translation; a
 paragraph the translation left out has an empty space beside it. It is available once the paragraphs
-of a finished translation are matched, and not for subtitles. Leave with the button at the other end
+of a finished translation are matched, and not for subtitles. On a touch screen, swipe sideways to go
+to the next of these, as the buttons are laid out. Leave with the button at the other end
 of the bar, Escape, or the browser's Back. Reading aloud stops when you open it.
 **Copy translation** copies the Markdown source as plain text and, when the translation is shown
 formatted, also puts the formatted text on the clipboard as rich text. Links open in a new tab;
