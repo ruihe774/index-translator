@@ -55,7 +55,9 @@ for (const file of files) {
       browsers,
       // Reported only as "partial support" for properties used in their basic, widely supported
       // form (visually hidden text, resizable textarea, overflow hidden).
-      ignore: ["css-clip-path", "css-masks", "css-overflow", "css-resize"],
+      // `text-size-adjust` only means something to mobile browsers that autosize text (iOS Safari prefixed, Chrome
+      // on Android), which take it; desktop Safari and Firefox are reported for ignoring it, which is harmless.
+      ignore: ["css-clip-path", "css-masks", "css-overflow", "css-resize", "text-size-adjust"],
       onFeatureUsage: (info: { message: string }) => {
         problems++;
         console.error(info.message);

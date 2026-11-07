@@ -6,6 +6,10 @@
 
 html {
   scroll-padding-block: 1rem;
+  /* No text autosizing: in landscape iOS enlarges wide blocks of running text (the history's entries; the
+     panes, which scroll, it leaves), so they would stand out from the rest of the page. */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
 }
 
 body {
