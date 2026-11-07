@@ -127,7 +127,7 @@ describe.skipIf(!installed)("webViewFetcher", () => {
         "```\nlet x = 1;\n```",
       ].join("\n\n"),
     );
-  }, 30_000);
+  }, 90_000); // the first fetch starts the browser; a cold CI runner can take longer than 30 s, and the fetch's own limit is 60 s
 
   test("several articles: the whole body, without the page's header and footer", async () => {
     const page = await fetcher.fetch(new URL(`${base}/list`), local, new AbortController().signal);
