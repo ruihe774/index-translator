@@ -27,7 +27,7 @@
     <strong>Failed to launch: JavaScript is disabled</strong>
   </noscript>
 </p>
-<!-- sha256-3UZwvRm3UKR9RB0lE57/ZGxUodThIOqU6t14BTQJ4Wk= -->
+<!-- sha256-HdFHGARpezqU0s/bw2AQPvBBvuJ6KoGA1Po1giUbnDI= -->
 <!-- prettier-ignore -->
 <style>
 *{margin:0;padding:0}
@@ -35,10 +35,14 @@ body{background:light-dark(#f3f5fa,#101217);color:light-dark(#1b1f2a,#ebedf3)}
 #icon,#status{display:none}
 @keyframes show{from{opacity:0}to{opacity:1}}
 @media(display-mode:standalone){
-#icon{display:block;position:fixed;width:8rem;height:8rem;left:calc(50vw - 4rem);top:calc(50vh - 8rem);opacity:0;animation:400ms ease-out 100ms forwards show}
-#status{display:block;position:fixed;width:100vw;height:2rem;line-height:2rem;top:50vh;font-family:system-ui;text-align:center}
+#icon{display:block;position:fixed;width:8rem;height:8rem;left:calc(50vw - 4rem);top:calc(50vh - 4rem);opacity:0;animation:400ms ease-out 100ms forwards show}
+#status{display:block;position:fixed;width:100vw;height:2rem;line-height:2rem;top:calc(50vh + 4rem);font-family:system-ui;text-align:center}
 @media(prefers-reduced-motion:reduce){
 #icon{animation-duration:1ms}
+}
+@media(orientation:portrait){
+#icon{top:calc(50vh - 8rem)}
+#status{top:50vh}
 }}
 </style>
 <!-- sha256-mPO7V38BOo1RlEecQ/LNj5fR3FFanGg+QCFN4pFYXxg= -->

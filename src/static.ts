@@ -13,7 +13,7 @@ import type { PublicWatcher } from "./public-watch";
  * play `blob:` URLs: the file a transcript was made from, which the page plays without sending it.
  */
 const HTML_CSP =
-  "default-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; style-src 'self' 'sha256-3UZwvRm3UKR9RB0lE57/ZGxUodThIOqU6t14BTQJ4Wk='; script-src 'self' 'sha256-mPO7V38BOo1RlEecQ/LNj5fR3FFanGg+QCFN4pFYXxg='";
+  "default-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; style-src 'self' 'sha256-HdFHGARpezqU0s/bw2AQPvBBvuJ6KoGA1Po1giUbnDI='; script-src 'self' 'sha256-mPO7V38BOo1RlEecQ/LNj5fR3FFanGg+QCFN4pFYXxg='";
 
 interface Transpiled {
   mtimeMs: number;
