@@ -14,11 +14,15 @@
   /* The wide screen's reading size at every width: the text has the whole screen, not a pane of it. */
   --text-size: 1.25rem;
 
-  /* Focus moves and anchors land below the bar. */
-  scroll-padding-block-start: 5rem;
+  /* The bar's height: its padding and border, and the controls' `--target` scaled to 0.75 (see `.pane-bar`). */
+  --bar-height: calc(1rem + 1px + var(--target) * 0.75);
 
+  /* Focus moves and anchors land below the bar. */
+  scroll-padding-block-start: calc(var(--bar-height) + 0.5rem);
+
+  /* The bar is fixed, out of the flow: the text starts below it, and the same room at the end balances it. */
   body {
-    padding-block-start: 0;
+    padding-block: var(--bar-height);
   }
 
   .site-header,
@@ -39,8 +43,8 @@
      scale leaves their layout box at full size: the margins take the height back, and Exit's column may be
      narrower than its box, which is scaled towards the start. */
   .pane-bar {
-    position: sticky;
-    inset-block-start: 0;
+    position: fixed;
+    inset: 0 0 auto;
     z-index: 2;
     display: grid;
     grid-template-columns: minmax(0, 1fr) auto;
@@ -51,7 +55,8 @@
     order: -1;
     transform: none;
     margin: 0;
-    /* Installed, the room left for the status bar is the top padding by itself (`css/standalone.css`). */
+    /* No extra room for the status bar when installed: the bar's background is opaque there (below), so iOS
+       blurs it as it does any other page. */
     padding: 0.5rem var(--gutter) 0.5rem;
     background: transparent;
     backdrop-filter: blur(0.5rem);
@@ -221,6 +226,11 @@
    are the sides told apart; elsewhere the browser's own fade. */
 ::view-transition-group(*) {
   animation-duration: 0.1s;
+}
+
+/* The bar's pictures stay above the blocks moving beneath it. */
+::view-transition-group(full-view-bar) {
+  z-index: 1;
 }
 
 /* Fast at the start, so the click answers at once, and settling into place. Set on each part rather than

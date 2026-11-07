@@ -68,7 +68,7 @@ test("full view: the page scrolls one side; the switch brings the other in at it
   await expect(bar(app)).toBeInViewport();
 
   // The source was in Raw: going there turns it to Preview, at the counterpart of the block at the top.
-  // Clicked by script: Playwright would first scroll the page to bring the sticky bar to the middle.
+  // Clicked by script: Playwright would first scroll the page to bring the fixed bar to the middle.
   await bar(app)
     .getByRole("button", { name: "Source text" })
     .evaluate((b: HTMLElement) => b.click());
@@ -268,7 +268,7 @@ function rowsInLine(app: AppPage) {
 }
 
 const both = (app: AppPage) => bar(app).getByRole("button", { name: "Side by side" });
-/** Clicked by script: Playwright would first scroll the page to bring the sticky bar to the middle. */
+/** Clicked by script: Playwright would first scroll the page to bring the fixed bar to the middle. */
 const press = (button: ReturnType<typeof both>) => button.evaluate((b: HTMLElement) => b.click());
 
 test("full view side by side: matched blocks in line, the block at the top kept, back to one side", async ({
@@ -498,12 +498,12 @@ function outsideBlend(decoder: Page, before: Buffer, during: Buffer, after: Buff
   );
 }
 
-// The bar is sticky: in flow at the top of the page before it scrolls, held to the top of the screen after. Either
-// way, halfway through a view transition between the views, each of its buttons looks like a blend of how it
-// looked before and after, not covered by the blocks moving nor faded out.
+// The bar is fixed: over the top of the page unscrolled, or over text scrolled beneath it. Either way, halfway
+// through a view transition between the views, each of its buttons looks like a blend of how it looked before and
+// after, not covered by the blocks moving nor faded out.
 for (const [state, scrollTop] of [
-  ["in flow", 0],
-  ["stuck", 1500],
+  ["unscrolled", 0],
+  ["scrolled", 1500],
 ] as const) {
   test(`full view: the bar and its buttons stay shown during a view transition (bar ${state})`, async ({
     app,
@@ -515,6 +515,10 @@ for (const [state, scrollTop] of [
     test.skip(
       browserName === "webkit" && scrollTop === 0,
       "WebKit leaves out a named element's new picture while the page is scrolled less than about a screen",
+    );
+    test.skip(
+      browserName === "webkit",
+      "WebKit draws the blocks moving beneath the fixed bar sharp through it, with no backdrop blur in its picture",
     );
     await app.page.setViewportSize({ width: 1280, height: 800 });
     await translated(app, mock);
