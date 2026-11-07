@@ -7,11 +7,14 @@ import { dlopen } from "bun:ffi";
 const failures: string[] = [];
 
 async function check(name: string, run: () => unknown): Promise<void> {
+  // Said before it runs, so a check that hangs is the last line in the log.
+  console.log(`checking ${name}`);
   try {
     const value = await run();
     if (value !== true) {
       throw new Error(`got ${String(value)}`);
     }
+    console.log(`ok ${name}`);
   } catch (e) {
     failures.push(`${name}: ${e instanceof Error ? e.message : String(e)}`);
   }
