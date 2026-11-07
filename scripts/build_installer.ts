@@ -10,8 +10,8 @@
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts && bun scripts/build_soxr.ts &&
 // bun scripts/build_libopus.ts (the Opus encoder), and bun scripts/fetch_web_libs.ts (the web app's PDF and Word
 // libraries), bun scripts/fetch_turndown.ts (web pages as Markdown) and
-// bun scripts/fetch_onnxruntime.ts (onnxruntime.dll, for sentence segmentation). The Bun that is packed is
-// the one running this script. Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
+// bun scripts/fetch_onnxruntime.ts (onnxruntime.dll, for sentence segmentation), and bun scripts/build_bun.ts (the
+// Bun that is packed: a minimal build, not the one running this script). Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
 import { cp, mkdir, rm } from "node:fs/promises";
@@ -21,6 +21,7 @@ import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { opusLibraryPath } from "../src/opus-ffi";
+import { bunPath } from "./build_bun";
 import { output, run } from "./build_tools";
 import { downloadUnlessMatches } from "./fetch_tools";
 import { copyEngine, requireAllVendored, root, stageApp } from "./stage_app";
@@ -42,6 +43,7 @@ const llama = join(root, "vendor", "llama.cpp");
 const audio = join(root, "vendor", "audio.cpp");
 const soxr = join(root, "vendor", "soxr");
 const opus = join(root, "vendor", "opus");
+const bun = join(root, "vendor", "bun");
 const work = join(root, "vendor", ".build", "installer");
 const stage = join(work, "stage");
 const dist = join(root, "dist");
@@ -52,6 +54,7 @@ for (const [file, script] of [
   [audioLibrary(audio), "build_audiocpp.ts"],
   [soxrLibraryPath(soxr), "build_soxr.ts"],
   [opusLibraryPath(opus), "build_libopus.ts"],
+  [bunPath(bun), "build_bun.ts"],
 ] as const) {
   if (!(await Bun.file(file).exists())) {
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
@@ -104,7 +107,7 @@ await copyEngine(audio, join(stage, "vendor", "audio.cpp"));
 await copyEngine(soxr, join(stage, "vendor", "soxr"));
 await copyEngine(opus, join(stage, "vendor", "opus"));
 await cp(launcher, join(stage, "launcher.exe"));
-await cp(process.execPath, join(stage, "bun.exe"));
+await cp(bunPath(bun), join(stage, "bun.exe"));
 
 const commit = (await output(["git", "describe", "--tags", "--always", "--dirty"], root)) || "unknown";
 const version = [
@@ -114,7 +117,7 @@ const version = [
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
   `onnxruntime ${(await Bun.file(join(root, "vendor", "onnxruntime", "VERSION")).text()).split(" ")[0]}`,
-  `bun ${Bun.version}`,
+  `bun ${(await Bun.file(join(bun, "VERSION")).text()).trim()}`,
 ];
 await Bun.write(join(stage, "VERSION"), `${version.join("\n")}\n`);
 

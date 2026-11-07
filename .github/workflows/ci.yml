@@ -14,9 +14,10 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Runs the checks, and is the Bun that gets packed into the AppImage. `bun lint` (builtin linter and type
-  # checker) needs the builtins that only canary has. Canary builds are published only under the moving `canary`
-  # release (a versioned canary tag 404s), so this cannot be pinned.
+  # Runs the checks and the build scripts. `bun lint` (builtin linter and type checker) needs the builtins that only
+  # canary has. Canary builds are published only under the moving `canary` release (a versioned canary tag 404s), so
+  # this cannot be pinned. The Bun that gets packed is another one: a minimal build from a pinned commit (`bun` and
+  # `bun-windows` below, scripts/build_bun.ts).
   BUN_VERSION: canary
 
 jobs:
@@ -210,8 +211,59 @@ jobs:
           if-no-files-found: ignore
           retention-days: 7
 
+  # The Bun the AppImages pack: Bun built from the pinned commit with scripts/patches/bun-minimal.patch, without
+  # its type checker, linter and formatter. A cold build takes an hour or more; the cache makes it rare. The
+  # AppImage jobs restore this very cache entry.
+  bun:
+    name: Bun, minimal (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: aarch64
+            runner: ubuntu-24.04-arm
+    # Built on the AppImages' system, so it needs no newer C and C++ libraries than they do.
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache Bun
+        id: bun
+        uses: actions/cache@v6
+        with:
+          path: vendor/bun
+          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+
+      # What Bun's build needs (https://bun.com/docs/project/contributing): LLVM 23 from apt.llvm.org (Bun's build
+      # finds it in /usr/lib/llvm-23), Go, Ruby; rustup is on the runner and installs Bun's pinned nightly.
+      - name: Install the build tools
+        if: ${{ steps.bun.outputs.cache-hit != 'true' }}
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential git cmake ninja-build golang libtool pkg-config ruby-full xz-utils lsb-release \
+            software-properties-common gnupg
+          curl -fsSL -o "$RUNNER_TEMP/llvm.sh" https://apt.llvm.org/llvm.sh
+          sudo bash "$RUNNER_TEMP/llvm.sh" 23 all
+          /usr/lib/llvm-23/bin/clang --version
+
+      - name: Build Bun
+        if: ${{ steps.bun.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_bun.ts
+
+      - name: Check that it has what the server uses
+        run: vendor/bun/bun scripts/check_bun.ts
+
   appimage:
     name: AppImage (${{ matrix.arch }})
+    needs: bun
     strategy:
       fail-fast: false
       matrix:
@@ -296,6 +348,14 @@ jobs:
       - name: Fetch ONNX Runtime
         run: bun scripts/fetch_onnxruntime.ts
 
+      # The minimal Bun that the `bun` job built or found in the cache.
+      - name: Restore Bun
+        uses: actions/cache/restore@v6
+        with:
+          path: vendor/bun
+          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          fail-on-cache-miss: true
+
       - name: Build the AppImage
         run: bun scripts/build_appimage.ts
 
@@ -329,6 +389,7 @@ jobs:
   # Vulkan and no CUDA), with the CUDA runtime libraries packed. No GPU or driver is needed to build it.
   appimage-cuda:
     name: AppImage with CUDA (${{ matrix.arch }})
+    needs: bun
     # Manual runs only (Actions → CI → Run workflow): not on push or pull request.
     if: ${{ github.event_name == 'workflow_dispatch' }}
     strategy:
@@ -430,6 +491,14 @@ jobs:
       # Packed for POST /segment and POST /align (sentence segmentation and alignment).
       - name: Fetch ONNX Runtime
         run: bun scripts/fetch_onnxruntime.ts
+
+      # The minimal Bun that the `bun` job built or found in the cache.
+      - name: Restore Bun
+        uses: actions/cache/restore@v6
+        with:
+          path: vendor/bun
+          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          fail-on-cache-miss: true
 
       - name: Build the AppImage
         run: bun scripts/build_appimage.ts --cuda
@@ -595,13 +664,59 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
-  # The installer packs the engines built by `engines-windows` (same caches, same keys), Bun and the
-  # launcher. The runner has no GPU or models, so what is checked is that the installer installs
+  # The Bun the installer packs, as `bun` above, built on Windows (https://bun.com/docs/project/building-windows).
+  bun-windows:
+    name: Bun, minimal (Windows)
+    runs-on: windows-2025-vs2026
+    timeout-minutes: 240
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Cache Bun
+        id: bun
+        uses: actions/cache@v6
+        with:
+          path: vendor/bun
+          key: bun-windows-vs2026-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+
+      # Visual Studio with the C++ tools, Git, CMake and rustup are on the runner image. The rest from Scoop, as
+      # Bun's guide says: LLVM 23.1.1 first on the PATH (Bun's build passes over the runner's own LLVM, whose version
+      # does not match), and Scoop's Perl instead of the runner's Strawberry Perl, whose tools break the build.
+      - name: Install the build tools
+        if: ${{ steps.bun.outputs.cache-hit != 'true' }}
+        shell: pwsh
+        run: |
+          Invoke-Expression "& {$(Invoke-RestMethod https://get.scoop.sh)} -RunAsAdmin"
+          $scoop = Join-Path $env:USERPROFILE "scoop"
+          & "$scoop\shims\scoop.cmd" install go nasm ruby perl
+          & "$scoop\shims\scoop.cmd" install llvm@23.1.1
+          $llvm = "$scoop\apps\llvm\current\bin"
+          & "$llvm\clang-cl.exe" --version
+          $path = (@($llvm, "$scoop\shims") + ($env:PATH -split ";" | Where-Object { $_ -and $_ -notmatch "Strawberry" })) -join ";"
+          "PATH=$path" >> $env:GITHUB_ENV
+          # The build tree is deep: rustc's and the linker's paths go past 260 characters.
+          New-ItemProperty -Path HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem -Name LongPathsEnabled -Value 1 -PropertyType DWORD -Force
+          git config --global core.longpaths true
+
+      - name: Build Bun
+        if: ${{ steps.bun.outputs.cache-hit != 'true' }}
+        run: bun scripts/build_bun.ts
+
+      - name: Check that it has what the server uses
+        shell: bash
+        run: vendor/bun/bun.exe scripts/check_bun.ts
+
+  # The installer packs the engines built by `engines-windows` (same caches, same keys), the Bun built by
+  # `bun-windows` and the launcher. The runner has no GPU or models, so what is checked is that the installer installs
   # silently, that the installed program opens its engines and stops with a reason, and that it
   # uninstalls.
   installer-windows:
     name: Installer (Windows)
-    needs: engines-windows
+    needs: [engines-windows, bun-windows]
     runs-on: windows-2025-vs2026
     timeout-minutes: 90
     env:
@@ -677,6 +792,13 @@ jobs:
       # Packed for POST /segment and POST /align (sentence segmentation and alignment).
       - name: Fetch ONNX Runtime
         run: bun scripts/fetch_onnxruntime.ts
+
+      - name: Restore Bun
+        uses: actions/cache/restore@v6
+        with:
+          path: vendor/bun
+          key: bun-windows-vs2026-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          fail-on-cache-miss: true
 
       - name: Build the installer
         run: bun scripts/build_installer.ts

@@ -1,0 +1,480 @@
+diff --git a/scripts/build.ts b/scripts/build.ts
+index 719afd7862a..1fb19017475 100644
+--- a/scripts/build.ts
++++ b/scripts/build.ts
+@@ -454,6 +454,7 @@ const configFlags: { [K in keyof Required<PartialConfig>]: ConfigFlagKind<NonNul
+   socketFaultInjection: "boolean",
+   codeGenerationFromStrings: "boolean",
+   webAssembly: "boolean",
++  tooling: "boolean",
+   unifiedSources: "boolean",
+   archiveDeps: "boolean",
+   timeTrace: "boolean",
+diff --git a/scripts/build/config.ts b/scripts/build/config.ts
+index e32ce3113ab..1a9c2652af1 100644
+--- a/scripts/build/config.ts
++++ b/scripts/build/config.ts
+@@ -160,6 +160,12 @@ export interface Config {
+    * false whatever `BUN_JSC_useWasm` says.
+    */
+   webAssembly: boolean;
++  /**
++   * Default true. Off builds a Bun without `bun check`, `bun lint` and `bun fmt` (and `--check` of `bun run`, `bun
++   * test` and `bun build`): bun_runtime's `tooling` cargo feature, which links the type checker, the linter and the
++   * formatter. Saves ~20 MB.
++   */
++  tooling: boolean;
+   /** Bundle small .cpp files into unified TUs (WebKit-style). See unified.ts. */
+   unifiedSources: boolean;
+   /**
+@@ -378,6 +384,7 @@ export interface PartialConfig {
+   socketFaultInjection?: boolean;
+   codeGenerationFromStrings?: boolean;
+   webAssembly?: boolean;
++  tooling?: boolean;
+   unifiedSources?: boolean;
+   archiveDeps?: boolean;
+   timeTrace?: boolean;
+@@ -1329,6 +1336,7 @@ export function resolveConfig(partial: PartialConfig, toolchain: Toolchain): Con
+     socketFaultInjection,
+     codeGenerationFromStrings: partial.codeGenerationFromStrings ?? true,
+     webAssembly: partial.webAssembly ?? true,
++    tooling: partial.tooling ?? true,
+     unifiedSources: partial.unifiedSources ?? true,
+     archiveDeps: partial.archiveDeps ?? false,
+     timeTrace: partial.timeTrace ?? false,
+@@ -1704,6 +1712,7 @@ export function formatConfig(cfg: Config, exe: string): string {
+   }
+   if (!cfg.codeGenerationFromStrings) features.push("code-generation-from-strings:off");
+   if (!cfg.webAssembly) features.push("webassembly:off");
++  if (!cfg.tooling) features.push("tooling:off");
+   if (!cfg.canary) features.push("canary:off");
+   // Non-default modes — show so you notice when a build is unusual.
+   if (cfg.webkit !== "prebuilt") features.push(`webkit:${cfg.webkit}`);
+diff --git a/scripts/build/profiles.ts b/scripts/build/profiles.ts
+index 75af0a71c56..d0572d32d17 100644
+--- a/scripts/build/profiles.ts
++++ b/scripts/build/profiles.ts
+@@ -136,6 +136,17 @@ export const profiles = {
+     webkit: "prebuilt",
+   },
+ 
++  /**
++   * Release without what a server doesn't run: the type checker, linter and formatter (`tooling`), and the bundled
++   * sqlite3 (bun:sqlite dlopens the system's libsqlite3 instead).
++   */
++  "release-minimal": {
++    buildType: "Release",
++    webkit: "prebuilt",
++    tooling: false,
++    staticSqlite: false,
++  },
++
+   /** Release with local WebKit. */
+   "release-local": {
+     buildType: "Release",
+diff --git a/scripts/build/rust.ts b/scripts/build/rust.ts
+index a18d3bae54f..296ba35fd71 100644
+--- a/scripts/build/rust.ts
++++ b/scripts/build/rust.ts
+@@ -282,6 +282,8 @@ export function cargoBuildInvocation(cfg: Config): CargoInvocation {
+     profile,
+     "--locked",
+   ];
++  // bun_runtime's cargo features (src/runtime/Cargo.toml). `default` is all of them.
++  if (!cfg.tooling) args.push("--no-default-features");
+   // std is compiled from source (cargoBuildStdArg) in every build: the link is bun's own and takes each crate's rlib
+   // as the output of an edge (rust/units.ts linkedRlibs), so std's crates have to be units of the graph like the
+   // rest; the toolchain's prebuilt std is not. It also gives:
+diff --git a/src/jsc/bindings/BunProcess.cpp b/src/jsc/bindings/BunProcess.cpp
+index 1d015587674..b679aa45afc 100644
+--- a/src/jsc/bindings/BunProcess.cpp
++++ b/src/jsc/bindings/BunProcess.cpp
+@@ -312,8 +312,9 @@ static JSValue constructVersions(VM& vm, JSObject* processObject)
+     putVersion("icu", icuVersionString());
+     putVersion("unicode", unicodeVersionString());
+     putVersion("sqlite", String::fromLatin1(Bun__sqlite3_version()));
+-    // What `bun check` is a port of.
+-    putVersion("typescript", String::fromLatin1(Bun__typescript_version()));
++    // What `bun check` is a port of. Null in a build without it (the `tooling` feature).
++    if (const char* typescriptVersion = Bun__typescript_version())
++        putVersion("typescript", String::fromLatin1(typescriptVersion));
+     putVersion("modules", STRINGIFY(REPORTED_NODEJS_ABI_VERSION) ""_s);
+ #undef STRINGIFY
+ #undef STRINGIFY_IMPL
+diff --git a/src/jsc/bindings/sqlite/JSSQLStatement.h b/src/jsc/bindings/sqlite/JSSQLStatement.h
+index 09a2f95a5db..a1e165f1da9 100644
+--- a/src/jsc/bindings/sqlite/JSSQLStatement.h
++++ b/src/jsc/bindings/sqlite/JSSQLStatement.h
+@@ -51,8 +51,12 @@
+ #define LAZY_LOAD_SQLITE 0
+ #endif
+ 
+-#if LAZY_LOAD_SQLITE
++#if LAZY_LOAD_SQLITE && defined(__APPLE__)
+ #include "sqlite3.h"
++#elif LAZY_LOAD_SQLITE
++// Elsewhere the system library (dlopen'd by lazy_sqlite3.h) seldom comes with its header; the bundled one declares the
++// same API.
++#include "sqlite3_local.h"
+ #else
+ #include "sqlite3_local.h"
+ #endif
+diff --git a/src/jsc/bindings/sqlite/lazy_sqlite3.h b/src/jsc/bindings/sqlite/lazy_sqlite3.h
+index f9c964ac80f..f283c996dd8 100644
+--- a/src/jsc/bindings/sqlite/lazy_sqlite3.h
++++ b/src/jsc/bindings/sqlite/lazy_sqlite3.h
+@@ -1,7 +1,11 @@
+ #pragma once
+ 
+ #include "root.h"
++#if defined(__APPLE__)
+ #include "sqlite3.h"
++#else
++#include "sqlite3_local.h"
++#endif
+ #include <wtf/Lock.h>
+ 
+ #if !OS(WINDOWS)
+diff --git a/src/runtime/Cargo.toml b/src/runtime/Cargo.toml
+index a1e652b8d6f..be14b6a788e 100644
+--- a/src/runtime/Cargo.toml
++++ b/src/runtime/Cargo.toml
+@@ -64,10 +64,10 @@ bun_parsers.workspace = true
+ bun_io.workspace = true
+ bun_js_parser.workspace = true
+ bun_js_parser_jsc.workspace = true
+-bun_sema_driver.workspace = true
+-bun_lint_driver.workspace = true
+-bun_format_conformance.workspace = true
+-bun_sema_baselines.workspace = true
++bun_sema_driver = { workspace = true, optional = true }
++bun_lint_driver = { workspace = true, optional = true }
++bun_format_conformance = { workspace = true, optional = true }
++bun_sema_baselines = { workspace = true, optional = true }
+ bun_js_printer.workspace = true
+ bun_jsc.workspace = true
+ bun_libarchive.workspace = true
+@@ -119,4 +119,7 @@ bun_patch_jsc.workspace = true
+ bun_css_jsc.workspace = true
+ 
+ [features]
+-default = []
++default = ["tooling"]
++# `bun check`, `bun lint` and `bun fmt`, and `--check` of `bun run`, `bun test` and `bun build`: the type checker, the
++# linter and the formatter. Without it those commands say they aren't in this build (cli/without_tooling.rs).
++tooling = ["dep:bun_sema_driver", "dep:bun_lint_driver", "dep:bun_format_conformance", "dep:bun_sema_baselines"]
+diff --git a/src/runtime/cli/check_command.rs b/src/runtime/cli/check_command.rs
+index 5cbcda0bf10..9bc1ffba3fb 100644
+--- a/src/runtime/cli/check_command.rs
++++ b/src/runtime/cli/check_command.rs
+@@ -9,7 +9,8 @@ use bun_bundler::options::{TypeChecked, loaders_from_transform_options};
+ use bun_clap as clap;
+ use bun_core::{Global, Output, ZStr, env_var};
+ use bun_sema_driver::format::{self, Layout, Style};
+-use bun_sema_driver::host::{AlreadyRead, BeforeRead, Provided};
++pub(crate) use bun_sema_driver::host::BeforeRead;
++use bun_sema_driver::host::{AlreadyRead, Provided};
+ use bun_sema_driver::{
+     Category, CommandLine, CompilerOption, Diagnostic, FlagError, Progress, RejectedFlag, Report,
+     Request, ScriptKind,
+diff --git a/src/runtime/cli/lint_command.rs b/src/runtime/cli/lint_command.rs
+index d726735999b..1f6ee2ed3cb 100644
+--- a/src/runtime/cli/lint_command.rs
++++ b/src/runtime/cli/lint_command.rs
+@@ -16,7 +16,7 @@ use bun_bunfig::Above;
+ 
+ pub(crate) struct LintCommand;
+ 
+-pub(crate) use bun_lint_driver::cli::HELP;
++pub(crate) use bun_lint_driver::cli::{HELP, Help};
+ 
+ /// True if `bun lint` is a command. A release build doesn't have it: there `bun lint` runs the project's own `lint`.
+ pub(crate) const IS_ENABLED: bool = bun_core::Environment::IS_CANARY;
+diff --git a/src/runtime/cli/mod.rs b/src/runtime/cli/mod.rs
+index 9be3a69cffb..1c77e324338 100644
+--- a/src/runtime/cli/mod.rs
++++ b/src/runtime/cli/mod.rs
+@@ -136,6 +136,7 @@ pub(crate) mod upgrade_command;
+ pub(crate) mod add_command;
+ #[path = "audit_command.rs"]
+ pub(crate) mod audit_command;
++#[cfg(feature = "tooling")]
+ #[path = "check_command.rs"]
+ pub(crate) mod check_command;
+ #[path = "dedupe_command.rs"]
+@@ -144,12 +145,15 @@ pub(crate) mod dedupe_command;
+ pub(crate) mod filter_arg;
+ #[path = "filter_run.rs"]
+ pub(crate) mod filter_run;
++#[cfg(feature = "tooling")]
+ #[path = "format_command.rs"]
+ pub(crate) mod format_command;
+ #[path = "link_command.rs"]
+ pub(crate) mod link_command;
++#[cfg(feature = "tooling")]
+ #[path = "lint_command.rs"]
+ pub(crate) mod lint_command;
++#[cfg(feature = "tooling")]
+ #[path = "lint_js.rs"]
+ pub(crate) mod lint_js;
+ #[path = "multi_run.rs"]
+@@ -191,7 +195,14 @@ pub(crate) mod remove_command;
+ pub(crate) mod scan_command;
+ #[path = "script_or_command.rs"]
+ pub(crate) mod script_or_command;
++#[cfg(feature = "tooling")]
+ mod typescript_libs;
++// Without the `tooling` feature, `bun check`, `bun lint` and `bun fmt` say they aren't in this build.
++#[cfg(not(feature = "tooling"))]
++#[path = "without_tooling.rs"]
++mod without_tooling;
++#[cfg(not(feature = "tooling"))]
++pub(crate) use without_tooling::{check_command, format_command, lint_command};
+ #[path = "unlink_command.rs"]
+ pub(crate) mod unlink_command;
+ #[path = "update_command.rs"]
+@@ -1878,7 +1889,7 @@ To create a project with the official Next.js scaffolding tool, run
+     }
+ 
+     /// Prints the flags for `bun lint --help` and `bun fmt --help`: the common ones, or with `all`, every flag by group.
+-    fn print_flags(help: &bun_lint_driver::cli::Help, all: bool) {
++    fn print_flags(help: &super::lint_command::Help, all: bool) {
+         if all {
+             for group in help.groups {
+                 pretty!("\n<b>{}:<r>", group.title);
+diff --git a/src/runtime/cli/run_command.rs b/src/runtime/cli/run_command.rs
+index 4de49a0c330..b78ad0f57d4 100644
+--- a/src/runtime/cli/run_command.rs
++++ b/src/runtime/cli/run_command.rs
+@@ -797,7 +797,7 @@ Full documentation is available at <magenta>https://bun.com/docs/cli/run<r>
+         path: &[u8],
+         loader: Option<Loader>,
+         arguments: &[Box<[u8]>],
+-        before_read: Option<bun_sema_driver::host::BeforeRead>,
++        before_read: Option<crate::cli::check_command::BeforeRead>,
+     ) -> bool {
+         use crate::cli::check_command::{EntryPoint, check_before};
+         let main = EntryPoint {
+diff --git a/src/runtime/cli/without_tooling.rs b/src/runtime/cli/without_tooling.rs
+new file mode 100644
+index 00000000000..2f59fe93c05
+--- /dev/null
++++ b/src/runtime/cli/without_tooling.rs
+@@ -0,0 +1,180 @@
++//! `bun check`, `bun lint` and `bun fmt` in a Bun built without the `tooling` feature. The type checker, the linter and
++//! the formatter are left out (`bun_sema_driver`, `bun_lint_driver`, `bun_format_conformance`), and these modules stand
++//! in for `check_command.rs`, `lint_command.rs` and `format_command.rs`: the commands, and `--check` of
++//! `bun run`, `bun test` and `bun build`, say that they aren't in this build and fail.
++
++use bun_core::{Global, Output};
++
++/// Reports that `what` is left out of this build and exits.
++fn unavailable(what: &str) -> ! {
++    Output::err_generic(
++        "{} is not available in this build of Bun (built without the \"tooling\" feature)",
++        (what,),
++    );
++    Global::exit(1);
++}
++
++pub(crate) mod check_command {
++    use bun_bundler::options::TypeChecked;
++    use bun_clap as clap;
++    use bun_core::{Global, Output, ZStr};
++
++    pub(crate) type BeforeRead = Box<dyn Fn(&[u8]) + Send + Sync>;
++
++    pub(crate) struct CheckCommand;
++
++    pub(crate) const PARAMS: &[clap::Param<clap::Help>] = &[];
++
++    impl CheckCommand {
++        pub(crate) fn exec(_args: &[&ZStr]) -> ! {
++            super::unavailable("bun check")
++        }
++
++        pub(crate) fn exec_without_arguments() -> ! {
++            super::unavailable("bun check")
++        }
++    }
++
++    pub(crate) fn working_directory() -> Vec<u8> {
++        let mut buf = bun_paths::path_buffer_pool::get();
++        match bun_core::getcwd(&mut buf) {
++            Ok(cwd) => cwd.as_bytes().to_vec(),
++            Err(err) => {
++                Output::err(err, "Could not read the working directory", ());
++                Global::exit(1);
++            }
++        }
++    }
++
++    /// A file or snippet that's about to run. Never read here: there is no type checker to give it to.
++    #[allow(dead_code)]
++    #[derive(Clone, Copy)]
++    pub(crate) struct EntryPoint<'a> {
++        pub(crate) path: &'a [u8],
++        pub(crate) loader: Option<bun_ast::Loader>,
++        pub(crate) text: Option<&'a [u8]>,
++    }
++
++    impl<'a> EntryPoint<'a> {
++        pub(crate) fn file(path: &'a [u8]) -> EntryPoint<'a> {
++            EntryPoint {
++                path,
++                loader: None,
++                text: None,
++            }
++        }
++    }
++
++    const NO_CHECK: &str = "Type checking (--check) is not available in this build of Bun (built without the \"tooling\" feature)";
++
++    /// Fails: there is no type checker to run.
++    pub(crate) fn check_before(_entry_points: &[EntryPoint], _before_read: Option<BeforeRead>) -> bool {
++        Output::err_generic("{}", (NO_CHECK,));
++        false
++    }
++
++    pub(crate) fn watching(_vm: &bun_jsc::virtual_machine::VirtualMachine) -> Option<BeforeRead> {
++        None
++    }
++
++    pub(crate) fn check_for_build_command(_checked: TypeChecked, log: &mut bun_ast::Log) -> bool {
++        log.add_error(None, bun_ast::Loc::EMPTY, NO_CHECK);
++        false
++    }
++
++    pub(crate) fn check_for_bun_build(_checked: TypeChecked, log: &mut bun_ast::Log) -> bool {
++        log.add_error(None, bun_ast::Loc::EMPTY, NO_CHECK);
++        false
++    }
++
++    pub(crate) fn check_project_before(before_read: Option<BeforeRead>) -> bool {
++        check_before(&[], before_read)
++    }
++}
++
++pub(crate) mod lint_command {
++    use super::super::command::ContextData;
++    use bun_clap as clap;
++    use bun_core::ZStr;
++
++    /// `bun lint` isn't a command: it runs the project's own `lint`.
++    pub(crate) const IS_ENABLED: bool = false;
++
++    pub(crate) struct Group {
++        pub(crate) title: &'static str,
++        pub(crate) params: &'static [clap::Param<clap::Help>],
++    }
++
++    /// A command's flags, as `--help` lists them. There are none.
++    pub(crate) struct Help {
++        pub(crate) groups: &'static [Group],
++    }
++
++    impl Help {
++        pub(crate) fn common(&self) -> Vec<clap::Param<clap::Help>> {
++            Vec::new()
++        }
++    }
++
++    pub(crate) const HELP: Help = Help { groups: &[] };
++
++    pub(crate) struct LintCommand;
++
++    impl LintCommand {
++        pub(crate) fn has_flag(_flag: &[u8]) -> bool {
++            false
++        }
++
++        pub(crate) fn exec(_ctx: &mut ContextData, _args: &[&ZStr]) -> ! {
++            super::unavailable("bun lint")
++        }
++    }
++
++    /// `bun lint` starts no process that reads its program from stdin.
++    pub(crate) fn read_program_from_stdin(_ctx: &mut ContextData) {}
++}
++
++pub(crate) mod format_command {
++    use super::super::command::ContextData;
++    use bun_core::ZStr;
++
++    pub(crate) use super::lint_command::HELP;
++
++    pub(crate) struct FormatCommand;
++
++    impl FormatCommand {
++        pub(crate) fn has_flag(_flag: &[u8]) -> bool {
++            false
++        }
++
++        pub(crate) fn exec(_ctx: &mut ContextData, _args: &[&ZStr]) -> ! {
++            super::unavailable("bun fmt")
++        }
++    }
++}
++
++/// For src/jsc/bindings/LintHost.h (`lint_js.rs`). No file is ever being linted.
++#[repr(C)]
++pub(crate) struct LintSpan {
++    ptr: *const u8,
++    len: usize,
++}
++
++#[unsafe(no_mangle)]
++extern "C" fn Bun__Lint__ask(
++    _global: &bun_jsc::JSGlobalObject,
++    _kind: u32,
++    _details: *const u8,
++    _details_len: usize,
++) -> LintSpan {
++    LintSpan {
++        ptr: core::ptr::null(),
++        len: 0,
++    }
++}
++
++/// `process.versions.typescript`: none, since the type checker is left out.
++#[unsafe(no_mangle)]
++pub(crate) extern "C" fn Bun__typescript_version() -> *const core::ffi::c_char {
++    core::ptr::null()
++}
+diff --git a/src/runtime/jsc_hooks.rs b/src/runtime/jsc_hooks.rs
+index 920f9c46294..bbbec081258 100644
+--- a/src/runtime/jsc_hooks.rs
++++ b/src/runtime/jsc_hooks.rs
+@@ -104,6 +104,7 @@ pub(crate) struct RuntimeState {
+     /// `clear_all_for_vm`.
+     pub(crate) cron_jobs: Vec<bun_ptr::RefPtr<crate::api::cron::CronJob>>,
+     /// `bun lint`: what runs the rules of JavaScript plugins in this VM.
++    #[cfg(feature = "tooling")]
+     pub(crate) lint: core::cell::OnceCell<Box<crate::cli::lint_js::LintVm>>,
+     /// The `uv_loop_t` that addons get for this VM. Stored inline because addons
+     /// keep its address for as long as the VM lives.
+@@ -197,6 +198,7 @@ pub(crate) fn global_dns_data() -> &'static core::cell::OnceCell<Box<crate::dns_
+ }
+ 
+ /// [`RuntimeState::lint`] of this thread's VM.
++#[cfg(feature = "tooling")]
+ #[inline]
+ pub(crate) fn lint_vm() -> &'static core::cell::OnceCell<Box<crate::cli::lint_js::LintVm>> {
+     let state = runtime_state();
+@@ -206,6 +208,7 @@ pub(crate) fn lint_vm() -> &'static core::cell::OnceCell<Box<crate::cli::lint_js
+ }
+ 
+ /// Takes [`RuntimeState::lint`] out of this thread's VM, which is about to end.
++#[cfg(feature = "tooling")]
+ pub(crate) fn take_lint_vm() -> Option<Box<crate::cli::lint_js::LintVm>> {
+     let state = runtime_state();
+     debug_assert!(!state.is_null(), "take_lint_vm before init_runtime_state");
+@@ -378,6 +381,7 @@ unsafe fn init_runtime_state(
+         },
+         wake_ctx: None,
+         cron_jobs: Vec::new(),
++        #[cfg(feature = "tooling")]
+         lint: core::cell::OnceCell::new(),
+         // SAFETY: `vm` is the live VM being initialized. `VirtualMachine::init`
+         // wrote `handle` before calling this hook (the wake context below reads

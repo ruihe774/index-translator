@@ -12,7 +12,8 @@
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
 // since the engines are packed as built, bun scripts/build_soxr.ts, bun scripts/build_libopus.ts (the Opus encoder), and
 // bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries, packed with public/), bun scripts/fetch_turndown.ts (web pages as Markdown) and
-// bun scripts/fetch_onnxruntime.ts (ONNX Runtime, for sentence segmentation). The Bun that is packed is the one running this script.
+// bun scripts/fetch_onnxruntime.ts (ONNX Runtime, for sentence segmentation), and bun scripts/build_bun.ts (the Bun that is
+// packed: a minimal build, not the one running this script).
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
 // for `fetch`. Layout and start script: packaging/appimage/.
@@ -27,6 +28,7 @@ import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
 import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
 import { opusLibraryPath } from "../src/opus-ffi";
+import { bunPath } from "./build_bun";
 import { output, run } from "./build_tools";
 import { downloadUnlessMatches } from "./fetch_tools";
 import { copyEngine, requireAllVendored, root, stageApp } from "./stage_app";
@@ -75,6 +77,7 @@ const llama = join(root, "vendor", cuda ? "llama.cpp-cuda" : "llama.cpp");
 const audio = join(root, "vendor", cuda ? "audio.cpp-cuda" : "audio.cpp");
 const soxr = join(root, "vendor", "soxr");
 const opus = join(root, "vendor", "opus");
+const bun = join(root, "vendor", "bun");
 const work = join(root, "vendor", ".build", "appimage");
 const appDir = join(work, "AppDir");
 const app = join(appDir, "usr", "share", "index-translator");
@@ -86,6 +89,7 @@ for (const [file, script] of [
   [audioLibrary(audio), `build_audiocpp.ts${cuda ? " --cuda" : ""}`],
   [soxrLibraryPath(soxr), "build_soxr.ts"],
   [opusLibraryPath(opus), "build_libopus.ts"],
+  [bunPath(bun), "build_bun.ts"],
 ] as const) {
   if (!(await Bun.file(file).exists())) {
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
@@ -123,11 +127,11 @@ const version = [
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
   `onnxruntime ${(await Bun.file(join(root, "vendor", "onnxruntime", "VERSION")).text()).split(" ")[0]}`,
-  `bun ${Bun.version}`,
+  `bun ${(await Bun.file(join(bun, "VERSION")).text()).trim()}`,
 ];
 await Bun.write(join(app, "VERSION"), `${version.join("\n")}\n`);
 
-await cp(process.execPath, join(appDir, "usr", "bin", "bun"), { dereference: true });
+await cp(bunPath(bun), join(appDir, "usr", "bin", "bun"));
 await chmod(join(appDir, "usr", "bin", "bun"), 0o755);
 await cp(join(packaging, "AppRun"), join(appDir, "AppRun"));
 await chmod(join(appDir, "AppRun"), 0o755);

@@ -84,7 +84,9 @@ Windows has no AppImage-style single file, so the installer unpacks the reposito
 is the shortcut's target. The launcher's commands run in the install directory, and `cmd` finds
 `bun.exe` there first, so the user needs no Bun on the `PATH`.
 
-- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`), `build_soxr.ts` and `build_libopus.ts`, the web app's PDF
+- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`), `build_soxr.ts`, `build_libopus.ts` and
+  `build_bun.ts` (the packed `bun.exe`, a minimal build of Bun; it needs LLVM 23.1.1, Go, NASM, Ruby and Perl from
+  Scoop beside Visual Studio, see the head of the script), the web app's PDF
   libraries fetched (`fetch_web_libs.ts`, packed with `public\`), `fetch_onnxruntime.ts` (Microsoft's
   `onnxruntime.dll`, which runs the sentence segmentation model) and the launcher's MSVC
   tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads
@@ -100,6 +102,7 @@ is the shortcut's target. The launcher's commands run in the install directory, 
   the installer downloads Microsoft's redistributable (checksum pinned in that file) and runs it,
   which asks for administrator rights itself. Needs network only on a machine without the runtime.
   The Universal CRT comes with Windows 10 and later. Not tested without the redistributable.
-- CI job `installer-windows` builds it (reusing the engine caches), installs it silently, checks that
+- CI job `bun-windows` builds `bun.exe` (cached by the script and the patch) and checks it with `scripts/check_bun.ts`.
+- CI job `installer-windows` builds it (reusing the engine caches and `bun-windows`'), installs it silently, checks that
   the installed `bun.exe` loads the engines and stops with the same reasons as `engines-windows`,
   uninstalls it, and uploads the installer as an artifact. Installing and uninstalling were also run by hand.
