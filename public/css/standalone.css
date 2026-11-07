@@ -17,17 +17,6 @@
     padding-block-start: var(--standalone-top);
     padding-inline: env(safe-area-inset-left, 0px) env(safe-area-inset-right, 0px);
   }
-
-  /* More eager to use two-column layout in standalone mode. */
-  @media (width >= 44rem) {
-    .workspace {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-    }
-
-    .pane-bar {
-      display: none;
-    }
-  }
 }
 
 /* Installed as an app: the site header goes below the page. */

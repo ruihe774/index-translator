@@ -72,13 +72,15 @@ main:has(.output.subtitles) {
   --page-cap: 160rem;
 }
 
-/* One column; two from 54rem, the one breakpoint of the page. */
+/* One column; two from 54rem, the one breakpoint of the page, or from 44rem in an app installed and held in
+   landscape, where a phone is wide enough for both panels; the rest of the page stays compact there below
+   54rem (tokens.css). The same two queries are in pane-carousel.css. */
 .workspace {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
   gap: var(--gap);
 
-  @media (width >= 54rem) {
+  @media (width >= 54rem), (display-mode: standalone) and (orientation: landscape) and (width >= 44rem) {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 }

@@ -92,15 +92,14 @@
     --standalone-top: max(env(safe-area-inset-top, 0px), 0.5rem);
     --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 0.5rem);
     /* The panel's own chrome only: padding, the two control rows, the gaps between and the two 1px
-       borders (7.625rem with the 0.5rem gap of the narrow layout); "Model and options" lies below
-       the fold. */
+       borders (7.625rem with the 0.5rem gap and the one-row head of the compact layout, also where the
+       two panels stand side by side from 44rem); "Model and options" lies below the fold. */
     --pane-height: clamp(16rem, calc(100svh - 7.625rem - var(--standalone-top) - var(--standalone-bottom)), 72rem);
   }
 
-  /* Two columns from 44rem (standalone.css). */
-  @media (width >= 44rem) {
+  @media (width >= 54rem) {
     :root {
-      /* Two columns: the language label stands over its select, so the head row is 4.3rem, not 2.75rem. */
+      /* The wide layout: the language label stands over its select, so the head row is 4.3rem, not 2.75rem. */
       --pane-height: clamp(16rem, calc(100svh - 11.25rem - var(--standalone-top) - var(--standalone-bottom)), 72rem);
     }
   }
