@@ -1,6 +1,28 @@
 import { applyDynamicType } from "./dynamic-type.ts";
 import { prefersReducedMotion } from "./media-query.ts";
-import { isLaunchedFromSplash, solvent } from "./solvent.ts";
+
+const isLaunchedFromSplash = document.body.dataset.splash !== undefined;
+const solvent = isLaunchedFromSplash
+  ? await fetch("/app.html")
+      .then((r) => {
+        if (r.ok) {
+          return r.text();
+        }
+        throw new Error(r.statusText);
+      })
+      .then((t) => {
+        const start = t.indexOf("<body>"),
+          end = t.indexOf("</body>");
+        if (start !== -1 && end !== -1) {
+          return t.slice(start + 6, end);
+        }
+        throw new Error("Malformed HTML");
+      })
+      .then(
+        (html) => ({ html, error: undefined }),
+        (e) => ({ html: undefined, error: e as Error }),
+      )
+  : { html: undefined, error: new Error("Not launched from splash") };
 
 const stylesheet = document.getElementById("stylesheet");
 
@@ -27,18 +49,17 @@ if (isLaunchedFromSplash && solvent.error) {
       await p;
     }
 
-    const { body } = document;
     // The splash before 93e4756, still served by a stale service worker, writes app.html over itself and hides the
     // body; only this shows it again.
-    body.style.opacity = "";
+    document.body.style.opacity = "";
     if (isLaunchedFromSplash) {
-      body.innerHTML = solvent.html!;
-      delete body.dataset.splash;
+      document.body.innerHTML = solvent.html!;
+      delete document.body.dataset.splash;
     }
   };
 
   if ("startViewTransition" in document && !prefersReducedMotion()) {
-    const { documentElement: root } = document;
+    const root = document.documentElement;
     root.dataset.hydrating = "";
     const t = document.startViewTransition(update);
     void t.finished.finally(() => {
