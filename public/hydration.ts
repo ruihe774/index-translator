@@ -48,7 +48,7 @@ if (isLaunchedFromSplash && solvent.error) {
       .then(() => {
         for (const a of root.getAnimations({ subtree: true })) {
           if (a.effect instanceof KeyframeEffect && a.effect.pseudoElement?.startsWith("::view-transition")) {
-            a.effect.updateTiming({ duration: 100, easing: "ease-out" });
+            a.effect.updateTiming({ duration: 300, easing: "ease-out" });
           }
         }
       })
