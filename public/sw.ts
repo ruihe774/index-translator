@@ -6,7 +6,9 @@
 // the rest is a slower first render, and the app is no use without its server anyway. (Downloading every
 // missing or outdated file at low priority right after the list arrives is written but switched off, see
 // `prefetch`.)
-// On loopback (development, or the app on its own machine) the worker caches nothing.
+// On loopback (development, or the app on its own machine) the worker caches nothing. Neither does it when the
+// list's request fails with an error status or answers something that is not JSON: the server is then not ours, and
+// the worker does not assume it is.
 // On every origin it shows the notification of a push message (src/push.ts, public/push.ts): a job
 // that ended while no page was reading it.
 
@@ -62,12 +64,22 @@ function onLoopback(hostname: string): boolean {
   );
 }
 
-async function loadManifest(): Promise<Manifest | undefined> {
+/** The list; `null` when the server answers but not with a list (not our server); undefined when it cannot be reached. */
+async function loadManifest(): Promise<Manifest | null | undefined> {
+  let res: Response;
   try {
-    const res = await fetch(MANIFEST_PATH, { cache: "no-store" });
-    return res.ok ? ((await res.json()) as Manifest) : undefined;
+    res = await fetch(MANIFEST_PATH, { cache: "no-store" });
   } catch {
     return undefined;
+  }
+  if (!res.ok) {
+    return null;
+  }
+  try {
+    return (await res.json()) as Manifest;
+  } catch {
+    // Ok, but not JSON (a fallback page): not our server. A body cut off by the network lands here too.
+    return null;
   }
 }
 
@@ -117,14 +129,26 @@ async function prefetch(manifest: Manifest): Promise<void> {
 }
 
 interface Sync {
-  manifest: Promise<Manifest | undefined>;
+  manifest: Promise<Manifest | null | undefined>;
   /** Settles when the low-priority downloads have. */
   done: Promise<void>;
 }
 
+/** Set when the server answered the list with an error: it is not ours, so nothing is cached or served from the cache. */
+let foreign = false;
+
 function startSync(): Sync {
   const manifest = loadManifest();
-  const done = manifest.then((m) => (m ? prefetch(m) : undefined)).catch(() => {});
+  const done = manifest
+    .then(async (m) => {
+      foreign = m === null;
+      if (m) {
+        await prefetch(m);
+      } else if (foreign) {
+        await caches.delete(CACHE);
+      }
+    })
+    .catch(() => {});
   return { manifest, done };
 }
 
@@ -211,14 +235,14 @@ if (onLoopback(sw.location.hostname)) {
       (async () => {
         // The loading page may be stale: it only fetches app.html, which is checked against the list. The sync
         // started above brings the copy up to date for the next load.
-        if (path === "/" || path === "/index.html") {
+        if (!foreign && (path === "/" || path === "/index.html")) {
           const hit = await caches.open(CACHE).then((cache) => cache.match(path));
           if (hit) {
             return hit;
           }
         }
         return manifest.then(async (m) => {
-          // No list, or a file the server does not list: not ours to cache.
+          // No list (unreachable, or not our server), or a file the server does not list: not ours to cache.
           if (!m?.[path]) {
             return fetch(req);
           }
