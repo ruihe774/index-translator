@@ -387,7 +387,7 @@ export function checkLinks(root: HTMLElement, ref: LinkReference) {
 export function createOutput(target: HTMLElement, format: Format): OutputView {
   target.classList.toggle("markdown", format === "markdown");
   target.classList.toggle("subtitles", format === "subtitles");
-  const reduced = prefersReducedMotion();
+  const reduced = prefersReducedMotion.matches;
   if (format === "subtitles") {
     return subtitleOutput(target, reduced);
   }

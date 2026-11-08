@@ -77,7 +77,7 @@ export function initPaneCarousel(
     if (reach() > 1) {
       row.scrollTo({
         left: side === "source" ? 0 : reach(),
-        behavior: instant || prefersReducedMotion() ? "auto" : "smooth",
+        behavior: instant || prefersReducedMotion.matches ? "auto" : "smooth",
       });
     }
   }

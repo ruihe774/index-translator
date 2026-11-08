@@ -954,7 +954,7 @@ function restoreEntry(entry: HistoryEntry) {
   prefetchSentences();
   textInput.closest("section")?.scrollIntoView({
     block: "start",
-    behavior: prefersReducedMotion() ? "auto" : "smooth",
+    behavior: prefersReducedMotion.matches ? "auto" : "smooth",
   });
 }
 

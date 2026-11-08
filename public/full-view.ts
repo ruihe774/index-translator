@@ -31,7 +31,7 @@
 
 import { lineElements } from "./dom.ts";
 import type { ViewSwitch } from "./elements/view-switch.ts";
-import { prefersReducedMotion, TWO_COLUMNS } from "./media-query.ts";
+import { isWideScreen, prefersReducedMotion } from "./media-query.ts";
 import type { PaneCarousel } from "./pane-carousel.ts";
 import { type Alignment, counterpart } from "./paragraphs.ts";
 import { shareText, shareTypeFor } from "./share.ts";
@@ -116,8 +116,6 @@ function setAttr(el: Element, name: string, value: string) {
 export function initFullView(d: FullViewDeps): FullView {
   const root = document.documentElement;
   const page = document.scrollingElement ?? root;
-  /** Where both columns fit; css/full-view.css shows Side by side by the same query. */
-  const wide = matchMedia(TWO_COLUMNS);
   let current: Shown | null = null;
   /** The side full view was opened on, which leaving side by side goes back to. */
   let entered: Side = "source";
@@ -131,13 +129,13 @@ export function initFullView(d: FullViewDeps): FullView {
   let laidOut: Alignment | null = null;
   /**
    * The source's block at the top while side by side, kept as the page scrolls: when the page narrows, the
-   * columns have reflowed before `wide` says so, and the block to keep is the one that was there before.
+   * columns have reflowed before `isWideScreen` says so, and the block to keep is the one that was there before.
    */
   let sourceTop: Place | null = null;
 
   const barBottom = () => d.bar.getBoundingClientRect().bottom;
   const reach = () => page.scrollHeight - page.clientHeight;
-  const bothShowable = () => wide.matches && d.sideBySide() && d.showable("source");
+  const bothShowable = () => isWideScreen.matches && d.sideBySide() && d.showable("source");
   const showable = (shown: Shown) => (shown === "both" ? bothShowable() : d.showable(shown));
 
   /** Scrolls the page so that `place` of `side` is below the bar as it was below its own top. */
@@ -279,7 +277,7 @@ export function initFullView(d: FullViewDeps): FullView {
    * as one picture (css/full-view.css), so no block is named.
    */
   function transition(update: () => void, zoom?: { area: HTMLElement; direction: "in" | "out" }) {
-    if (!("startViewTransition" in document) || prefersReducedMotion()) {
+    if (!("startViewTransition" in document) || prefersReducedMotion.matches) {
       update();
       return;
     }
@@ -467,7 +465,7 @@ export function initFullView(d: FullViewDeps): FullView {
 
   function keepSourceTop() {
     // Once narrower (`matches` is current before its `change` comes), the columns have reflowed: keep the last.
-    if (wide.matches) {
+    if (isWideScreen.matches) {
       sourceTop = current === "both" && page.scrollTop > 0 ? placeAt(d.panes.source.view, barBottom()) : null;
     }
   }
@@ -615,8 +613,8 @@ export function initFullView(d: FullViewDeps): FullView {
     },
     { passive: true },
   );
-  wide.addEventListener("change", () => {
-    if (current === "both" && !wide.matches) {
+  isWideScreen.addEventListener("change", () => {
+    if (current === "both" && !isWideScreen.matches) {
       fallBack();
     }
   });

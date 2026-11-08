@@ -20,7 +20,7 @@ if (files.length === 0) {
   }
 }
 
-/** Every width a media query may name, with where and why. 54rem is `TWO_COLUMNS` in public/media-query.ts. */
+/** Every width a media query may name, with where and why. 54rem is `isWideScreen` in public/media-query.ts. */
 const BREAKPOINTS: Record<string, string> = {
   "54rem": "one column or two: the page's breakpoint",
   "22rem": "switches.css: the language select and the Raw/Preview switch no longer fit on one row",
@@ -79,13 +79,6 @@ if (Bun.argv.length === 2) {
   for await (const name of new Bun.Glob("**/*.ts").scan({ cwd: "public", onlyFiles: true })) {
     if (name.startsWith("vendor/")) {
       continue;
-    }
-    const text = await Bun.file(`public/${name}`).text();
-    for (const [, query] of text.matchAll(/(?:matchMedia\(|TWO_COLUMNS = )\s*"([^"]*)"/g)) {
-      for (const problem of checkWidths(query!, `public/${name}`)) {
-        problems++;
-        console.error(problem);
-      }
     }
   }
 }

@@ -58,7 +58,7 @@ if (isLaunchedFromSplash && solvent.error) {
     }
   };
 
-  if ("startViewTransition" in document && !prefersReducedMotion()) {
+  if ("startViewTransition" in document && !prefersReducedMotion.matches) {
     const root = document.documentElement;
     root.dataset.hydrating = "";
     const t = document.startViewTransition(update);
