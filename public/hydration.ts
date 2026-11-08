@@ -1,7 +1,5 @@
-import { applyDynamicType } from "./dynamic-type.ts";
-import { prefersReducedMotion } from "./media-query.ts";
-
-const isLaunchedFromSplash = document.body.dataset.splash !== undefined;
+const { documentElement: root, body } = document;
+const isLaunchedFromSplash = body.dataset.splash !== undefined;
 const solvent = isLaunchedFromSplash
   ? await fetch("/app.html")
       .then((r) => {
@@ -33,7 +31,9 @@ if (isLaunchedFromSplash && solvent.error) {
   status.insertAdjacentHTML("afterbegin", "<strong>Network error: </strong>");
   throw solvent.error;
 } else {
-  applyDynamicType();
+  if (root.dataset.e2e === undefined) {
+    applyDynamicType();
+  }
 
   // The splash and the page cross-fade: the old picture is taken before `update`, and nothing is drawn until the
   // stylesheet has loaded and the body is replaced. Without view transitions, or with reduced motion, the page
@@ -51,15 +51,16 @@ if (isLaunchedFromSplash && solvent.error) {
 
     // The splash before 93e4756, still served by a stale service worker, writes app.html over itself and hides the
     // body; only this shows it again.
-    document.body.style.opacity = "";
+    body.style.opacity = "";
     if (isLaunchedFromSplash) {
-      document.body.innerHTML = solvent.html!;
-      delete document.body.dataset.splash;
+      body.innerHTML = solvent.html!;
+      delete body.dataset.splash;
     }
   };
 
-  if ("startViewTransition" in document && !prefersReducedMotion.matches) {
-    const root = document.documentElement;
+  // At this time ./media-query.ts should already be loaded by other modules,
+  // so importing it should be immediate.
+  if ("startViewTransition" in document && !(await import("./media-query.ts")).prefersReducedMotion.matches) {
     root.dataset.hydrating = "";
     const t = document.startViewTransition(update);
     void t.finished.finally(() => {
@@ -80,3 +81,18 @@ if (isLaunchedFromSplash && solvent.error) {
     await update();
   }
 }
+
+function applyDynamicType() {
+  const div = document.createElement("div");
+  body.append(div);
+  div.style.all = "initial";
+  div.style.font = "-apple-system-body";
+  const dynamicTypeFontSize = parseFloat(getComputedStyle(div).fontSize);
+  const dynamicTypeFontSizeClamped = Number.isNaN(dynamicTypeFontSize)
+    ? 16 // I don't think this path is actually reachable.
+    : Math.max(10, Math.min(20, dynamicTypeFontSize)); // Our UI layout cannot support too small or large font size.
+  root.style.setProperty("--dynamic-type-font-size", `${dynamicTypeFontSizeClamped}px`);
+  div.remove();
+}
+
+export {};
