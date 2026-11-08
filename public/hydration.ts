@@ -1,7 +1,10 @@
+const mediaQuery = import("./media-query.ts");
+const elements = import("./elements/index.ts");
+
 const { documentElement: root, body } = document;
 const isLaunchedFromSplash = body.dataset.splash !== undefined;
-const solventFetching = isLaunchedFromSplash
-  ? fetch("/app.html")
+const solvent = isLaunchedFromSplash
+  ? await fetch("/app.html")
       .then((r) => {
         if (r.ok) {
           return r.text();
@@ -20,19 +23,7 @@ const solventFetching = isLaunchedFromSplash
         (html) => ({ html, error: undefined }),
         (e) => ({ html: undefined, error: e as Error }),
       )
-  : Promise.resolve({ html: undefined, error: new Error("Not launched from splash") });
-
-const mediaQuery = import("./media-query.ts");
-const elements = import("./elements/index.ts");
-
-export const UNDOC = "/vendor/undoc";
-export const PDFJS = "/vendor/pdfjs";
-export const PDFINSPECTOR = "/vendor/pdf-inspector";
-const undocVersion = fetch(`${UNDOC}/VERSION`, { cache: "no-cache" });
-const pdfJsVersion = fetch(`${PDFJS}/VERSION`, { cache: "no-cache" });
-const pdfInspectorVersion = fetch(`${PDFINSPECTOR}/VERSION`, { cache: "no-cache" });
-
-const solvent = await solventFetching;
+  : { html: undefined, error: new Error("Not launched from splash") };
 
 export async function hydrate() {
   const stylesheet = document.getElementById("stylesheet");
@@ -108,6 +99,3 @@ function applyDynamicType() {
   root.style.setProperty("--dynamic-type-font-size", `${dynamicTypeFontSizeClamped}px`);
   div.remove();
 }
-
-export const docxInstalled = (await undocVersion).ok;
-export const pdfInstalled = (await pdfJsVersion).ok && (await pdfInspectorVersion).ok;

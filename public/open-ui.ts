@@ -361,9 +361,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   // Without a library the picker does not offer its files, and one that is picked anyway is refused
   // by openPdf or readDocx; recordings are offered while the server can transcribe them, and one that
   // is picked otherwise is refused by the transcription's dialog.
-  // `media` is set to true to avoid blinking of the placeholder.
-  // It will be set to false if the server does not support it.
-  const offered = { pdf: pdfInstalled, docx: docxInstalled, media: true };
+  const offered = { pdf: true, docx: true, media: true };
   const setAccept = () => {
     d.input.accept = [
       ACCEPT_TEXT,
@@ -375,7 +373,15 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     d.onOffered(offered);
   };
   setAccept();
-  d.button.title = NOT_INSTALLED[pdfInstalled ? "docx" : docxInstalled ? "pdf" : "both"];
+  void Promise.all([pdfInstalled(), docxInstalled()]).then(([pdfOk, docxOk]) => {
+    if (pdfOk && docxOk) {
+      return;
+    }
+    offered.pdf = pdfOk;
+    offered.docx = docxOk;
+    setAccept();
+    d.button.title = NOT_INSTALLED[pdfOk ? "docx" : docxOk ? "pdf" : "both"];
+  });
 
   return {
     setBusy(b) {

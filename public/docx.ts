@@ -9,7 +9,8 @@
 import type { DocxReply, DocxRequest } from "./docx-worker.ts";
 import { docxFailure } from "./open-file.ts";
 import { workerClient } from "./worker-client.ts";
-export { docxInstalled } from "./hydration.ts";
+
+const UNDOC = "/vendor/undoc";
 
 /** A failure with a message for the user. */
 export class DocxError extends Error {
@@ -17,6 +18,15 @@ export class DocxError extends Error {
 }
 
 const NOT_LOADED = "Word support could not be loaded.";
+
+/** Whether the library is on the server: its stamp file is written last by the fetch script. */
+export async function docxInstalled(): Promise<boolean> {
+  try {
+    return (await fetch(`${UNDOC}/VERSION`, { cache: "no-cache" })).ok;
+  } catch {
+    return false;
+  }
+}
 
 /** The text of a .docx file as Markdown. The buffer is given up to the worker (transferred). */
 export function readDocx(bytes: ArrayBuffer): Promise<string> {
