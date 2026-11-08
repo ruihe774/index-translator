@@ -6,12 +6,11 @@
 //
 // The file's bytes stay in this browser; nothing here talks to the API.
 
+import { PDFJS } from "./hydration.ts";
 import type { PageText } from "./open-file.ts";
 import type { WorkerReply, WorkerRequest } from "./pdf-worker.ts";
 import { workerClient } from "./worker-client.ts";
-
-const PDFJS = "/vendor/pdfjs";
-const INSPECTOR = "/vendor/pdf-inspector";
+export { pdfInstalled } from "./hydration.ts";
 
 /** A failure with a message for the user. */
 export class PdfError extends Error {
@@ -63,16 +62,6 @@ function loadPdfJs(): Promise<PdfJs> {
     },
   );
   return pdfjs;
-}
-
-/** Whether both libraries are on the server: their stamp files are written last by the fetch script. */
-export async function pdfInstalled(): Promise<boolean> {
-  try {
-    const stamps = await Promise.all([PDFJS, INSPECTOR].map((dir) => fetch(`${dir}/VERSION`, { cache: "no-cache" })));
-    return stamps.every((res) => res.ok);
-  } catch {
-    return false;
-  }
 }
 
 // ---- the extraction worker -------------------------------------------------------------------
