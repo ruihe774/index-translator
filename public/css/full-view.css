@@ -223,6 +223,12 @@
   animation-duration: 0.1s;
 }
 
+@media (width < 54rem) {
+  ::view-transition-group(*) {
+    animation-duration: 0.3s;
+  }
+}
+
 /* The bar's pictures stay above the blocks moving beneath it. */
 ::view-transition-group(full-view-bar) {
   z-index: 1;
@@ -329,10 +335,15 @@
     translate: 0 var(--zoom-shift, 0);
   }
 
-  &[data-zoom="out"]::view-transition-group(full-zoom),
-  &[data-zoom="out"]::view-transition-old(full-zoom),
-  &[data-zoom="out"]::view-transition-new(full-zoom) {
-    animation-timing-function: ease-in;
+  @media (width < 54rem) {
+    &[data-zoom="in"]::view-transition-group(full-zoom),
+    &[data-zoom="in"]::view-transition-old(full-zoom),
+    &[data-zoom="in"]::view-transition-new(full-zoom),
+    &[data-zoom="out"]::view-transition-group(full-zoom),
+    &[data-zoom="out"]::view-transition-old(full-zoom),
+    &[data-zoom="out"]::view-transition-new(full-zoom) {
+      animation-timing-function: cubic-bezier(0.18, 0.89, 0.32, 1.28);
+    }
   }
 }
 
