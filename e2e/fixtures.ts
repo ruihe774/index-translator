@@ -238,6 +238,8 @@ export class AppPage {
   /** Opens the page and waits until the language lists are filled. */
   async open() {
     await this.page.goto("/");
+    // The splash's cross-fade into the page (hydration.ts) takes every click while it runs.
+    await expect(this.page.locator("html")).not.toHaveAttribute("data-hydrating");
     await expect(this.from.locator("option")).not.toHaveCount(0);
     await expect(this.translate).toHaveAttribute("aria-disabled", "false");
   }
