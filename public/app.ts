@@ -21,6 +21,7 @@ import { fillLanguages } from "./languages.ts";
 import { confirmLink } from "./link-dialog.ts";
 import { linkReference } from "./links.ts";
 import { clipboardHtml, createOutput, type OutputView, renderText } from "./markdown-dom.ts";
+import { prefersReducedMotion } from "./media-query.ts";
 import { initMediaUi } from "./media-ui.ts";
 import {
   addDone,
@@ -945,7 +946,10 @@ function restoreEntry(entry: HistoryEntry) {
   sync.refresh();
   metaEl.show(`Restored from the history (${modelLabel(entry.model)}).`);
   prefetchSentences();
-  textInput.closest("section")?.scrollIntoView({ block: "start" });
+  textInput.closest("section")?.scrollIntoView({
+    block: "start",
+    behavior: prefersReducedMotion() ? "auto" : "smooth",
+  });
 }
 
 // ---- reading aloud ---------------------------------------------------------------------------
