@@ -111,8 +111,8 @@ export const NO_H264 = "Playwright's WebKit cannot decode H.264";
 /** WebKit on macOS behaves as Safari does: neither Tab nor a click reaches or focuses buttons and links by default. */
 export const macWebkit = (browserName: string) => browserName === "webkit" && process.platform === "darwin";
 
-/** `public/visibility-gate.ts` as served to the tests: it only shows the page, without the transition or dynamic type. */
-const VISIBILITY_GATE_MOCK = `document.body.style.opacity = "1";`;
+/** `public/dynamic-type.ts` as served to the tests: the page keeps the browser's font size. */
+const DYNAMIC_TYPE_MOCK = `export function applyDynamicType() {}`;
 
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
   page: async ({ page, browserName }, use) => {
@@ -123,12 +123,12 @@ export const test = base.extend<{ mock: Mock; app: AppPage }>({
         press(key === "Tab" ? "Alt+Tab" : key === "Shift+Tab" ? "Alt+Shift+Tab" : key, options);
     }
     // WebKit in CI may report a dynamic type size that scales the page's font and moves the layout the tests
-    // measure, so the page gate is mocked.
-    await page.route("**/visibility-gate.ts", (route) =>
+    // measure, so dynamic type is mocked.
+    await page.route("**/dynamic-type.ts", (route) =>
       route.fulfill({
         contentType: "text/javascript; charset=utf-8",
         headers: { "cache-control": "no-store" },
-        body: VISIBILITY_GATE_MOCK,
+        body: DYNAMIC_TYPE_MOCK,
       }),
     );
     // Coverage comes from Chromium's CDP; Firefox and WebKit run without it.

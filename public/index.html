@@ -1,35 +1,41 @@
 <!doctype html>
-<meta charset="utf-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
-<meta name="color-scheme" content="light dark" />
-<meta name="theme-color" content="#1f4e79" />
-<meta name="apple-mobile-web-app-capable" content="yes" />
-<meta name="mobile-web-app-capable" content="yes" />
-<meta name="apple-mobile-web-app-title" content="Index" />
-<meta name="apple-mobile-web-app-status-bar-style" content="default" />
-<link rel="manifest" href="/manifest.webmanifest" />
-<link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
-<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
-<title>Translate – Index Translator</title>
-<svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" id="icon">
-  <rect width="256" height="256" rx="56" fill="#1f4e79" />
-  <rect x="40" y="44" width="112" height="136" rx="14" fill="#9fc3e6" />
-  <g stroke="#1f4e79" stroke-width="10" stroke-linecap="round">
-    <path d="M62 76h68M62 102h68M62 128h40" />
-  </g>
-  <rect x="104" y="84" width="112" height="136" rx="14" fill="#ffffff" stroke="#1f4e79" stroke-width="8" />
-  <g stroke="#e0832f" stroke-width="10" stroke-linecap="round">
-    <path d="M128 120h64M128 146h64M128 172h64M128 198h36" />
-  </g>
-</svg>
-<p role="status" id="status">
-  <noscript>
-    <strong>Failed to launch: JavaScript is disabled</strong>
-  </noscript>
-</p>
-<!-- sha256-HdFHGARpezqU0s/bw2AQPvBBvuJ6KoGA1Po1giUbnDI= -->
-<!-- prettier-ignore -->
-<style>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+    <meta name="color-scheme" content="light dark" />
+    <meta name="theme-color" content="#1f4e79" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Index" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" href="/icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <title>Translate – Index Translator</title>
+    <script type="module" src="/app.ts"></script>
+    <script async type="module" src="/pwa.ts"></script>
+  </head>
+  <body data-splash>
+    <svg xmlns="http://www.w3.org/2000/svg" width="256" height="256" viewBox="0 0 256 256" id="icon">
+      <rect width="256" height="256" rx="56" fill="#1f4e79" />
+      <rect x="40" y="44" width="112" height="136" rx="14" fill="#9fc3e6" />
+      <g stroke="#1f4e79" stroke-width="10" stroke-linecap="round">
+        <path d="M62 76h68M62 102h68M62 128h40" />
+      </g>
+      <rect x="104" y="84" width="112" height="136" rx="14" fill="#ffffff" stroke="#1f4e79" stroke-width="8" />
+      <g stroke="#e0832f" stroke-width="10" stroke-linecap="round">
+        <path d="M128 120h64M128 146h64M128 172h64M128 198h36" />
+      </g>
+    </svg>
+    <p role="status" id="status">
+      <noscript>
+        <strong>Failed to launch: JavaScript is disabled</strong>
+      </noscript>
+    </p>
+    <!-- sha256-HdFHGARpezqU0s/bw2AQPvBBvuJ6KoGA1Po1giUbnDI= -->
+    <!-- prettier-ignore -->
+    <style>
 *{margin:0;padding:0}
 body{background:light-dark(#f3f5fa,#101217);color:light-dark(#1b1f2a,#ebedf3)}
 #icon,#status{display:none}
@@ -45,18 +51,9 @@ body{background:light-dark(#f3f5fa,#101217);color:light-dark(#1b1f2a,#ebedf3)}
 #status{top:50vh}
 }}
 </style>
-<!-- sha256-mPO7V38BOo1RlEecQ/LNj5fR3FFanGg+QCFN4pFYXxg= -->
-<!-- prettier-ignore -->
-<script>
-(()=>{
-var f=fetch("/app.html").then(r=>{if(r.ok)return r.text();throw new Error(r.statusText)})
-onload=()=>{
-with(document){
-getElementById("stylesheet").remove()
-f.then(t=>{open();write(t);close();body.style.opacity="0"})
-.catch(e=>{var s=getElementById("status");s.textContent=e.message;s.insertAdjacentHTML("afterbegin", "<strong>Network error: </strong>")})
-}}})()
-</script>
-<script async type="module" src="/pwa.ts"></script>
-<link rel="stylesheet" href="/style.css" id="stylesheet" />
+    <!-- sha256-6ytuyXCLw7SwJNQUVY2nTe0QPY3HuMW/7qi/0SIAY5M= -->
+    <!-- prettier-ignore -->
+    <style id="stylesheet">@import url("/style.css");</style>
+  </body>
+</html>
 <!-- This file is not subject to A11Y acceptance -->

@@ -3,10 +3,8 @@
 // reads the form, calls the API and writes the results to the page.
 
 import { failureMessage } from "./api.ts";
-import { $, setLang, setText, showFieldError } from "./dom.ts";
-// eslint-disable-next-line import/no-unassigned-import -- custom element definitions
-import "./elements/index.ts";
 import { writeClipboard } from "./clipboard.ts";
+import { $, setLang, setText, showFieldError } from "./dom.ts";
 import type { MetaLine } from "./elements/meta-line.ts";
 import type { PdfPages } from "./elements/pdf-pages.ts";
 import type { SpeechControls } from "./elements/speech-controls.ts";
@@ -85,6 +83,14 @@ import { initSyncState } from "./sync-state.ts";
 import { initTranscribeFlow } from "./transcribe-flow.ts";
 import { initWebpageFlow } from "./webpage-flow.ts";
 import { webpageLink } from "./webpage-link.ts";
+
+// Register custom elements.
+// eslint-disable-next-line import/no-unassigned-import -- has side effects
+import "./elements/index.ts";
+// Last: waits for app.html (top-level await in solvent.ts); app.ts's body runs after it.
+// This also intentionally extends the splash so that module loading is covered.
+// eslint-disable-next-line import/no-unassigned-import -- has side effects
+import "./hydration.ts";
 
 const number = new Intl.NumberFormat();
 

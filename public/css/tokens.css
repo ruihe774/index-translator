@@ -100,7 +100,7 @@
        the next panel's controls under it. */
     --pane-height: clamp(16rem, calc(min(100svh - 12rem, 100vh - 14rem)), 72rem);
 
-    /* Use font size set via dynamic type. (see visibility-gate.ts) */
+    /* Use font size set via dynamic type. (see dynamic-type.ts) */
     font-size: var(--dynamic-type-font-size, 100%);
   }
 

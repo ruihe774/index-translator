@@ -79,7 +79,7 @@ Options: `--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s wit
 | `sw-update` | next visit after every ETag outside `/vendor/` changed (the proxy rewrites them): a full update |
 | `sw-patch`  | after that has settled, the next visit once only five files the page loads at start changed |
 
-`visible` is the time until `visibility-gate.ts` sets the body's opacity to 1; `reqs` and `MB` are what the proxy saw until the page and the worker went
+`visible` is the time until `hydration.ts` has replaced the splash and the stylesheet has loaded; `reqs` and `MB` are what the proxy saw until the page and the worker went
 quiet. Run `bun scripts/fetch_web_libs.ts` first, or the page is lighter than the real one.
 
 The service worker needs a secure context, which `http://app.test` is not: the browser is started with

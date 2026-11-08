@@ -34,7 +34,7 @@ export const SCENARIOS = ["cold", "warm-http", "first-sw", "warm-sw", "again-sw"
 export type Scenario = (typeof SCENARIOS)[number];
 
 export interface Metrics {
-  /** From the start of the navigation until the page shows itself (`visibility-gate.ts` sets the opacity to 1). */
+  /** From the start of the navigation until the page shows itself (`hydration.ts` has replaced the splash and the stylesheet has loaded). */
   visibleMs: number;
   fcpMs?: number;
   lcpMs?: number;

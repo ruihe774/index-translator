@@ -8,21 +8,20 @@ import { isAbsolute, join, relative, resolve } from "node:path";
 import { createStaticServer } from "../src/static";
 import { tempDir } from "./helpers/harness";
 
-/** The hash of the one inline `<tag>` in the real loading page, as a CSP source. */
-async function inlineHash(tag: "script" | "style"): Promise<string> {
+/** The hashes of the inline `<style>`s in the real loading page, as CSP sources, in document order. */
+async function inlineStyleHashes(): Promise<string[]> {
   const html = await Bun.file(join(import.meta.dir, "../public/index.html")).text();
-  const body = new RegExp(`<${tag}>([\\s\\S]*?)</${tag}>`).exec(html)?.[1];
-  if (body === undefined) {
-    throw new Error(`public/index.html has no inline <${tag}>`);
+  const bodies = [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style>/g)].map((m) => m[1]!);
+  if (bodies.length === 0) {
+    throw new Error("public/index.html has no inline <style>");
   }
-  return `'sha256-${new Bun.CryptoHasher("sha256").update(body).digest("base64")}'`;
+  return bodies.map((body) => `'sha256-${new Bun.CryptoHasher("sha256").update(body).digest("base64")}'`);
 }
 
-/** The policy src/static.ts sends with HTML: the loading page's inline script and style are allowed by hash. */
+/** The policy src/static.ts sends with HTML: the loading page's inline styles are allowed by hash; no inline script. */
 async function expectedCsp(): Promise<string> {
-  const script = await inlineHash("script");
-  const style = await inlineHash("style");
-  return `default-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; style-src 'self' ${style}; script-src 'self' ${script}`;
+  const styles = (await inlineStyleHashes()).join(" ");
+  return `default-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; style-src 'self' ${styles}`;
 }
 
 let dir: string;

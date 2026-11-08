@@ -13,10 +13,16 @@ const PATCH_FILES = ["/app.ts", "/render.ts", "/state.ts", "/messages.ts", "/css
 
 type Results = Partial<Record<Scenario, Metrics>>;
 
-/** The time, on the page's clock (zero at the start of the navigation), at which the page showed itself. */
+/**
+ * The time, on the page's clock (zero at the start of the navigation), at which the page showed itself: the splash
+ * is gone (`hydration.ts` drops `data-splash`) and the body's opacity is no longer held at 0 for the stylesheet.
+ */
 async function whenVisible(page: Page): Promise<number> {
   const handle = await page.waitForFunction(
-    () => (document.body?.style.opacity === "1" ? performance.now() : false),
+    () =>
+      document.body && !("splash" in document.body.dataset) && document.body.style.opacity === ""
+        ? performance.now()
+        : false,
     undefined,
     {
       polling: "raf",
