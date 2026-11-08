@@ -113,7 +113,14 @@ export const macWebkit = (browserName: string) => browserName === "webkit" && pr
 
 export const test = base.extend<{ mock: Mock; app: AppPage }>({
   page: async ({ page, browserName }, use) => {
-    await page.evaluate("document.documentElement.dataset.e2e = ''");
+    await page.addInitScript(() => {
+      new MutationObserver((_, o) => {
+        if (document.documentElement) {
+          document.documentElement.dataset.e2e = "";
+          o.disconnect();
+        }
+      }).observe(document, { childList: true });
+    });
     if (macWebkit(browserName)) {
       // Safari's Tab skips buttons and links; with Option held it visits them, as the page's users with the setting do.
       const press = page.keyboard.press.bind(page.keyboard);
