@@ -55,8 +55,7 @@
     /* No extra room for the status bar when installed: the bar's background is opaque there (below), so iOS
        blurs it as it does any other page. */
     padding: 0.5rem var(--gutter) 0.5rem;
-    background: transparent;
-    backdrop-filter: blur(0.5rem);
+    background: var(--bg);
     border-block-end: 1px solid var(--divider);
     /* Its own picture in a view transition, which keeps it still above the blocks moving (below). */
     view-transition-name: full-view-bar;
@@ -77,6 +76,13 @@
     /* Share and the switch scale as one, so that Share sits against the switch's visible edge. */
     > .pane-bar-end {
       transform-origin: right center;
+    }
+  }
+
+  @media not ((prefers-reduced-transparency) or (display-mode: standalone)) {
+    .pane-bar {
+      background: transparent;
+      backdrop-filter: blur(0.5rem);
     }
   }
 
@@ -359,11 +365,5 @@
     .pane-bar {
       display: none;
     }
-  }
-}
-
-@media (prefers-reduced-transparency) or (display-mode: standalone) {
-  :root[data-full-view] .pane-bar {
-    background: var(--bg);
   }
 }
