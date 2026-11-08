@@ -1,3 +1,6 @@
+const mediaQuery = import("./media-query.ts");
+const elements = import("./elements/index.ts");
+
 const { documentElement: root, body } = document;
 const isLaunchedFromSplash = body.dataset.splash !== undefined;
 const solvent = isLaunchedFromSplash
@@ -46,7 +49,7 @@ if (isLaunchedFromSplash && solvent.error) {
         stylesheet.addEventListener("error", resolve);
       });
       document.head.append(stylesheet);
-      await p;
+      await Promise.all([p, elements]);
     }
 
     // The splash before 93e4756, still served by a stale service worker, writes app.html over itself and hides the
@@ -58,9 +61,9 @@ if (isLaunchedFromSplash && solvent.error) {
     }
   };
 
-  // At this time ./media-query.ts should already be loaded by other modules,
-  // so importing it should be immediate.
-  if ("startViewTransition" in document && !(await import("./media-query.ts")).prefersReducedMotion.matches) {
+  // At this time ./media-query.ts should already be loaded,
+  // so awaiting it should be immediate.
+  if ("startViewTransition" in document && !(await mediaQuery).prefersReducedMotion.matches) {
     root.dataset.hydrating = "";
     const t = document.startViewTransition(update);
     void t.finished.finally(() => {

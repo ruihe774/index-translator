@@ -84,9 +84,6 @@ import { initTranscribeFlow } from "./transcribe-flow.ts";
 import { initWebpageFlow } from "./webpage-flow.ts";
 import { webpageLink } from "./webpage-link.ts";
 
-// Register custom elements.
-// eslint-disable-next-line import/no-unassigned-import -- has side effects
-import "./elements/index.ts";
 // Last: waits for app.html (top-level await in solvent.ts); app.ts's body runs after it.
 // This also intentionally extends the splash so that module loading is covered.
 // eslint-disable-next-line import/no-unassigned-import -- has side effects
