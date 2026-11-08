@@ -2,10 +2,6 @@
 // Everything with logic that can be tested without a DOM lives in the sibling modules; this file
 // reads the form, calls the API and writes the results to the page.
 
-// This should always be the first to load.
-// prettier-ignore
-import { hydrate } from "./hydration.ts";
-
 import { failureMessage } from "./api.ts";
 import { writeClipboard } from "./clipboard.ts";
 import { $, setLang, setText, showFieldError } from "./dom.ts";
@@ -19,6 +15,7 @@ import { type Format, formatOf } from "./format.ts";
 import { initFullView } from "./full-view.ts";
 import { initHistory } from "./history-state.ts";
 import { type HistoryEntry, newId, restoredAlignment } from "./history.ts";
+import { hydrate } from "./hydration.ts";
 import { fillLanguages } from "./languages.ts";
 import { confirmLink } from "./link-dialog.ts";
 import { linkReference } from "./links.ts";
