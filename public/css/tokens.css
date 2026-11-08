@@ -99,12 +99,15 @@
        floating toolbar, which overlays the page and is not part of any safe-area inset; more would push
        the next panel's controls under it. */
     --pane-height: clamp(16rem, calc(min(100svh - 12rem, 100vh - 14rem)), 72rem);
+
+    /* Use font size set via dynamic type. (see visibility-gate.ts) */
+    font-size: var(--dynamic-type-font-size, 100%);
   }
 
   /* For HiDPI small screen device, use a more compact UI. */
   @media (min-resolution: 2dppx) {
     :root {
-      font-size: 90%;
+      font-size: calc(0.9 * var(--dynamic-type-font-size, 100%));
     }
   }
 }
