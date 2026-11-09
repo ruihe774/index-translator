@@ -42,6 +42,8 @@ const config: Linter.Config[] = [
     // reason. Firefox has them from 130, Safari from 26.
     // `document.startViewTransition` (`transition` in full-view.ts) animates moving between full view's three
     // views where it exists; elsewhere they change at once, as before. Firefox has it from 144, Safari from 18.
+    // `Uint8Array.fromBase64` (ES2026; `fromBase64` in base64.ts) decodes where it exists; elsewhere `atob` does,
+    // with the same result. Chrome has it from 140, Firefox from 133, Safari from 18.2.
     settings: {
       polyfills: [
         "Highlight",
@@ -52,12 +54,15 @@ const config: Linter.Config[] = [
         "AudioDecoder",
         "EncodedAudioChunk",
         "document.startViewTransition",
+        "Uint8Array.fromBase64",
       ],
     },
     languageOptions: { ecmaVersion: "latest", sourceType: "module" },
     rules: {
       // Bun turns `using` into helpers imported from "bun:wrap", and drops `with { type: "json" }`.
       "no-restricted-imports": ["error", { patterns: ["bun:*", "*.json"] }],
+      // Feature-detected in base64.ts, which falls back to `atob` (see `polyfills`).
+      "es-x/no-uint8array-frombase64": "off",
     },
   },
 ];

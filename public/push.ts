@@ -3,6 +3,7 @@
 // notification. Permission is asked in the click that starts a job; the browser keeps the answer.
 
 import type { Health } from "../src/api.ts";
+import { fromBase64 } from "./base64.ts";
 
 /** The server's VAPID key; undefined while push is off (or /health has not answered). */
 let serverKey: string | undefined;
@@ -24,11 +25,6 @@ export function askForNotifications(): void {
   }
 }
 
-function fromBase64url(text: string): Uint8Array<ArrayBuffer> {
-  const binary = atob(text.replaceAll("-", "+").replaceAll("_", "/"));
-  return Uint8Array.from(binary, (c) => c.charCodeAt(0));
-}
-
 function sameBytes(a: ArrayBuffer | null, b: Uint8Array): boolean {
   return a !== null && a.byteLength === b.length && new Uint8Array(a).every((x, i) => x === b[i]);
 }
@@ -38,7 +34,7 @@ export async function notifyWhenDone(jobUrl: string): Promise<void> {
   if (!serverKey || !supported()) {
     return;
   }
-  const key = fromBase64url(serverKey);
+  const key = fromBase64(serverKey, "base64url");
   try {
     // A job accepted while the prompt is still open is subscribed once the user has answered.
     await asking;

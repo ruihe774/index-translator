@@ -4,6 +4,8 @@
 // `canPlayType` would say something else, about the <audio> element and not the Web Audio decoder.
 // Browsers that cannot (Safari before it learnt Ogg, any without Opus) get WAV.
 
+import { fromBase64 } from "./base64.ts";
+
 export const OPUS_TYPE = "audio/ogg";
 
 const PROBE =
@@ -31,7 +33,7 @@ let decodable: Promise<boolean> | undefined;
 export function opusDecodable(): Promise<boolean> {
   decodable ??= (async () => {
     try {
-      const bytes = Uint8Array.from(atob(PROBE), (c) => c.charCodeAt(0));
+      const bytes = fromBase64(PROBE);
       const audio = await new OfflineAudioContext(1, 1, 16_000).decodeAudioData(bytes.buffer);
       return audio.length > 0;
     } catch {
