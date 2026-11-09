@@ -19,7 +19,7 @@
 
 import type { Health } from "../src/api.ts";
 import { demux, probeMatroska, type TrackInfo } from "./matroska.ts";
-import { demuxOggOpus, OggOpusMuxer, opusPacketSamples } from "./ogg-opus.ts";
+import { demuxOggOpus, OggOpusMuxer, opusCoverArt, opusPacketSamples, type OpusPicture } from "./ogg-opus.ts";
 import { MAX_CHANNELS, type PcmFormat, pcmReadable } from "./pcm.ts";
 import {
   browserDecodes,
@@ -78,6 +78,8 @@ export interface MediaProbe {
   cutAt: number | undefined;
   /** A Matroska file's layout, for playing it with only the chosen audio track (media-player.ts). */
   matroska?: MatroskaLayout;
+  /** An Ogg Opus file's cover art (its comments' picture), shown by the system's media controls. */
+  cover?: OpusPicture;
 }
 
 export interface MatroskaLayout {
@@ -469,9 +471,11 @@ export async function probeMedia(file: Blob, limits: Limits, caps: Capabilities 
     let channels: number | undefined;
     let duration: number | undefined;
     let problem: string | null = null;
+    let cover: OpusPicture | undefined;
     try {
-      const { head, frames } = demuxOggOpus(await bytesOf(file));
+      const { head, tags, frames } = demuxOggOpus(await bytesOf(file));
       ({ channels } = head);
+      cover = opusCoverArt(tags);
       duration = frames / RATE;
       if (!caps.ogg && !(await caps.decodes(oggDecoderConfig(head)))) {
         problem = "This browser cannot decode Opus audio.";
@@ -484,6 +488,7 @@ export async function probeMedia(file: Blob, limits: Limits, caps: Capabilities 
       duration,
       tracks: [{ number: 0, codec: "Opus", channels, isDefault: true, problem }],
       cutAt: duration !== undefined && duration > limits.maxSeconds ? limits.maxSeconds : undefined,
+      ...(cover && { cover }),
     };
   }
   if (container === "matroska") {

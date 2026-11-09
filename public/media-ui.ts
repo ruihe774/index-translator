@@ -13,12 +13,16 @@
 //
 // A video with a picture also carries the transcript, its translation and both together as caption
 // tracks (caption-tracks.ts), which follow both texts as they are written.
+//
+// While the player is open, the system's media controls (Media Session) name the file and show the
+// cover art an Ogg Opus file carries, from a `blob:` URL (the CSP's `img-src` allows it: WebKit checks it).
 
 import { CaptionTracks } from "./caption-tracks.ts";
 import { bilingual, captions } from "./captions.ts";
 import { lineElements } from "./dom.ts";
 import type { MediaProbe, Recording } from "./media-file.ts";
 import { cueAt, playbackOf } from "./media-player.ts";
+import type { OpusPicture } from "./ogg-opus.ts";
 import { type Alignment, counterpart } from "./paragraphs.ts";
 import { type GutterBlock, ReadGutter } from "./read-gutter.ts";
 import { clock, type Cue, parseSrt, shownText, speakerColumn, splitSpeakers } from "./subtitles.ts";
@@ -69,6 +73,40 @@ export interface MediaUi {
 }
 
 const canPlay = (type: string) => document.createElement("audio").canPlayType(type) !== "";
+
+/** The `blob:` URL of the cover art the system's media controls show. */
+let artworkUrl: string | null = null;
+
+/**
+ * Names the file in the system's media controls, with its cover art when it has one; undefined takes
+ * the metadata away. Nothing where the browser has no Media Session.
+ */
+function setMediaMetadata(file?: { title: string; cover: OpusPicture | undefined }) {
+  if (artworkUrl) {
+    URL.revokeObjectURL(artworkUrl);
+    artworkUrl = null;
+  }
+  if (!("mediaSession" in navigator) || typeof MediaMetadata !== "function") {
+    return;
+  }
+  if (!file) {
+    navigator.mediaSession.metadata = null;
+    return;
+  }
+  const artwork: MediaImage[] = [];
+  const { cover } = file;
+  if (cover) {
+    // The file's MIME type, when it names an image; otherwise the browser sniffs the picture.
+    const type = cover.mime.toLowerCase().startsWith("image/") ? cover.mime.toLowerCase() : "";
+    artworkUrl = URL.createObjectURL(new Blob([cover.data], { type }));
+    artwork.push({
+      src: artworkUrl,
+      ...(type && { type }),
+      ...(cover.width > 0 && cover.height > 0 && { sizes: `${cover.width}x${cover.height}` }),
+    });
+  }
+  navigator.mediaSession.metadata = new MediaMetadata({ title: file.title, artwork });
+}
 
 export function initMediaUi(d: MediaUiDeps): MediaUi {
   const { box, field, source } = d;
@@ -356,6 +394,7 @@ export function initMediaUi(d: MediaUiDeps): MediaUi {
 
   function close() {
     unmount();
+    setMediaMetadata();
     hide();
     mode = null;
     held = null;
@@ -368,6 +407,7 @@ export function initMediaUi(d: MediaUiDeps): MediaUi {
     open(file, probe, track) {
       close();
       ({ name } = file);
+      setMediaMetadata({ title: name, cover: probe.cover });
       const playback = playbackOf(file, probe, track, canPlay);
       if (playback.kind === "file") {
         mode = "file";

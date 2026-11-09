@@ -391,7 +391,7 @@ export interface OpusPicture {
   /** As the file says them (0 when unknown); not checked against `data`. */
   width: number;
   height: number;
-  data: Uint8Array;
+  data: Uint8Array<ArrayBuffer>;
 }
 
 const PICTURE_KEY = "METADATA_BLOCK_PICTURE=";
