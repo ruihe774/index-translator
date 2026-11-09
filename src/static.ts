@@ -10,10 +10,12 @@ import type { PublicWatcher } from "./public-watch";
 
 /**
  * The page loads only same-origin scripts and styles, and nothing can frame it. Media elements may also
- * play `blob:` URLs: the file a transcript was made from, which the page plays without sending it.
+ * play `blob:` URLs: the file a transcript was made from, which the page plays without sending it. Images may
+ * be `blob:` too, for the Media Session artwork (a cover read from that file): WebKit loads artwork as an image
+ * of the page, under `img-src` (Chromium and Firefox fetch it outside the page's CSP).
  */
 const HTML_CSP =
-  "default-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; style-src 'self' 'sha256-2BD9MqJJ7AvYOljEFLcM1EJGeoDwn/KQ5MvfbT1mJD4='";
+  "default-src 'self'; media-src 'self' blob:; img-src 'self' blob:; frame-ancestors 'none'; style-src 'self' 'sha256-2BD9MqJJ7AvYOljEFLcM1EJGeoDwn/KQ5MvfbT1mJD4='";
 
 interface Transpiled {
   mtimeMs: number;

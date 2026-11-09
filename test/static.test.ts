@@ -21,7 +21,7 @@ async function inlineStyleHashes(): Promise<string[]> {
 /** The policy src/static.ts sends with HTML: the loading page's inline styles are allowed by hash; no inline script. */
 async function expectedCsp(): Promise<string> {
   const styles = (await inlineStyleHashes()).join(" ");
-  return `default-src 'self'; media-src 'self' blob:; frame-ancestors 'none'; style-src 'self' ${styles}`;
+  return `default-src 'self'; media-src 'self' blob:; img-src 'self' blob:; frame-ancestors 'none'; style-src 'self' ${styles}`;
 }
 
 let dir: string;
