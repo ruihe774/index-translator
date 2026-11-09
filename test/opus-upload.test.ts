@@ -8,7 +8,14 @@ import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
-import { concat, demuxOggOpus, OggOpusMuxer, type OpusPacket, opusPacketSamples } from "../public/ogg-opus";
+import {
+  concat,
+  demuxOggOpus,
+  OggOpusMuxer,
+  opusCoverArt,
+  type OpusPacket,
+  opusPacketSamples,
+} from "../public/ogg-opus";
 import type { Health, Voice, VoiceList } from "../src/api";
 import { type App, startApp } from "../src/app";
 import { opusDir, OpusEncoder, opusLibraryPath } from "../src/opus-ffi";
@@ -200,6 +207,146 @@ describe("demuxOggOpus", () => {
     ],
   ])("refuses a file that %s", (_what, file, message) => {
     expect(() => demuxOggOpus(file())).toThrow(message);
+  });
+});
+
+interface PictureOptions {
+  type?: number;
+  mime?: string;
+  description?: string;
+  data?: Uint8Array;
+}
+
+/** A FLAC picture block, as `METADATA_BLOCK_PICTURE` holds it before base64. */
+function pictureBlock({
+  type = 3,
+  mime = "image/png",
+  description = "",
+  data = new Uint8Array([1, 2, 3]),
+}: PictureOptions) {
+  const text = new TextEncoder();
+  const fields = [text.encode(mime), text.encode(description)];
+  const out = new Uint8Array(32 + fields[0]!.length + fields[1]!.length + data.length);
+  const view = new DataView(out.buffer);
+  let at = 0;
+  const u32 = (n: number) => {
+    view.setUint32(at, n);
+    at += 4;
+  };
+  const bytes = (b: Uint8Array) => {
+    u32(b.length);
+    out.set(b, at);
+    at += b.length;
+  };
+  u32(type);
+  bytes(fields[0]!);
+  bytes(fields[1]!);
+  u32(640); // width
+  u32(480); // height
+  u32(24); // depth
+  u32(0); // colours
+  bytes(data);
+  return out;
+}
+
+/** The comment `METADATA_BLOCK_PICTURE=…` of a picture. */
+const pictureComment = (o: PictureOptions = {}) => `METADATA_BLOCK_PICTURE=${pictureBlock(o).toBase64()}`;
+
+/** An OpusTags packet holding `comments`. */
+function opusTags(comments: string[]): Uint8Array {
+  const text = new TextEncoder();
+  const count = new Uint8Array(4);
+  new DataView(count.buffer).setUint32(0, comments.length, true);
+  const parts = [text.encode("OpusTags"), lengthOf(text.encode("vendor")), text.encode("vendor"), count];
+  for (const comment of comments) {
+    parts.push(lengthOf(text.encode(comment)), text.encode(comment));
+  }
+  return concat(parts);
+}
+
+/** `bytes`'s length as Vorbis comments write it: 32 bits, little-endian. */
+function lengthOf(bytes: Uint8Array): Uint8Array {
+  const out = new Uint8Array(4);
+  new DataView(out.buffer).setUint32(0, bytes.length, true);
+  return out;
+}
+
+describe("opusCoverArt", () => {
+  test("reads a picture: type, MIME type, description, size and data", () => {
+    const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
+    const tags = opusTags(["TITLE=x", pictureComment({ description: "封面", data })]);
+    expect(opusCoverArt(tags)).toStrictEqual({
+      type: 3,
+      mime: "image/png",
+      description: "封面",
+      width: 640,
+      height: 480,
+      data,
+    });
+  });
+
+  test("takes the front cover over pictures before it, else the first", () => {
+    const back = pictureComment({ type: 4, data: new Uint8Array([4]) });
+    const front = pictureComment({ type: 3, data: new Uint8Array([3]) });
+    const artist = pictureComment({ type: 8, data: new Uint8Array([8]) });
+    expect(opusCoverArt(opusTags([back, front]))?.data).toStrictEqual(new Uint8Array([3]));
+    expect(opusCoverArt(opusTags([back, artist]))?.data).toStrictEqual(new Uint8Array([4]));
+  });
+
+  test("reads the key in any case", () => {
+    const comment = pictureComment().replace("METADATA_BLOCK_PICTURE", "metadata_block_Picture");
+    expect(opusCoverArt(opusTags([comment]))?.mime).toBe("image/png");
+  });
+
+  test("passes over a URL, an empty picture and damaged ones for the next", () => {
+    const next = pictureComment({ type: 0, data: new Uint8Array([9]) });
+    const comments = [
+      pictureComment({ mime: "-->", data: new TextEncoder().encode("https://example.com/cover.png") }),
+      pictureComment({ data: new Uint8Array(0) }),
+      "METADATA_BLOCK_PICTURE=not*base64",
+      // Cut inside its data.
+      `METADATA_BLOCK_PICTURE=${pictureBlock({}).subarray(0, 40).toBase64()}`,
+      next,
+    ];
+    expect(opusCoverArt(opusTags(comments))?.data).toStrictEqual(new Uint8Array([9]));
+  });
+
+  test("keeps the pictures before a comment that runs past the header", () => {
+    const tags = opusTags([pictureComment({ type: 5 }), "TITLE=x"]);
+    // The last comment claims more bytes than there are.
+    expect(opusCoverArt(tags.subarray(0, -2))?.type).toBe(5);
+  });
+
+  test.each([
+    ["no comments", opusTags([])],
+    ["no picture", opusTags(["TITLE=x", "METADATA_BLOCK_PICTURE"])],
+    ["not a comment header", new TextEncoder().encode("OpusHead........")],
+    ["a header cut before its count", opusTags([]).subarray(0, 14)],
+  ])("is undefined for %s", (_what, tags) => {
+    expect(opusCoverArt(tags)).toBeUndefined();
+  });
+
+  test("reads a file's comment header, also one that spans pages", () => {
+    expect(opusCoverArt(demuxOggOpus(muxed([celt()])).tags)).toBeUndefined();
+
+    const data = new Uint8Array(100_000).map((_, i) => i);
+    const tags = opusTags([pictureComment({ data })]);
+    const [head] = headers();
+    // 255 segments of 255 bytes a page; the last page ends the packet with a shorter one.
+    const pages: Uint8Array[] = [head!];
+    let sequence = 1;
+    for (let at = 0; at <= tags.length; at += 255 * 255) {
+      const body = tags.subarray(at, at + 255 * 255);
+      const full = Math.floor(body.length / 255);
+      const lacing =
+        full === 255 ? Array<number>(255).fill(255) : [...Array<number>(full).fill(255), body.length % 255];
+      const granule = full === 255 ? 0xff_ff_ff_ff_ff_ff_ff_ffn : 0n;
+      pages.push(page(body, lacing, { flags: at > 0 ? 0x01 : 0, sequence: sequence++, granule }));
+    }
+    pages.push(page(celt(), [40], { sequence, flags: 0x04, granule: 960n }));
+    const ogg = demuxOggOpus(concat(pages));
+    expect(ogg.tags).toStrictEqual(tags);
+    expect(opusCoverArt(ogg.tags)?.data).toStrictEqual(data);
   });
 });
 

@@ -3,7 +3,9 @@
 // encoder; it wraps the packets of libopus in src/opus-stream.ts (the speech stream) and of the
 // browser's AudioEncoder in public/audio-upload.ts (uploads). The demuxer reads those uploads back
 // (src/opus-file.ts): a subset of Ogg, one logical stream from granule 0, which is what any Opus
-// encoder writes, ours included.
+// encoder writes, ours included. `opusCoverArt` reads the picture a tagger may have put in its comments.
+
+import { fromBase64 } from "./base64.ts";
 
 /** One Opus packet and how long it plays, as the muxer needs to know it. */
 export interface OpusPacket {
@@ -48,6 +50,9 @@ function crc32(data: Uint8Array, crc = 0): number {
 }
 
 const utf8 = new TextEncoder();
+const utf8Text = new TextDecoder();
+/** One character per byte; the MIME type and the base64 text are ASCII. */
+const latin1 = new TextDecoder("latin1");
 
 export function concat(parts: Uint8Array[]): Uint8Array {
   const out = new Uint8Array(parts.reduce((n, p) => n + p.length, 0));
@@ -237,6 +242,8 @@ export interface OpusHead {
 /** What `demuxOggOpus` finds: the header and the audio packets in order. */
 export interface OggOpus {
   head: OpusHead;
+  /** The comment header (OpusTags) as it is, unread: `opusCoverArt` reads its picture. */
+  tags: Uint8Array;
   packets: Uint8Array[];
   /** Samples per channel at 48 kHz the stream plays: from its last granule position, pre-skip left out. */
   frames: number;
@@ -371,5 +378,108 @@ export function demuxOggOpus(bytes: Uint8Array): OggOpus {
   if (packets.length === 0 || frames < 1) {
     throw new Error("the Ogg Opus file has no audio");
   }
-  return { head, packets, frames };
+  return { head, tags: all[1]!, packets, frames };
+}
+
+/** A picture from a `METADATA_BLOCK_PICTURE` comment: a FLAC picture block (FLAC format, METADATA_BLOCK_PICTURE). */
+export interface OpusPicture {
+  /** The ID3v2 APIC picture type: 3 is the front cover. */
+  type: number;
+  /** As the file says it; nothing checks that `data` is one. */
+  mime: string;
+  description: string;
+  /** As the file says them (0 when unknown); not checked against `data`. */
+  width: number;
+  height: number;
+  data: Uint8Array;
+}
+
+const PICTURE_KEY = "METADATA_BLOCK_PICTURE=";
+const FRONT_COVER = 3;
+/** The MIME type of a picture that is a URL, not an image (FLAC format). */
+const URL_MIME = "-->";
+
+/**
+ * The cover art in an OpusTags packet (RFC 7845, 5.2): the first front cover among its `METADATA_BLOCK_PICTURE`
+ * comments, else the first picture of any type; pictures given as a URL, empty or unreadable are passed over.
+ * Undefined when there is none. Never throws: a damaged comment is no reason to refuse the audio.
+ */
+export function opusCoverArt(tags: Uint8Array): OpusPicture | undefined {
+  const pictures: Uint8Array[] = [];
+  try {
+    pictureComments(tags, pictures);
+  } catch {
+    // A comment header cut short: the pictures found before the damage are still worth trying.
+  }
+  let first: OpusPicture | undefined;
+  for (const comment of pictures) {
+    const picture = readPicture(comment);
+    if (picture?.type === FRONT_COVER) {
+      return picture;
+    }
+    first ??= picture;
+  }
+  return first;
+}
+
+/**
+ * Adds to `out` the values (base64, still encoded) of the picture comments, in order. Throws when the header is cut
+ * short, `out` keeping those found before.
+ */
+function pictureComments(tags: Uint8Array, out: Uint8Array[]): void {
+  if (tags.length < 8 || ascii(tags, 0, 8) !== "OpusTags") {
+    return;
+  }
+  const view = new DataView(tags.buffer, tags.byteOffset, tags.byteLength);
+  // Past the magic, the vendor string, then a count of comments, each "KEY=value" after its length.
+  let at = 8;
+  at += 4 + view.getUint32(at, true);
+  const count = view.getUint32(at, true);
+  at += 4;
+  for (let i = 0; i < count; i++) {
+    const length = view.getUint32(at, true);
+    const end = at + 4 + length;
+    if (end > tags.length) {
+      throw new RangeError("a comment runs past the header");
+    }
+    const comment = tags.subarray(at + 4, end);
+    // Keys are ASCII and compared ignoring case.
+    if (comment.length > PICTURE_KEY.length && ascii(comment, 0, PICTURE_KEY.length).toUpperCase() === PICTURE_KEY) {
+      out.push(comment.subarray(PICTURE_KEY.length));
+    }
+    at = end;
+  }
+}
+
+/** One picture comment's value, decoded; undefined when it is no picture worth showing. */
+function readPicture(value: Uint8Array): OpusPicture | undefined {
+  try {
+    // Base64 is ASCII: a byte past it is no base64 character either, and `fromBase64` refuses it.
+    const block = fromBase64(latin1.decode(value));
+    const view = new DataView(block.buffer, block.byteOffset, block.byteLength);
+    // Big-endian throughout: type, MIME type, description, width, height, depth, colours, data.
+    let at = 0;
+    const u32 = () => {
+      const n = view.getUint32(at);
+      at += 4;
+      return n;
+    };
+    const bytes = (length: number) => {
+      if (at + length > block.length) {
+        throw new RangeError("a picture field runs past the block");
+      }
+      at += length;
+      return block.subarray(at - length, at);
+    };
+    const type = u32();
+    const mime = latin1.decode(bytes(u32()));
+    const description = utf8Text.decode(bytes(u32()));
+    const width = u32();
+    const height = u32();
+    at += 8; // colour depth, colours used
+    const data = bytes(u32());
+    return mime === URL_MIME || data.length === 0 ? undefined : { type, mime, description, width, height, data };
+  } catch {
+    return undefined;
+  }
 }
