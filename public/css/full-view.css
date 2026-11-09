@@ -17,7 +17,9 @@
   --output-pad: 1.5rem;
 
   /* The bar's height: its padding and border, and the controls' `--target` scaled (see `.pane-bar`). */
-  --bar-height: calc(1rem + 1px + var(--target) * var(--bar-scale));
+  --bar-height: calc(1rem + var(--target) * var(--bar-scale));
+  --bottom-bar-inset: 5rem;
+  --bar-block-padding: 0.5rem;
 
   /* Focus moves and anchors land below the bar. */
   scroll-padding-block-start: calc(var(--bar-height) + 0.5rem);
@@ -52,11 +54,10 @@
     grid-template-columns: minmax(0, 1fr) auto;
     align-items: center;
     gap: var(--gap);
-    /* No extra room for the status bar when installed: the bar's background is opaque there (below), so iOS
-       blurs it as it does any other page. */
-    padding: 0.5rem var(--gutter) 0.5rem;
-    background: var(--bg);
-    border-block-end: 1px solid var(--divider);
+    padding: var(--bar-block-padding) var(--gutter);
+    background: transparent;
+    backdrop-filter: blur(0.5rem);
+    outline: 1px solid var(--divider);
     /* Its own picture in a view transition, which keeps it still above the blocks moving (below). */
     view-transition-name: full-view-bar;
 
@@ -79,10 +80,21 @@
     }
   }
 
-  @media not ((prefers-reduced-transparency) or (display-mode: standalone)) {
+  @media (prefers-reduced-transparency) {
     .pane-bar {
-      background: transparent;
-      backdrop-filter: blur(0.5rem);
+      background: var(--bg);
+      backdrop-filter: none;
+    }
+  }
+
+  @media (orientation: portrait) and (display-mode: standalone) {
+    body {
+      padding-block: var(--standalone-top) calc(var(--bottom-bar-inset) + 1rem);
+    }
+
+    .pane-bar {
+      top: calc(100lvh - var(--bottom-bar-inset));
+      padding-block-end: calc(var(--bottom-bar-inset) - var(--bar-height) + var(--bar-block-padding));
     }
   }
 
