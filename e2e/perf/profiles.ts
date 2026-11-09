@@ -36,6 +36,8 @@ export type Scenario = (typeof SCENARIOS)[number];
 export interface Metrics {
   /** From the start of the navigation until the page shows itself (`hydration.ts` has replaced the splash and the stylesheet has loaded). */
   visibleMs: number;
+  /** From the start of the navigation until Translate is enabled and a click at its centre reaches it. */
+  clickableMs: number;
   fcpMs?: number;
   lcpMs?: number;
   /** Requests the proxy saw, until the page went quiet. */

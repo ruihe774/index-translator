@@ -14,22 +14,38 @@ function over(rows: Row[], pick: (m: Metrics) => number | undefined): number | u
 
 const ms = (v: number | undefined) => (v === undefined ? "-" : `${Math.round(v)}`);
 
-/** One line per scenario, profile and protocol: medians over the repeats and the spread of the visible time. */
+/** One line per scenario, profile and protocol: medians over the repeats and the spread of the visible and clickable times. */
 export function table(rows: Row[]): string {
   const groups = new Map<string, Row[]>();
   for (const row of rows) {
     const key = [row.scenario, row.profile, row.protocol].join("\t");
     groups.set(key, [...(groups.get(key) ?? []), row]);
   }
-  const header = ["scenario", "profile", "proto", "n", "visible ms", "(min-max)", "fcp", "lcp", "reqs", "MB"];
+  const header = [
+    "scenario",
+    "profile",
+    "proto",
+    "n",
+    "visible ms",
+    "(min-max)",
+    "click ms",
+    "(min-max)",
+    "fcp",
+    "lcp",
+    "reqs",
+    "MB",
+  ];
   const lines = [header];
   for (const [key, group] of groups) {
     const visible = group.map((r) => r.metrics.visibleMs);
+    const clickable = group.map((r) => r.metrics.clickableMs);
     lines.push([
       ...key.split("\t"),
       String(group.length),
       ms(median(visible)),
       `${ms(Math.min(...visible))}-${ms(Math.max(...visible))}`,
+      ms(median(clickable)),
+      `${ms(Math.min(...clickable))}-${ms(Math.max(...clickable))}`,
       ms(over(group, (m) => m.fcpMs)),
       ms(over(group, (m) => m.lcpMs)),
       ms(over(group, (m) => m.requests)),

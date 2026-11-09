@@ -62,7 +62,8 @@ asserts nothing, since the numbers depend on the machine (compare runs of the sa
 `bun run e2e`. It starts the mock server on `PERF_PORT` (3200) and drives Chromium through a throttling reverse
 proxy (`proxy.ts`): every request waits one round trip, and all responses share one bandwidth. The browser speaks
 HTTP/1.1 (`http://app.test:3201`) or HTTP/2 over a throwaway certificate (`https://app.test:3202`, needs `openssl`);
-`tailscale serve` is the latter. A proxy is used rather than DevTools' network emulation because that does not slow
+`tailscale serve` is the latter. Chromium is started with `--no-proxy-server`, so a system proxy (`HTTPS_PROXY`) is not
+asked for `app.test`. A proxy is used rather than DevTools' network emulation because that does not slow
 the service worker's own downloads.
 
 Options: `--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s with 40 ms, 5 Mbit/s with 100 ms),
@@ -79,7 +80,9 @@ Options: `--profile loopback,fast,slow` (`profiles.ts`: unlimited, 20 Mbit/s wit
 | `sw-update` | next visit after every ETag outside `/vendor/` changed (the proxy rewrites them): a full update |
 | `sw-patch`  | after that has settled, the next visit once only five files the page loads at start changed |
 
-`visible` is the time until `hydration.ts` has replaced the splash and the stylesheet has loaded; `reqs` and `MB` are what the proxy saw until the page and the worker went
+`visible` is the time until `hydration.ts` has replaced the splash and the stylesheet has loaded; `click` the time
+until Translate is enabled (the language lists are filled) and a click at its centre reaches it, which the splash's
+cross-fade delays (Chromium hit-tests the root while it runs); `reqs` and `MB` are what the proxy saw until the page and the worker went
 quiet. Run `bun scripts/fetch_web_libs.ts` first, or the page is lighter than the real one.
 
 The service worker needs a secure context, which `http://app.test` is not: the browser is started with

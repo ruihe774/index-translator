@@ -32,6 +32,31 @@ async function whenVisible(page: Page): Promise<number> {
   return (await handle.jsonValue()) as number;
 }
 
+/**
+ * The time, on the page's clock, at which Translate can be clicked: it is enabled (`aria-disabled="false"`, once the
+ * language lists are filled), the page is not transparent, and a click at its centre reaches it. The last excludes
+ * the splash's cross-fade (`hydration.ts`), during which Chromium hit-tests the root whatever is drawn.
+ */
+async function whenClickable(page: Page): Promise<number> {
+  const handle = await page.waitForFunction(
+    () => {
+      const button = document.getElementById("translate");
+      if (button?.getAttribute("aria-disabled") !== "false" || getComputedStyle(document.body).opacity === "0") {
+        return false;
+      }
+      const box = button.getBoundingClientRect();
+      const hit = document.elementFromPoint(box.x + box.width / 2, box.y + box.height / 2);
+      return hit && button.contains(hit) ? performance.now() : false;
+    },
+    undefined,
+    {
+      polling: "raf",
+      timeout: VISIT_TIMEOUT_MS,
+    },
+  );
+  return (await handle.jsonValue()) as number;
+}
+
 async function paints(page: Page): Promise<{ fcpMs?: number; lcpMs?: number }> {
   return page.evaluate(async () => {
     const fcp = performance.getEntriesByName("first-contentful-paint")[0]?.startTime;
@@ -51,8 +76,8 @@ async function paints(page: Page): Promise<{ fcpMs?: number; lcpMs?: number }> {
 async function visit(page: Page, proxy: Proxy, url: string): Promise<Metrics> {
   proxy.mark();
   await page.goto(url, { waitUntil: "commit" });
-  const visibleMs = await whenVisible(page);
-  const metrics: Metrics = { visibleMs, requests: 0, bytes: 0 };
+  const [visibleMs, clickableMs] = await Promise.all([whenVisible(page), whenClickable(page)]);
+  const metrics: Metrics = { visibleMs, clickableMs, requests: 0, bytes: 0 };
   await page.waitForLoadState("networkidle");
   Object.assign(metrics, await paints(page));
   metrics.requests = proxy.log.length;

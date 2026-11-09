@@ -102,6 +102,8 @@ try {
       `--host-resolver-rules=MAP ${HOST} 127.0.0.1`,
       `--unsafely-treat-insecure-origin-as-secure=${origins.h1.slice(0, -1)}`,
       "--ignore-certificate-errors",
+      // Everything is local: a system proxy (Chromium on Linux reads HTTPS_PROXY) would be asked for app.test.
+      "--no-proxy-server",
     ],
   });
 
