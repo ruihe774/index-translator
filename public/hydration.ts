@@ -3,6 +3,25 @@ const elements = import("./elements/index.ts");
 
 const { documentElement: root, body } = document;
 const isLaunchedFromSplash = body.dataset.splash !== undefined;
+
+// An index.html cached by a stale service worker may still import the stylesheet from a
+// `<style id="stylesheet">` in its body: dropped, so the sheets are not loaded twice.
+document.getElementById("stylesheet")?.remove();
+
+// The app's stylesheet, from the splash: linked here, before app.html and app.ts's modules are waited for, so it loads
+// alongside them. A stylesheet inserted by script does not block rendering: the splash stays drawn meanwhile.
+// app.html links its own (an index.html from before 93e4756 writes app.html over itself).
+const stylesheet = isLaunchedFromSplash ? document.createElement("link") : undefined;
+const styled =
+  stylesheet &&
+  new Promise((resolve) => {
+    stylesheet.addEventListener("load", resolve);
+    stylesheet.addEventListener("error", resolve);
+    stylesheet.rel = "stylesheet";
+    stylesheet.href = "/style.css";
+    document.head.append(stylesheet);
+  });
+
 const solvent = isLaunchedFromSplash
   ? await fetch("/app.html")
       .then((r) => {
@@ -26,10 +45,8 @@ const solvent = isLaunchedFromSplash
   : { html: undefined, error: new Error("Not launched from splash") };
 
 export async function hydrate() {
-  const stylesheet = document.getElementById("stylesheet");
-
   if (isLaunchedFromSplash && solvent.error) {
-    stylesheet!.remove();
+    stylesheet?.remove();
     const status = document.getElementById("status")!;
     status.textContent = solvent.error.message;
     status.insertAdjacentHTML("afterbegin", "<strong>Network error: </strong>");
@@ -44,14 +61,7 @@ export async function hydrate() {
     // shows at once. While the pictures are shown, clicks reach no element (Chromium hit-tests the root whatever their
     // `pointer-events`); `data-hydrating` on the root marks that time.
     const update = async () => {
-      if (stylesheet) {
-        const p = new Promise((resolve) => {
-          stylesheet.addEventListener("load", resolve);
-          stylesheet.addEventListener("error", resolve);
-        });
-        document.head.append(stylesheet);
-        await Promise.all([p, elements]);
-      }
+      await Promise.all([styled, elements]);
 
       // The splash before 93e4756, still served by a stale service worker, writes app.html over itself and hides the
       // body; only this shows it again.
