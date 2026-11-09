@@ -42,13 +42,13 @@
   }
 }
 
-/* An image in place of the source box: whole, at most its own size, in the middle. The canvas
+/* An image in place of the source box: whole, at most its own size, in the middle. The picture
    keeps its proportions when both limits bind. Transparent parts are white in either colour
    scheme, which is what the server makes of them for the model. */
 .source-image {
   overflow: hidden;
 
-  > canvas {
+  > img {
     flex: none;
     background: #fff;
     max-inline-size: 100%;

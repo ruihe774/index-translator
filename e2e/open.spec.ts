@@ -165,11 +165,16 @@ test.describe("images", () => {
     // Far taller than the pane: scaled to fit it, in proportion.
     const pane = (await app.page.locator("#source-image").boundingBox())!;
     const shown = await picture(app.page).evaluate((el) => {
-      const canvas = el as HTMLCanvasElement;
-      const box = canvas.getBoundingClientRect();
+      const img = el as HTMLImageElement;
+      const box = img.getBoundingClientRect();
       // `object-fit: contain` draws the picture inside the box at its own proportions.
-      const scale = Math.min(box.width / canvas.width, box.height / canvas.height);
-      return { boxHeight: box.height, boxWidth: box.width, height: canvas.height * scale, width: canvas.width * scale };
+      const scale = Math.min(box.width / img.naturalWidth, box.height / img.naturalHeight);
+      return {
+        boxHeight: box.height,
+        boxWidth: box.width,
+        height: img.naturalHeight * scale,
+        width: img.naturalWidth * scale,
+      };
     });
     expect(shown.boxHeight).toBeLessThanOrEqual(pane.height);
     expect(shown.boxWidth).toBeLessThanOrEqual(pane.width);

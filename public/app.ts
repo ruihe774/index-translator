@@ -62,7 +62,7 @@ import {
 } from "./select-model.ts";
 import { SentenceAligner } from "./sentence-align.ts";
 import { initSentenceHover } from "./sentence-hover.ts";
-import { initSourceImage } from "./source-image.ts";
+import { type DecodedImage, initSourceImage } from "./source-image.ts";
 import { initSpeechUi, type SpeechUi } from "./speech-ui.ts";
 import { appendTranslation, bindRender, setState, setTranslation, type Side, state } from "./state.ts";
 import { KEYS, store, stored } from "./storage.ts";
@@ -125,7 +125,7 @@ const metaEl = $<MetaLine>("meta");
 const notesEl = $("notes");
 
 /** An opened image in place of the source box; see source-image.ts. */
-const sourceImage = initSourceImage($<HTMLCanvasElement>("source-canvas"));
+const sourceImage = initSourceImage($<HTMLImageElement>("source-img"));
 
 // ---- the form and the model selection --------------------------------------------------------
 
@@ -811,7 +811,7 @@ function loadSource(text: string, preview = false) {
 }
 
 /** Puts an opened image in place of the source box: a new start like `loadSource`, with no text. */
-function loadImage(file: File, picture: ImageBitmap) {
+function loadImage(file: File, picture: DecodedImage) {
   loadSource("");
   sourceImage.set(file, picture);
   showSource();

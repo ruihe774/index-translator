@@ -28,6 +28,7 @@ import {
 import { openPdf, PdfError, pdfInstalled } from "./pdf.ts";
 import type { PdfDocument } from "./pdf.ts";
 import { theServer } from "./server-name.ts";
+import { type DecodedImage, decodeImage } from "./source-image.ts";
 import type { TranscribeFlow } from "./transcribe-flow.ts";
 
 export interface OpenUiDeps {
@@ -50,7 +51,7 @@ export interface OpenUiDeps {
    * Shows `picture`, the decoded `file`, in place of the source box and drops the text and its
    * translation. The file is what Translate then sends; the picture becomes the page's to close.
    */
-  loadImage: (file: File, picture: ImageBitmap) => void;
+  loadImage: (file: File, picture: DecodedImage) => void;
   /** Reads a recording, asks in a dialog and transcribes it into the box (transcribe-flow.ts). */
   transcribe: TranscribeFlow["open"];
 }
@@ -132,9 +133,9 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
   }
 
   async function openImage(file: File, mine: number) {
-    let picture: ImageBitmap;
+    let picture: DecodedImage;
     try {
-      picture = await createImageBitmap(file);
+      picture = await decodeImage(file);
     } catch {
       // Any decode failure (an InvalidStateError, a corrupt file) means the same to the reader.
       reading(false, mine);
@@ -145,7 +146,7 @@ export function initOpenUi(d: OpenUiDeps): OpenUi {
     }
     reading(false, mine);
     if (mine !== turn || busy) {
-      picture.close();
+      picture.release();
       return;
     }
     d.loadImage(file, picture);
