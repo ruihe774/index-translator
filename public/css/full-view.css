@@ -55,7 +55,7 @@
     align-items: center;
     gap: var(--gap);
     padding: var(--bar-block-padding) var(--gutter);
-    background: transparent;
+    background: color-mix(var(--bg), transparent);
     backdrop-filter: blur(0.5rem);
     outline: 1px solid var(--divider);
     /* Its own picture in a view transition, which keeps it still above the blocks moving (below). */
