@@ -94,6 +94,8 @@ function stripWhitespace(html: Response): Response {
 
 /** Where the service worker (public/sw.ts) learns the ETag of every file served. */
 export const MANIFEST_PATH = "/asset-manifest.json";
+/** The manifest's key for `HTML_CSP`. */
+export const CSP_KEY = "$CSP";
 
 interface Hashed {
   mtimeMs: number;
@@ -150,9 +152,12 @@ export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
     return etag;
   }
 
-  /** URL path → ETag of every file under the directory, as `lookup` would answer it. */
+  /**
+   * URL path → ETag of every file under the directory, as `lookup` would answer it, and under `$CSP` (not a path)
+   * the policy pages are served with: a service worker drops a cached page whose header differs.
+   */
   async function buildManifest(): Promise<Record<string, string>> {
-    const manifest: Record<string, string> = {};
+    const manifest: Record<string, string> = { [CSP_KEY]: HTML_CSP };
     const names: string[] = [];
     try {
       for await (const name of new Bun.Glob("**/*").scan({ cwd: dir, dot: true })) {

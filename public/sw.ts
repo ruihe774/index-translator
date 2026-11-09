@@ -9,6 +9,8 @@
 // On loopback (development, or the app on its own machine) the worker caches nothing. Neither does it when the
 // list's request fails with an error status or answers something that is not JSON: the server is then not ours, and
 // the worker does not assume it is.
+// The list also carries the pages' Content-Security-Policy (`$CSP`). A cached loading page served with another
+// policy is dropped, and since it may already have been answered, its /hydration.ts is answered with a reload.
 // On every origin it shows the notification of a push message (src/push.ts, public/push.ts): a job
 // that ended while no page was reading it.
 
@@ -47,13 +49,16 @@ interface WindowClient {
   focus(): Promise<unknown>;
 }
 
-/** URL path → ETag, as src/static.ts lists it. */
+/** URL path → ETag, as src/static.ts lists it, plus `$CSP`: the pages' Content-Security-Policy. */
 type Manifest = Record<string, string>;
 
 const sw = self as unknown as WorkerScope;
 /** Bump to drop everything cached by an older worker. */
 const CACHE = "index-translator-v3";
 const MANIFEST_PATH = "/asset-manifest.json";
+const CSP_KEY = "$CSP";
+/** The loading page's paths, as they are cached. */
+const LOADING_PAGES = ["/", "/index.html"];
 
 function onLoopback(hostname: string): boolean {
   return (
@@ -115,8 +120,36 @@ async function prefetch(manifest: Manifest): Promise<void> {
   await Promise.all(cached.filter((req) => !(new URL(req.url).pathname in manifest)).map((req) => cache.delete(req)));
 }
 
+/**
+ * Drops each cached loading page whose Content-Security-Policy is not the listed one; true when one was dropped.
+ * A page answered from it was given an outdated policy (a stylesheet's hash, say, that no longer matches).
+ */
+async function dropOutdatedPages(manifest: Manifest): Promise<boolean> {
+  const csp = manifest[CSP_KEY];
+  if (csp === undefined) {
+    return false;
+  }
+  const cache = await caches.open(CACHE);
+  const dropped = await Promise.all(
+    LOADING_PAGES.map(async (path) => {
+      const hit = await cache.match(path);
+      return hit !== undefined && hit.headers.get("content-security-policy") !== csp && (await cache.delete(path));
+    }),
+  );
+  return dropped.includes(true);
+}
+
+/** What /hydration.ts is answered with when the page that asks for it came with an outdated policy. */
+function reloadScript(): Response {
+  return new Response("location.reload();", {
+    headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" },
+  });
+}
+
 interface Sync {
   manifest: Promise<Manifest | null | undefined>;
+  /** True when a cached loading page had another policy than the list's and was dropped. */
+  outdated: Promise<boolean>;
   /** Settles when the low-priority downloads have. */
   done: Promise<void>;
 }
@@ -126,8 +159,9 @@ let foreign = false;
 
 function startSync(): Sync {
   const manifest = loadManifest();
-  const done = manifest
-    .then(async (m) => {
+  const outdated = manifest.then((m) => (m ? dropOutdatedPages(m) : false)).catch(() => false);
+  const done = Promise.all([manifest, outdated])
+    .then(async ([m]) => {
       foreign = m === null;
       if (m) {
         await prefetch(m);
@@ -136,7 +170,7 @@ function startSync(): Sync {
       }
     })
     .catch(() => {});
-  return { manifest, done };
+  return { manifest, outdated, done };
 }
 
 const TITLES: Record<PushMessage["job"], Record<PushMessage["outcome"], string>> = {
@@ -215,18 +249,21 @@ if (onLoopback(sw.location.hostname)) {
     if (req.mode === "navigate") {
       sync = startSync();
     }
-    const { manifest, done } = sync;
+    const { manifest, outdated, done } = sync;
     event.waitUntil(done);
     const path = url.pathname;
     event.respondWith(
       (async () => {
         // The loading page may be stale: it only fetches app.html, which is checked against the list. The sync
         // started above brings the copy up to date for the next load.
-        if (!foreign && (path === "/" || path === "/index.html")) {
+        if (!foreign && LOADING_PAGES.includes(path)) {
           const hit = await caches.open(CACHE).then((cache) => cache.match(path));
           if (hit) {
             return hit;
           }
+        }
+        if (path === "/hydration.ts" && (await outdated)) {
+          return reloadScript();
         }
         return manifest.then(async (m) => {
           // No list (unreachable, or not our server), or a file the server does not list: not ours to cache.

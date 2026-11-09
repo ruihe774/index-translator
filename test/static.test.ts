@@ -310,8 +310,9 @@ describe("asset manifest", () => {
   test("lists every served file with the ETag the file is served with, and directories by their path", async () => {
     const manifest = (await (await get("/asset-manifest.json")).json()) as Record<string, string>;
     expect(Object.keys(manifest).sort()).toStrictEqual(
-      ["/", "/app.ts", "/broken.ts", "/index.html", "/style.css", "/sub/", "/sub/index.html"].sort(),
+      ["$CSP", "/", "/app.ts", "/broken.ts", "/index.html", "/style.css", "/sub/", "/sub/index.html"].sort(),
     );
+    expect(manifest.$CSP).toBe(await expectedCsp());
     for (const path of ["/", "/app.ts", "/style.css", "/sub/"]) {
       expect((await get(path)).headers.get("etag")).toBe(manifest[path] ?? null);
     }
