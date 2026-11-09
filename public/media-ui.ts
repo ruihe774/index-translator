@@ -14,15 +14,16 @@
 // A video with a picture also carries the transcript, its translation and both together as caption
 // tracks (caption-tracks.ts), which follow both texts as they are written.
 //
-// While the player is open, the system's media controls (Media Session) name the file and show the
-// cover art an Ogg Opus file carries, from a `blob:` URL (the CSP's `img-src` allows it: WebKit checks it).
+// While the player is open, the system's media controls (Media Session) show the title and artists an Ogg
+// Opus file's comments give (else the file's name) and its cover art, from a `blob:` URL (the CSP's
+// `img-src` allows it: WebKit checks it).
 
 import { CaptionTracks } from "./caption-tracks.ts";
 import { bilingual, captions } from "./captions.ts";
 import { lineElements } from "./dom.ts";
 import type { MediaProbe, Recording } from "./media-file.ts";
 import { cueAt, playbackOf } from "./media-player.ts";
-import type { OpusPicture } from "./ogg-opus.ts";
+import type { OpusMetadata } from "./ogg-opus.ts";
 import { type Alignment, counterpart } from "./paragraphs.ts";
 import { type GutterBlock, ReadGutter } from "./read-gutter.ts";
 import { clock, type Cue, parseSrt, shownText, speakerColumn, splitSpeakers } from "./subtitles.ts";
@@ -78,10 +79,11 @@ const canPlay = (type: string) => document.createElement("audio").canPlayType(ty
 let artworkUrl: string | null = null;
 
 /**
- * Names the file in the system's media controls, with its cover art when it has one; undefined takes
- * the metadata away. Nothing where the browser has no Media Session.
+ * Names the file in the system's media controls by the title its comments give, else `name`, with their
+ * artists and cover art when they give them; no `name` takes the metadata away. Nothing where the browser has
+ * no Media Session.
  */
-function setMediaMetadata(file?: { title: string; cover: OpusPicture | undefined }) {
+function setMediaMetadata(name?: string, tags: OpusMetadata = {}) {
   if (artworkUrl) {
     URL.revokeObjectURL(artworkUrl);
     artworkUrl = null;
@@ -89,12 +91,12 @@ function setMediaMetadata(file?: { title: string; cover: OpusPicture | undefined
   if (!("mediaSession" in navigator) || typeof MediaMetadata !== "function") {
     return;
   }
-  if (!file) {
+  if (name === undefined) {
     navigator.mediaSession.metadata = null;
     return;
   }
   const artwork: MediaImage[] = [];
-  const { cover } = file;
+  const { cover } = tags;
   if (cover) {
     // The file's MIME type, when it names an image; otherwise the browser sniffs the picture.
     const type = cover.mime.toLowerCase().startsWith("image/") ? cover.mime.toLowerCase() : "";
@@ -105,7 +107,11 @@ function setMediaMetadata(file?: { title: string; cover: OpusPicture | undefined
       ...(cover.width > 0 && cover.height > 0 && { sizes: `${cover.width}x${cover.height}` }),
     });
   }
-  navigator.mediaSession.metadata = new MediaMetadata({ title: file.title, artwork });
+  navigator.mediaSession.metadata = new MediaMetadata({
+    title: tags.title ?? name,
+    ...(tags.artist !== undefined && { artist: tags.artist }),
+    artwork,
+  });
 }
 
 export function initMediaUi(d: MediaUiDeps): MediaUi {
@@ -407,7 +413,7 @@ export function initMediaUi(d: MediaUiDeps): MediaUi {
     open(file, probe, track) {
       close();
       ({ name } = file);
-      setMediaMetadata({ title: name, cover: probe.cover });
+      setMediaMetadata(name, probe.metadata);
       const playback = playbackOf(file, probe, track, canPlay);
       if (playback.kind === "file") {
         mode = "file";

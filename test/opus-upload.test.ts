@@ -12,7 +12,7 @@ import {
   concat,
   demuxOggOpus,
   OggOpusMuxer,
-  opusCoverArt,
+  opusMetadata,
   type OpusPacket,
   opusPacketSamples,
 } from "../public/ogg-opus";
@@ -271,11 +271,14 @@ function lengthOf(bytes: Uint8Array): Uint8Array {
   return out;
 }
 
-describe("opusCoverArt", () => {
+/** The cover `opusMetadata` finds. */
+const coverOf = (tags: Uint8Array) => opusMetadata(tags).cover;
+
+describe("opusMetadata", () => {
   test("reads a picture: type, MIME type, description, size and data", () => {
     const data = new Uint8Array([0x89, 0x50, 0x4e, 0x47]);
     const tags = opusTags(["TITLE=x", pictureComment({ description: "封面", data })]);
-    expect(opusCoverArt(tags)).toStrictEqual({
+    expect(coverOf(tags)).toStrictEqual({
       type: 3,
       mime: "image/png",
       description: "封面",
@@ -289,13 +292,13 @@ describe("opusCoverArt", () => {
     const back = pictureComment({ type: 4, data: new Uint8Array([4]) });
     const front = pictureComment({ type: 3, data: new Uint8Array([3]) });
     const artist = pictureComment({ type: 8, data: new Uint8Array([8]) });
-    expect(opusCoverArt(opusTags([back, front]))?.data).toStrictEqual(new Uint8Array([3]));
-    expect(opusCoverArt(opusTags([back, artist]))?.data).toStrictEqual(new Uint8Array([4]));
+    expect(coverOf(opusTags([back, front]))?.data).toStrictEqual(new Uint8Array([3]));
+    expect(coverOf(opusTags([back, artist]))?.data).toStrictEqual(new Uint8Array([4]));
   });
 
   test("reads the key in any case", () => {
     const comment = pictureComment().replace("METADATA_BLOCK_PICTURE", "metadata_block_Picture");
-    expect(opusCoverArt(opusTags([comment]))?.mime).toBe("image/png");
+    expect(coverOf(opusTags([comment]))?.mime).toBe("image/png");
   });
 
   test("passes over a URL, an empty picture and damaged ones for the next", () => {
@@ -308,13 +311,28 @@ describe("opusCoverArt", () => {
       `METADATA_BLOCK_PICTURE=${pictureBlock({}).subarray(0, 40).toBase64()}`,
       next,
     ];
-    expect(opusCoverArt(opusTags(comments))?.data).toStrictEqual(new Uint8Array([9]));
+    expect(coverOf(opusTags(comments))?.data).toStrictEqual(new Uint8Array([9]));
   });
 
   test("keeps the pictures before a comment that runs past the header", () => {
     const tags = opusTags([pictureComment({ type: 5 }), "TITLE=x"]);
     // The last comment claims more bytes than there are.
-    expect(opusCoverArt(tags.subarray(0, -2))?.type).toBe(5);
+    expect(coverOf(tags.subarray(0, -2))?.type).toBe(5);
+  });
+
+  test("reads the first title and every artist, in any case of key, trimmed", () => {
+    const tags = opusTags(["title=  夜に駆ける ", "ARTIST=A", "Artist=B", "ARTIST= ", "TITLE=Second", "ALBUM=C"]);
+    expect(opusMetadata(tags)).toStrictEqual({ title: "夜に駆ける", artist: "A, B" });
+  });
+
+  test("leaves out what the comments do not give", () => {
+    expect(opusMetadata(opusTags(["ALBUM=C", "TITLE=", "=x", "ARTIST"]))).toStrictEqual({});
+    expect(opusMetadata(opusTags([]).subarray(0, 14))).toStrictEqual({});
+  });
+
+  test("keeps the title and artists before a comment that runs past the header", () => {
+    const tags = opusTags(["TITLE=T", "ARTIST=A", "ARTIST=B"]);
+    expect(opusMetadata(tags.subarray(0, -1))).toStrictEqual({ title: "T", artist: "A" });
   });
 
   test.each([
@@ -323,11 +341,11 @@ describe("opusCoverArt", () => {
     ["not a comment header", new TextEncoder().encode("OpusHead........")],
     ["a header cut before its count", opusTags([]).subarray(0, 14)],
   ])("is undefined for %s", (_what, tags) => {
-    expect(opusCoverArt(tags)).toBeUndefined();
+    expect(coverOf(tags)).toBeUndefined();
   });
 
   test("reads a file's comment header, also one that spans pages", () => {
-    expect(opusCoverArt(demuxOggOpus(muxed([celt()])).tags)).toBeUndefined();
+    expect(coverOf(demuxOggOpus(muxed([celt()])).tags)).toBeUndefined();
 
     const data = new Uint8Array(100_000).map((_, i) => i);
     const tags = opusTags([pictureComment({ data })]);
@@ -346,7 +364,7 @@ describe("opusCoverArt", () => {
     pages.push(page(celt(), [40], { sequence, flags: 0x04, granule: 960n }));
     const ogg = demuxOggOpus(concat(pages));
     expect(ogg.tags).toStrictEqual(tags);
-    expect(opusCoverArt(ogg.tags)?.data).toStrictEqual(data);
+    expect(coverOf(ogg.tags)?.data).toStrictEqual(data);
   });
 });
 

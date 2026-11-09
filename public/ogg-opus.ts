@@ -3,7 +3,7 @@
 // encoder; it wraps the packets of libopus in src/opus-stream.ts (the speech stream) and of the
 // browser's AudioEncoder in public/audio-upload.ts (uploads). The demuxer reads those uploads back
 // (src/opus-file.ts): a subset of Ogg, one logical stream from granule 0, which is what any Opus
-// encoder writes, ours included. `opusCoverArt` reads the picture a tagger may have put in its comments.
+// encoder writes, ours included. `opusMetadata` reads the title, artists and picture a tagger may have put in its comments.
 
 import { fromBase64 } from "./base64.ts";
 
@@ -242,7 +242,7 @@ export interface OpusHead {
 /** What `demuxOggOpus` finds: the header and the audio packets in order. */
 export interface OggOpus {
   head: OpusHead;
-  /** The comment header (OpusTags) as it is, unread: `opusCoverArt` reads its picture. */
+  /** The comment header (OpusTags) as it is, unread: `opusMetadata` reads it. */
   tags: Uint8Array;
   packets: Uint8Array[];
   /** Samples per channel at 48 kHz the stream plays: from its last granule position, pre-skip left out. */
@@ -394,39 +394,67 @@ export interface OpusPicture {
   data: Uint8Array<ArrayBuffer>;
 }
 
-const PICTURE_KEY = "METADATA_BLOCK_PICTURE=";
+const PICTURE_KEY = "METADATA_BLOCK_PICTURE";
 const FRONT_COVER = 3;
 /** The MIME type of a picture that is a URL, not an image (FLAC format). */
 const URL_MIME = "-->";
 
-/**
- * The cover art in an OpusTags packet (RFC 7845, 5.2): the first front cover among its `METADATA_BLOCK_PICTURE`
- * comments, else the first picture of any type; pictures given as a URL, empty or unreadable are passed over.
- * Undefined when there is none. Never throws: a damaged comment is no reason to refuse the audio.
- */
-export function opusCoverArt(tags: Uint8Array): OpusPicture | undefined {
-  const pictures: Uint8Array[] = [];
-  try {
-    pictureComments(tags, pictures);
-  } catch {
-    // A comment header cut short: the pictures found before the damage are still worth trying.
-  }
-  let first: OpusPicture | undefined;
-  for (const comment of pictures) {
-    const picture = readPicture(comment);
-    if (picture?.type === FRONT_COVER) {
-      return picture;
-    }
-    first ??= picture;
-  }
-  return first;
+/** What an OpusTags packet says of the recording, for the system's media controls. */
+export interface OpusMetadata {
+  /** The first non-empty `TITLE` comment. */
+  title?: string;
+  /** Every non-empty `ARTIST` comment, joined by ", " (Vorbis comments give one artist each). */
+  artist?: string;
+  /**
+   * The first front cover among the `METADATA_BLOCK_PICTURE` comments, else the first picture of any type;
+   * pictures given as a URL, empty or unreadable are passed over.
+   */
+  cover?: OpusPicture;
 }
 
 /**
- * Adds to `out` the values (base64, still encoded) of the picture comments, in order. Throws when the header is cut
- * short, `out` keeping those found before.
+ * The title, artists and cover art in an OpusTags packet (RFC 7845, 5.2); a field the comments do not give is left
+ * out. Never throws: a damaged comment is no reason to refuse the audio, and what was read before it is kept.
  */
-function pictureComments(tags: Uint8Array, out: Uint8Array[]): void {
+export function opusMetadata(tags: Uint8Array): OpusMetadata {
+  const titles: string[] = [];
+  const artists: string[] = [];
+  const pictures: Uint8Array[] = [];
+  try {
+    readComments(tags, (key, value) => {
+      if (key === PICTURE_KEY) {
+        pictures.push(value);
+      } else if (key === "TITLE" || key === "ARTIST") {
+        const text = utf8Text.decode(value).trim();
+        if (text) {
+          (key === "TITLE" ? titles : artists).push(text);
+        }
+      }
+    });
+  } catch {
+    // A comment header cut short: the comments found before the damage still count.
+  }
+  let cover: OpusPicture | undefined;
+  for (const comment of pictures) {
+    const picture = readPicture(comment);
+    if (picture?.type === FRONT_COVER) {
+      cover = picture;
+      break;
+    }
+    cover ??= picture;
+  }
+  return {
+    ...(titles.length > 0 && { title: titles[0] }),
+    ...(artists.length > 0 && { artist: artists.join(", ") }),
+    ...(cover && { cover }),
+  };
+}
+
+/**
+ * Calls `visit` with each comment's key, in upper case (keys are ASCII and compared ignoring case), and its value,
+ * in order. Nothing when the packet is no OpusTags; throws when it is cut short, after visiting the comments before.
+ */
+function readComments(tags: Uint8Array, visit: (key: string, value: Uint8Array) => void): void {
   if (tags.length < 8 || ascii(tags, 0, 8) !== "OpusTags") {
     return;
   }
@@ -443,9 +471,9 @@ function pictureComments(tags: Uint8Array, out: Uint8Array[]): void {
       throw new RangeError("a comment runs past the header");
     }
     const comment = tags.subarray(at + 4, end);
-    // Keys are ASCII and compared ignoring case.
-    if (comment.length > PICTURE_KEY.length && ascii(comment, 0, PICTURE_KEY.length).toUpperCase() === PICTURE_KEY) {
-      out.push(comment.subarray(PICTURE_KEY.length));
+    const equals = comment.indexOf(0x3d);
+    if (equals > 0) {
+      visit(ascii(comment, 0, equals).toUpperCase(), comment.subarray(equals + 1));
     }
     at = end;
   }
