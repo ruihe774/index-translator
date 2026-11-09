@@ -93,23 +93,23 @@ function stripWhitespace(html: Response): Response {
 /** Where the service worker (public/sw.ts) learns the ETag of every file served. */
 export const MANIFEST_PATH = "/asset-manifest.json";
 
-/** The validator both the files and the manifest carry, so a client can compare without asking again. */
-function etagOf(info: { mtimeMs: number; size: number }): string {
-  return `W/"${info.mtimeMs}-${info.size}"`;
+interface Hashed {
+  mtimeMs: number;
+  size: number;
+  etag: string;
 }
 
 /**
- * The answer for a file whose validator is `info`'s: a 304 when the client has it, else `body()` with the
+ * The answer for a file whose validator is `etag`: a 304 when the client has it, else `body()` with the
  * validator and `cache` headers (and `type` as the media type, when the body does not carry its own).
  */
 async function revalidated(
   req: Request,
-  info: { mtimeMs: number; size: number },
+  etag: string,
   cache: string,
   body: () => string | Blob | Promise<string | Blob>,
   type?: string,
 ): Promise<Response> {
-  const etag = etagOf(info);
   const headers: Record<string, string> = { etag, "cache-control": cache };
   if (req.headers.get("if-none-match") === etag) {
     return new Response(null, { status: 304, headers });
@@ -126,6 +126,28 @@ export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
   // Every served path must start with this. "/" already ends in a separator, so it is not doubled.
   const prefix = dir.endsWith(sep) ? dir : dir + sep;
 
+  // Keyed by resolved file path. A file is read and hashed only when its mtime or size differs from the entry's,
+  // so a file that was touched or reinstalled with the same bytes keeps its ETag and clients keep their copies.
+  const hashes = new Map<string, Hashed>();
+
+  /**
+   * The validator both the files and the manifest carry, so a client can compare without asking again: a hash
+   * of the file's bytes (of the source for `.ts` and `.html`, not of what is made from it). Weak, since a
+   * representation is not byte for byte the file's.
+   */
+  async function etagOf(path: string, info: { mtimeMs: number; size: number }): Promise<string> {
+    const known = hashes.get(path);
+    if (known?.mtimeMs === info.mtimeMs && known.size === info.size) {
+      return known.etag;
+    }
+    // A change between the stat and the read leaves the newer bytes under the older stat: the next stat differs
+    // and hashes again.
+    const bytes = await Bun.file(path).bytes();
+    const etag = `W/"${Bun.hash(bytes).toString(36)}-${bytes.length}"`;
+    hashes.set(path, { mtimeMs: info.mtimeMs, size: info.size, etag });
+    return etag;
+  }
+
   /** URL path → ETag of every file under the directory, as `lookup` would answer it. */
   async function buildManifest(): Promise<Record<string, string>> {
     const manifest: Record<string, string> = {};
@@ -139,13 +161,17 @@ export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
     }
     await Promise.all(
       names.map(async (name) => {
-        const info = await Bun.file(join(dir, name))
+        const path = resolve(dir, name);
+        const info = await Bun.file(path)
           .stat()
           .catch(() => {});
         if (!info?.isFile()) {
           return;
         }
-        const etag = etagOf(info);
+        const etag = await etagOf(path, info).catch(() => {});
+        if (!etag) {
+          return;
+        }
         const url = "/" + name.replaceAll("\\", "/");
         manifest[url] = etag;
         // A directory's page is also asked for by the directory's own path.
@@ -184,9 +210,10 @@ export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
     }
 
     const cache = cacheControl(path.slice(prefix.length));
+    const etag = await etagOf(path, info);
     return path.endsWith(".html")
-      ? revalidated(req, info, cache, () => stripWhitespace(new Response(file)).text(), "text/html; charset=utf-8")
-      : revalidated(req, info, cache, () => file);
+      ? revalidated(req, etag, cache, () => stripWhitespace(new Response(file)).text(), "text/html; charset=utf-8")
+      : revalidated(req, etag, cache, () => file);
   }
 
   async function transpiled(path: string, req: Request): Promise<Response | undefined> {
@@ -214,7 +241,7 @@ export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
 
     // The file is revalidated on every load, so an edit shows up on the next reload.
     const { code } = entry;
-    return revalidated(req, entry, "no-cache", () => code, "text/javascript; charset=utf-8");
+    return revalidated(req, await etagOf(path, info), "no-cache", () => code, "text/javascript; charset=utf-8");
   }
 
   async function lookup(pathname: string, req: Request): Promise<Response> {

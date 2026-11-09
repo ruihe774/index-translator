@@ -128,6 +128,16 @@ describe("transpiled .ts", () => {
     await expect(touched.text()).resolves.toContain("9999999999");
   });
 
+  test("a touched file with the same bytes keeps its ETag", async () => {
+    const path = join(dir, "app.ts");
+    const before = (await get("/app.ts")).headers.get("etag")!;
+    const later = new Date(Date.now() + 120_000);
+    utimesSync(path, later, later);
+    const touched = await get("/app.ts", { headers: { "if-none-match": before } });
+    expect(touched.status).toBe(304);
+    expect(touched.headers.get("etag")).toBe(before);
+  });
+
   test("a syntax error is a 500 that is logged, and the server keeps serving other files", async () => {
     const spy = spyOn(console, "error").mockImplementation(() => {});
     try {
