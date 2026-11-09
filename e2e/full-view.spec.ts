@@ -243,8 +243,13 @@ for (const [orientation, size] of [
   ["portrait", PHONE],
   ["landscape", { width: 740, height: 360 }],
 ] as const) {
-  test(`full view installed as an app (${orientation}): the bar is on top and stays there`, async ({ app, mock }) => {
-    // standalone.css moves the switch below the panels; full view puts it back on top.
+  // standalone.css moves the switch below the panels; full view puts it back on top in landscape, and in portrait
+  // it sits at the bottom of the screen, `--bottom-bar-inset` above the edge (css/full-view.css).
+  const onBottom = orientation === "portrait";
+  test(`full view installed as an app (${orientation}): the bar is ${onBottom ? "at the bottom" : "on top"} and stays there`, async ({
+    app,
+    mock,
+  }) => {
     await app.page.setViewportSize(size);
     await translated(app, mock);
     expect(await emulateStandalone(app)).toBeGreaterThanOrEqual(3);
@@ -254,8 +259,15 @@ for (const [orientation, size] of [
     await openOutput(app).click();
     await expect(exit(app)).toBeVisible();
     const barBox = async () => (await app.page.locator(".pane-bar").boundingBox())!;
+    const viewport = app.page.viewportSize()!;
     const output = (await app.output.boundingBox())!;
-    expect((await barBox()).y).toBeLessThan(output.y);
+    const bar = await barBox();
+    if (onBottom) {
+      expect(bar.y).toBeGreaterThan(viewport.height / 2);
+      expect(bar.y + bar.height).toBeLessThanOrEqual(viewport.height);
+    } else {
+      expect(bar.y).toBeLessThan(output.y);
+    }
     // Firefox limits how far one wheel event goes, so it is repeated.
     await expect
       .poll(async () => {
@@ -263,7 +275,13 @@ for (const [orientation, size] of [
         return app.page.evaluate(() => scrollY);
       })
       .toBeGreaterThan(1000);
-    expect((await barBox()).y).toBeLessThanOrEqual(1);
+    const after = await barBox();
+    if (onBottom) {
+      expect(after.y).toBeGreaterThan(viewport.height / 2);
+      expect(after.y + after.height).toBeLessThanOrEqual(viewport.height);
+    } else {
+      expect(after.y).toBeLessThanOrEqual(1);
+    }
   });
 }
 
