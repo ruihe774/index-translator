@@ -74,7 +74,8 @@ export async function hydrate() {
 
     // At this time ./media-query.ts should already be loaded,
     // so awaiting it should be immediate.
-    if ("startViewTransition" in document && !(await mediaQuery).prefersReducedMotion.matches) {
+    const { isStandalone, prefersReducedMotion } = await mediaQuery;
+    if ("startViewTransition" in document && isStandalone.matches && !prefersReducedMotion.matches) {
       root.dataset.hydrating = "";
       const t = document.startViewTransition(update);
       void t.finished.finally(() => {
