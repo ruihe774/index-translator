@@ -119,7 +119,7 @@
    (next block). */
 @media (display-mode: standalone) and (orientation: portrait) {
   :root {
-    --standalone-top: max(env(safe-area-inset-top, 0px), 24px);
+    --standalone-top: max(env(safe-area-inset-top, 0px), 2rem);
     --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 3rem);
     --pane-height: clamp(16rem, calc(100svh - 10rem - var(--standalone-top) - var(--standalone-bottom)), 72rem);
   }
