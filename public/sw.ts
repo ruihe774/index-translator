@@ -113,19 +113,6 @@ async function prefetch(manifest: Manifest): Promise<void> {
   const cache = await caches.open(CACHE);
   const cached = await cache.keys();
   await Promise.all(cached.filter((req) => !(new URL(req.url).pathname in manifest)).map((req) => cache.delete(req)));
-  // Switched off for everyone. e2e/perf measured it: downloading every file only makes the second visit faster, at
-  // the price of the whole download on the first one (about 12 MB), a slower first visit on a slow link and a slower
-  // update; a visit after a small release is as fast without it. A file is cached when the page asks for it.
-  // eslint-disable-next-line no-constant-condition -- the prefetch stays written; this is its switch
-  if (false) {
-    await Promise.all(
-      Object.keys(manifest).map(async (path) => {
-        if (!(await current(cache, path, manifest))) {
-          await download(path, "low").catch(() => {});
-        }
-      }),
-    );
-  }
 }
 
 interface Sync {
