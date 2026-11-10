@@ -50,7 +50,8 @@
   --pane-height: clamp(16rem, calc(100svh - 17rem), 72rem);
   /* Reading size, line height and side padding of the text areas (the source box and both views). */
   /* Use font size set via dynamic type. (see dynamic-type.ts) */
-  --text-size: calc(1.25 * var(--dynamic-type-font-size, 1rem));
+  --text-scale: 1.25;
+  --text-size: calc(var(--text-scale) * var(--dynamic-type-font-size, 1rem));
   --text-leading: 1.6;
   --output-pad: 1.5rem;
   --gutter: 1rem;
@@ -88,7 +89,7 @@
     --gap: 0.5rem;
     --section-gap: 0.75rem;
     --gutter: 0.5rem;
-    --text-size: var(--dynamic-type-font-size, 1rem);
+    --text-scale: 1;
     --text-leading: 1.5;
     --output-pad: 0.5rem;
     /* Concentric again with the smaller padding: panel and settings 0.5rem, output side padding 0.5rem. */
