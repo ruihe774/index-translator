@@ -120,7 +120,7 @@
   :root {
     --standalone-top: max(env(safe-area-inset-top, 0px), 32px);
     --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 32px);
-    --pane-height: clamp(16rem, calc(100svh - 10rem - var(--standalone-top) - var(--standalone-bottom)), 72rem);
+    --pane-height: clamp(16rem, calc(100svh - 160px - var(--standalone-top) - var(--standalone-bottom)), 72rem);
   }
 }
 
