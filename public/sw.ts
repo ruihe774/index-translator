@@ -2,15 +2,17 @@
 // The worker fetches that list first, answers a request from the cache only when the cached copy has
 // the listed ETag, and otherwise downloads the file and caches it, so a file is cached once the page has
 // asked for it. So no stale file is ever served, except the loading page (index.html), which is answered
-// from the cache without waiting for the list: it only fetches app.html, which is checked. The price for
-// the rest is a slower first render, and the app is no use without its server anyway. (Downloading every
-// missing or outdated file at low priority right after the list arrives is written but switched off, see
-// `prefetch`.)
+// from the cache without waiting for the list: it only fetches app.html, which is checked. So is /hydration.ts,
+// the script that shows the "Network error" message when app.html cannot be fetched: that message must not itself
+// wait for the network. The price for the rest is a slower first render, and the app is no use without its server
+// anyway. (Downloading every missing or outdated file at low priority right after the list arrives is written but
+// switched off, see `prefetch`.)
 // On loopback (development, or the app on its own machine) the worker caches nothing. Neither does it when the
 // list's request fails with an error status or answers something that is not JSON: the server is then not ours, and
 // the worker does not assume it is.
-// The list also carries the pages' Content-Security-Policy (`$CSP`). A cached loading page served with another
-// policy is dropped, and since it may already have been answered, its /hydration.ts is answered with a reload.
+// The list also carries the pages' Content-Security-Policy (`$CSP`). A cached loading page or hydration.ts whose
+// ETag is not the listed one, or a loading page served with another policy, is dropped, and since it may already
+// have been answered, the /app.ts that follows is answered with a reload.
 // On every origin it shows the notification of a push message (src/push.ts, public/push.ts): a job
 // that ended while no page was reading it.
 
@@ -59,6 +61,8 @@ const MANIFEST_PATH = "/asset-manifest.json";
 const CSP_KEY = "$CSP";
 /** The loading page's paths, as they are cached. */
 const LOADING_PAGES = ["/", "/index.html"];
+/** What may be answered from the cache without waiting for the list: the loading page and its script. */
+const EAGER = [...LOADING_PAGES, "/hydration.ts"];
 
 function onLoopback(hostname: string): boolean {
   return (
@@ -121,25 +125,29 @@ async function prefetch(manifest: Manifest): Promise<void> {
 }
 
 /**
- * Drops each cached loading page whose Content-Security-Policy is not the listed one; true when one was dropped.
- * A page answered from it was given an outdated policy (a stylesheet's hash, say, that no longer matches).
+ * Drops each cached eager file whose ETag is not the listed one, or a loading page whose Content-Security-Policy is
+ * not the listed one; true when one was dropped. A page answered from it was given outdated content or an outdated
+ * policy (a stylesheet's hash, say, that no longer matches).
  */
 async function dropOutdatedPages(manifest: Manifest): Promise<boolean> {
   const csp = manifest[CSP_KEY];
-  if (csp === undefined) {
-    return false;
-  }
   const cache = await caches.open(CACHE);
   const dropped = await Promise.all(
-    LOADING_PAGES.map(async (path) => {
+    EAGER.map(async (path) => {
       const hit = await cache.match(path);
-      return hit !== undefined && hit.headers.get("content-security-policy") !== csp && (await cache.delete(path));
+      if (hit === undefined) {
+        return false;
+      }
+      const stale =
+        hit.headers.get("etag") !== manifest[path] ||
+        (LOADING_PAGES.includes(path) && csp !== undefined && hit.headers.get("content-security-policy") !== csp);
+      return stale && (await cache.delete(path));
     }),
   );
   return dropped.includes(true);
 }
 
-/** What /hydration.ts is answered with when the page that asks for it came with an outdated policy. */
+/** What /app.ts is answered with when the page that asks for it came from an outdated cached file. */
 function reloadScript(): Response {
   return new Response("location.reload();", {
     headers: { "content-type": "text/javascript; charset=utf-8", "cache-control": "no-store" },
@@ -254,15 +262,15 @@ if (onLoopback(sw.location.hostname)) {
     const path = url.pathname;
     event.respondWith(
       (async () => {
-        // The loading page may be stale: it only fetches app.html, which is checked against the list. The sync
-        // started above brings the copy up to date for the next load.
-        if (!foreign && LOADING_PAGES.includes(path)) {
+        // The loading page and hydration.ts may be stale: they only fetch app.html, which is checked against the
+        // list. The sync started above brings the copies up to date for the next load.
+        if (!foreign && EAGER.includes(path)) {
           const hit = await caches.open(CACHE).then((cache) => cache.match(path));
           if (hit) {
             return hit;
           }
         }
-        if (path === "/hydration.ts" && (await outdated)) {
+        if (path === "/app.ts" && (await outdated)) {
           return reloadScript();
         }
         return manifest.then(async (m) => {
