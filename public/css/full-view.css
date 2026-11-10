@@ -13,7 +13,7 @@
   --muted: light-dark(#595959, #a8a8a8);
   /* The wide screen's reading size and side padding at every width: the text has the whole screen, not a
      pane of it. */
-  --text-size: 1.25rem;
+  --text-size: calc(1.25 * var(--dynamic-type-font-size, 1rem));
   --output-pad: 1.5rem;
 
   /* The bar's height: its padding and border, and the controls' `--target` scaled (see `.pane-bar`). */
