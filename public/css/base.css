@@ -19,7 +19,7 @@ body {
   flex-direction: column;
   background: var(--bg);
   color: var(--text);
-  font: 1rem / 1.5 var(--font);
+  font: var(--dynamic-type-font-size, 1rem) / 1.5 var(--font);
 }
 
 h1,
