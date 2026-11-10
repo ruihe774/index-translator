@@ -31,22 +31,32 @@ const SNIPPET = 300;
 /** Characters of the text in the Restore and Delete labels, which name the entry. */
 const LABEL = 40;
 
-const graphemes = new Intl.Segmenter(undefined, { granularity: "grapheme" });
+const words = new Intl.Segmenter(undefined, { granularity: "word" });
 
 /**
- * The first `max` characters of `text` with its white space collapsed, followed by "…" when there is
- * more. Characters as a reader sees them (an emoji or a letter with its marks is one); only what is
- * kept is segmented, as a history entry can be a whole document.
+ * `text` with its white space collapsed, cut to as many whole words as fit in `max` UTF-16 code units,
+ * followed by "…" when there is more. Words by `Intl.Segmenter`, as line-clamp breaks between words
+ * in WebKit (not UAX #14, which is close enough). A first word longer than `max` is cut at `max`, not
+ * inside a surrogate pair. Segments are read lazily, as a history entry can be a whole document.
  */
 export function snippet(text: string, max: number): string {
   const flat = text.replaceAll(/\s+/g, " ").trim();
-  let count = 0;
-  for (const { index } of graphemes.segment(flat)) {
-    if (count++ === max) {
-      return `${flat.slice(0, index).trimEnd()}…`;
-    }
+  if (flat.length <= max) {
+    return flat;
   }
-  return flat;
+  let cut = 0;
+  for (const { index, segment } of words.segment(flat)) {
+    const end = index + segment.length;
+    if (end > max) {
+      break;
+    }
+    cut = end;
+  }
+  if (flat.slice(0, cut).trim() === "") {
+    const high = flat.charCodeAt(max - 1);
+    cut = high >= 0xd8_00 && high <= 0xdb_ff ? max - 1 : max;
+  }
+  return `${flat.slice(0, cut).trimEnd()}…`;
 }
 
 const dateTime = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "short" });
