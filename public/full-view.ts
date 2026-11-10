@@ -575,6 +575,49 @@ export function initFullView(d: FullViewDeps): FullView {
     { passive: true },
   );
 
+  /* Apple-specific gesture-based scaling. */
+  interface GestureEvent extends UIEvent {
+    readonly rotation: number;
+    readonly scale: number;
+  }
+  document.addEventListener(
+    "gesturestart",
+    (e) => {
+      if (
+        !!current &&
+        !zoomed() &&
+        !document.querySelector("dialog[open]") &&
+        !inSidewaysScroller(e.target as Element)
+      ) {
+        e.preventDefault();
+        let currentUserTextScale = 1;
+        let userTextScale = parseFloat(document.documentElement.style.getPropertyValue("--user-text-scale"));
+        if (!Number.isFinite(userTextScale)) {
+          userTextScale = 1;
+        }
+        const gestureCallback = (e: GestureEvent) => {
+          e.preventDefault();
+          document.documentElement.style.setProperty(
+            "--user-text-scale",
+            String((userTextScale = (userTextScale / currentUserTextScale) * (currentUserTextScale = e.scale))),
+          );
+        };
+        // @ts-expect-error
+        document.addEventListener("gesturechange", gestureCallback, { passive: false });
+        document.addEventListener(
+          "gestureend",
+          (e) => {
+            e.preventDefault();
+            // @ts-expect-error
+            document.removeEventListener("gesturechange", gestureCallback);
+          },
+          { passive: false, once: true },
+        );
+      }
+    },
+    { passive: false },
+  );
+
   for (const side of SIDES) {
     d.open[side].addEventListener("click", () => {
       if (d.open[side].getAttribute("aria-disabled") !== "true") {
