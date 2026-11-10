@@ -18,7 +18,6 @@
 
   /* The bar's height: its padding and border, and the controls' `--target` scaled (see `.pane-bar`). */
   --bar-height: calc(1rem + var(--target) * var(--bar-scale));
-  --bottom-bar-inset: 5rem;
   --bar-block-padding: 0.5rem;
 
   /* Focus moves and anchors land below the bar. */
@@ -89,12 +88,13 @@
 
   @media (orientation: portrait) and (display-mode: standalone) {
     body {
-      padding-block: var(--standalone-top) calc(var(--bottom-bar-inset) + 1rem);
+      padding-block: calc(var(--standalone-top) - var(--output-pad) + 0.5rem)
+        calc(var(--standalone-bottom) + var(--bar-height) + 0.5rem);
     }
 
     .pane-bar {
-      top: calc(100lvh - var(--bottom-bar-inset));
-      padding-block-end: calc(var(--bottom-bar-inset) - var(--bar-height) + var(--bar-block-padding));
+      top: calc(100lvh - var(--standalone-bottom) - var(--bar-height));
+      padding-block-end: calc(var(--standalone-bottom) + var(--bar-block-padding));
     }
   }
 
