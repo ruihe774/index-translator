@@ -111,6 +111,17 @@ describe("readDense", () => {
     expect(dense.weight).toStrictEqual(identity.weight);
   });
 
+  test("reads a Buffer, as readFileSync returns it (its slice is a view)", () => {
+    const bias = new Float32Array(DIMENSIONS).map((_, k) => k / 10);
+    const file = safetensors({
+      "linear.bias": { shape: [DIMENSIONS], data: bias },
+      "linear.weight": { shape: [DIMENSIONS, DIMENSIONS], data: identity.weight },
+    });
+    const dense = readDense(Buffer.from(file));
+    expect(dense.bias).toStrictEqual(bias);
+    expect(dense.weight).toStrictEqual(identity.weight);
+  });
+
   test("a file of another shape is refused", () => {
     const file = safetensors({ "linear.weight": { shape: [2, 2], data: new Float32Array(4) } });
     expect(() => readDense(file)).toThrow("linear.weight");

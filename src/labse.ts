@@ -158,8 +158,9 @@ export function readDense(file: Uint8Array): Dense {
       throw new Error(`the pooling layer has no ${name} of float32 ${shape.join(" × ")}`);
     }
     const [from, to] = t.data_offsets;
-    // Copied: the file's offsets need not be aligned to 4 bytes.
-    return new Float32Array(file.slice(8 + headerSize + from, 8 + headerSize + to).buffer);
+    // Copied (`new Uint8Array(typedArray)` copies; a Buffer's `slice` is a view, and its `buffer` the whole file):
+    // the file's offsets need not be aligned to 4 bytes.
+    return new Float32Array(new Uint8Array(file.subarray(8 + headerSize + from, 8 + headerSize + to)).buffer);
   };
   return { weight: tensor("linear.weight", [DIMENSIONS, DIMENSIONS]), bias: tensor("linear.bias", [DIMENSIONS]) };
 }
