@@ -112,13 +112,13 @@
 
 /* Installed on a phone's home screen (iOS 26, standalone.css): the page is drawn under the status bar, where the
    system blurs it, and down to the home indicator, and `env(safe-area-inset-*)` is not reliable
-   there (0 on affected versions, WebKit bug 301994). So each inset has a floor, 2rem at the top and
-   3rem at the bottom, and the panes are shorter by that much. In landscape the floors are 0.5rem
+   there (0 on affected versions, WebKit bug 301994). So each inset has a floor, 32px at the top and
+   32px at the bottom, and the panes are shorter by that much. In landscape the floors are 0.5rem
    (next block). */
 @media (display-mode: standalone) and (orientation: portrait) {
   :root {
-    --standalone-top: max(env(safe-area-inset-top, 0px), 2rem);
-    --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 3rem);
+    --standalone-top: max(env(safe-area-inset-top, 0px), 32px);
+    --standalone-bottom: max(env(safe-area-inset-bottom, 0px), 32px);
     --pane-height: clamp(16rem, calc(100svh - 10rem - var(--standalone-top) - var(--standalone-bottom)), 72rem);
   }
 }
