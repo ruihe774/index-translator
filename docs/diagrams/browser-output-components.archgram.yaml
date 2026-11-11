@@ -4,7 +4,9 @@ description: >-
   The page's main module renders a translation as Markdown only when the source looks like it. The
   parser is pure, and the DOM builder never parses a string as HTML. A SubRip text is shown as a
   table of cues by its own builder. After a finished translation the link check disables or flags
-  links the source did not have, and the paragraph module counts the paragraphs of both sides.
+  links the source did not have, and the paragraph module counts the paragraphs of both sides. Full
+  view shows one side, or both side by side, in a reading column, with the rows of each block given
+  by a pure module.
 direction: down
 legend: true
 nodes:
@@ -15,6 +17,8 @@ nodes:
   - { id: subtitles, kind: service, label: "public/subtitles.ts", note: "SubRip, pure" }
   - { id: links, kind: check, label: "public/links.ts", note: link check }
   - { id: link-dialog, kind: service, label: "public/link-dialog.ts", note: confirms a link }
+  - { id: full-view, kind: service, label: "public/full-view.ts", note: "one side or both, alone" }
+  - { id: side-by-side, kind: service, label: "public/side-by-side.ts", note: "grid rows per block, pure" }
   - { id: paragraphs, kind: check, label: "public/paragraphs.ts", note: counts paragraphs }
 edges:
   - { from: app, to: markdown, label: "looks like Markdown" }
@@ -29,6 +33,8 @@ edges:
   - { from: app, to: link-dialog, label: "confirm link" }
   - { from: link-dialog, to: links }
   - { from: app, to: paragraphs }
+  - { from: app, to: full-view, label: "enter, leave" }
+  - { from: full-view, to: side-by-side, label: block rows }
 flows:
   - { name: output, steps: [app, markdown-dom, links, paragraphs] }
   - { name: subtitles, steps: [app, markdown-dom, subtitle-dom, subtitles] }

@@ -2,8 +2,10 @@ archgram: 1
 title: Index Translator server components, sentences and web pages
 description: >-
   The app asks the segmentation engine for sentence ends and for paragraph or sentence alignment. The
-  engine starts its worker thread on the first request, which loads ONNX Runtime through the bindings
-  file and runs SaT for sentence ends and LaBSE for the embeddings that the alignment step matches.
+  engine starts its worker thread on the first request. The thread runs SaT for sentence ends on
+  sat.wasm, a hand-written WebAssembly forward pass whose helper Workers share its memory, and LaBSE
+  for the embeddings that the alignment step matches, on libllama's CPU backend through the bindings
+  file.
   The alignment step is the dynamic programme of the AIlign paper. A web page is opened by its own
   module in a headless browser, and a script that runs inside the page turns it into Markdown. The
   two share nothing but the process.
@@ -19,8 +21,10 @@ nodes:
   - { id: sat, kind: service, label: "src/sat.ts", note: "SaT sentence ends", frame: sentences }
   - { id: labse, kind: service, label: "src/labse.ts", note: "LaBSE embeddings", frame: sentences }
   - { id: align, kind: service, label: "src/align.ts", note: "AIlign DP step", frame: sentences }
-  - { id: ort-ffi, kind: service, label: "src/onnxruntime-ffi.ts", note: bindings, frame: sentences }
-  - { id: ort, kind: service, label: ONNX Runtime, note: CPU, variant: external }
+  - { id: sat-wasm, kind: service, label: "src/sat-wasm.ts", note: "loads sat.wasm, checks the model", frame: sentences }
+  - { id: sat-thread, kind: service, label: "src/sat-wasm-thread.ts", note: "helper Workers", frame: sentences }
+  - { id: embed-ffi, kind: service, label: "src/llama-embed-ffi.ts", note: "LaBSE context bindings", frame: sentences }
+  - { id: llama, kind: service, label: libllama, note: "CPU backend", variant: external }
   - { id: webpage, kind: service, label: "src/webpage.ts", note: "allowed hosts, one view per fetch", frame: pages }
   - { id: extract, kind: script, label: "src/page/extract.ts", note: "runs inside the page", frame: pages }
   - { id: webview, kind: service, label: Bun.WebView, note: headless browser, variant: external, frame: pages }
@@ -31,10 +35,13 @@ edges:
   - { from: segment-worker, to: sat, label: sentence ends }
   - { from: segment-worker, to: labse, label: embeddings }
   - { from: segment-worker, to: align, label: "match groups" }
-  - { from: segment-worker, to: ort-ffi, label: calls }
-  - { from: ort-ffi, to: ort, label: dlopen }
+  - { from: sat, to: sat-wasm, label: forward pass }
+  - { from: sat-wasm, to: sat-thread, label: "tasks, shared memory" }
+  - { from: labse, to: embed-ffi, label: encode }
+  - { from: embed-ffi, to: llama, label: dlopen }
   - { from: webpage, to: extract, label: "sends, as text" }
   - { from: webpage, to: webview, label: opens }
 flows:
-  - { name: sentence ends, steps: [app, segment, segment-worker, ort-ffi, ort] }
+  - { name: sentence ends, steps: [app, segment, segment-worker, sat, sat-wasm] }
+  - { name: alignment embeddings, steps: [app, segment, segment-worker, labse, embed-ffi, llama] }
   - { name: a web page, steps: [app, webpage, extract] }

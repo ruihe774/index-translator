@@ -4,7 +4,8 @@ description: >-
   The page's main module builds the request body, from text or an image and with the glossary, and
   picks the model by the text's length. A run sends it and reads the event stream through the resume
   module, which reconnects after the last event seen when the connection is cut. A web page is
-  fetched through the same run before its Markdown is translated.
+  fetched through the same run before its Markdown is translated. When the server offers Web Push, the
+  run subscribes its job (PUT ./push) so a notification arrives if the page is away when it ends.
 direction: down
 legend: true
 frames:
@@ -20,6 +21,7 @@ nodes:
   - { id: glossary, kind: service, label: "public/glossary.ts", note: parses the glossary, frame: requesting }
   - { id: select, kind: service, label: "public/select-model.ts", note: "picks the model by length", frame: requesting }
   - { id: sse, kind: service, label: "public/sse.ts", note: reads the event stream, frame: requesting }
+  - { id: push, kind: service, label: "public/push.ts", note: "subscribes the job", frame: requesting }
   - { id: webpage-flow, kind: service, label: "public/webpage-flow.ts", note: "fetches a page, asks first", frame: requesting }
 edges:
   - { from: app, to: server, label: "POST /translate, GET events" }
@@ -32,6 +34,7 @@ edges:
   - { from: app, to: run, label: "start a run" }
   - { from: run, to: resume, label: "read stream" }
   - { from: resume, to: sse, label: "reads events" }
+  - { from: run, to: push, label: "notify when done" }
   - { from: app, to: webpage-flow, label: "a page address" }
   - { from: webpage-flow, to: run }
   - { from: webpage-flow, to: server, label: "POST /webpage" }
