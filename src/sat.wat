@@ -19,7 +19,8 @@
 ;;   14400   classifier weights, dequantized, f32[768]
 ;;   0x10000 X, Q, K, V, CTX, TMP: f32[512][768] each (0x180000 bytes)
 ;;   0x910000 H: f32[512][3072]
-;;   0xF10000 per-thread scratch, 16 x 0x50000 (packed panel / K transposed, then attention scores)
+;;   0xF10000 per-thread scratch, 16 x 0x50000 (packed panel, or 1/sum of the softmax rows + attention scores)
+;;   From QKV to attention, TMP holds K as KT panels and H holds V as VP panels (see $kv_strip).
 ;;   0x1410000 weights
 (module
   (import "env" "memory" (memory 1 65536 shared))
@@ -61,6 +62,8 @@
   (global $V i32 (i32.const 0x490000))
   (global $CTX i32 (i32.const 0x610000))
   (global $TMP i32 (i32.const 0x790000))
+  (global $KT i32 (i32.const 0x790000))   ;; = TMP, from QKV to attention
+  (global $VP i32 (i32.const 0x910000))   ;; = H, from QKV to attention
   (global $H i32 (i32.const 0x910000))
   (global $SCR i32 (i32.const 0xF10000))
   (global $SCR_STRIDE i32 (i32.const 0x50000))
@@ -86,12 +89,18 @@
   ;; ---------------------------------------------------------------- math
 
   ;; e^x for x <= 0 (0 below -87.3), Cephes-style range reduction, degree-6 polynomial.
+  ;; n = round(x log2 e) comes from adding 1.5 * 2^23 (the low mantissa bits of $m are then n): the same
+  ;; value as f32x4.nearest for |x log2 e| < 2^22, and 2^n is built from $m's bits without trunc_sat, which
+  ;; JSC lowers to several instructions on x86-64. The clamp is pmax (one maxps): f32x4.max is 8
+  ;; instructions there because of its NaN and -0 rules, and there are no NaNs here.
   (func $exp4 (param $x v128) (result v128)
-    (local $n v128) (local $r v128) (local $p v128) (local $under v128)
+    (local $n v128) (local $r v128) (local $p v128) (local $under v128) (local $m v128)
     (local.set $under (f32x4.lt (local.get $x) (v128.const f32x4 -87.3 -87.3 -87.3 -87.3)))
-    (local.set $x (f32x4.max (local.get $x) (v128.const f32x4 -87.3 -87.3 -87.3 -87.3)))
-    (local.set $n (f32x4.nearest (f32x4.mul (local.get $x)
-      (v128.const f32x4 1.44269504 1.44269504 1.44269504 1.44269504))))
+    (local.set $x (f32x4.pmax (local.get $x) (v128.const f32x4 -87.3 -87.3 -87.3 -87.3)))
+    (local.set $m (f32x4.add (f32x4.mul (local.get $x)
+      (v128.const f32x4 1.44269504 1.44269504 1.44269504 1.44269504))
+      (v128.const f32x4 12582912 12582912 12582912 12582912)))
+    (local.set $n (f32x4.sub (local.get $m) (v128.const f32x4 12582912 12582912 12582912 12582912)))
     (local.set $r (f32x4.sub (local.get $x) (f32x4.mul (local.get $n)
       (v128.const f32x4 0.693359375 0.693359375 0.693359375 0.693359375))))
     (local.set $r (f32x4.sub (local.get $r) (f32x4.mul (local.get $n)
@@ -109,10 +118,10 @@
       (v128.const f32x4 1 1 1 1)))
     (local.set $p (f32x4.add (f32x4.mul (local.get $p) (local.get $r))
       (v128.const f32x4 1 1 1 1)))
+    ;; bits of $m: 0x4B400000 + n; the 0x4B4... part shifts out
     (v128.andnot
       (f32x4.mul (local.get $p)
-        (i32x4.shl (i32x4.add (i32x4.trunc_sat_f32x4_s (local.get $n)) (v128.const i32x4 127 127 127 127))
-          (i32.const 23)))
+        (i32x4.shl (i32x4.add (local.get $m) (v128.const i32x4 127 127 127 127)) (i32.const 23)))
       (local.get $under)))
 
   ;; x * Phi(x) with erf from Abramowitz-Stegun 7.1.26 (|error| < 1.5e-7), no cancellation for x < 0.
@@ -182,22 +191,19 @@
 
   ;; ---------------------------------------------------------------- GEMM
 
-  ;; C[4][16] (=|+=) A[4][k] . B[k][16]. Strides in bytes. Rows start from `bias` (16 floats, every row)
-  ;; unless `acc`, then from C. With `gelu`, GELU is applied before the store.
+  ;; C[2][16] (=|+=) A[2][k] . B[k][16]. Strides in bytes. Rows start from `bias` (16 floats, every row)
+  ;; unless `acc`, then from C. Sized for x86-64, where JSC has 16 XMM registers: 8 accumulators, the A
+  ;; splat and the 4 B vectors fit (4 x 16 spilled there). Each A row has its own pointer: splats at a
+  ;; load offset from one pointer came out as a GPR load + vmovq + vshufps instead of one vbroadcastss.
+  ;; No calls in here (GELU is a pass of its own): every vector register is caller-saved, and one call
+  ;; after the loop was enough for JSC to keep all accumulators on the stack, inside the loop too.
   (func $mk (param $a i32) (param $lda i32) (param $b i32) (param $ldb i32)
-            (param $c i32) (param $ldc i32) (param $k i32) (param $acc i32) (param $bias i32) (param $gelu i32)
-    (local $a1 i32) (local $a2 i32) (local $a3 i32) (local $c1 i32) (local $c2 i32) (local $c3 i32)
+            (param $c i32) (param $ldc i32) (param $k i32) (param $acc i32) (param $bias i32)
+    (local $a1 i32) (local $c1 i32)
     (local $x00 v128) (local $x01 v128) (local $x02 v128) (local $x03 v128)
-    (local $x10 v128) (local $x11 v128) (local $x12 v128) (local $x13 v128)
-    (local $x20 v128) (local $x21 v128) (local $x22 v128) (local $x23 v128)
-    (local $x30 v128) (local $x31 v128) (local $x32 v128) (local $x33 v128)
-    (local $b0 v128) (local $b1 v128) (local $b2 v128) (local $b3 v128) (local $av v128)
+    (local $x10 v128) (local $x11 v128) (local $x12 v128) (local $x13 v128) (local $av v128)
     (local.set $a1 (i32.add (local.get $a) (local.get $lda)))
-    (local.set $a2 (i32.add (local.get $a1) (local.get $lda)))
-    (local.set $a3 (i32.add (local.get $a2) (local.get $lda)))
     (local.set $c1 (i32.add (local.get $c) (local.get $ldc)))
-    (local.set $c2 (i32.add (local.get $c1) (local.get $ldc)))
-    (local.set $c3 (i32.add (local.get $c2) (local.get $ldc)))
     (if (local.get $acc)
       (then
         (local.set $x00 (v128.load offset=0 (local.get $c)))
@@ -207,69 +213,31 @@
         (local.set $x10 (v128.load offset=0 (local.get $c1)))
         (local.set $x11 (v128.load offset=16 (local.get $c1)))
         (local.set $x12 (v128.load offset=32 (local.get $c1)))
-        (local.set $x13 (v128.load offset=48 (local.get $c1)))
-        (local.set $x20 (v128.load offset=0 (local.get $c2)))
-        (local.set $x21 (v128.load offset=16 (local.get $c2)))
-        (local.set $x22 (v128.load offset=32 (local.get $c2)))
-        (local.set $x23 (v128.load offset=48 (local.get $c2)))
-        (local.set $x30 (v128.load offset=0 (local.get $c3)))
-        (local.set $x31 (v128.load offset=16 (local.get $c3)))
-        (local.set $x32 (v128.load offset=32 (local.get $c3)))
-        (local.set $x33 (v128.load offset=48 (local.get $c3))))
+        (local.set $x13 (v128.load offset=48 (local.get $c1))))
       (else
         (local.set $x00 (v128.load offset=0 (local.get $bias)))
         (local.set $x01 (v128.load offset=16 (local.get $bias)))
         (local.set $x02 (v128.load offset=32 (local.get $bias)))
         (local.set $x03 (v128.load offset=48 (local.get $bias)))
         (local.set $x10 (local.get $x00)) (local.set $x11 (local.get $x01))
-        (local.set $x12 (local.get $x02)) (local.set $x13 (local.get $x03))
-        (local.set $x20 (local.get $x00)) (local.set $x21 (local.get $x01))
-        (local.set $x22 (local.get $x02)) (local.set $x23 (local.get $x03))
-        (local.set $x30 (local.get $x00)) (local.set $x31 (local.get $x01))
-        (local.set $x32 (local.get $x02)) (local.set $x33 (local.get $x03))))
+        (local.set $x12 (local.get $x02)) (local.set $x13 (local.get $x03))))
     (block $done
       (br_if $done (i32.eqz (local.get $k)))
       (loop $l
-        (local.set $b0 (v128.load offset=0 (local.get $b)))
-        (local.set $b1 (v128.load offset=16 (local.get $b)))
-        (local.set $b2 (v128.load offset=32 (local.get $b)))
-        (local.set $b3 (v128.load offset=48 (local.get $b)))
         (local.set $av (v128.load32_splat (local.get $a)))
-        (local.set $x00 (f32x4.add (f32x4.mul (local.get $av) (local.get $b0)) (local.get $x00)))
-        (local.set $x01 (f32x4.add (f32x4.mul (local.get $av) (local.get $b1)) (local.get $x01)))
-        (local.set $x02 (f32x4.add (f32x4.mul (local.get $av) (local.get $b2)) (local.get $x02)))
-        (local.set $x03 (f32x4.add (f32x4.mul (local.get $av) (local.get $b3)) (local.get $x03)))
+        (local.set $x00 (f32x4.add (f32x4.mul (local.get $av) (v128.load offset=0 (local.get $b))) (local.get $x00)))
+        (local.set $x01 (f32x4.add (f32x4.mul (local.get $av) (v128.load offset=16 (local.get $b))) (local.get $x01)))
+        (local.set $x02 (f32x4.add (f32x4.mul (local.get $av) (v128.load offset=32 (local.get $b))) (local.get $x02)))
+        (local.set $x03 (f32x4.add (f32x4.mul (local.get $av) (v128.load offset=48 (local.get $b))) (local.get $x03)))
         (local.set $av (v128.load32_splat (local.get $a1)))
-        (local.set $x10 (f32x4.add (f32x4.mul (local.get $av) (local.get $b0)) (local.get $x10)))
-        (local.set $x11 (f32x4.add (f32x4.mul (local.get $av) (local.get $b1)) (local.get $x11)))
-        (local.set $x12 (f32x4.add (f32x4.mul (local.get $av) (local.get $b2)) (local.get $x12)))
-        (local.set $x13 (f32x4.add (f32x4.mul (local.get $av) (local.get $b3)) (local.get $x13)))
-        (local.set $av (v128.load32_splat (local.get $a2)))
-        (local.set $x20 (f32x4.add (f32x4.mul (local.get $av) (local.get $b0)) (local.get $x20)))
-        (local.set $x21 (f32x4.add (f32x4.mul (local.get $av) (local.get $b1)) (local.get $x21)))
-        (local.set $x22 (f32x4.add (f32x4.mul (local.get $av) (local.get $b2)) (local.get $x22)))
-        (local.set $x23 (f32x4.add (f32x4.mul (local.get $av) (local.get $b3)) (local.get $x23)))
-        (local.set $av (v128.load32_splat (local.get $a3)))
-        (local.set $x30 (f32x4.add (f32x4.mul (local.get $av) (local.get $b0)) (local.get $x30)))
-        (local.set $x31 (f32x4.add (f32x4.mul (local.get $av) (local.get $b1)) (local.get $x31)))
-        (local.set $x32 (f32x4.add (f32x4.mul (local.get $av) (local.get $b2)) (local.get $x32)))
-        (local.set $x33 (f32x4.add (f32x4.mul (local.get $av) (local.get $b3)) (local.get $x33)))
+        (local.set $x10 (f32x4.add (f32x4.mul (local.get $av) (v128.load offset=0 (local.get $b))) (local.get $x10)))
+        (local.set $x11 (f32x4.add (f32x4.mul (local.get $av) (v128.load offset=16 (local.get $b))) (local.get $x11)))
+        (local.set $x12 (f32x4.add (f32x4.mul (local.get $av) (v128.load offset=32 (local.get $b))) (local.get $x12)))
+        (local.set $x13 (f32x4.add (f32x4.mul (local.get $av) (v128.load offset=48 (local.get $b))) (local.get $x13)))
         (local.set $a (i32.add (local.get $a) (i32.const 4)))
         (local.set $a1 (i32.add (local.get $a1) (i32.const 4)))
-        (local.set $a2 (i32.add (local.get $a2) (i32.const 4)))
-        (local.set $a3 (i32.add (local.get $a3) (i32.const 4)))
         (local.set $b (i32.add (local.get $b) (local.get $ldb)))
         (br_if $l (local.tee $k (i32.sub (local.get $k) (i32.const 1))))))
-    (if (local.get $gelu)
-      (then
-        (local.set $x00 (call $gelu4 (local.get $x00))) (local.set $x01 (call $gelu4 (local.get $x01)))
-        (local.set $x02 (call $gelu4 (local.get $x02))) (local.set $x03 (call $gelu4 (local.get $x03)))
-        (local.set $x10 (call $gelu4 (local.get $x10))) (local.set $x11 (call $gelu4 (local.get $x11)))
-        (local.set $x12 (call $gelu4 (local.get $x12))) (local.set $x13 (call $gelu4 (local.get $x13)))
-        (local.set $x20 (call $gelu4 (local.get $x20))) (local.set $x21 (call $gelu4 (local.get $x21)))
-        (local.set $x22 (call $gelu4 (local.get $x22))) (local.set $x23 (call $gelu4 (local.get $x23)))
-        (local.set $x30 (call $gelu4 (local.get $x30))) (local.set $x31 (call $gelu4 (local.get $x31)))
-        (local.set $x32 (call $gelu4 (local.get $x32))) (local.set $x33 (call $gelu4 (local.get $x33)))))
     (v128.store offset=0 (local.get $c) (local.get $x00))
     (v128.store offset=16 (local.get $c) (local.get $x01))
     (v128.store offset=32 (local.get $c) (local.get $x02))
@@ -277,15 +245,7 @@
     (v128.store offset=0 (local.get $c1) (local.get $x10))
     (v128.store offset=16 (local.get $c1) (local.get $x11))
     (v128.store offset=32 (local.get $c1) (local.get $x12))
-    (v128.store offset=48 (local.get $c1) (local.get $x13))
-    (v128.store offset=0 (local.get $c2) (local.get $x20))
-    (v128.store offset=16 (local.get $c2) (local.get $x21))
-    (v128.store offset=32 (local.get $c2) (local.get $x22))
-    (v128.store offset=48 (local.get $c2) (local.get $x23))
-    (v128.store offset=0 (local.get $c3) (local.get $x30))
-    (v128.store offset=16 (local.get $c3) (local.get $x31))
-    (v128.store offset=32 (local.get $c3) (local.get $x32))
-    (v128.store offset=48 (local.get $c3) (local.get $x33)))
+    (v128.store offset=48 (local.get $c1) (local.get $x13)))
 
   ;; Rewrites one quantized N x K matrix in place, once, into panels of 16 output columns:
   ;; weights [N/16][K][16] int8 (q - 128), scales [N/16][K/32][16] f32. H and TMP serve as scratch.
@@ -316,7 +276,14 @@
     (memory.copy (local.get $wq) (global.get $H) (i32.mul (local.get $N) (local.get $K)))
     (memory.copy (local.get $ws) (global.get $TMP) (i32.shl (i32.mul (local.get $N) (local.get $nb)) (i32.const 2))))
 
-  ;; Once after the weights are in: the 18 encoder matrices into panels.
+  ;; p[0..n] *= 1/8
+  (func $scale8 (param $p i32) (param $n i32)
+    (loop $l
+      (f32.store (local.get $p) (f32.mul (f32.load (local.get $p)) (f32.const 0.125)))
+      (local.set $p (i32.add (local.get $p) (i32.const 4)))
+      (br_if $l (local.tee $n (i32.sub (local.get $n) (i32.const 1))))))
+
+  ;; Once after the weights are in: the 18 encoder matrices into panels, Q pre-scaled.
   (func (export "prepare")
     (local $l i32) (local $m i32) (local $base i32) (local $N i32) (local $K i32)
     (loop $layers
@@ -331,6 +298,9 @@
           (call $slot (i32.add (local.get $base) (i32.add (i32.shl (local.get $m) (i32.const 1)) (i32.const 1))))
           (local.get $N) (local.get $K))
         (br_if $mats (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 1))) (i32.const 6))))
+      ;; Q / 8 (the 1/sqrt(64) of the scores) through Q's scales and bias, exact as a power of 2
+      (call $scale8 (call $slot (i32.add (local.get $base) (i32.const 1))) (i32.const 18432))
+      (call $scale8 (call $slot (i32.add (local.get $base) (i32.const 12))) (i32.const 768))
       (br_if $layers (i32.lt_u (local.tee $l (i32.add (local.get $l) (i32.const 1))) (i32.const 3)))))
 
   ;; Dequantizes panel n0/16, rows kb .. kb+kc, into dst[kc][16] (layout of $to_panels).
@@ -370,7 +340,7 @@
   ;; C[0..SP][n0..n0+16] = A[SP][K] . W^T + bias (then GELU), W quantized N x K. ldc in floats.
   (func $gemm_panel (param $a i32) (param $K i32) (param $wq i32) (param $ws i32) (param $bias i32)
                     (param $c i32) (param $ldc i32) (param $n0 i32) (param $gelu i32)
-    (local $pack i32) (local $kb i32) (local $m i32) (local $sp i32) (local $last i32)
+    (local $pack i32) (local $kb i32) (local $m i32) (local $sp i32)
     (local $lda i32) (local $ldcb i32) (local $cp i32) (local $ap i32)
     (local.set $pack (i32.add (global.get $SCR) (i32.mul (global.get $tid) (global.get $SCR_STRIDE))))
     (local.set $sp (i32.load (global.get $SP)))
@@ -379,7 +349,6 @@
     (loop $kblocks
       (call $pack (local.get $wq) (local.get $ws) (local.get $K) (local.get $n0) (local.get $kb)
         (global.get $KC) (local.get $pack))
-      (local.set $last (i32.ge_u (i32.add (local.get $kb) (global.get $KC)) (local.get $K)))
       (local.set $m (i32.const 0))
       (local.set $cp (i32.add (local.get $c) (i32.shl (local.get $n0) (i32.const 2))))
       (local.set $ap (i32.add (local.get $a) (i32.shl (local.get $kb) (i32.const 2))))
@@ -387,12 +356,23 @@
         (call $mk (local.get $ap) (local.get $lda) (local.get $pack) (i32.const 64)
           (local.get $cp) (local.get $ldcb) (global.get $KC)
           (local.get $kb) ;; accumulate after the first block
-          (i32.add (local.get $bias) (i32.shl (local.get $n0) (i32.const 2)))
-          (i32.and (local.get $gelu) (local.get $last)))
-        (local.set $ap (i32.add (local.get $ap) (i32.shl (local.get $lda) (i32.const 2))))
-        (local.set $cp (i32.add (local.get $cp) (i32.shl (local.get $ldcb) (i32.const 2))))
-        (br_if $rows (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 4))) (local.get $sp))))
-      (br_if $kblocks (i32.lt_u (local.tee $kb (i32.add (local.get $kb) (global.get $KC))) (local.get $K)))))
+          (i32.add (local.get $bias) (i32.shl (local.get $n0) (i32.const 2))))
+        (local.set $ap (i32.add (local.get $ap) (i32.mul (local.get $lda) (i32.const 2))))
+        (local.set $cp (i32.add (local.get $cp) (i32.mul (local.get $ldcb) (i32.const 2))))
+        (br_if $rows (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 2))) (local.get $sp))))
+      (br_if $kblocks (i32.lt_u (local.tee $kb (i32.add (local.get $kb) (global.get $KC))) (local.get $K))))
+    ;; GELU over the finished strip, apart from $mk (see there)
+    (if (local.get $gelu)
+      (then
+        (local.set $cp (i32.add (local.get $c) (i32.shl (local.get $n0) (i32.const 2))))
+        (local.set $m (i32.const 0))
+        (loop $g
+          (v128.store offset=0 (local.get $cp) (call $gelu4 (v128.load offset=0 (local.get $cp))))
+          (v128.store offset=16 (local.get $cp) (call $gelu4 (v128.load offset=16 (local.get $cp))))
+          (v128.store offset=32 (local.get $cp) (call $gelu4 (v128.load offset=32 (local.get $cp))))
+          (v128.store offset=48 (local.get $cp) (call $gelu4 (v128.load offset=48 (local.get $cp))))
+          (local.set $cp (i32.add (local.get $cp) (local.get $ldcb)))
+          (br_if $g (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 1))) (local.get $sp)))))))
 
   ;; ---------------------------------------------------------------- steps
 
@@ -434,86 +414,151 @@
       (br_if $cols (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 16))) (i32.const 3072))))
     (call $ln (local.get $x) (local.get $g) (local.get $b)))
 
-  ;; One head, query rows rb*64 .. +64: softmax(Q K^T / 8 + bias) V into CTX.
+  ;; One head, query rows rb*64 .. +64: softmax(Q K^T / 8 + bias) V into CTX (Q is already / 8, see
+  ;; prepare). K and V come as panels of 16 columns, contiguous (KT and VP, see $kv_strip): read with
+  ;; their row strides (2-3 KB), 64+ rows would fall in a few L1 sets. The column strip is the outer loop
+  ;; of both products, so that their B panel stays in L1. The 1/sum of the softmax is applied to the
+  ;; 64-wide output row, not to the S-wide scores.
   (func $attention (param $h i32) (param $rb i32)
-    (local $s i32) (local $sp i32) (local $kt i32) (local $sc i32) (local $i0 i32) (local $r i32)
-    (local $j i32) (local $d i32) (local $m i32) (local $n i32) (local $row i32) (local $src i32)
-    (local $mx v128) (local $sum v128) (local $v v128) (local $ldsc i32) (local $hoff i32)
+    (local $s i32) (local $sp i32) (local $inv i32) (local $sc i32) (local $i0 i32) (local $r i32)
+    (local $j i32) (local $m i32) (local $n i32) (local $row i32) (local $kt i32)
+    (local $mx v128) (local $sum v128) (local $v v128) (local $ldsc i32) (local $hoff i32) (local $out i32)
+    (local $x v128) (local $e v128) (local $t v128) (local $p v128) (local $under v128) (local $mg v128)
     (local.set $s (i32.load (global.get $S)))
     (local.set $sp (i32.load (global.get $SP)))
-    (local.set $kt (i32.add (global.get $SCR) (i32.mul (global.get $tid) (global.get $SCR_STRIDE))))
-    (local.set $sc (i32.add (local.get $kt) (global.get $SCORES_AT)))
+    (local.set $inv (i32.add (global.get $SCR) (i32.mul (global.get $tid) (global.get $SCR_STRIDE))))
+    (local.set $sc (i32.add (local.get $inv) (global.get $SCORES_AT)))
     (local.set $i0 (i32.shl (local.get $rb) (i32.const 6)))
     (local.set $r (i32.sub (local.get $sp) (local.get $i0)))
     (if (i32.gt_u (local.get $r) (i32.const 64)) (then (local.set $r (i32.const 64))))
     (local.set $ldsc (i32.shl (local.get $sp) (i32.const 2)))
     (local.set $hoff (i32.shl (local.get $h) (i32.const 8))) ;; h * 64 floats, in bytes
-    ;; Kt[d][j] = K[j][h*64 + d]
-    (local.set $j (i32.const 0))
-    (loop $tj
-      (local.set $src (i32.add (i32.add (global.get $K) (i32.mul (local.get $j) (i32.const 3072))) (local.get $hoff)))
-      (local.set $d (i32.const 0))
-      (loop $td
-        (f32.store (i32.add (local.get $kt)
-            (i32.shl (i32.add (i32.mul (local.get $d) (local.get $sp)) (local.get $j)) (i32.const 2)))
-          (f32.load (i32.add (local.get $src) (i32.shl (local.get $d) (i32.const 2)))))
-        (br_if $td (i32.lt_u (local.tee $d (i32.add (local.get $d) (i32.const 1))) (i32.const 64))))
-      (br_if $tj (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 1))) (local.get $sp))))
-    ;; scores[r][j] = Q[i0 + r][h] . Kt[.][j]
-    (local.set $m (i32.const 0))
-    (loop $sm
-      (local.set $n (i32.const 0))
-      (loop $sn
+    ;; head h of KT: KT + h * 64 * SP floats
+    (local.set $kt (i32.add (global.get $KT) (i32.mul (local.get $hoff) (local.get $sp))))
+    ;; scores[r][j] = bias[j] + Q[i0 + r][h] . K[j][h]
+    (local.set $n (i32.const 0))
+    (loop $sn
+      (local.set $m (i32.const 0))
+      (loop $sm
         (call $mk
           (i32.add (i32.add (global.get $Q) (i32.mul (i32.add (local.get $i0) (local.get $m)) (i32.const 3072)))
             (local.get $hoff))
           (i32.const 3072)
-          (i32.add (local.get $kt) (i32.shl (local.get $n) (i32.const 2))) (local.get $ldsc)
+          (i32.add (local.get $kt) (i32.shl (local.get $n) (i32.const 8))) (i32.const 64)
           (i32.add (local.get $sc) (i32.shl (i32.add (i32.mul (local.get $m) (local.get $sp)) (local.get $n)) (i32.const 2)))
-          (local.get $ldsc) (i32.const 64) (i32.const 0) (global.get $ZERO) (i32.const 0))
-        (br_if $sn (i32.lt_u (local.tee $n (i32.add (local.get $n) (i32.const 16))) (local.get $sp))))
-      (br_if $sm (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 4))) (local.get $r))))
-    ;; softmax of each row over all SP columns (padding has bias -65504 and comes out as 0)
+          (local.get $ldsc) (i32.const 64) (i32.const 0)
+          (i32.add (global.get $BIAS) (i32.shl (local.get $n) (i32.const 2))))
+        (br_if $sm (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 2))) (local.get $r))))
+      (br_if $sn (i32.lt_u (local.tee $n (i32.add (local.get $n) (i32.const 16))) (local.get $sp))))
+    ;; e^(x - max) of each row over all SP columns (padding has bias -65504 and comes out as 0); 1/sum to $inv
     (local.set $m (i32.const 0))
     (loop $rows
       (local.set $row (i32.add (local.get $sc) (i32.mul (local.get $m) (local.get $ldsc))))
       (local.set $mx (v128.const f32x4 -inf -inf -inf -inf))
       (local.set $j (i32.const 0))
       (loop $c1
-        (local.set $v (f32x4.add
-          (f32x4.mul (v128.load (i32.add (local.get $row) (local.get $j))) (v128.const f32x4 0.125 0.125 0.125 0.125))
-          (v128.load (i32.add (global.get $BIAS) (local.get $j)))))
-        (v128.store (i32.add (local.get $row) (local.get $j)) (local.get $v))
-        (local.set $mx (f32x4.max (local.get $mx) (local.get $v)))
+        (local.set $mx (f32x4.pmax (local.get $mx) (v128.load (i32.add (local.get $row) (local.get $j)))))
         (br_if $c1 (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 16))) (local.get $ldsc))))
       (local.set $mx (f32x4.splat (call $hmax (local.get $mx))))
       (local.set $sum (v128.const f32x4 0 0 0 0))
       (local.set $j (i32.const 0))
       (loop $c2
-        (local.set $v (call $exp4 (f32x4.sub (v128.load (i32.add (local.get $row) (local.get $j))) (local.get $mx))))
+        (local.set $x (f32x4.sub (v128.load (i32.add (local.get $row) (local.get $j))) (local.get $mx)))
+        ;; $exp4, inlined: a call here would spill the loop's state (see $mk)
+        (local.set $under (f32x4.lt (local.get $x) (v128.const f32x4 -87.3 -87.3 -87.3 -87.3)))
+        (local.set $x (f32x4.pmax (local.get $x) (v128.const f32x4 -87.3 -87.3 -87.3 -87.3)))
+        (local.set $mg (f32x4.add (f32x4.mul (local.get $x)
+          (v128.const f32x4 1.44269504 1.44269504 1.44269504 1.44269504))
+          (v128.const f32x4 12582912 12582912 12582912 12582912)))
+        (local.set $e (f32x4.sub (local.get $mg) (v128.const f32x4 12582912 12582912 12582912 12582912)))
+        (local.set $t (f32x4.sub (local.get $x) (f32x4.mul (local.get $e)
+          (v128.const f32x4 0.693359375 0.693359375 0.693359375 0.693359375))))
+        (local.set $t (f32x4.sub (local.get $t) (f32x4.mul (local.get $e)
+          (v128.const f32x4 -2.12194440e-4 -2.12194440e-4 -2.12194440e-4 -2.12194440e-4))))
+        (local.set $p (v128.const f32x4 1.3888889e-3 1.3888889e-3 1.3888889e-3 1.3888889e-3))
+        (local.set $p (f32x4.add (f32x4.mul (local.get $p) (local.get $t))
+          (v128.const f32x4 8.3333333e-3 8.3333333e-3 8.3333333e-3 8.3333333e-3)))
+        (local.set $p (f32x4.add (f32x4.mul (local.get $p) (local.get $t))
+          (v128.const f32x4 4.1666667e-2 4.1666667e-2 4.1666667e-2 4.1666667e-2)))
+        (local.set $p (f32x4.add (f32x4.mul (local.get $p) (local.get $t))
+          (v128.const f32x4 0.16666667 0.16666667 0.16666667 0.16666667)))
+        (local.set $p (f32x4.add (f32x4.mul (local.get $p) (local.get $t))
+          (v128.const f32x4 0.5 0.5 0.5 0.5)))
+        (local.set $p (f32x4.add (f32x4.mul (local.get $p) (local.get $t))
+          (v128.const f32x4 1 1 1 1)))
+        (local.set $p (f32x4.add (f32x4.mul (local.get $p) (local.get $t))
+          (v128.const f32x4 1 1 1 1)))
+        (local.set $v (v128.andnot
+          (f32x4.mul (local.get $p)
+            (i32x4.shl (i32x4.add (local.get $mg) (v128.const i32x4 127 127 127 127)) (i32.const 23)))
+          (local.get $under)))
         (v128.store (i32.add (local.get $row) (local.get $j)) (local.get $v))
         (local.set $sum (f32x4.add (local.get $sum) (local.get $v)))
         (br_if $c2 (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 16))) (local.get $ldsc))))
-      (local.set $sum (f32x4.splat (f32.div (f32.const 1) (call $hsum (local.get $sum)))))
-      (local.set $j (i32.const 0))
-      (loop $c3
-        (v128.store (i32.add (local.get $row) (local.get $j))
-          (f32x4.mul (v128.load (i32.add (local.get $row) (local.get $j))) (local.get $sum)))
-        (br_if $c3 (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 16))) (local.get $ldsc))))
+      (f32.store (i32.add (local.get $inv) (i32.shl (local.get $m) (i32.const 2)))
+        (f32.div (f32.const 1) (call $hsum (local.get $sum))))
       (br_if $rows (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 1))) (local.get $r))))
-    ;; CTX[i0 + r][h] = P[r][0..S] . V[0..S][h]
-    (local.set $m (i32.const 0))
-    (loop $pm
-      (local.set $n (i32.const 0))
-      (loop $pn
+    ;; CTX[i0 + r][h] = (P[r][0..S] . V[0..S][h]) / sum[r]
+    (local.set $n (i32.const 0))
+    (loop $pn
+      (local.set $m (i32.const 0))
+      (loop $pm
         (call $mk
           (i32.add (local.get $sc) (i32.mul (local.get $m) (local.get $ldsc))) (local.get $ldsc)
-          (i32.add (i32.add (global.get $V) (local.get $hoff)) (i32.shl (local.get $n) (i32.const 2))) (i32.const 3072)
+          (i32.add (global.get $VP) (i32.mul (i32.add (i32.shl (local.get $h) (i32.const 2)) (i32.shr_u (local.get $n) (i32.const 4)))
+            (i32.shl (local.get $sp) (i32.const 6)))) (i32.const 64)
           (i32.add (i32.add (global.get $CTX) (i32.mul (i32.add (local.get $i0) (local.get $m)) (i32.const 3072)))
             (i32.add (local.get $hoff) (i32.shl (local.get $n) (i32.const 2))))
-          (i32.const 3072) (local.get $s) (i32.const 0) (global.get $ZERO) (i32.const 0))
-        (br_if $pn (i32.lt_u (local.tee $n (i32.add (local.get $n) (i32.const 16))) (i32.const 64))))
-      (br_if $pm (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 4))) (local.get $r)))))
+          (i32.const 3072) (local.get $s) (i32.const 0) (global.get $ZERO))
+        (br_if $pm (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 2))) (local.get $r))))
+      (br_if $pn (i32.lt_u (local.tee $n (i32.add (local.get $n) (i32.const 16))) (i32.const 64))))
+    (local.set $m (i32.const 0))
+    (loop $scale
+      (local.set $out (i32.add (i32.add (global.get $CTX) (i32.mul (i32.add (local.get $i0) (local.get $m)) (i32.const 3072)))
+        (local.get $hoff)))
+      (local.set $v (v128.load32_splat (i32.add (local.get $inv) (i32.shl (local.get $m) (i32.const 2)))))
+      (local.set $j (i32.const 0))
+      (loop $c
+        (v128.store (i32.add (local.get $out) (local.get $j))
+          (f32x4.mul (v128.load (i32.add (local.get $out) (local.get $j))) (local.get $v)))
+        (br_if $c (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 16))) (i32.const 256))))
+      (br_if $scale (i32.lt_u (local.tee $m (i32.add (local.get $m) (i32.const 1))) (local.get $r)))))
+
+  ;; After the QKV task that wrote columns n0 .. n0+16 of K or V, for rows j < SP, while they are in cache:
+  ;;   K into KT[h][j/16][d][j%16] (h = n0/64, d = n mod 64), the B operand of the scores, 64 x 16 per block;
+  ;;   V into VP[n0/16][j][16], the B operand of P V.
+  ;; KT lives in TMP and VP in H, both free from QKV to OPROJ.
+  (func $kv_strip (param $mat i32) (param $n0 i32)
+    (local $sp i32) (local $j i32) (local $src i32) (local $dst i32) (local $c i32)
+    (local.set $sp (i32.load (global.get $SP)))
+    (if (i32.eq (local.get $mat) (i32.const 2))
+      (then
+        (local.set $src (i32.add (global.get $V) (i32.shl (local.get $n0) (i32.const 2))))
+        (local.set $dst (i32.add (global.get $VP) (i32.mul (i32.shr_u (local.get $n0) (i32.const 4)) (i32.shl (local.get $sp) (i32.const 6)))))
+        (loop $rows
+          (v128.store offset=0 (local.get $dst) (v128.load offset=0 (local.get $src)))
+          (v128.store offset=16 (local.get $dst) (v128.load offset=16 (local.get $src)))
+          (v128.store offset=32 (local.get $dst) (v128.load offset=32 (local.get $src)))
+          (v128.store offset=48 (local.get $dst) (v128.load offset=48 (local.get $src)))
+          (local.set $src (i32.add (local.get $src) (i32.const 3072)))
+          (local.set $dst (i32.add (local.get $dst) (i32.const 64)))
+          (br_if $rows (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 1))) (local.get $sp))))
+        (return)))
+    (local.set $src (i32.add (global.get $K) (i32.shl (local.get $n0) (i32.const 2))))
+    (loop $rows
+      ;; KT + h*64*SP*4 + (j/16)*4096 + d*64 + (j%16)*4
+      (local.set $dst (i32.add (global.get $KT) (i32.add
+        (i32.add (i32.mul (i32.shr_u (local.get $n0) (i32.const 6)) (i32.shl (local.get $sp) (i32.const 8)))
+          (i32.shl (i32.shr_u (local.get $j) (i32.const 4)) (i32.const 12)))
+        (i32.add (i32.shl (i32.and (local.get $n0) (i32.const 63)) (i32.const 6))
+          (i32.shl (i32.and (local.get $j) (i32.const 15)) (i32.const 2))))))
+      (local.set $c (i32.const 0))
+      (loop $cols
+        (f32.store (local.get $dst) (f32.load (i32.add (local.get $src) (i32.shl (local.get $c) (i32.const 2)))))
+        (local.set $dst (i32.add (local.get $dst) (i32.const 64)))
+        (br_if $cols (i32.lt_u (local.tee $c (i32.add (local.get $c) (i32.const 1))) (i32.const 16))))
+      (local.set $src (i32.add (local.get $src) (i32.const 3072)))
+      (br_if $rows (i32.lt_u (local.tee $j (i32.add (local.get $j) (i32.const 1))) (local.get $sp)))))
 
   (func $task (param $op i32) (param $t i32)
     (local $base i32) (local $i i32) (local $end i32) (local $mat i32)
@@ -538,6 +583,8 @@
             (i32.const 768)
             (i32.shl (i32.rem_u (local.get $t) (i32.const 48)) (i32.const 4))
             (i32.const 0))
+          (if (local.get $mat)
+            (then (call $kv_strip (local.get $mat) (i32.shl (i32.rem_u (local.get $t) (i32.const 48)) (i32.const 4)))))
           (br $out)))
       (if (i32.eq (local.get $op) (global.get $OP_ATTN))
         (then
