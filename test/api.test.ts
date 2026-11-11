@@ -64,7 +64,7 @@ describe("metadata endpoints", () => {
       },
       align: {
         status: "unavailable",
-        error: "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts",
+        error: "libllama is not installed; run bun scripts/build_llama.ts",
         max_chars: 20_000,
       },
       transcribe: {

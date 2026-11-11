@@ -129,29 +129,22 @@ describe("readDense", () => {
 });
 
 describe("embed", () => {
-  test("pools each text's first token in batches, shortest first, padded with a mask; vectors come back in order", () => {
+  test("pools each text's [CLS] state in batches, shortest first; vectors come back in order", () => {
     const texts = Array.from({ length: 20 }, (_, k) => "play ".repeat(k + 1));
-    const batches: { rows: number; width: number; masked: number }[] = [];
-    const vectors = embed(tokenizer, identity, texts, (ids, mask, rows, width) => {
-      batches.push({ rows, width, masked: mask.filter((m) => m === 0n).length });
+    const batches: number[][] = [];
+    const vectors = embed(tokenizer, identity, texts, (sequences) => {
+      batches.push(sequences.map((s) => s.length));
       // The [CLS] state of each row says how many tokens it has: on axis 0, (tokens) / 100.
-      const out = new Float32Array(rows * width * DIMENSIONS);
-      for (let row = 0; row < rows; row++) {
-        let tokens = 0;
-        for (let k = 0; k < width; k++) {
-          tokens += Number(mask[row * width + k]);
-        }
-        out[row * width * DIMENSIONS] = tokens / 100;
-        out[row * width * DIMENSIONS + 1] = 0.5;
-      }
+      const out = new Float32Array(sequences.length * DIMENSIONS);
+      sequences.forEach((s, row) => {
+        out[row * DIMENSIONS] = s.length / 100;
+        out[row * DIMENSIONS + 1] = 0.5;
+      });
       return out;
     })!;
-    expect(batches.map((b) => [b.rows, b.width])).toStrictEqual([
-      [16, 18],
-      [4, 22],
-    ]);
-    // In the first batch, row k holds k + 3 tokens of 18.
-    expect(batches[0]!.masked).toBe(Array.from({ length: 16 }, (_, k) => 18 - (k + 3)).reduce((a, b) => a + b));
+    // 16 sequences, then 4: row k of the first holds k + 3 tokens ([CLS], k + 1 words, [SEP]).
+    expect(batches.map((b) => b.length)).toStrictEqual([16, 4]);
+    expect(batches[0]).toStrictEqual(Array.from({ length: 16 }, (_, k) => k + 3));
     expect(vectors).toHaveLength(20);
     vectors.forEach((v, k) => {
       const a = Math.tanh((k + 3) / 100);
@@ -168,9 +161,9 @@ describe("embed", () => {
       tokenizer,
       identity,
       texts,
-      (_ids, _mask, rows, width) => {
+      (sequences) => {
         runs++;
-        return new Float32Array(rows * width * DIMENSIONS);
+        return new Float32Array(sequences.length * DIMENSIONS);
       },
       () => runs >= 1,
     );

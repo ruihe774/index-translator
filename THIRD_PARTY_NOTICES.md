@@ -19,7 +19,7 @@ names them and says where the full texts are. The AppImage carries this file in
 | [libsoxr](https://sourceforge.net/projects/soxr/) (the SoX Resampler Library, `libsoxr.so.0`; `soxr.dll` in the Windows installer), version and commit pinned in `scripts/build_soxr.ts`, built unchanged | Resampling for audio.cpp (the voice samples) and for the Opus encoder (the speech) | LGPL-2.1 or later, Copyright (c) 2007-18 robs; the PFFFT code in it is under a BSD-like license (Copyright (c) 2013 Julien Pommier, and 2004 University Corporation for Atmospheric Research for the FFTPACK parts), stated in its source file; it is a separate shared library that can be replaced by another build of the same version, and its source is the repository at the pinned commit (the same files as the release tarball `soxr-0.1.3-Source.tar.xz`) | `vendor/soxr/LICENCE` and `vendor/soxr/COPYING.LGPL` |
 | [libopus](https://opus-codec.org) (`libopus.so.0`; `opus.dll` in the Windows installer), version and commit pinned in `scripts/build_libopus.ts`, built unchanged | Encoding the speech stream as Opus; libsoxr resamples the audio it takes | BSD-3-Clause, Copyright 2001-2023 Xiph.Org, Skype Limited, Octasic, Jean-Marc Valin, Timothy B. Terriberry, CSIRO, Gregory Maxwell, Mark Borgerding, Erik de Castro Lopo, Mozilla, Amazon, with the royalty-free patent licenses named in the text | `vendor/opus/COPYING` |
 | [turndown](https://github.com/mixmark-io/turndown) (its browser build, `dist/turndown.js` of the npm package), pinned in `scripts/fetch_turndown.ts` | Runs inside a web page the server opens: the page's HTML as Markdown | MIT, Copyright (c) 2017 Dom Christie | `vendor/turndown/LICENSE` |
-| [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.31.0 (Microsoft's official release build, CPU only: `libonnxruntime.so.1.31.0`; `onnxruntime.dll` in the Windows installer), pinned in `scripts/fetch_onnxruntime.ts`, used unchanged | Sentence segmentation and alignment (the SaT and LaBSE models below) | MIT, Copyright (c) Microsoft Corporation; the release's own `ThirdPartyNotices.txt`, shipped alongside the library, lists the licenses of the components compiled into it | `vendor/onnxruntime/LICENSE` and `vendor/onnxruntime/ThirdPartyNotices.txt` |
+| [ONNX Runtime](https://github.com/microsoft/onnxruntime) 1.31.0 (Microsoft's official release build, CPU only: `libonnxruntime.so.1.31.0`; `onnxruntime.dll` in the Windows installer), pinned in `scripts/fetch_onnxruntime.ts`, used unchanged | Sentence segmentation (the SaT model below; LaBSE runs on llama.cpp) | MIT, Copyright (c) Microsoft Corporation; the release's own `ThirdPartyNotices.txt`, shipped alongside the library, lists the licenses of the components compiled into it | `vendor/onnxruntime/LICENSE` and `vendor/onnxruntime/ThirdPartyNotices.txt` |
 | NVIDIA CUDA runtime libraries (`libcudart.so.13`, `libcublas.so.13`, `libcublasLt.so.13`, and `libcufft.so.12` beside audio.cpp, of the CUDA 13 Toolkit), redistributed unchanged beside the engines in the AppImages with CUDA (`*-cuda.AppImage`) only, which have CUDA instead of Vulkan | The GPU backend of llama.cpp and audio.cpp in those AppImages | NVIDIA CUDA Toolkit End User License Agreement, which allows redistributing these libraries with an application (its Attachment A); the NVIDIA driver (`libcuda.so.1`) is not included | `vendor/llama.cpp-cuda/LICENSE.cuda` and `vendor/audio.cpp-cuda/LICENSE.cuda` |
 | [Bun](https://bun.sh) (`usr/bin/bun` in the AppImage, `bun.exe` on Windows), built from its source with `scripts/patches/bun-minimal.patch` | JavaScript runtime and HTTP server | MIT for Bun itself; the executable also contains statically linked components under their own licenses, among them JavaScriptCore (LGPL-2.0 or later) | <https://bun.com/docs/project/licensing> |
 
@@ -134,11 +134,13 @@ about to download and asks for `yes` first (the same text as here, in short).
 
 - Sentence embedding model (which sentence of a translation matches which of the source): LaBSE
   (Language-agnostic BERT Sentence Embedding, Feng et al., Google) as `sentence-transformers/LaBSE`,
-  in Xenova's 8-bit ONNX export (`Xenova/LaBSE`, `onnx/model_quantized.onnx`, saved as `model.onnx`)
-  with its `vocab.txt`, and the pooling layer of `sentence-transformers/LaBSE` (`2_Dense/model.safetensors`,
+  as keisuke-miyako's Q8_0 GGUF (`keisuke-miyako/LaBSE-gguf-q8_0`, `LaBSE-Q8_0.gguf`, saved as `model.gguf`;
+  llama.cpp's converter output), run by llama.cpp, with Xenova's copy of the WordPiece `vocab.txt`
+  (`Xenova/LaBSE`), and the pooling layer of `sentence-transformers/LaBSE` (`2_Dense/model.safetensors`,
   saved as `dense.safetensors`). The files are downloaded into `models/labse/`.
-- License: Apache-2.0 (as stated on the sentence-transformers model card; Xenova's export names it as its base model).
-- <https://huggingface.co/sentence-transformers/LaBSE>, <https://huggingface.co/Xenova/LaBSE>
+- License: Apache-2.0 (as stated on the sentence-transformers model card; the GGUF repository carries no license
+  of its own and names `sentence-transformers/LaBSE` as its base model, as Xenova's does).
+- <https://huggingface.co/sentence-transformers/LaBSE>, <https://huggingface.co/keisuke-miyako/LaBSE-gguf-q8_0>, <https://huggingface.co/Xenova/LaBSE>
 
 ## Methods from publications
 

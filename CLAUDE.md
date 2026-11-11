@@ -4,7 +4,7 @@ Local translation app. One Bun process serves the REST/SSE API and the static we
 in-process through `bun:ffi`, each on its own worker thread: llama.cpp (libllama, Vulkan; one model at a time; the
 chat model also translates images through libmtmd), audio.cpp (IndexTTS-2.5 reading aloud, Mel-Band RoFormer voice
 separation, and a preview of transcription: CED, Silero VAD and MOSS-Transcribe-Diarize) and ONNX Runtime on CPU
-(`POST /segment`: SaT sentence ends; `POST /align`: LaBSE embeddings and AIlign's DP). `POST /webpage` opens a page in
+(`POST /segment`: SaT sentence ends), beside LaBSE embeddings on libllama's CPU backend (`POST /align`, with AIlign's DP). `POST /webpage` opens a page in
 a headless browser (`Bun.WebView`) and answers Markdown. User docs: README.md. On Windows read `WINDOWS.md` first.
 
 ## Commands
@@ -48,7 +48,7 @@ No npm runtime dependencies; no build step for the web app.
 
 - The backend never picks a model from the text; the client does (`public/select-model.ts`). `LONG_THRESHOLD_LETTERS = 11_000` there is the switch point (the chat model loses paragraphs beyond about 11–16K letters); keep docs in sync.
 - A model swap frees the loaded model and loads the other; repeated requests do not reload.
-- libllama is only called from its worker thread, and every call blocks it. Threads: `LLAMA_THREADS`, else `inferenceThreads` (`src/cpu.ts`): `min(performance cores, navigator.hardwareConcurrency, 8)` (ggml waits for its slowest thread, so E-cores slow the P-cores down). `SEGMENT_THREADS` has the same default; nothing shares out the cores between the two. A generation returns to the worker's event loop after each decode, which is when `/tokenize` and cancellations are handled.
+- libllama is called from its worker thread, and every call blocks it; the one other caller is the segmentation worker's LaBSE encoder (`src/llama-embed-ffi.ts`: its own model and context on the processor, `op_offload` off), and `shim_init` runs once however many threads open the library. Threads: `LLAMA_THREADS`, else `inferenceThreads` (`src/cpu.ts`): `min(performance cores, navigator.hardwareConcurrency, 8)` (ggml waits for its slowest thread, so E-cores slow the P-cores down). `SEGMENT_THREADS` has the same default; nothing shares out the cores between the two. A generation returns to the worker's event loop after each decode, which is when `/tokenize` and cancellations are handled.
 - The engines (llama.cpp, audio.cpp, ONNX Runtime) share the process: a crash in any takes the server down.
 - Generation is greedy from an empty context. One at a time; up to `MAX_QUEUE` wait FIFO, beyond that `429 queue_full`. Closing the client connection cancels it, except for an SSE request with `resumable: true`: that job (`Job` in `src/jobs.ts`) runs on for `RESUME_GRACE_MS` with no reader, can be read again by `GET /translations/{id}/events` (`Last-Event-ID`) and is cancelled by `DELETE /translations/{id}`; finished ones are kept 10 minutes.
 - `MAX_INPUT_TOKENS + 64 < CTX_SIZE`, else startup fails. Output is capped at 4 × prompt tokens + 512 unless `max_output_tokens` is set.
@@ -70,8 +70,8 @@ No npm runtime dependencies; no build step for the web app.
 
 ### Segmentation and alignment (ONNX Runtime)
 
-- **Sentence segmentation** (`src/segment.ts`): ONNX Runtime is only called from the segmentation worker, started by the first `POST /segment` or `POST /align` (never at startup); freed after `SEGMENT_IDLE_UNLOAD` seconds idle; a failed load is retried. `onnxruntime-ffi.ts` reads function pointers from `OrtApi` by slot, no C shim; strings and arrays the library keeps pointers to must stay referenced from JS. `sat.ts` is wtpsplit's SaT with tokens identical to Hugging Face's XLM-R tokenizer. Offsets are UTF-16 units of the text as sent. Own single-slot queue, like speech.
-- **Sentence alignment** (`POST /align`, `src/align.ts`, `src/labse.ts`): LaBSE is the segmentation worker's second ONNX session, same queue, own load state (`ModelSlot`) and idle unload; `ALIGN=0` turns it off. The quantized model ends at `last_hidden_state`, so the embedding is ours: [CLS] through sentence-transformers' Dense (768 → 768, tanh), L2-normalized; the WordPiece tokenizer must stay identical to Hugging Face's (`test/labse-native.test.ts`). `align.ts` is the DP step of the AIlign paper (arXiv:2403.11921, CC BY 4.0) written from the paper, never from its CC BY-NC code. `unit: "paragraphs"` embeds each paragraph by its opening and measures length by what it translates (`translatedLengths`); an empty side costs 0.7; no 2-2 group.
+- **Sentence segmentation** (`src/segment.ts`): ONNX Runtime (SaT) and libllama (LaBSE, below) are only called from the segmentation worker, started by the first `POST /segment` or `POST /align` (never at startup); freed after `SEGMENT_IDLE_UNLOAD` seconds idle; a failed load is retried. `onnxruntime-ffi.ts` reads function pointers from `OrtApi` by slot, no C shim; strings and arrays the library keeps pointers to must stay referenced from JS. `sat.ts` is wtpsplit's SaT with tokens identical to Hugging Face's XLM-R tokenizer. Offsets are UTF-16 units of the text as sent. Own single-slot queue, like speech.
+- **Sentence alignment** (`POST /align`, `src/align.ts`, `src/labse.ts`): LaBSE is the segmentation worker's second model, run by libllama on the processor (Q8_0 GGUF of keisuke-miyako, pinned in `fetch_models.ts`; `shim_new_embed_context`, CLS pooling, up to 16 sequences per call), same queue, own load state (`ModelSlot`) and idle unload; `ALIGN=0` turns it off. The GGUF ends at the [CLS] state (llama.cpp's converter drops sentence-transformers' Dense layer, and `--sentence-transformers-dense-modules` does nothing for BERT), so the embedding is ours: [CLS] through sentence-transformers' Dense (768 → 768, tanh), L2-normalized; the WordPiece tokenizer must stay identical to Hugging Face's (`test/labse-native.test.ts`). `align.ts` is the DP step of the AIlign paper (arXiv:2403.11921, CC BY 4.0) written from the paper, never from its CC BY-NC code. `unit: "paragraphs"` embeds each paragraph by its opening and measures length by what it translates (`translatedLengths`); an empty side costs 0.8; no 2-2 group.
 
 ### Speech (audio.cpp)
 
@@ -111,7 +111,7 @@ arguments fail startup. Non-obvious ones:
 - `GPU_LAYERS`: `all`, a count, or `0` for CPU. `MTP=0`: no multi-token prediction. `SPEECH=0`: reading aloud unavailable, libaudiocpp never loaded. `SPEECH_BACKEND=cpu` is far slower than real time
 - `SPEECH_MODEL_DIR` / `SEPARATION_MODEL_DIR` / `TRANSCRIBE_MODEL_DIR` hold one GGUF each; no separation model means no separation. `VOICES_DIR` holds one `*.wav` per voice. `TRANSCRIBE=0`: `/transcriptions` unavailable
 - `PUSH_CONTACT`: the VAPID `sub`, a URI (`mailto:`, `https:`, ...); setting it turns Web Push on, unset is off (it reaches the browser vendor's push service); no default
-- `SEGMENT=0`: `/segment` unavailable; `ALIGN=0`: `/align` unavailable (both off: ONNX Runtime is never loaded). `ONNXRUNTIME_DIR`, `SEGMENT_MODEL_DIR` (`model.onnx`, `tokenizer.json`), `ALIGN_MODEL_DIR` (`model.onnx`, `vocab.txt`, `dense.safetensors`); `SEGMENT_THREADS` and `SEGMENT_IDLE_UNLOAD` are also LaBSE's
+- `SEGMENT=0`: `/segment` unavailable; `ALIGN=0`: `/align` unavailable (`SEGMENT=0` alone: ONNX Runtime is never loaded). `ONNXRUNTIME_DIR`, `SEGMENT_MODEL_DIR` (`model.onnx`, `tokenizer.json`), `ALIGN_MODEL_DIR` (`model.gguf`, `vocab.txt`, `dense.safetensors`; libllama from `LLAMA_DIR`); `SEGMENT_THREADS` and `SEGMENT_IDLE_UNLOAD` are also LaBSE's
 
 ## API
 

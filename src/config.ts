@@ -113,9 +113,9 @@ export interface Config {
   segmentThreads: number;
   /** Seconds without a segmentation (or alignment) request after which its model is freed; 0 keeps it. */
   segmentIdleUnload: number;
-  /** Sentence alignment (`POST /align`, LaBSE on the segmentation thread); false never loads its model. */
+  /** Sentence alignment (`POST /align`, LaBSE on libllama on the segmentation thread); false never loads its model. */
   align: boolean;
-  /** Directory holding LaBSE's `model.onnx`, `vocab.txt` and `dense.safetensors`. */
+  /** Directory holding LaBSE's `model.gguf`, `vocab.txt` and `dense.safetensors`. */
   alignModelDir: string;
   /**
    * The VAPID `sub` claim, a URI (`mailto:`, `https:`, ...): how a push service reaches whoever runs the server.

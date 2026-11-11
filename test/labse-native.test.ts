@@ -1,6 +1,6 @@
-// The real aligner: ONNX Runtime through bun:ffi on the segmentation worker, with LaBSE. Skipped unless
-// both are installed (bun scripts/fetch_onnxruntime.ts; bun scripts/fetch_models.ts --model labse, or
-// ALIGN_MODEL_DIR naming a directory with model.onnx, vocab.txt and dense.safetensors).
+// The real aligner: libllama through bun:ffi on the segmentation worker, with LaBSE. Skipped unless
+// both are installed (bun scripts/build_llama.ts; bun scripts/fetch_models.ts --model labse, or
+// ALIGN_MODEL_DIR naming a directory with model.gguf, vocab.txt and dense.safetensors).
 
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync, readFileSync } from "node:fs";
@@ -9,13 +9,14 @@ import { join } from "node:path";
 import type { AlignUnit } from "../src/api";
 import { loadConfig } from "../src/config";
 import { WordPieceTokenizer } from "../src/labse";
-import { libraryPath } from "../src/onnxruntime-ffi";
+import { libraryPath, shimPath } from "../src/llama-ffi";
 import { NativeSegmenter } from "../src/segment";
 
 const cfg = { ...loadConfig(Bun.env), align: true, segmentIdleUnload: 0 };
 const installed =
-  existsSync(libraryPath(cfg.onnxruntimeDir)) &&
-  ["model.onnx", "vocab.txt", "dense.safetensors"].every((f) => existsSync(join(cfg.alignModelDir, f)));
+  existsSync(libraryPath(cfg.llamaDir)) &&
+  existsSync(shimPath(cfg.llamaDir)) &&
+  ["model.gguf", "vocab.txt", "dense.safetensors"].every((f) => existsSync(join(cfg.alignModelDir, f)));
 
 const segmenter = new NativeSegmenter(cfg);
 
@@ -31,7 +32,7 @@ const paragraphsOf = (name: string) =>
     .trim()
     .split(/\n\s*\n/);
 
-describe.skipIf(!installed)("LaBSE on ONNX Runtime", () => {
+describe.skipIf(!installed)("LaBSE on libllama", () => {
   test("the tokenizer gives Hugging Face's ids", () => {
     const tokenizer = new WordPieceTokenizer(readFileSync(join(cfg.alignModelDir, "vocab.txt"), "utf8"));
     // From `tokenizers` with Xenova/LaBSE's tokenizer.json.

@@ -15,16 +15,22 @@
 // The same search matches the paragraphs of a document and its translation, each read by its opening
 // (`openings`) and weighed by the length of what it translates (`translatedLengths`: its words, without
 // those the other text has too). Length is then what tells a merged paragraph (its opening is the first
-// one's, its length both) from a dropped one; an empty side costs less, 0.7: at 1 a paragraph the
+// one's, its length both) from a dropped one; an empty side costs less, 0.8: at 1 a paragraph the
 // translation left out is joined to a neighbour, as a sentence is, and the neighbour is often the wrong
-// one; and there is no 2-2 group. Measured with one paragraph dropped, merged, split or repeated, on 12
-// machine translations of long prose (en to zh, ja, es, de, fr, ko, and zh to en) and on 32 of short
-// Markdown documents with headings, tables, code and lists (en to zh, ja, fr, de): 97% and 84% of the
-// cases matched exactly, and 99% and 98% put every group but at most one next to the damage right (a
+// one; and there is no 2-2 group. Measured (with LaBSE Q8_0 on libllama) with one paragraph dropped,
+// merged, split or repeated, at 20%, 50% and 80% of the text, on 11 machine translations of the 30
+// paragraphs of test/fixtures/essays.en.txt and its Chinese translation (en to zh, ja, es, de, fr, ko, and
+// zh to en by Index-Translate-9B; en to zh, zh to en, zh to ja and ja to zh by Index-NativeLong-9B) and on
+// 12 Markdown documents of 18 to 21 blocks, made of sections of README.md and e2e/README.md with
+// headings, tables, code and lists (en to zh, ja, fr, de by Index-Translate-9B): 100% and 91% of the 260
+// cases matched exactly, and every group but at most one next to the damage was right in all of them (a
 // short paragraph left out is often told as merged into its neighbour); no clean translation flagged.
-// Below 0.7 clean Markdown translations were flagged (8 of 32 at 0.6), above it fewer drops were found;
-// whole lengths instead of translated ones made 66% exact on the Markdown documents, as did allowing 2-2
-// (two short neighbours, a heading and its paragraph, came out as one 2-2 group in clean translations).
+// Between 0.75 and 0.95 the result hardly changes, and 0.8 sits inside that plateau; at 0.7 it was 92% and
+// 79%. The weights above are the paper's and were not retuned: every change of the neighbours' weight or
+// the size term flagged clean Markdown translations and lost a fifth or more of the exact matches, and the
+// length weight gave the same result anywhere from 0.2 to 0.45. An opening of 40 to 60 characters
+// was worse (76% to 83% on Markdown), and allowing 2-2 flagged every clean translation (a heading and its
+// paragraph, two short neighbours, came out as one 2-2 group).
 
 import type { AlignedPair, AlignUnit } from "./api";
 
@@ -37,9 +43,9 @@ const PER_SENTENCE = 0.06;
 /** Weight of the length distance (`w`). */
 const LENGTH = 0.33;
 /** Distance of an item matched with nothing, by unit. */
-const UNMATCHED: Record<AlignUnit, number> = { sentences: 1, paragraphs: 0.7 };
+const UNMATCHED: Record<AlignUnit, number> = { sentences: 1, paragraphs: 0.8 };
 /** Characters of a source paragraph's opening; the target's is scaled by the texts' length ratio. */
-export const OPENING = 80;
+export const OPENING = 120;
 /** Bounds of a target opening: a ratio far from 1 should not leave it a word or the whole paragraph. */
 const OPENING_RANGE = [OPENING / 4, OPENING * 4] as const;
 

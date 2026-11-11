@@ -35,12 +35,23 @@ static void shim_log(enum ggml_log_level level, const char * text, void * user_d
     }
 }
 
-// Once per process. `backend_dir` holds the libggml-* backends (Vulkan, CPU variants).
+// Once per process, however many threads ask: the chat engine's thread and the segmentation thread (LaBSE) both
+// open the library, and a second caller waits for the first one's initialization to end.
+// `backend_dir` holds the libggml-* backends (Vulkan, CPU variants).
+static int shim_init_state = 0; // 0: not started, 1: running, 2: done
+
 SHIM_API void shim_init(const char * backend_dir) {
+    int expected = 0;
+    if (!__atomic_compare_exchange_n(&shim_init_state, &expected, 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        while (__atomic_load_n(&shim_init_state, __ATOMIC_ACQUIRE) != 2) {
+        }
+        return;
+    }
     llama_log_set(shim_log, NULL);
     mtmd_helper_log_set(shim_log, NULL);
     llama_backend_init();
     ggml_backend_load_all_from_path(backend_dir);
+    __atomic_store_n(&shim_init_state, 2, __ATOMIC_RELEASE);
 }
 
 // The devices the loaded backends found. Returns how many, and writes them to `out` as
@@ -147,6 +158,67 @@ static int32_t decode_tokens(struct llama_context * ctx, const llama_token * tok
     int32_t status = llama_decode(ctx, batch);
     llama_batch_free(batch);
     return status;
+}
+
+// A context that embeds sentences (an encoder-only BERT such as LaBSE) on the processor: up to `n_seq_max` sequences, `n_batch` tokens in
+// all, per `shim_embed`. Its pooling is CLS, so a sequence's embedding is its first token's state.
+SHIM_API struct llama_context * shim_new_embed_context(struct llama_model * model, uint32_t n_batch, uint32_t n_seq_max, int32_t n_threads) {
+    struct llama_context_params params = llama_context_default_params();
+    params.n_ctx = n_batch;
+    params.n_batch = n_batch;
+    params.n_ubatch = n_batch;
+    params.n_seq_max = n_seq_max;
+    params.embeddings = true;
+    params.pooling_type = LLAMA_POOLING_TYPE_CLS;
+    // Processor only: without this a large batch would borrow the GPU for the matrix products of weights in memory.
+    params.op_offload = false;
+    if (n_threads > 0) {
+        params.n_threads = n_threads;
+        params.n_threads_batch = n_threads;
+    }
+    return llama_init_from_model(model, params);
+}
+
+// Embeds `n_seq` sequences, `lens[i]` tokens each, laid out one after the other in `tokens`, and writes each one's pooled
+// embedding to `out` (`n_seq` rows of `n_embd` floats). 0 on success; -1 when the sequences do not fit the context's
+// batch or sequence count; llama_decode's status otherwise; -2 when the library gives no embedding for a sequence.
+SHIM_API int32_t shim_embed(struct llama_context * ctx, const llama_token * tokens, const int32_t * lens, int32_t n_seq, float * out, int32_t n_embd) {
+    int32_t total = 0;
+    for (int32_t s = 0; s < n_seq; s++) {
+        total += lens[s];
+    }
+    if (n_seq < 1 || n_seq > (int32_t) llama_n_seq_max(ctx) || total > (int32_t) llama_n_batch(ctx)) {
+        return -1;
+    }
+    struct llama_batch batch = llama_batch_init(total, 0, 1);
+    int32_t k = 0;
+    for (int32_t s = 0; s < n_seq; s++) {
+        for (int32_t i = 0; i < lens[s]; i++, k++) {
+            batch.token[k] = tokens[k];
+            batch.pos[k] = i;
+            batch.n_seq_id[k] = 1;
+            batch.seq_id[k][0] = s;
+            batch.logits[k] = 1;
+        }
+    }
+    batch.n_tokens = total;
+    llama_memory_t memory = llama_get_memory(ctx);
+    if (memory != NULL) {
+        llama_memory_clear(memory, true);
+    }
+    int32_t status = llama_decode(ctx, batch);
+    llama_batch_free(batch);
+    if (status != 0) {
+        return status;
+    }
+    for (int32_t s = 0; s < n_seq; s++) {
+        const float * embedding = llama_get_embeddings_seq(ctx, s);
+        if (embedding == NULL) {
+            return -2;
+        }
+        memcpy(out + (size_t) s * (size_t) n_embd, embedding, sizeof(float) * (size_t) n_embd);
+    }
+    return 0;
 }
 
 // Appends `n` tokens at the positions from `pos` on; logits are computed for the last one.

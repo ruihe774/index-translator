@@ -1,6 +1,6 @@
-// Sentence boundaries with SaT (Segment any Text, sat-3l-sm), and sentence alignment with LaBSE, in-process
-// through ONNX Runtime's C API (bun:ffi). The library runs on a worker thread (src/segment-worker.ts);
-// this file is the server-thread side. Each model is loaded by the first request that needs it and freed
+// Sentence boundaries with SaT (Segment any Text, sat-3l-sm), in-process through ONNX Runtime's C API, and
+// sentence alignment with LaBSE through libllama (bun:ffi). Both run on one worker thread
+// (src/segment-worker.ts); this file is the server-thread side. Each model is loaded by the first request that needs it and freed
 // again after `SEGMENT_IDLE_UNLOAD` seconds without one. They run on the processor, beside the
 // translation and speech engines.
 
@@ -10,7 +10,8 @@ import { join } from "node:path";
 import type { AlignedPair, AlignUnit, SegmentedText, SegmentStatus } from "./api";
 import type { Config } from "./config";
 import { inferenceThreads } from "./cpu";
-import { libraryPath } from "./onnxruntime-ffi";
+import { libraryPath as llamaLibraryPath, shimPath } from "./llama-ffi";
+import { libraryPath as onnxLibraryPath } from "./onnxruntime-ffi";
 import { fetchAdvice } from "./preflight";
 import type { SegmentModel, SegmentProtocol } from "./segment-worker";
 import { abortable, LazyModel, startWorker, WorkerClient } from "./worker-rpc";
@@ -32,7 +33,7 @@ export const MAX_ALIGN_CHARS = MAX_SEGMENT_CHARS;
 export class SegmentError extends Error {}
 
 /**
- * `unavailable`: turned off, or ONNX Runtime or the model is missing (`error` says which);
+ * `unavailable`: turned off, or ONNX Runtime (libllama for LaBSE) or the model is missing (`error` says which);
  * `stopped`: installed, the model is not loaded; `starting`: loading it; `ready`; `error`: the
  * last load failed.
  */
@@ -59,7 +60,7 @@ export interface Segmenter extends ModelStatus {
 
 export type SegmentLauncher = (cfg: Config) => Segmenter;
 
-/** Starts the thread that owns ONNX Runtime; replaceable in tests. */
+/** Starts the thread that owns the models; replaceable in tests. */
 type SegmentWorkerFactory = () => Worker;
 
 const defaultWorker: SegmentWorkerFactory = () => startWorker("segment-worker.ts");
@@ -77,6 +78,9 @@ const MODELS: Record<
     fetchId: string;
     enabled: (cfg: Config) => boolean;
     dir: (cfg: Config) => string;
+    /** The directory with the engine library that runs the model, and what to say when it is not there. */
+    library: (cfg: Config) => string;
+    libraryMissing: (libraryDir: string) => string | undefined;
   }
 > = {
   sat: {
@@ -86,14 +90,24 @@ const MODELS: Record<
     fetchId: "sat-3l-sm",
     enabled: (cfg) => cfg.segment,
     dir: (cfg) => cfg.segmentModelDir,
+    library: (cfg) => cfg.onnxruntimeDir,
+    libraryMissing: (dir) =>
+      existsSync(onnxLibraryPath(dir))
+        ? undefined
+        : "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts",
   },
   labse: {
     name: "alignment",
     disabledMessage: "sentence alignment is turned off (ALIGN=0)",
-    files: ["model.onnx", "vocab.txt", "dense.safetensors"],
+    files: ["model.gguf", "vocab.txt", "dense.safetensors"],
     fetchId: "labse",
     enabled: (cfg) => cfg.align,
     dir: (cfg) => cfg.alignModelDir,
+    library: (cfg) => cfg.llamaDir,
+    libraryMissing: (dir) =>
+      [llamaLibraryPath(dir), shimPath(dir)].every((path) => existsSync(path))
+        ? undefined
+        : "libllama is not installed; run bun scripts/build_llama.ts",
   },
 };
 
@@ -123,7 +137,7 @@ class ModelSlot implements ModelStatus {
         const threads = inferenceThreads(cfg.segmentThreads);
         const { version } = await client.call("load", {
           model,
-          options: { runtimeDir: cfg.onnxruntimeDir, modelDir: MODELS[model].dir(cfg), threads },
+          options: { libraryDir: MODELS[model].library(cfg), modelDir: MODELS[model].dir(cfg), threads },
         });
         return `, ${threads} threads${version ? `, ONNX Runtime ${version}` : ""}`;
       },
@@ -134,12 +148,13 @@ class ModelSlot implements ModelStatus {
 
   /** Why the model cannot run at all, checked each time so an install does not need a restart. */
   private missing(): string | undefined {
-    const { disabledMessage, name, files, fetchId, enabled, dir } = MODELS[this.model];
+    const { disabledMessage, name, files, fetchId, enabled, dir, library, libraryMissing } = MODELS[this.model];
     if (!enabled(this.cfg)) {
       return disabledMessage;
     }
-    if (!existsSync(libraryPath(this.cfg.onnxruntimeDir))) {
-      return "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts";
+    const noLibrary = libraryMissing(library(this.cfg));
+    if (noLibrary) {
+      return noLibrary;
     }
     if (files.some((f) => !existsSync(join(dir(this.cfg), f)))) {
       return `the ${name} model is not installed; ${fetchAdvice([fetchId])}`;
@@ -197,7 +212,7 @@ class ModelSlot implements ModelStatus {
 }
 
 export class NativeSegmenter implements Segmenter {
-  /** The thread that owns ONNX Runtime, started by the first request. */
+  /** The thread that owns the models, started by the first request. */
   private readonly worker: SegmentClient;
   readonly sentences: ModelSlot;
   readonly aligner: ModelSlot;

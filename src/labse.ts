@@ -9,12 +9,11 @@
 // "##" before a piece that continues a word. The embedding is the first ([CLS]) token's state through
 // a Dense layer (768 → 768, tanh), normalized to length 1, so a dot product is a cosine.
 
-/** The encoder's last hidden state for a batch: `ids` and `mask` are `rows × width`; `DIMENSIONS` floats per token come back. */
-type RunEncoder = (ids: BigInt64Array, mask: BigInt64Array, rows: number, width: number) => Float32Array;
+/** The encoder's [CLS] state (its first token's last hidden state) for each of the token id sequences: `DIMENSIONS` floats a row. */
+type RunEncoder = (sequences: number[][]) => Float32Array;
 
 export const DIMENSIONS = 768;
 
-const PAD = 0;
 /** Tokens per sentence besides [CLS] and [SEP]: the model's 512 positions. A longer sentence is cut. */
 const MAX_TOKENS = 510;
 /** A word longer than this, in code points, is one unknown token. */
@@ -187,9 +186,8 @@ function pool(dense: Dense, hidden: Float32Array): Float32Array {
 }
 
 /**
- * One unit vector per text, in order. Texts are run `BATCH` at a time, shortest first, each batch padded
- * to its longest (the mask keeps padding out of the result). `aborted` is asked between batches; when it
- * says so the result is undefined.
+ * One unit vector per text, in order. Texts are run `BATCH` at a time, shortest first. `aborted` is asked between
+ * batches; when it says so the result is undefined.
  */
 export function embed(
   tokenizer: WordPieceTokenizer,
@@ -206,19 +204,9 @@ export function embed(
       return undefined;
     }
     const batch = order.slice(first, first + BATCH);
-    const width = Math.max(...batch.map((t) => encoded[t]!.length));
-    const ids = new BigInt64Array(batch.length * width).fill(BigInt(PAD));
-    const mask = new BigInt64Array(batch.length * width);
+    const hidden = run(batch.map((t) => encoded[t]!));
     batch.forEach((t, row) => {
-      encoded[t]!.forEach((id, k) => {
-        ids[row * width + k] = BigInt(id);
-        mask[row * width + k] = 1n;
-      });
-    });
-    const hidden = run(ids, mask, batch.length, width);
-    batch.forEach((t, row) => {
-      const at = row * width * DIMENSIONS;
-      out[t] = pool(dense, hidden.subarray(at, at + DIMENSIONS));
+      out[t] = pool(dense, hidden.subarray(row * DIMENSIONS, (row + 1) * DIMENSIONS));
     });
   }
   return out;

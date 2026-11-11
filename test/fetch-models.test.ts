@@ -158,15 +158,15 @@ describe("plan", () => {
     expect(MODEL_IDS).toContain("sat-3l-sm");
   });
 
-  test("the alignment model is the ONNX export, its vocabulary and the pooling layer, in a directory of its own", () => {
+  test("the alignment model is the GGUF, its vocabulary and the pooling layer, in a directory of its own", () => {
     const files = plan(["labse"], dirs);
     expect(files.map((f) => f.dest)).toStrictEqual([
-      join("/m", "labse", "model.onnx"),
+      join("/m", "labse", "model.gguf"),
       join("/m", "labse", "vocab.txt"),
       join("/m", "labse", "dense.safetensors"),
     ]);
     expect(files[0]!.url).toEndWith(
-      "/Xenova/LaBSE/resolve/147002d501fc76ecd313c631999ea796520fea74/onnx/model_quantized.onnx",
+      "/keisuke-miyako/LaBSE-gguf-q8_0/resolve/63c29f7632bc99b5bbacaa7ac8823e2778ad99a2/LaBSE-Q8_0.gguf",
     );
     expect(files[2]!.url).toEndWith(
       "/sentence-transformers/LaBSE/resolve/836121a0533e5664b21c7aacc5d22951f2b8b25b/2_Dense/model.safetensors",

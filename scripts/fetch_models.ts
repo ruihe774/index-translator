@@ -113,21 +113,21 @@ const SEGMENTATION_FILES: Record<string, string> = {
 };
 
 /**
- * LaBSE (sentence-transformers/LaBSE, Apache-2.0) as Xenova's 8-bit ONNX export (`model_quantized.onnx`,
- * 470 MB, which ends at the encoder's last hidden state) with its WordPiece vocabulary, and the
- * sentence-transformers pooling layer (Dense 768 → 768, tanh) that the export leaves out. `POST /align`
- * runs it (src/segment.ts) to match the sentences of a source and its translation.
+ * LaBSE (sentence-transformers/LaBSE, Apache-2.0) as keisuke-miyako's Q8_0 GGUF (515 MB, which ends at the encoder's
+ * [CLS] state; its tensors are the ones llama.cpp's own converter writes) with Xenova's copy of the WordPiece
+ * vocabulary, and the sentence-transformers pooling layer (Dense 768 → 768, tanh) that the GGUF leaves out.
+ * `POST /align` runs it on libllama (src/segment.ts) to match the sentences of a source and its translation.
  */
 const ALIGNMENT = "labse";
 export const ALIGNMENT_DIR = "labse";
-const LABSE_ONNX = (file: string) => resolveUrl("Xenova/LaBSE", "147002d501fc76ecd313c631999ea796520fea74", file);
+const LABSE_XENOVA = (file: string) => resolveUrl("Xenova/LaBSE", "147002d501fc76ecd313c631999ea796520fea74", file);
 const ALIGNMENT_FILES: Record<string, { url: string; sha256: string }> = {
-  "model.onnx": {
-    url: LABSE_ONNX("onnx/model_quantized.onnx"),
-    sha256: "2d209704455c8e5718dbef9c46ca22c823eb35256b74b4122d90845310c7ef82",
+  "model.gguf": {
+    url: resolveUrl("keisuke-miyako/LaBSE-gguf-q8_0", "63c29f7632bc99b5bbacaa7ac8823e2778ad99a2", "LaBSE-Q8_0.gguf"),
+    sha256: "89ec00269f2d30015194e49f0b6b1a2b9affe6d14c46762c4a0edd425f41a171",
   },
   "vocab.txt": {
-    url: LABSE_ONNX("vocab.txt"),
+    url: LABSE_XENOVA("vocab.txt"),
     sha256: "7453247caa2cf23116c1da332bec0cc1c9ef896b7803591a62ad2007b7a33c33",
   },
   "dense.safetensors": {
@@ -202,9 +202,9 @@ export const NOTICES: Record<string, string> = {
     "  https://huggingface.co/jiangzhuo9357/sat-3l-sm-onnx",
   ].join("\n"),
   [ALIGNMENT]: [
-    "LaBSE (Google, via sentence-transformers), 8-bit ONNX export by Xenova, with its vocabulary and pooling layer",
+    "LaBSE (Google, via sentence-transformers), Q8_0 GGUF by keisuke-miyako, with its vocabulary and pooling layer",
     "  License: Apache-2.0",
-    "  https://huggingface.co/sentence-transformers/LaBSE, https://huggingface.co/Xenova/LaBSE",
+    "  https://huggingface.co/sentence-transformers/LaBSE, https://huggingface.co/keisuke-miyako/LaBSE-gguf-q8_0",
   ].join("\n"),
 };
 
