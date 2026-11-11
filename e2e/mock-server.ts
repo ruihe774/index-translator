@@ -50,7 +50,7 @@ const optionalDirs = {
   speechModelDir: [],
   separationModelDir: ["separation.gguf"],
   segmentModelDir: ["model.onnx", "tokenizer.json"],
-  alignModelDir: ["model.onnx", "vocab.txt", "dense.safetensors"],
+  alignModelDir: ["model.gguf", "vocab.txt", "dense.safetensors"],
   transcribeModelDir: ["moss-transcribe-diarize.gguf"],
 };
 for (const [dir, files] of Object.entries(optionalDirs)) {
