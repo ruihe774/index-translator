@@ -1,0 +1,11 @@
+const mem = new WebAssembly.Memory({ initial: 1, maximum: 10, shared: true });
+const mod = await WebAssembly.compile(await Bun.file("shared.wasm").arrayBuffer());
+const ws = [0,1,2].map(() => new Worker(new URL("./w.ts", import.meta.url).href));
+await Promise.all(ws.map(w => new Promise(r => { w.onmessage = r; w.postMessage({ mem, mod }); })));
+await Bun.sleep(100);
+const inst = await WebAssembly.instantiate(mod, { env: { mem } });
+console.log("woken", (inst.exports.wake as any)());
+await Promise.all(ws.map(w => new Promise(r => { w.onmessage = r; })));
+console.log("counter", new Int32Array(mem.buffer)[0]);
+mem.grow(1); console.log("grown", mem.buffer.byteLength);
+ws.forEach(w => w.terminate());

@@ -1,0 +1,13 @@
+# Fetched or installed (REPORT.md, Reproduce)
+/.venv/
+/models/
+/wabt-1.0.42/
+
+# Generated
+/layout.json
+/ref/
+*.wasm
+/probe/mk.wat
+/probe/dot.wat
+/probe/mk.variants
+__pycache__/
