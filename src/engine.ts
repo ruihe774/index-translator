@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { MODEL_SIZE, TENSORS } from "./tensors";
 
 /** Bun.hash (wyhash) of the bytes before the first weight: the graph, which names every op and tensor. */
-const HEADER_BYTES = 343532;
+export const HEADER_BYTES = 343532;
 export const HEADER_HASH = 0xce62e25de97aa9bn; // bun tools/fingerprint.ts
 
 interface Exports {
@@ -133,7 +133,7 @@ export async function loadEngine(modelPath: string, threads: number, wasmPath = 
   };
 }
 
-function readFully(fd: number, into: Uint8Array, position: number): void {
+export function readFully(fd: number, into: Uint8Array, position: number): void {
   for (let done = 0; done < into.length;) {
     const n = readSync(fd, into, done, into.length - done, position + done);
     if (n <= 0) {

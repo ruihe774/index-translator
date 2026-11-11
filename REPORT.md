@@ -151,6 +151,109 @@ Interleaved (`test/ab.ts`, medians): 1×512 on 1 thread 1243 → 754 ms, of whic
   the better tile, so aarch64 should be re-measured, and the shape could be picked per architecture. The other
   changes (call-free kernel, attention, exp) are not x86-specific.
 
+## Native follow-up: the same engine in Zig, through bun:ffi
+
+Measured on an Intel Core i5-14600KF (Raptor Lake: 6 P-cores + 8 E-cores, AVX2 and FMA, no AVX-512), Linux,
+Bun 1.4.4, Zig 0.17.1, Python onnxruntime 1.31.1 for ORT. On this machine the WASM engine is 2.3× ORT at 1×512.
+
+**What was built** (`native/`)
+
+| File | Contents |
+|---|---|
+| `native/sat.zig` | a port of `src/sat.wat`: same memory roles, same task split, same thread pool (generation-tagged CAS counter, futex wait/wake, 20k-load spin), with `@Vector` code; C API `sat_create / sat_slot / sat_prepare / sat_run / sat_step / sat_destroy` |
+| `native/config.zig` | build-time tunables: `vw` (lanes), `mr`/`nr` (GEMM tile), `amr` (attention tile rows), `kc`, `fma`, `fma_math`, `kernel` (`.manual` / `.auto` / `.naive` / `.naive2`), `fast`, `spin` |
+| `native/build.sh` | `native/build.sh NAME key=value ...` → `native/out/NAME/libsat.so`, `-O ReleaseFast -mcpu x86_64_v3` |
+| `native/engine.ts` | `loadNative(model, threads, lib)`, the same `SatEngine` as `src/engine.ts` (size and graph checks reused); the weights are read straight into memory the library allocated |
+| `test/{compare,bench,ab,profile}_native.ts` | accuracy against ORT *and* WASM, the bench.ts batches, interleaved A/B of builds, per-op profile |
+
+**As-is port.** The defaults reproduce sat.wat exactly: 4 lanes, call-free 2×16 kernel, KC 256, no FMA. Its logits
+are **bit-identical to the WASM engine's** (max |Δ| 0 at 1 and 4 threads), and its GEMM hot loop is the same as JSC's
+(8 `vmulps`, 8 `vaddps`, 2 `vbroadcastss`, 4 `vmovups`, xmm, no spills). It runs **3–4% faster than WASM**, with the
+same per-op profile (GEMMs 56–59 GFLOPS ≈ 11 flop/cycle, the unfused 128-bit ceiling). So on x86-64, after the fixes
+above, JSC isn't what holds the engine back: the f32x4 mul+add design is.
+
+**Speed** (ms per call, `tools/bench_ort.py` and `test/bench_native.ts`; repeat runs agree within ~2%)
+
+| batch | threads | ORT | WASM | Zig as-is | Zig + FMA | Zig tuned | tuned / ORT |
+|---|---|---|---|---|---|---|---|
+| 1×32 | 1 | 28.8 | 26.6 | 25.5 | 22.0 | **10.3** | 0.36 |
+| 1×128 | 1 | 58.3 | 102.9 | 99.5 | 84.7 | **37.2** | 0.64 |
+| 1×512 | 1 | 195.1 | 453.1 | 436.6 | 367.8 | **161.7** | 0.83 |
+| 8×512 | 1 | 1522 | 3619 | 3503 | 2953 | **1289** | 0.85 |
+| 1×512 | 4 | 51.5 | 116.7 | 114.5 | 96.3 | **42.8** | 0.83 |
+| 8×512 | 4 | 382.2 | 940.8 | 908.1 | 771.8 | **345.6** | 0.90 |
+| 1×512 | 8 | 40.0 | 77.6 | 71.8 | 59.1 | **28.4** | 0.71 |
+| 8×512 | 8 | 301.6 | 595.9 | 571.1 | 468.3 | **239.4** | 0.79 |
+
+"Tuned" is `vw=8 mr=6 nr=16 kc=384 amr=6 fma=true fma_math=true`: **0.71–0.90× ORT, 2.5–2.8× faster than WASM**, with
+max |Δlogit| 4.0e-5 against ORT and no sign flips. Load takes ~55 ms (WASM ~90, ORT ~95).
+
+**Experiment 1: fused multiply-add** (1×512, interleaved medians; `fma` = micro-kernels only, `fma_math` = exp, GELU, LN too)
+
+- At the as-is 4-lane 2×16 tile: 435.8 → **368.0 ms (×0.845)** with `fma`, 364.1 (×0.836) with both. At 4 threads on
+  8×512, ×0.84. Not 2×: 8 accumulators are just enough to cover FMA latency (4 cycles × 2 ports), and the kernel
+  goes from 58 to 68 GFLOPS.
+- At the tuned 8-lane 6×16 tile: no FMA 222.3, `fma` 163.1, both 161.9 ms. **FMA is worth 27% once the tile can feed
+  it**. FMA in the math functions is worth ≤1% anywhere.
+- Accuracy: 3.3–8.3e-5 against ORT across these builds, no sign flips. They are no longer bit-identical to WASM.
+
+**Experiment 2: tunables** (1 thread, 1×512, `fma`+`fma_math`, interleaved; ms medians)
+
+- Vector width × tile (KC 256, AMR 2). The rule is the 16 YMM registers: tiles whose accumulators + B + splat fit
+  win, and tiles that spill fall off a cliff.
+
+  | vw | tile (mr×nr) → ms |
+  |---|---|
+  | 4 | 1×16 553, **2×16 364**, 3×16 443, 4×16 553, 1×32 346, 2×32 503 |
+  | 8 | 1×16 479, 2×16 294, 3×16 228, 4×16 198, 5×16 178, **6×16 174**, 7×16 228, 8×16 311, 1×32 289, 2×32 187, 3×32 253, 4×32 350, 2×48 262, 2×64 330 |
+
+- KC (8-lane 6×16): 64 → 186.5, 128 → 178.1, 256 → 175.1, 384 → 173.5, 768 → 173.3. Flat at 256 and above.
+  For 2×32 it is flat everywhere.
+- Attention rows AMR (6×16, KC 384): 1 → 191.0, 2 → 174.6, 3 → 166.7, 4 → 163.9, 5 → 162.6, **6 → 161.2**,
+  8 → 167.1. Attention goes from 9.9 to 6.1 ms per layer.
+- Worker spin (0 / 2k / 20k / 200k loads), 4 and 8 threads, 1×128 and 1×512: within noise. Kept at 20k.
+- Where the tuned build stands, per layer at 1×512 on 1 thread: QKV 11.5 ms (158 GFLOPS), attention 6.1 (132),
+  OPROJ 3.8 (161), FF1 16.0 (151), FF2 15.3 (158). AVX2 FMA peak is 32 flop/cycle, ~170 GFLOPS at 5.3 GHz, so the
+  GEMMs run at ~90% of peak. The int8 weights are dequantized to f32 while packing, as before.
+
+**Experiment 3: de-manual** (can LLVM do it from plain code?). LLVM's loop and SLP vectorizers are on by default in
+ReleaseFast, and `fast` is `@setFloatMode(.optimized)` (reassociation, contraction to FMA).
+
+- `.auto`: the same algorithm (packing, blocking, panels, tiles), with every `@Vector` loop written on scalars.
+- `.naive`: textbook loops, i.e. one dot product per output over the row-major int8 weights, attention row by row,
+  no packing. `.naive2` is the same with each dot product split at the 32-wide quantization block.
+
+| build (1 thread, 1×512) | ms | vs hand-written |
+|---|---|---|
+| manual, as-is (4 lanes, 2×16) | 435.8 | — |
+| auto, 2×16, strict | 311.2 | **0.71× of as-is** |
+| auto, 2×16, fast | 352.7 | 0.81× of as-is |
+| manual tuned, no FMA | 221.8 | — |
+| auto, 6×16 / AMR 6, strict | 283.8 | 1.28× of manual no-FMA |
+| manual tuned | 161.2 | — |
+| auto, 6×16 / AMR 6, fast | 225.4 | 1.40× of manual tuned |
+| naive, strict / fast | 4814 / 8559 | 30× / 53× of tuned |
+| naive2, strict / fast | 3781 / 1149 | 23× / 7.1× of tuned |
+
+- **The GEMM micro-kernel: LLVM matches the hand-written one when it may use FMA.** auto+fast runs QKV / OPROJ / FF2
+  at 153–156 GFLOPS against 158–161 manual. In strict mode it can't contract, so it lands near the unfused rate.
+- **The as-is code was beaten only because it is 4 lanes wide.** Given scalar loops over 16-wide rows, LLVM picks
+  8-lane YMM. That is the win of experiment 2's `vw=8`, not a better schedule.
+- **The non-GEMM code is where LLVM loses.** auto+fast spends 18.3 ms per layer in attention (manual 6.1) and 22.9 in
+  FF1 (manual 16.0). The binaries have no `vdivps`: the 16-wide GELU loop is fully unrolled before vectorization,
+  and the SLP vectorizer then leaves exp / GELU scalar. Softmax and LayerNorm reductions stay scalar in strict mode.
+- **Naive loops aren't vectorized at all.** The per-element scale `ws[n*nb + k/32]` would need a gather, and the
+  cost model declines even with fast-math. Fast-math then makes it *slower*: the strict `vmulss`+`vaddss` chain
+  (Raptor Cove's FADD has 2-cycle latency) becomes one serial `vfmadd213ss` chain (4 cycles), 5.3 → 2.7 GFLOPS.
+  Hoisting the scale out of the 32-block (`naive2`) lets fast-math vectorize it (31 GFLOPS), still 5× short of a
+  blocked kernel.
+- **A fast-math trap:** with reassociation, `(x·log2e + 1.5·2²³) − 1.5·2²³` folds to `x·log2e`. The rounding trick
+  in exp vanishes, 2ⁿ is built from garbage bits, and logits came out up to 3.56 off with 38 sign flips. The scalar
+  exp is therefore kept strict in every build.
+
+So hand-written vectors are needed less for the GEMM (LLVM gets there from scalar loops if it may use FMA and is
+given the tile) than for everything around it, and for keeping control of float semantics.
+
 ## Not done (out of scope or left open)
 
 Wiring into index-translator; Windows measurement; aarch64 re-measurement after the x86-64 changes; aborting mid-batch (the TS loop could check between rows);
@@ -223,6 +326,18 @@ bun test/bench.ts 4                         # now with an ORT column (the app's 
 bun test/rss.ts ort; bun test/rss.ts wasm   # resident memory, one engine per process
 bun tools/dump_windows.ts                   # ref/windows.bin: 40 real 512-token windows
 .venv/bin/python tools/int8_sim.py 7        # boundary flips with 7-bit activations (also try 8, 12)
+```
+
+**6. Native (Zig) follow-up** (steps 1–3 first; Zig 0.17.1 unpacked into `zig-x86_64-linux-0.17.1/` here, or `ZIG=`):
+
+```
+native/build.sh                                             # as-is port -> native/out/base/libsat.so
+native/build.sh best vw=8 mr=6 nr=16 kc=384 amr=6 fma=true fma_math=true
+native/build.sh auto_best_fast kernel=.auto fast=true mr=6 nr=16 kc=384 amr=6
+bun test/compare_native.ts 4 native/out/base/libsat.so native/out/best/libsat.so   # Δ vs ORT and vs WASM
+bun test/bench_native.ts 4 native/out/base/libsat.so native/out/best/libsat.so     # bench.ts batches, + WASM
+bun test/ab_native.ts 1 1x512 9 native/out/base/libsat.so native/out/best/libsat.so wasm
+bun test/profile_native.ts 1 512 native/out/best/libsat.so
 ```
 
 The machine measured was a Cortex-X925 / A725 (20 cores, aarch64 Linux). Absolute timings will differ elsewhere; the ratios
