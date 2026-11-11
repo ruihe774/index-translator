@@ -10,7 +10,7 @@
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts && bun scripts/build_soxr.ts &&
 // bun scripts/build_libopus.ts (the Opus encoder), and bun scripts/fetch_web_libs.ts (the web app's PDF and Word
 // libraries), bun scripts/fetch_turndown.ts (web pages as Markdown) and
-// bun scripts/fetch_onnxruntime.ts (onnxruntime.dll, for sentence segmentation), and bun scripts/build_bun.ts (the
+// bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the
 // Bun that is packed: a minimal build, not the one running this script). Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
 // without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
@@ -116,7 +116,7 @@ const version = [
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
-  `onnxruntime ${(await Bun.file(join(root, "vendor", "onnxruntime", "VERSION")).text()).split(" ")[0]}`,
+  `sat.wasm ${(await Bun.file(join(root, "vendor", "sat-wasm", "VERSION")).text()).slice(0, 7)}`,
   `bun ${(await Bun.file(join(bun, "VERSION")).text()).trim()}`,
 ];
 await Bun.write(join(stage, "VERSION"), `${version.join("\n")}\n`);

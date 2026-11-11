@@ -1,18 +1,18 @@
-// The real segmenter: ONNX Runtime through bun:ffi on its worker, with the SaT model. Skipped unless
-// both are installed (bun scripts/fetch_onnxruntime.ts; bun scripts/fetch_models.ts --model sat-3l-sm,
-// or SEGMENT_MODEL_DIR naming a directory with model.onnx and tokenizer.json).
+// The real segmenter: sat.wasm on its worker, with the SaT model. Skipped unless both are installed
+// (bun scripts/fetch_sat_wasm.ts; bun scripts/fetch_models.ts --model sat-3l-sm, or SEGMENT_MODEL_DIR
+// naming a directory with model.onnx and tokenizer.json).
 
 import { afterAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 
 import { loadConfig } from "../src/config";
-import { libraryPath } from "../src/onnxruntime-ffi";
+import { wasmPath } from "../src/sat-wasm";
 import { NativeSegmenter } from "../src/segment";
 
 const cfg = { ...loadConfig(Bun.env), segment: true, segmentIdleUnload: 0 };
 const installed =
-  existsSync(libraryPath(cfg.onnxruntimeDir)) &&
+  existsSync(wasmPath(cfg.satWasmDir)) &&
   ["model.onnx", "tokenizer.json"].every((f) => existsSync(join(cfg.segmentModelDir, f)));
 
 const segmenter = new NativeSegmenter(cfg);
@@ -25,7 +25,7 @@ async function endsAbove(text: string, p = 0.5): Promise<string[]> {
   return b!.offsets.filter((_, i) => b!.probabilities[i]! > p).map((o) => text.slice(0, o));
 }
 
-describe.skipIf(!installed)("SaT on ONNX Runtime", () => {
+describe.skipIf(!installed)("SaT on sat.wasm", () => {
   test("loads on the first request", async () => {
     expect(segmenter.state).toBe("stopped");
     await endsAbove("One.");

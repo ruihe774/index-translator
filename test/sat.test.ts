@@ -1,4 +1,4 @@
-// src/sat.ts without ONNX Runtime: the tokenizer on a small made-up vocabulary, and the windows a long
+// src/sat.ts without sat.wasm: the tokenizer on a small made-up vocabulary, and the windows a long
 // text is read in, through a fake model. test/sat-native.test.ts runs the real ones.
 
 import { describe, expect, test } from "bun:test";

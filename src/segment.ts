@@ -1,4 +1,4 @@
-// Sentence boundaries with SaT (Segment any Text, sat-3l-sm), in-process through ONNX Runtime's C API, and
+// Sentence boundaries with SaT (Segment any Text, sat-3l-sm), in-process on sat.wasm (src/sat-wasm.ts), and
 // sentence alignment with LaBSE through libllama (bun:ffi). Both run on one worker thread
 // (src/segment-worker.ts); this file is the server-thread side. Each model is loaded by the first request that needs it and freed
 // again after `SEGMENT_IDLE_UNLOAD` seconds without one. They run on the processor, beside the
@@ -11,8 +11,8 @@ import type { AlignedPair, AlignUnit, SegmentedText, SegmentStatus } from "./api
 import type { Config } from "./config";
 import { inferenceThreads } from "./cpu";
 import { libraryPath as llamaLibraryPath, shimPath } from "./llama-ffi";
-import { libraryPath as onnxLibraryPath } from "./onnxruntime-ffi";
 import { fetchAdvice } from "./preflight";
+import { wasmPath } from "./sat-wasm";
 import type { SegmentModel, SegmentProtocol } from "./segment-worker";
 import { abortable, LazyModel, startWorker, WorkerClient } from "./worker-rpc";
 
@@ -33,7 +33,7 @@ export const MAX_ALIGN_CHARS = MAX_SEGMENT_CHARS;
 export class SegmentError extends Error {}
 
 /**
- * `unavailable`: turned off, or ONNX Runtime (libllama for LaBSE) or the model is missing (`error` says which);
+ * `unavailable`: turned off, or sat.wasm (libllama for LaBSE) or the model is missing (`error` says which);
  * `stopped`: installed, the model is not loaded; `starting`: loading it; `ready`; `error`: the
  * last load failed.
  */
@@ -90,11 +90,9 @@ const MODELS: Record<
     fetchId: "sat-3l-sm",
     enabled: (cfg) => cfg.segment,
     dir: (cfg) => cfg.segmentModelDir,
-    library: (cfg) => cfg.onnxruntimeDir,
+    library: (cfg) => cfg.satWasmDir,
     libraryMissing: (dir) =>
-      existsSync(onnxLibraryPath(dir))
-        ? undefined
-        : "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts",
+      existsSync(wasmPath(dir)) ? undefined : "sat.wasm is not installed; run bun scripts/fetch_sat_wasm.ts",
   },
   labse: {
     name: "alignment",
@@ -135,11 +133,11 @@ class ModelSlot implements ModelStatus {
       idleUnload: cfg.segmentIdleUnload,
       load: async () => {
         const threads = inferenceThreads(cfg.segmentThreads);
-        const { version } = await client.call("load", {
+        await client.call("load", {
           model,
           options: { libraryDir: MODELS[model].library(cfg), modelDir: MODELS[model].dir(cfg), threads },
         });
-        return `, ${threads} threads${version ? `, ONNX Runtime ${version}` : ""}`;
+        return `, ${threads} threads`;
       },
       unload: () => client.call("unload", { model }),
       error: (message) => new SegmentError(message),

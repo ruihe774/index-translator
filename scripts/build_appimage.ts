@@ -1,6 +1,6 @@
 // Pack the app into one file that runs on other Linux machines: dist/Index_Translator-<arch>.AppImage (x86_64 or aarch64, as the machine),
 // with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and
-// the prebuilt shim, libaudiocpp), libsoxr, libopus and ONNX Runtime. The models and the voices are not packed; the AppImage's `fetch`
+// the prebuilt shim, libaudiocpp), libsoxr, libopus and sat.wasm. The models and the voices are not packed; the AppImage's `fetch`
 // subcommand (scripts/fetch_models.ts) downloads them into the user's data directory.
 // Usage: bun scripts/build_appimage.ts [--cuda]
 //
@@ -12,7 +12,7 @@
 // Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
 // since the engines are packed as built, bun scripts/build_soxr.ts, bun scripts/build_libopus.ts (the Opus encoder), and
 // bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries, packed with public/), bun scripts/fetch_turndown.ts (web pages as Markdown) and
-// bun scripts/fetch_onnxruntime.ts (ONNX Runtime, for sentence segmentation), and bun scripts/build_bun.ts (the Bun that is
+// bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the Bun that is
 // packed: a minimal build, not the one running this script).
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
 // as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
@@ -126,7 +126,7 @@ const version = [
   ...(cuda ? [`CUDA ${(await Bun.file(join(llama, "CUDA_VERSION")).text()).trim()}`] : []),
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
-  `onnxruntime ${(await Bun.file(join(root, "vendor", "onnxruntime", "VERSION")).text()).split(" ")[0]}`,
+  `sat.wasm ${(await Bun.file(join(root, "vendor", "sat-wasm", "VERSION")).text()).slice(0, 7)}`,
   `bun ${(await Bun.file(join(bun, "VERSION")).text()).trim()}`,
 ];
 await Bun.write(join(app, "VERSION"), `${version.join("\n")}\n`);

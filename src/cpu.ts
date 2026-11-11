@@ -2,8 +2,8 @@
 // matrix multiplication and waits for the slowest at every operation, so on a hybrid processor (Intel
 // P and E cores, Arm big.LITTLE) a thread on a slow core holds back all the others, and a count that
 // reaches into the slow cores is slower than one that stays out of them. Hyperthreads add little.
-// ONNX Runtime's thread pool (sentence segmentation) behaves the same: on an i5-14600KF SaT ran
-// faster with 6 threads (its P-cores) than with 8.
+// Sentence segmentation's thread pool is no different: on an i5-14600KF SaT ran faster with 6 threads
+// (its P-cores) than with 8 (measured on ONNX Runtime, before sat.wasm).
 
 import { readdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";

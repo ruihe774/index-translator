@@ -1046,8 +1046,8 @@ export interface components {
          */
         SpeechStatus: "unavailable" | "stopped" | "starting" | "ready" | "error";
         /**
-         * @description `unavailable`: turned off, or ONNX Runtime or the model is not installed. `stopped`:
-         *     installed, the model is not loaded; a `POST /segment` (for alignment, a `POST /align`)
+         * @description `unavailable`: turned off, or the engine (sat.wasm; libllama for alignment) or the model is
+         *     not installed. `stopped`: installed, the model is not loaded; a `POST /segment` (for alignment, a `POST /align`)
          *     loads it (`starting`, then `ready`) and it is unloaded again when idle. `error`: the last
          *     load failed; the next request tries again.
          * @enum {string}
@@ -1789,8 +1789,8 @@ export interface operations {
                 };
             };
             /**
-             * @description Sentence segmentation is not available (`segment_unavailable`): it is turned off, or ONNX
-             *     Runtime or the model is not installed. The message says which.
+             * @description Sentence segmentation is not available (`segment_unavailable`): it is turned off, or
+             *     sat.wasm or the model is not installed. The message says which.
              */
             503: {
                 headers: {
@@ -1889,8 +1889,8 @@ export interface operations {
                 };
             };
             /**
-             * @description Alignment is not available (`align_unavailable`): it is turned off, or ONNX
-             *     Runtime or the model is not installed. The message says which.
+             * @description Alignment is not available (`align_unavailable`): it is turned off, or
+             *     libllama or the model is not installed. The message says which.
              */
             503: {
                 headers: {

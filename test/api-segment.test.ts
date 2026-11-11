@@ -1,4 +1,4 @@
-// POST /segment and the `segment` part of GET /health, on the mock segmenter (no ONNX Runtime): what
+// POST /segment and the `segment` part of GET /health, on the mock segmenter (no sat.wasm): what
 // is refused before the model is asked, the queue, and how the segmenter's failures are answered.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";

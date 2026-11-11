@@ -348,9 +348,9 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
-      # Packed for POST /segment and POST /align (sentence segmentation and alignment).
-      - name: Fetch ONNX Runtime
-        run: bun scripts/fetch_onnxruntime.ts
+      # Packed for POST /segment (sentence segmentation).
+      - name: Fetch sat.wasm
+        run: bun scripts/fetch_sat_wasm.ts
 
       # The minimal Bun that the `bun` job built or found in the cache.
       - name: Restore Bun
@@ -492,9 +492,9 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
-      # Packed for POST /segment and POST /align (sentence segmentation and alignment).
-      - name: Fetch ONNX Runtime
-        run: bun scripts/fetch_onnxruntime.ts
+      # Packed for POST /segment (sentence segmentation).
+      - name: Fetch sat.wasm
+        run: bun scripts/fetch_sat_wasm.ts
 
       # The minimal Bun that the `bun` job built or found in the cache.
       - name: Restore Bun
@@ -794,9 +794,9 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
-      # Packed for POST /segment and POST /align (sentence segmentation and alignment).
-      - name: Fetch ONNX Runtime
-        run: bun scripts/fetch_onnxruntime.ts
+      # Packed for POST /segment (sentence segmentation).
+      - name: Fetch sat.wasm
+        run: bun scripts/fetch_sat_wasm.ts
 
       - name: Restore Bun
         uses: actions/cache/restore@v6

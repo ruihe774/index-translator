@@ -1,4 +1,4 @@
-// POST /align and the `align` part of GET /health, on the mock segmenter (no ONNX Runtime): what is
+// POST /align and the `align` part of GET /health, on the mock segmenter (no LaBSE): what is
 // refused before the model is asked, the shared queue with POST /segment, and the model's failures.
 
 import { afterAll, afterEach, beforeAll, describe, expect, test } from "bun:test";

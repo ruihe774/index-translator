@@ -103,10 +103,10 @@ export interface Config {
   transcribe: boolean;
   /** Directory holding the MOSS-Transcribe-Diarize GGUF. */
   transcribeModelDir: string;
-  /** Sentence segmentation (`POST /segment`); false never loads ONNX Runtime. */
+  /** Sentence segmentation (`POST /segment`); false never loads sat.wasm. */
   segment: boolean;
-  /** Directory with the ONNX Runtime library, as scripts/fetch_onnxruntime.ts leaves it. */
-  onnxruntimeDir: string;
+  /** Directory with sat.wasm, as scripts/fetch_sat_wasm.ts leaves it. */
+  satWasmDir: string;
   /** Directory holding SaT's `model.onnx` and `tokenizer.json`. */
   segmentModelDir: string;
   /** CPU threads for segmentation; 0 uses the performance cores, like `threads`. */
@@ -151,7 +151,7 @@ export const SETTING_NAMES = [
   "TRANSCRIBE",
   "TRANSCRIBE_MODEL_DIR",
   "SEGMENT",
-  "ONNXRUNTIME_DIR",
+  "SAT_WASM_DIR",
   "SEGMENT_MODEL_DIR",
   "SEGMENT_THREADS",
   "SEGMENT_IDLE_UNLOAD",
@@ -255,7 +255,7 @@ export function loadConfig(environment: Env = Bun.env, argv: readonly string[] =
     transcribe: env.TRANSCRIBE !== "0",
     transcribeModelDir: dir(env, "TRANSCRIBE_MODEL_DIR", join(modelsDir, "MOSS-Transcribe-Diarize-GGUF")),
     segment: env.SEGMENT !== "0",
-    onnxruntimeDir: dir(env, "ONNXRUNTIME_DIR", join(root, "vendor", "onnxruntime")),
+    satWasmDir: dir(env, "SAT_WASM_DIR", join(root, "vendor", "sat-wasm")),
     segmentModelDir: dir(env, "SEGMENT_MODEL_DIR", join(modelsDir, "sat-3l-sm")),
     segmentThreads: int(env, "SEGMENT_THREADS", 0),
     segmentIdleUnload: int(env, "SEGMENT_IDLE_UNLOAD", 300),
@@ -294,7 +294,7 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   TRANSCRIBE: "0 turns transcription (a preview) off (default on)",
   TRANSCRIBE_MODEL_DIR: "directory with the transcription model (default MODELS_DIR/MOSS-Transcribe-Diarize-GGUF)",
   SEGMENT: "0 turns sentence segmentation for reading aloud off (default on)",
-  ONNXRUNTIME_DIR: "directory with the ONNX Runtime library (default vendor/onnxruntime)",
+  SAT_WASM_DIR: "directory with sat.wasm, which runs sentence segmentation (default vendor/sat-wasm)",
   SEGMENT_MODEL_DIR: "directory with the sentence segmentation model (default MODELS_DIR/sat-3l-sm)",
   SEGMENT_THREADS: "CPU threads for sentence segmentation and alignment (default the performance cores, at most 8)",
   SEGMENT_IDLE_UNLOAD: "seconds without segmentation (or alignment) before its model is freed; 0 never (default 300)",

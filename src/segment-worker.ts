@@ -1,4 +1,4 @@
-// Worker thread that owns the models of sentence work: SaT (sentence ends, on ONNX Runtime) and LaBSE (sentence
+// Worker thread that owns the models of sentence work: SaT (sentence ends, on sat.wasm) and LaBSE (sentence
 // embeddings, for alignment, on libllama). Running a model blocks, so it runs here and the server thread stays free
 // to answer requests. Every message is handled to its end before the next one. A request is run in
 // batches, and between two batches this thread looks at memory it shares with the server thread to see
@@ -11,15 +11,15 @@ import { alignSentences, lengthOf, openings, translatedLengths } from "./align";
 import type { AlignedPair, AlignUnit, SegmentedText } from "./api";
 import { type Dense, DIMENSIONS, embed, readDense, WordPieceTokenizer } from "./labse";
 import { Embedder } from "./llama-embed-ffi";
-import { loadRuntime, type Runtime, type Session } from "./onnxruntime-ffi";
 import { findBoundaries, type TokenizerJson, XlmrTokenizer } from "./sat";
+import { loadSatEngine, type SatEngine } from "./sat-wasm";
 import { abortFlag, isAborted, serve } from "./worker-rpc";
 
 /** `sat`: `model.onnx` and `tokenizer.json`; `labse`: `model.gguf`, `vocab.txt` and `dense.safetensors`. */
 export type SegmentModel = "sat" | "labse";
 
 export interface SegmentModelOptions {
-  /** Directory with the model's engine: ONNX Runtime for `sat`, libllama for `labse`. */
+  /** Directory with the model's engine: sat.wasm for `sat`, libllama for `labse`. */
   libraryDir: string;
   /** Directory with the model's files. */
   modelDir: string;
@@ -33,7 +33,7 @@ interface Aborted {
 
 // `abort` holds one Int32 that the server thread makes non-zero when nobody wants the answer any more.
 export interface SegmentProtocol {
-  load: { request: { model: SegmentModel; options: SegmentModelOptions }; reply: { type: "ok"; version?: string } };
+  load: { request: { model: SegmentModel; options: SegmentModelOptions }; reply: { type: "ok" } };
   unload: { request: { model: SegmentModel }; reply: { type: "ok" } };
   segment: {
     request: { texts: string[]; minProbability: number; abort: SharedArrayBuffer };
@@ -45,14 +45,12 @@ export interface SegmentProtocol {
   };
 }
 
-/** The runtime stays loaded once opened (closing and reopening a library buys nothing); the models do not. */
-let runtime: Runtime | undefined;
-let sat: { session: Session; tokenizer: XlmrTokenizer } | undefined;
+let sat: { engine: SatEngine; tokenizer: XlmrTokenizer } | undefined;
 let labse: { encoder: Embedder; tokenizer: WordPieceTokenizer; dense: Dense } | undefined;
 
 function unload(model: SegmentModel): void {
   if (model === "sat") {
-    sat?.session.close();
+    sat?.engine.close();
     sat = undefined;
   } else {
     labse?.encoder.free();
@@ -64,10 +62,8 @@ function load(model: SegmentModel, options: SegmentModelOptions): void {
   unload(model);
   const file = (name: string) => join(options.modelDir, name);
   if (model === "sat") {
-    runtime ??= loadRuntime(options.libraryDir);
     const tokenizer = new XlmrTokenizer(JSON.parse(readFileSync(file("tokenizer.json"), "utf8")) as TokenizerJson);
-    const signature = { inputs: ["input_ids", "attention_mask"], output: "logits" };
-    sat = { session: runtime.open(file("model.onnx"), options.threads, signature), tokenizer };
+    sat = { engine: loadSatEngine(options.libraryDir, file("model.onnx"), options.threads), tokenizer };
   } else {
     const tokenizer = new WordPieceTokenizer(readFileSync(file("vocab.txt"), "utf8"));
     const dense = readDense(readFileSync(file("dense.safetensors")));
@@ -79,7 +75,7 @@ function load(model: SegmentModel, options: SegmentModelOptions): void {
 serve<SegmentProtocol>({
   load: (msg) => {
     load(msg.model, msg.options);
-    return { type: "ok", version: msg.model === "sat" ? runtime!.version : undefined };
+    return { type: "ok" };
   },
   unload: (msg) => {
     unload(msg.model);
@@ -89,15 +85,9 @@ serve<SegmentProtocol>({
     if (!sat) {
       throw new Error("the segmentation model is not loaded");
     }
-    const { session, tokenizer } = sat;
+    const { engine, tokenizer } = sat;
     const abort = abortFlag(msg.abort);
-    const texts = findBoundaries(
-      tokenizer,
-      msg.texts,
-      (ids, mask, rows, width) => session.run([ids, mask], rows, width, 1),
-      msg.minProbability,
-      () => isAborted(abort),
-    );
+    const texts = findBoundaries(tokenizer, msg.texts, engine.run, msg.minProbability, () => isAborted(abort));
     return texts ? { type: "boundaries", texts } : { type: "aborted" };
   },
   align: (msg) => {

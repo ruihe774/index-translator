@@ -59,7 +59,7 @@ describe("metadata endpoints", () => {
       speech: { status: "unavailable", error: "the speech engine is not installed; run bun scripts/build_audiocpp.ts" },
       segment: {
         status: "unavailable",
-        error: "ONNX Runtime is not installed; run bun scripts/fetch_onnxruntime.ts",
+        error: "sat.wasm is not installed; run bun scripts/fetch_sat_wasm.ts",
         max_chars: 20_000,
       },
       align: {

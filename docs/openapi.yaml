@@ -381,8 +381,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: |
-            Sentence segmentation is not available (`segment_unavailable`): it is turned off, or ONNX
-            Runtime or the model is not installed. The message says which.
+            Sentence segmentation is not available (`segment_unavailable`): it is turned off, or
+            sat.wasm or the model is not installed. The message says which.
           content:
             application/json:
               schema:
@@ -474,8 +474,8 @@ paths:
                 $ref: "#/components/schemas/Error"
         "503":
           description: |
-            Alignment is not available (`align_unavailable`): it is turned off, or ONNX
-            Runtime or the model is not installed. The message says which.
+            Alignment is not available (`align_unavailable`): it is turned off, or
+            libllama or the model is not installed. The message says which.
           content:
             application/json:
               schema:
@@ -1996,8 +1996,8 @@ components:
       type: string
       enum: [unavailable, stopped, starting, ready, error]
       description: |
-        `unavailable`: turned off, or ONNX Runtime or the model is not installed. `stopped`:
-        installed, the model is not loaded; a `POST /segment` (for alignment, a `POST /align`)
+        `unavailable`: turned off, or the engine (sat.wasm; libllama for alignment) or the model is
+        not installed. `stopped`: installed, the model is not loaded; a `POST /segment` (for alignment, a `POST /align`)
         loads it (`starting`, then `ready`) and it is unloaded again when idle. `error`: the last
         load failed; the next request tries again.
     AlignRequest:

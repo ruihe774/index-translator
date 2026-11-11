@@ -148,7 +148,7 @@ bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from 
 bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
 bun scripts/build_libopus.ts    # libopus, which compresses speech for the browser and reads compressed uploads: built from source, seconds
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, the sentence segmentation and alignment models, example voices
-bun scripts/fetch_onnxruntime.ts  # ONNX Runtime, which runs the sentence segmentation model, into vendor/
+bun scripts/fetch_sat_wasm.ts    # sat.wasm, which runs the sentence segmentation model, into vendor/
 bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and show equations in the browser, into public/vendor/
 bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into Markdown, into vendor/
 ```

@@ -1,6 +1,6 @@
 // LaBSE (Language-agnostic BERT Sentence Embedding) without the runtime: BERT's WordPiece tokenizer,
 // read from the model's `vocab.txt`, and the sentence-transformers pooling that turns the encoder's
-// output into one vector per sentence. The encoder itself runs elsewhere (`RunEncoder`: ONNX Runtime on
+// output into one vector per sentence. The encoder itself runs elsewhere (`RunEncoder`: libllama on
 // the segmentation worker), so everything here is plain TypeScript and testable without it.
 //
 // The tokenizer is Hugging Face's for LaBSE: a BertNormalizer that keeps case and accents (control
