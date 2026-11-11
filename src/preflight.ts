@@ -61,7 +61,9 @@ export function runProbe(llamaDir: string): Probe {
     }
   }
   const how = child.signalCode ? `was ended by ${child.signalCode}` : `ended with exit code ${child.exitCode}`;
-  return { error: `Its check ${how}, which points at the graphics driver.${log ? `\n${log}` : ""}` };
+  return {
+    error: `Its check ${how}, which points at the graphics driver or an unsatisfied CPU requirement.${log ? `\n${log}` : ""}`,
+  };
 }
 
 // Message builders: text only, no filesystem. `preflight` below decides what to say.
