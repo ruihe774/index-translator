@@ -25,7 +25,7 @@ const MTP_DRAFT = 2;
 const MTP_MIN_GPU_BYTES = 15.5 * 2 ** 30;
 
 export const libraryPath = (dir: string) => libraryFile(dir, "llama");
-/** src/llama-shim.c as scripts/build_llama.ts compiled it, against the headers of the libllama beside it. */
+/** src/llama-shim.cpp as scripts/build_llama.ts compiled it, against the headers of the libllama beside it. */
 export const shimPath = (dir: string) => libraryFile(dir, "llama-shim");
 /** llama.cpp's library for image input, from the same build. */
 const mtmdPath = (dir: string) => libraryFile(dir, "mtmd");
@@ -58,7 +58,7 @@ function bind(dir: string) {
     mtmd_input_chunks_free: { args: ["ptr"], returns: "void" },
     mtmd_helper_get_n_tokens: { args: ["ptr"], returns: "usize" },
   }).symbols;
-  // src/llama-shim.c and src/llama-shim-ext.cpp.
+  // src/llama-shim.cpp and src/llama-shim-ext.cpp.
   const shim = dlopen(shimPath(dir), {
     shim_init: { args: ["ptr"], returns: "void" },
     shim_devices: { args: ["ptr", "i32"], returns: "i32" },

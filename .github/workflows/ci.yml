@@ -298,7 +298,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
@@ -447,7 +447,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp-cuda
-          key: llama-cuda-${{ env.CUDA_PACKAGE_VERSION }}-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-cuda-${{ env.CUDA_PACKAGE_VERSION }}-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.cpp') }}
 
       - name: Build the translation engine (llama.cpp, CUDA)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
@@ -588,7 +588,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
@@ -749,7 +749,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
