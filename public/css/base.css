@@ -22,9 +22,13 @@ body {
   font: var(--dynamic-type-font-size, 1rem) / 1.5 var(--font);
 }
 
+/* Balanced headings, except Japanese and Chinese, which wrap as their body text does (cjk.css). */
 h1,
 h2 {
   margin: 0;
+}
+
+:is(h1, h2):not(:lang(ja), :lang(zh)) {
   text-wrap: balance;
 }
 

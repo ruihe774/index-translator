@@ -28,8 +28,9 @@
     line-height: 1.3;
   }
 
-  .settled :is(h3, h4, h5, h6),
-  :is(h3, h4, h5, h6).settled {
+  /* Japanese and Chinese headings wrap as their body text does (cjk.css), so they are not balanced. */
+  .settled :is(h3, h4, h5, h6):not(:lang(ja), :lang(zh)),
+  :is(h3, h4, h5, h6).settled:not(:lang(ja), :lang(zh)) {
     text-wrap: balance;
   }
 
