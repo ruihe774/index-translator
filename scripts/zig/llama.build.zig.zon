@@ -1,0 +1,21 @@
+.{
+    .name = .llama_spike,
+    .version = "0.0.0",
+    .fingerprint = 0x3e7618487ffcd86,
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .llama_cpp = .{
+            .url = "https://github.com/ggml-org/llama.cpp/archive/cd959bae99ff4bed22bef2604f45241c09bbb8c8.tar.gz",
+            .hash = "N-V-__8AAIZK7wowrVPBF1a0QUlJdooy7ZP3UWj8fX4A3KG3",
+        },
+        .vulkan_headers = .{
+            .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.341.tar.gz",
+            .hash = "N-V-__8AABJ5QgLfX-rcpaOGlg1YXcabW-m5cl5HEKkRsi3f",
+        },
+        .spirv_headers = .{
+            .url = "https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/vulkan-sdk-1.4.341.0.tar.gz",
+            .hash = "N-V-__8AAL3WPACjJ68w-42pC9p4-xZRqOcpR2i6CYOMfMK7",
+        },
+    },
+    .paths = .{""},
+}

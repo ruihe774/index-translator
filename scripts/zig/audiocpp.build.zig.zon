@@ -1,0 +1,21 @@
+.{
+    .name = .audiocpp_spike,
+    .version = "0.0.0",
+    .fingerprint = 0xb607d35759192d92,
+    .minimum_zig_version = "0.17.1",
+    .dependencies = .{
+        .audio_cpp = .{
+            .url = "https://github.com/0xShug0/audio.cpp/archive/f7ac446fb75e594a6913c846bea6c85b637f6ac0.tar.gz",
+            .hash = "N-V-__8AAGC7rQ7S-RH3ZtXxwUZHgYdeJxKOTZ8pJgGDQlJG",
+        },
+        .vulkan_headers = .{
+            .url = "https://github.com/KhronosGroup/Vulkan-Headers/archive/refs/tags/v1.4.341.tar.gz",
+            .hash = "N-V-__8AABJ5QgLfX-rcpaOGlg1YXcabW-m5cl5HEKkRsi3f",
+        },
+        .spirv_headers = .{
+            .url = "https://github.com/KhronosGroup/SPIRV-Headers/archive/refs/tags/vulkan-sdk-1.4.341.0.tar.gz",
+            .hash = "N-V-__8AAL3WPACjJ68w-42pC9p4-xZRqOcpR2i6CYOMfMK7",
+        },
+    },
+    .paths = .{""},
+}

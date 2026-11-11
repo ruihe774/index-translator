@@ -5,7 +5,9 @@
 //
 // The output directory gets build.zig, generated/ (the headers CMake wrote at configure time that the compiles
 // include) and overlay/ (the source files the checkout changes from upstream, i.e. our patches applied). Its
-// build.zig.zon, with the upstream source and the Vulkan and SPIR-V headers, is written by hand (zig fetch --save).
+// build.zig.zon, with the pinned upstream source and the Vulkan and SPIR-V headers, is kept beside the config as
+// <config>.build.zig.zon (written by hand, `zig fetch --save`) and copied; its pin is the one in build_llama.ts or
+// build_audiocpp.ts.
 //
 // Every CMake target becomes a Zig object with its own include paths and flags, as CMake compiled it. What is not
 // in the compdb is handled by name (marked GENERATED below): CMake's unity sources and the Vulkan shaders.
@@ -410,6 +412,7 @@ for (const [name, t] of targets) {
   w();
 }
 w(`}`);
+cpSync(configPath.replace(/\.json$/, ".build.zig.zon"), join(outDir, "build.zig.zon"));
 writeFileSync(join(outDir, "build.zig"), `${out.join("\n")}\n`);
 console.log(
   `${outDir}/build.zig: ${targets.size} targets, ${used.length} compiles, ${deps.size} generated headers, ${changed.length} patched files`,
