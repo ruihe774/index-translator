@@ -1,0 +1,12 @@
+{
+  "name": "llama-shim",
+  "dependency": "llama_cpp",
+  "exports": ["llama_*", "mtmd_*", "shim_*"],
+  "extra": {
+    "dir": "shim",
+    "files": ["llama-shim.cpp", "llama-shim-ext.cpp"],
+    "flags": ["-std=c++17", "-Wall", "-Wextra"],
+    "includes": ["include", "src", "tools/mtmd", "ggml/include"]
+  },
+  "vulkanImports": ["vkCmdCopyBuffer", "vkGetDeviceProcAddr", "vkGetInstanceProcAddr", "vkGetPhysicalDeviceFeatures2"]
+}

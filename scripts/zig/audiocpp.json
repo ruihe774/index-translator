@@ -1,0 +1,7 @@
+{
+  "name": "audiocpp",
+  "dependency": "audio_cpp",
+  "roots": ["bin/libaudiocpp.so.0.1.0"],
+  "exports": "src/capi/audiocpp.map",
+  "vulkanImports": ["vkCmdCopyBuffer", "vkGetInstanceProcAddr", "vkGetPhysicalDeviceFeatures2"]
+}
