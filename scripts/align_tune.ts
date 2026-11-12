@@ -22,7 +22,8 @@
 // block count differs from its source's is not used. Settings are applied to a copy of src/align.ts in
 // <dir>, so the application's own file is never changed.
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync } from "node:fs";
+import { mkdir, readdir } from "node:fs/promises";
 import { join } from "node:path";
 
 import { blockStarts, blockTexts } from "../public/paragraphs";
@@ -75,43 +76,41 @@ interface Meta {
   usable: boolean;
 }
 
-function save(dir: string, kind: Kind, id: string, source: string, target: string, meta: Omit<Meta, "usable">) {
+async function save(dir: string, kind: Kind, id: string, source: string, target: string, meta: Omit<Meta, "usable">) {
   const folder = join(dir, kind, id);
-  mkdirSync(folder, { recursive: true });
+  await mkdir(folder, { recursive: true });
   const ext = kind === "md" ? "md" : "txt";
   const count = (t: string) => (kind === "md" ? blockStarts(t, "paragraphs").length : paragraphs(t).length);
   const [a, b] = [count(source), count(target)];
-  writeFileSync(join(folder, `src.${ext}`), `${source}\n`);
-  writeFileSync(join(folder, `tgt.${ext}`), `${target}\n`);
-  writeFileSync(join(folder, "meta.json"), JSON.stringify({ ...meta, usable: a === b } satisfies Meta));
+  await Bun.write(join(folder, `src.${ext}`), `${source}\n`);
+  await Bun.write(join(folder, `tgt.${ext}`), `${target}\n`);
+  await Bun.write(join(folder, "meta.json"), JSON.stringify({ ...meta, usable: a === b } satisfies Meta));
   console.log(`${a === b ? "ok  " : "SKIP"} ${kind}/${id}: ${a} -> ${b} blocks`);
 }
 
 /** The sections of the repository's Markdown files that make short documents with headings, tables, code and lists. */
-function markdownSections(): { id: string; text: string }[] {
+async function markdownSections(): Promise<{ id: string; text: string }[]> {
   const picked: { id: string; text: string; features: string }[] = [];
   for (const file of ["README.md", "e2e/README.md", "WINDOWS.md", "docs/markdown-conformance.md"]) {
-    readFileSync(join(ROOT, file), "utf8")
-      .split(/^(?=#{1,4} )/m)
-      .forEach((section, i) => {
-        const text = section.trim();
-        const blocks = blockStarts(text, "paragraphs").length;
-        const features = [
-          /^\|.*\|\s*$/m.test(text) && "table",
-          /^```/m.test(text) && "code",
-          /^\s*[-*] /m.test(text) && "list",
-        ]
-          .filter(Boolean)
-          .join("+");
-        if (
-          text.length >= SECTION.minChars &&
-          text.length <= SECTION.maxChars &&
-          blocks >= SECTION.minBlocks &&
-          blocks <= SECTION.maxBlocks
-        ) {
-          picked.push({ id: `${file.replaceAll(/\W+/g, "_")}_${i}`, text, features });
-        }
-      });
+    (await Bun.file(join(ROOT, file)).text()).split(/^(?=#{1,4} )/m).forEach((section, i) => {
+      const text = section.trim();
+      const blocks = blockStarts(text, "paragraphs").length;
+      const features = [
+        /^\|.*\|\s*$/m.test(text) && "table",
+        /^```/m.test(text) && "code",
+        /^\s*[-*] /m.test(text) && "list",
+      ]
+        .filter(Boolean)
+        .join("+");
+      if (
+        text.length >= SECTION.minChars &&
+        text.length <= SECTION.maxChars &&
+        blocks >= SECTION.minBlocks &&
+        blocks <= SECTION.maxBlocks
+      ) {
+        picked.push({ id: `${file.replaceAll(/\W+/g, "_")}_${i}`, text, features });
+      }
+    });
   }
   // Those with a table or code first, then lists, then the rest, up to what the combinations need.
   const rank = (p: { features: string }) => (/table|code/.test(p.features) ? 0 : p.features ? 1 : 2);
@@ -130,10 +129,11 @@ async function makeCorpus(baseUrl: string, dir: string): Promise<void> {
         max_output_tokens: 20_000,
       })
     ).translation.trim();
-  const fixture = (name: string) => readFileSync(join(ROOT, "test", "fixtures", name), "utf8").trim();
-  const [en, zh] = [fixture("essays.en.txt"), fixture("essays.zh.txt")];
-  const exists = (kind: Kind, id: string) => existsSync(join(dir, kind, id, "meta.json"));
-  const text = (kind: Kind, id: string, file: string) => readFileSync(join(dir, kind, id, file), "utf8").trim();
+  const fixture = async (name: string) => (await Bun.file(join(ROOT, "test", "fixtures", name)).text()).trim();
+  const [en, zh] = await Promise.all([fixture("essays.en.txt"), fixture("essays.zh.txt")]);
+  const exists = (kind: Kind, id: string) => Bun.file(join(dir, kind, id, "meta.json")).exists();
+  const text = async (kind: Kind, id: string, file: string) =>
+    (await Bun.file(join(dir, kind, id, file)).text()).trim();
   const halves = (t: string) => {
     const p = paragraphs(t);
     const at = Math.ceil(p.length / 2);
@@ -141,18 +141,19 @@ async function makeCorpus(baseUrl: string, dir: string): Promise<void> {
   };
 
   // The document model first, so that the backend swaps models once.
-  if (!exists("prose", "nl-en-zh")) {
-    save(dir, "prose", "nl-en-zh", en, zh, { model: NATIVE_LONG, from: "en", to: "zh" });
+  if (!(await exists("prose", "nl-en-zh"))) {
+    await save(dir, "prose", "nl-en-zh", en, zh, { model: NATIVE_LONG, from: "en", to: "zh" });
   }
   const long = async (id: string, source: string, from: string, to: string) => {
-    if (!exists("prose", id)) {
-      save(dir, "prose", id, source, await translate(source, NATIVE_LONG, from, to), { model: NATIVE_LONG, from, to });
+    if (!(await exists("prose", id))) {
+      const target = await translate(source, NATIVE_LONG, from, to);
+      await save(dir, "prose", id, source, target, { model: NATIVE_LONG, from, to });
     }
   };
   await long("nl-zh-en", zh, "zh", "en");
   await long("nl-zh-ja", zh, "zh", "ja");
-  if (exists("prose", "nl-zh-ja")) {
-    await long("nl-ja-zh", text("prose", "nl-zh-ja", "tgt.txt"), "ja", "zh");
+  if (await exists("prose", "nl-zh-ja")) {
+    await long("nl-ja-zh", await text("prose", "nl-zh-ja", "tgt.txt"), "ja", "zh");
   }
 
   for (const [from, to, source] of [
@@ -165,28 +166,28 @@ async function makeCorpus(baseUrl: string, dir: string): Promise<void> {
     ["zh", "en", zh],
   ] as const) {
     const id = `chat-${from}-${to}`;
-    if (!exists("prose", id)) {
+    if (!(await exists("prose", id))) {
       const [a, b] = halves(source);
       const target = `${await translate(a, undefined, from, to)}\n\n${await translate(b, undefined, from, to)}`;
-      save(dir, "prose", id, source, target, { model: "chat", from, to });
+      await save(dir, "prose", id, source, target, { model: "chat", from, to });
     }
   }
 
-  const sections = markdownSections();
+  const sections = await markdownSections();
   let first = 0;
   for (const [group, size] of DOCUMENTS_PER_COMBINATION.entries()) {
     const members = sections.slice(first, first + size);
     first += size;
     for (const to of MARKDOWN_LANGUAGES) {
       const id = `combo${group}-${to}`;
-      if (exists("md", id)) {
+      if (await exists("md", id)) {
         continue;
       }
       const targets: string[] = [];
       for (const { text: section } of members) {
         targets.push(await translate(section, undefined, "en", to));
       }
-      save(dir, "md", id, members.map((m) => m.text).join("\n\n"), targets.join("\n\n"), {
+      await save(dir, "md", id, members.map((m) => m.text).join("\n\n"), targets.join("\n\n"), {
         model: "chat",
         from: "en",
         to,
@@ -205,25 +206,25 @@ interface Doc {
   target: string[];
 }
 
-function loadCorpus(dir: string): Doc[] {
+async function loadCorpus(dir: string): Promise<Doc[]> {
   const docs: Doc[] = [];
   for (const kind of ["prose", "md"] as const) {
     if (!existsSync(join(dir, kind))) {
       continue;
     }
-    for (const id of readdirSync(join(dir, kind))) {
-      const meta = JSON.parse(readFileSync(join(dir, kind, id, "meta.json"), "utf8")) as Meta;
+    for (const id of await readdir(join(dir, kind))) {
+      const meta = (await Bun.file(join(dir, kind, id, "meta.json")).json()) as Meta;
       if (!meta.usable) {
         continue;
       }
       const ext = kind === "md" ? "md" : "txt";
-      const blocks = (file: string) => blockTexts(readFileSync(join(dir, kind, id, file), "utf8"), "paragraphs");
+      const blocks = async (file: string) => blockTexts(await Bun.file(join(dir, kind, id, file)).text(), "paragraphs");
       docs.push({
         id,
         kind,
         languages: `${meta.from}-${meta.to}`,
-        source: blocks(`src.${ext}`),
-        target: blocks(`tgt.${ext}`),
+        source: await blocks(`src.${ext}`),
+        target: await blocks(`tgt.${ext}`),
       });
     }
   }
@@ -232,14 +233,14 @@ function loadCorpus(dir: string): Doc[] {
 
 /** A copy of src/align.ts, written to `file`, whose settings `setSettings` changes. */
 async function tunableAlign(file: string): Promise<TunableAlign> {
-  const source = readFileSync(join(ROOT, "src", "align.ts"), "utf8")
+  const source = (await Bun.file(join(ROOT, "src", "align.ts")).text())
     .replace('from "./api"', `from "${join(ROOT, "src", "api")}"`)
     .replaceAll(/^const (NEIGHBOURS|PER_SENTENCE|LENGTH|OPENING_RANGE) =/gm, "let $1 =")
     .replace(/^export const OPENING =/m, "export let OPENING =");
   if (!source.includes("let LENGTH =") || !source.includes("export let OPENING =")) {
     throw new Error("src/align.ts no longer has the constants this script patches");
   }
-  writeFileSync(
+  await Bun.write(
     file,
     `${source}
 export function setSettings(o: { unmatched?: number; opening?: number; length?: number; neighbours?: number; size?: number; group22?: boolean }) {
@@ -337,14 +338,14 @@ interface Tally {
 }
 
 async function evaluate(dir: string, sets: Settings[]): Promise<void> {
-  const docs = loadCorpus(dir);
+  const docs = await loadCorpus(dir);
   if (docs.length === 0) {
     throw new Error(`no usable translations in ${dir}; run: bun scripts/align_tune.ts corpus <base-url> ${dir}`);
   }
   const cfg = loadConfig(Bun.env);
   const align = await tunableAlign(join(dir, "align-tunable.ts"));
-  const tokenizer = new WordPieceTokenizer(readFileSync(join(cfg.alignModelDir, "vocab.txt"), "utf8"));
-  const dense = readDense(new Uint8Array(readFileSync(join(cfg.alignModelDir, "dense.safetensors"))));
+  const tokenizer = new WordPieceTokenizer(await Bun.file(join(cfg.alignModelDir, "vocab.txt")).text());
+  const dense = readDense(await Bun.file(join(cfg.alignModelDir, "dense.safetensors")).bytes());
   const encoder = Embedder.load(
     cfg.llamaDir,
     join(cfg.alignModelDir, "model.gguf"),

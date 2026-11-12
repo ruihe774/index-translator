@@ -167,7 +167,12 @@ function optionalImage(body: Record<string, unknown>): Uint8Array | undefined {
     });
   }
   const base64 = v.startsWith("data:") ? v.slice(v.indexOf(",") + 1) : v;
-  const bytes = new Uint8Array(Buffer.from(base64, "base64"));
+  let bytes: Uint8Array;
+  try {
+    bytes = Uint8Array.fromBase64(base64);
+  } catch {
+    throw invalid("image must be a base64 string or a data: URL", "image");
+  }
   if (bytes.length === 0) {
     throw invalid("image must be a base64 string or a data: URL", "image");
   }

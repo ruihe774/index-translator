@@ -93,7 +93,7 @@ class MemoryReader {
           return undefined;
         }
       };
-      const timeout = new Promise<undefined>((resolve) => void setTimeout(resolve, MEMORY_WAIT_MS));
+      const timeout = Bun.sleep(MEMORY_WAIT_MS).then(() => void 0);
       this.reading = { at: now, pending: Promise.race([ask(), timeout]) };
     }
     return this.reading.pending;

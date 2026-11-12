@@ -23,7 +23,6 @@
 // machine's glibc; the build fails otherwise. The patch also turns off Bun's `--wrap` list, which pins what glibc 2.31
 // has above 2.17 down to 2.17 (its own shims of exp, getrandom, statx, ...): 2.31 is old enough.
 
-import { existsSync } from "node:fs";
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
@@ -103,7 +102,7 @@ if (import.meta.main) {
     throw e;
   });
   const built = join(build, exe);
-  if (!existsSync(built)) {
+  if (!(await Bun.file(built).exists())) {
     throw new Error(`the build left no ${built}`);
   }
 

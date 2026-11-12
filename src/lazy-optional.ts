@@ -1,7 +1,5 @@
 // A codec file that may or may not be installed, loaded the first time it is asked for.
 
-import { existsSync } from "node:fs";
-
 /**
  * A codec loaded on first use from `file()`: undefined while the file is not there, or when loading
  * it fails (logged as `failure` and the codec is given up for good). The file's absence is not
@@ -15,7 +13,7 @@ export function lazyOptional<T>(
   let loading: Promise<T | undefined> | undefined;
   return async () => {
     const path = file();
-    if (!loading && !existsSync(path)) {
+    if (!loading && !(await Bun.file(path).exists())) {
       return;
     }
     loading ??= (async (): Promise<T | undefined> => {

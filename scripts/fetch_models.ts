@@ -300,7 +300,7 @@ export async function fetchFile(
   curl: string,
   log: (line: string) => void,
 ): Promise<void> {
-  if (existsSync(file.dest)) {
+  if (await Bun.file(file.dest).exists()) {
     const got = await fileSha256(file.dest);
     if (got === file.sha256) {
       return log(`ok ${file.dest}`);
@@ -339,7 +339,8 @@ export async function fetchFile(
   const code = await child.exited;
   // 22 is an HTTP error, which is also what a .part file that is already complete gets (416 for the
   // empty range that is left to fetch), so there the file decides.
-  const got = existsSync(part) && (code === 0 || code === 22) ? await fileSha256(part) : "";
+  const partExists = await Bun.file(part).exists();
+  const got = partExists && (code === 0 || code === 22) ? await fileSha256(part) : "";
   if (got === file.sha256) {
     await rename(part, file.dest);
     return log(`ok ${file.dest}`);
@@ -347,7 +348,7 @@ export async function fetchFile(
   if (code !== 0) {
     throw new FetchError(
       `the download of ${url} failed (curl exit code ${code}); check the network connection and run this again${
-        existsSync(part) ? ", which continues where it stopped" : ""
+        partExists ? ", which continues where it stopped" : ""
       }`,
     );
   }
