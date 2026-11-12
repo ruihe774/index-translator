@@ -320,6 +320,10 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             git cmake ninja-build glslc libvulkan-dev spirv-headers
 
+      # scripts/fetch_zig.ts unpacks with scripts/extract_tools.ts, which imports @stdx/zip, a development dependency.
+      - name: Install the development tools
+        run: bun install --frozen-lockfile
+
       # The engines, libsoxr and libopus are built with Zig (scripts/zigbuild_*.ts), the release that
       # scripts/fetch_zig.ts pins.
       - name: Cache Zig
@@ -481,6 +485,10 @@ jobs:
           if (-not (Test-Path "$sdk\Bin\glslc.exe")) { throw "the Vulkan SDK was not installed to $sdk" }
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "$sdk\Bin" >> $env:GITHUB_PATH
+
+      # scripts/fetch_zig.ts unpacks with scripts/extract_tools.ts, which imports @stdx/zip, a development dependency.
+      - name: Install the development tools
+        run: bun install --frozen-lockfile
 
       # The engines and libsoxr are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins,
       # for x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
@@ -658,6 +666,10 @@ jobs:
           if (-not (Test-Path "$sdk\Bin\glslc.exe")) { throw "the Vulkan SDK was not installed to $sdk" }
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "$sdk\Bin" >> $env:GITHUB_PATH
+
+      # scripts/fetch_zig.ts unpacks with scripts/extract_tools.ts, which imports @stdx/zip, a development dependency.
+      - name: Install the development tools
+        run: bun install --frozen-lockfile
 
       # The engines, libsoxr and libopus are built with Zig (scripts/zigbuild_*.ts), the release that
       # scripts/fetch_zig.ts pins, for x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
