@@ -96,11 +96,6 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
 - It runs on x86-64 or aarch64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later). Besides
   the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
   an x86-64 processor with AVX2.
-- **NVIDIA GPUs:** `Index_Translator-x86_64-cuda.AppImage` and `Index_Translator-aarch64-cuda.AppImage` (the
-  same download, next to the others) run on CUDA 13 instead of Vulkan: use them with a driver of version 580 or
-  newer (`nvidia-smi` shows it); no Vulkan driver is needed, and they work the same otherwise. They are larger,
-  as they carry NVIDIA's CUDA runtime libraries. The other AppImages use Vulkan, which NVIDIA's driver also
-  provides.
 
 ### Windows installer
 
