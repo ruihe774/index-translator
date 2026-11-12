@@ -39,11 +39,11 @@ The engines and their libraries are built with Zig, as on Linux: `bun scripts/fe
 then `bun scripts/zigbuild_llamacpp.ts`, `bun scripts/zigbuild_audiocpp.ts`, `bun scripts/zigbuild_soxr.ts` and
 `bun scripts/zigbuild_libopus.ts`, for the target `x86_64-windows-gnu`
 (`scripts/zig/zig-toolchain-x86_64-windows-gnu.cmake`: MinGW-w64 with UCRT, libc++ linked in, x86-64-v3). No
-administrator rights. They need Git, CMake and Ninja on the PATH (a Developer Command Prompt of Visual Studio or its
-Build Tools has CMake and Ninja, or `winget install Kitware.CMake Ninja-build.Ninja`; the scripts do not look for
-them elsewhere) and, for the engines, the Vulkan SDK (`glslc`, the headers, `vulkan-1.lib`; the toolchain file takes
-the library from `VULKAN_SDK`, which the engine scripts require), no C or C++ compiler. A terminal opened before the
-installs needs a restart to see the new PATH.
+administrator rights. They need Git, CMake and Ninja on the PATH (their standalone installers, or
+`winget install Git.Git Kitware.CMake Ninja-build.Ninja`; the scripts do not look for them elsewhere, Visual Studio's
+copies included) and, for the engines, the Vulkan SDK (`glslc`, the headers, `vulkan-1.lib`; the toolchain file takes
+the library from `VULKAN_SDK`, which the engine scripts require), no C or C++ compiler and no Visual Studio. A
+terminal opened before the installs needs a restart to see the new PATH.
 
 - llama.cpp gives one `llama.dll`: libllama, libmtmd, the shim, ggml, its Vulkan and CPU backends. Nothing in it is
   marked `dllexport` (llama.h under MinGW, and the shim likewise), so the linker exports every symbol; a single
@@ -80,12 +80,12 @@ port, download models, third-party notices, server settings), each running in an
 console in the repository directory. It finds the repository by walking up from the exe until
 `src\server.ts` exists, and takes `bun` from the `PATH`, so keep `launcher.exe` inside the checkout.
 
-- Build: `packaging\windows\build.bat` (from `cmd` or PowerShell; in Git Bash `cmd //c packaging\windows\build.bat`).
-  Needs Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload,
-  found with `vswhere`; the script calls `vcvars64.bat` itself, so no Developer Prompt is needed.
-- Output: `packaging/windows/launcher.exe` (untracked, listed in `.gitignore`). `launcher.manifest`
-  (Common Controls 6 for command links and visual styles, Per-Monitor DPI Awareness V2) is embedded
-  by the build; the `.obj` is deleted afterwards.
+- Build: `bun scripts/zigbuild_launcher.ts`. Zig only (`bun scripts/fetch_zig.ts`): `zig cc` for `x86_64-windows-gnu`
+  (MinGW-w64 with UCRT, as the engines) with `-municode` and the GUI subsystem, `launcher.rc` compiled by Zig's
+  resource compiler. No CMake, Ninja or Visual Studio, and no Visual C++ runtime at run time.
+- Output: `packaging/windows/launcher.exe` (untracked, listed in `.gitignore`). `launcher.rc` holds the icon and
+  `launcher.manifest` (Common Controls 6 for command links and visual styles, Per-Monitor DPI Awareness V2) as the
+  exe's manifest resource.
 - Run it by double-clicking. It is not built in CI and has no automated test; check changes by hand
   at more than one display scale (all sizes are 96-dpi units scaled by the window's DPI).
 
@@ -100,20 +100,18 @@ is the shortcut's target. The launcher's commands run in the install directory, 
 
 - Needs the two engines built first (`zigbuild_llamacpp.ts`, `zigbuild_audiocpp.ts`), `zigbuild_soxr.ts`,
   `zigbuild_libopus.ts` and `build_bun.ts` (the packed `bun.exe`, a minimal build of Bun; it needs LLVM 23.1, NASM and Perl beside Visual
-  Studio, see the head of the script), the web app's PDF
-  libraries fetched (`fetch_web_libs.ts`, packed with `public\`), `fetch_sat_wasm.ts` (`sat.wasm`,
-  which runs the sentence segmentation model) and the launcher's MSVC
-  tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads
+  Studio, see the head of the script; Visual Studio is needed for nothing else here), the web app's PDF
+  libraries fetched (`fetch_web_libs.ts`, packed with `public\`) and `fetch_sat_wasm.ts` (`sat.wasm`,
+  which runs the sentence segmentation model). The script runs `zigbuild_launcher.ts` when `launcher.c`, `launcher.rc`
+  or the manifest is newer than `launcher.exe`, and downloads
   and installs Inno Setup 6.7.3 for the current user (pinned checksum) when `ISCC.exe` is not found.
 - Per-user install by default (`%LOCALAPPDATA%\Programs\Index Translator`, no administrator rights),
   so `models\` and `voices\` beside the program stay writable; the "Download models" link fills them.
   The uninstaller removes only what the installer put there, so models and voices stay.
-- The Visual C++ runtime is not packed. Neither the engines nor `soxr.dll` and `opus.dll` import it (they did when
-  built with MSVC); whether `bun.exe` does has not been checked, so the installer still provides it. It includes
-  `packaging/windows/CodeDependencies.iss` (a copy of DomGries/InnoDependencyInstaller) and calls
-  `Dependency_AddVC14`: when the runtime is missing or older than the version the script names, the installer downloads Microsoft's redistributable (checksum pinned in that file) and runs it,
-  which asks for administrator rights itself. Needs network only on a machine without the runtime.
-  The Universal CRT comes with Windows 10 and later. Not tested without the redistributable.
+- The Visual C++ runtime is neither packed nor installed. The engines, `soxr.dll` and `opus.dll` (built with Zig, which
+  links MinGW-w64 against the Universal CRT), the minimal `bun.exe` and `launcher.exe` import only Windows' own DLLs
+  and the Universal CRT (`api-ms-win-crt-*`), which comes with Windows 10 and later; none imports `vcruntime140.dll`,
+  `msvcp140.dll` or `vcomp140.dll` (checked with `llvm-objdump -p`). The installer needs no network.
 - CI job `bun-windows` builds `bun.exe` (cached by the script and the patch) and checks it with `scripts/check_bun.ts`.
 - CI job `installer-windows` builds it (reusing the engine caches and `bun-windows`'), installs it silently, checks that
   the installed `bun.exe` loads the engines and stops with the same reasons as `engines-windows`,

@@ -11,8 +11,8 @@
 // bun scripts/zigbuild_libopus.ts (the Opus encoder), and bun scripts/fetch_web_libs.ts (the web app's PDF and Word
 // libraries), bun scripts/fetch_turndown.ts (web pages as Markdown) and
 // bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the
-// Bun that is packed: a minimal build, not the one running this script). Needs Visual Studio's C++ tools (for the launcher) and Inno Setup;
-// without Inno Setup the script downloads the pinned installer and installs it for the current user.
+// Bun that is packed: a minimal build, not the one running this script). Builds the launcher itself with Zig (scripts/zigbuild_launcher.ts) and needs
+// Inno Setup (no Visual Studio, unless build_bun.ts is run); without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
 import { cp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -84,7 +84,7 @@ async function iscc(): Promise<string> {
   return installed;
 }
 
-// The launcher, rebuilt when its source or manifest is newer.
+// The launcher (scripts/zigbuild_launcher.ts), rebuilt when its source or manifest is newer.
 const launcher = join(packaging, "launcher.exe");
 const built = (await Bun.file(launcher).exists()) ? Bun.file(launcher).lastModified : 0;
 if (
@@ -95,7 +95,7 @@ if (
     Bun.file(join(packaging, "launcher.ico")).lastModified,
   ) > built
 ) {
-  await run(["cmd.exe", "/c", join(packaging, "build.bat")]);
+  await run([process.execPath, join(root, "scripts", "zigbuild_launcher.ts")]);
 }
 
 await rm(stage, { recursive: true, force: true });

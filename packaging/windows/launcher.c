@@ -4,21 +4,24 @@
    else: no status tracking, no embedding. Finds the repository by walking up from the exe until
    src\server.ts exists; `bun` comes from PATH.
    Modern look: Common Controls 6 (command links, visual styles) and Per-Monitor DPI Awareness V2,
-   both declared in launcher.manifest, which build.bat embeds. All sizes are in 96-dpi units and
+   both declared in launcher.manifest, which launcher.rc embeds. All sizes are in 96-dpi units and
    scaled by the window's DPI; WM_DPICHANGED rebuilds the font and the layout.
-   The exe's icon is launcher.ico through launcher.rc. Build: packaging\windows\build.bat (MSVC). */
+   The exe's icon is launcher.ico through launcher.rc. Build: bun scripts/zigbuild_launcher.ts (Zig;
+   it links comctl32, user32 and gdi32). */
+#ifndef UNICODE
 #define UNICODE
+#endif
+#ifndef _UNICODE
 #define _UNICODE
+#endif
 #define WINVER 0x0A00
+#ifndef _WIN32_WINNT
 #define _WIN32_WINNT 0x0A00
+#endif
 #include <windows.h>
 #include <commctrl.h>
 #include <stdio.h>
 #include <wchar.h>
-
-#pragma comment(lib, "comctl32.lib")
-#pragma comment(lib, "user32.lib")
-#pragma comment(lib, "gdi32.lib")
 
 enum { ID_PORT_LABEL = 100, ID_PORT, ID_CTX_LABEL, ID_CTX, ID_DOM_LABEL, ID_DOM, ID_HOST_LABEL, ID_HOST, ID_ORI_LABEL, ID_ORI, ID_AH_LABEL, ID_AH, ID_CPU, ID_NOSPEECH, ID_START, ID_FETCH, ID_NOTICES, ID_HELP, ID_QUIT };
 

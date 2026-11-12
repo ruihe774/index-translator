@@ -25,7 +25,7 @@ export function zigToolsHint(vulkan = true): string {
   const zig = "Zig: bun scripts/fetch_zig.ts";
   if (process.platform === "win32") {
     const tools =
-      "on Windows: Git, CMake and Ninja on the PATH (a Developer Command Prompt of Visual Studio or its Build Tools has both, or: winget install Kitware.CMake Ninja-build.Ninja)";
+      "on Windows: Git, CMake and Ninja on the PATH (standalone installers, or: winget install Git.Git Kitware.CMake Ninja-build.Ninja)";
     return vulkan
       ? `${tools} and the Vulkan SDK (https://vulkan.lunarg.com/sdk/home: glslc, the headers, vulkan-1.lib, and VULKAN_SDK set); ${zig}`
       : `${tools}; ${zig}`;
@@ -51,21 +51,26 @@ export async function requireZigBuildTools(vulkan = true): Promise<void> {
   if (vulkan && process.platform === "darwin") {
     throw new Error("the engines are not built on macOS (no Vulkan); only libsoxr and libopus are");
   }
+  await requireZig([...BUILD_TOOLS, ...(vulkan ? ["glslc"] : [])], zigToolsHint(vulkan));
+  // The Windows toolchain file finds the Vulkan SDK through it
+  if (vulkan && process.platform === "win32" && !process.env.VULKAN_SDK) {
+    throw new Error(`VULKAN_SDK is not set; ${zigToolsHint(vulkan)}`);
+  }
+}
+
+/**
+ * Zig, put first on the PATH when it is the one in vendor/zig, and the pinned version; `tools` also have to be on the
+ * PATH, else the error is `hint`. For a build that needs nothing else (the launcher): `requireZig([], hint)`.
+ */
+export async function requireZig(tools: string[], hint: string): Promise<void> {
   const home = zigHome(resolve(import.meta.dir, "..", "vendor"));
   if (await Bun.file(zigExecutable(home)).exists()) {
     process.env.PATH = `${home}${delimiter}${process.env.PATH ?? ""}`;
   }
-  const hint = zigToolsHint(vulkan);
   // On this process's PATH, Zig's included; not `requireTools`, which on Windows looks for Visual Studio's
-  const missing = [...BUILD_TOOLS, ...(vulkan ? ["glslc"] : []), "zig"].filter(
-    (tool) => !Bun.which(tool, { PATH: process.env.PATH }),
-  );
+  const missing = [...tools, "zig"].filter((tool) => !Bun.which(tool, { PATH: process.env.PATH }));
   if (missing.length > 0) {
     throw new Error(`${missing.join(", ")} not found; ${hint}`);
-  }
-  // The Windows toolchain file finds the Vulkan SDK through it
-  if (vulkan && process.platform === "win32" && !process.env.VULKAN_SDK) {
-    throw new Error(`VULKAN_SDK is not set; ${hint}`);
   }
   const version = await output(["zig", "version"]);
   if (version !== ZIG_VERSION) {

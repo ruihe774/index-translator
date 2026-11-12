@@ -164,8 +164,8 @@ What is built then needs an x86-64 processor with AVX2 (Haswell, 2013, or newer)
 Armv8.2-A dot product and fp16 (Cortex-A76 and Apple M1 or newer).
 
 On Windows the same commands work in Command Prompt or PowerShell. Instead of the packages
-above you need Git, CMake and Ninja on the `PATH` (a "Developer Command Prompt" of Visual Studio has both, or
-`winget install Kitware.CMake Ninja-build.Ninja`) and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (`glslc`,
+above you need Git, CMake and Ninja on the `PATH` (standalone installers, or
+`winget install Git.Git Kitware.CMake Ninja-build.Ninja`; no Visual Studio) and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (`glslc`,
 the headers and `vulkan-1.lib`); `curl` comes with Windows. Open a new terminal after installing them, so it sees
 the new `PATH`. More in [WINDOWS.md](WINDOWS.md).
 
