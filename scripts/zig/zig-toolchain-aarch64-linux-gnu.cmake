@@ -19,8 +19,8 @@ set(CMAKE_RANLIB "${_here}/zig-ranlib")
 
 set(CMAKE_C_COMPILER_TARGET ${ZIG_TARGET})
 set(CMAKE_CXX_COMPILER_TARGET ${ZIG_TARGET})
-set(CMAKE_C_FLAGS_INIT "-mcpu=${ZIG_CPU}")
-set(CMAKE_CXX_FLAGS_INIT "-mcpu=${ZIG_CPU}")
+set(CMAKE_C_FLAGS_INIT "-mcpu=${ZIG_CPU} -flto=thin")
+set(CMAKE_CXX_FLAGS_INIT "-mcpu=${ZIG_CPU} -flto=thin")
 
 # Stripped. The system libvulkan needs a newer glibc than Zig's default target; its symbols resolve at run time
 foreach(_kind EXE SHARED MODULE)
