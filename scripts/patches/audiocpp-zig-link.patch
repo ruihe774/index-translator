@@ -1,0 +1,14 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index a4c78c7..baa3f3b 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -3222,8 +3222,7 @@ if (AUDIOCPP_BUILD_C_API)
+             LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/capi/audiocpp.symbols")
+     elseif (NOT WIN32)
+         target_link_options(audiocpp PRIVATE
+-            "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/capi/audiocpp.map"
+-            "-Wl,--exclude-libs,ALL")
++            "-Wl,--version-script=${CMAKE_CURRENT_SOURCE_DIR}/src/capi/audiocpp.map")
+         set_property(TARGET audiocpp APPEND PROPERTY
+             LINK_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/src/capi/audiocpp.map")
+     endif()
