@@ -42,8 +42,8 @@ The AppImage is packed with [appimagetool](https://github.com/AppImage/appimaget
 [type2-runtime](https://github.com/AppImage/type2-runtime), whose code is embedded at the start of the
 AppImage file; their notices are in those projects' repositories.
 
-Not included in the AppImage and taken from the system: the C and C++ runtime libraries, `libgomp`,
-the Vulkan loader (CUDA AppImages: the NVIDIA driver) and the GPU driver, `curl` (used by `fetch`), and the browser that opens web pages
+Not included in the AppImage and taken from the system: the C and C++ runtime libraries,
+the Vulkan loader and the GPU driver, `curl` (used by `fetch`), and the browser that opens web pages
 for translation (Chrome, Chromium, Edge or Brave; the system WebKit on macOS).
 
 The web app (`public/`) loads no fonts or scripts from the network. Its only third-party code and

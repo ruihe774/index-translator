@@ -10,7 +10,7 @@
 // bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the Bun that is
 // packed: a minimal build, not the one running this script).
 // The AppImage needs what the engines were linked against, so it runs on systems at least as new
-// as the one it was built on (their C and C++ libraries), with libgomp, a Vulkan driver, and curl
+// as the one it was built on (their C and C++ libraries), with a Vulkan driver, and curl
 // for `fetch`. Layout and start script: packaging/appimage/.
 //
 // Needs nothing installed besides Bun and git: appimagetool and the AppImage runtime are
