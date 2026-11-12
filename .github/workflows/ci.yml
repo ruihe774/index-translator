@@ -292,17 +292,30 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
 
-      # Each engine is built from a pinned commit, so it changes only when its build script does.
+      # The engines are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins.
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
+      # Each engine is built from a pinned commit, so it changes only when its build script, its CMake options or
+      # toolchain files (scripts/zig), the shim, or Zig does.
       - name: Cache the translation engine
         id: llama
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-zig-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_llamacpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'src/llama-shim.c', 'src/llama-shim-ext.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_llama.ts
+        run: bun scripts/zigbuild_llamacpp.ts
 
       # audio.cpp resamples with libsoxr when it finds one and differently when not, so the one it is
       # given is ours, packed in the AppImage (src/audiocpp-ffi.ts opens it first).
@@ -322,11 +335,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+          key: audio-zig-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_audiocpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'scripts/patches/audiocpp-*.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_audiocpp.ts
+        run: bun scripts/zigbuild_audiocpp.ts
 
       - name: Check that libsoxr and libaudiocpp open
         run: bun -e "import { libraryVersion } from './src/audiocpp-ffi'; console.log(libraryVersion('vendor/audio.cpp'))"

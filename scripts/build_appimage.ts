@@ -21,7 +21,7 @@
 // Needs nothing installed besides Bun and git: appimagetool and the AppImage runtime are
 // downloaded, by version and checksum, into vendor/.build/appimage and kept there.
 
-import { chmod, cp, mkdir, rm } from "node:fs/promises";
+import { chmod, cp, lstat, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
@@ -98,7 +98,13 @@ for (const [file, script] of [
 // Whatever the directories were built with, the AppImage has exactly the one GPU backend it is named for.
 // (llama.cpp's backends are libraries of their own; audio.cpp's are inside libaudiocpp.so, where only the bundled CUDA runtime shows.)
 const llamaCuda = await Bun.file(join(llama, "libggml-cuda.so")).exists();
-const llamaVulkan = await Bun.file(join(llama, "libggml-vulkan.so")).exists();
+// (The Zig build of llama.cpp, scripts/zigbuild_llamacpp.ts, has Vulkan inside libllama.so, and libmtmd.so links to it.)
+const llamaVulkan =
+  (await Bun.file(join(llama, "libggml-vulkan.so")).exists()) ||
+  (await lstat(join(llama, "libmtmd.so")).then(
+    (stat) => stat.isSymbolicLink(),
+    () => false,
+  ));
 const audioCuda = await Bun.file(join(audio, "libcudart.so.13")).exists();
 if (llamaCuda !== cuda || llamaVulkan === cuda || audioCuda !== cuda) {
   throw new Error(

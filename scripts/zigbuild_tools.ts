@@ -1,9 +1,10 @@
 // What scripts/zigbuild_llamacpp.ts and scripts/zigbuild_audiocpp.ts share: the target, and CMake run with Zig as the
 // toolchain (scripts/zig/zig-toolchain-<target>.cmake, so a target needs its file there).
 
-import { join } from "node:path";
+import { delimiter, join, resolve } from "node:path";
 
-import { run } from "./build_tools";
+import { output, requireTools, run } from "./build_tools";
+import { ZIG_VERSION, zigHome } from "./fetch_zig";
 
 /** The build targets we support, mapped from node `${process.platform}-${process.arch}`. */
 const ZIG_TARGETS: Record<string, string> = {
@@ -11,8 +12,33 @@ const ZIG_TARGETS: Record<string, string> = {
   "linux-arm64": "aarch64-linux-gnu",
 };
 
-/** What the builds need on the PATH. */
-export const ZIG_BUILD_TOOLS = ["git", "cmake", "ninja", "zig", "glslc"];
+/** What the builds need on the PATH besides Zig. */
+const BUILD_TOOLS = ["git", "cmake", "ninja", "glslc"];
+
+/** What to install when a build tool is missing, for the message. */
+export const ZIG_TOOLS_HINT =
+  "on Debian and Ubuntu: sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers; Zig: bun scripts/fetch_zig.ts";
+
+/**
+ * Checks the tools the builds need. Zig is the one in vendor/zig (`bun scripts/fetch_zig.ts`) when there is one,
+ * put first on the PATH for everything that is run here (the toolchain files and their ar and ranlib call `zig`),
+ * else the system's; either must be the pinned version, so that a build does not depend on the machine's.
+ */
+export async function requireZigBuildTools(): Promise<void> {
+  const home = zigHome(resolve(import.meta.dir, "..", "vendor"));
+  if (await Bun.file(join(home, "zig")).exists()) {
+    process.env.PATH = `${home}${delimiter}${process.env.PATH ?? ""}`;
+  }
+  await requireTools(BUILD_TOOLS, ZIG_TOOLS_HINT);
+  // (`requireTools` looks at the PATH this process started with.)
+  if (!Bun.which("zig", { PATH: process.env.PATH })) {
+    throw new Error(`zig not found; ${ZIG_TOOLS_HINT}`);
+  }
+  const version = await output(["zig", "version"]);
+  if (version !== ZIG_VERSION) {
+    throw new Error(`zig is ${version}, not ${ZIG_VERSION}; run: bun scripts/fetch_zig.ts`);
+  }
+}
 
 const ZIG_DIR = join(import.meta.dir, "zig");
 

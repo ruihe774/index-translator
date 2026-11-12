@@ -18,14 +18,15 @@ import { cp, mkdir, rm, rmdir, symlink } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
 import { devices, libraryPath, shimPath } from "../src/llama-ffi";
-import { checkout, requireTools, run, TOOLS_HINT } from "./build_tools";
+import { checkout, run } from "./build_tools";
 import {
   cacheValue,
   cmakeBuild,
   getHostTriple,
   parseOptions,
+  requireZigBuildTools,
   targetDirectory,
-  ZIG_BUILD_TOOLS,
+  ZIG_TOOLS_HINT,
 } from "./zigbuild_tools";
 
 const TAG = "v0.9.0";
@@ -131,7 +132,7 @@ if (shimOnly) {
   if (!(await Bun.file(join(build, "CMakeCache.txt")).exists())) {
     throw new Error(`no build tree in ${build}; build with --keep first: bun scripts/zigbuild_llamacpp.ts --keep`);
   }
-  await requireTools(["zig"], TOOLS_HINT);
+  await requireZigBuildTools();
   await rm(stage, { recursive: true, force: true });
   await link();
   for (const name of ["libllama.so", "libmtmd.so", "libllama-shim.so"]) {
@@ -143,7 +144,7 @@ if (shimOnly) {
   process.exit(0);
 }
 
-await requireTools(ZIG_BUILD_TOOLS, TOOLS_HINT);
+await requireZigBuildTools();
 if (!keep) {
   await rm(work, { recursive: true, force: true });
 }
@@ -155,7 +156,7 @@ try {
   await rm(stage, { recursive: true, force: true });
   await link();
 } catch (e) {
-  console.error(`the build failed; if a tool or a header is missing, ${TOOLS_HINT}`);
+  console.error(`the build failed; if a tool or a header is missing, ${ZIG_TOOLS_HINT}`);
   throw e;
 }
 await cp(join(source, "LICENSE"), join(stage, "LICENSE"));

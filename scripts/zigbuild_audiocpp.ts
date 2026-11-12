@@ -20,8 +20,15 @@ import { join, resolve } from "node:path";
 import { $ } from "bun";
 
 import { libraryPath, libraryVersion, SILERO_WEIGHTS } from "../src/audiocpp-ffi";
-import { checkout, requireTools, run, TOOLS_HINT } from "./build_tools";
-import { cmakeBuild, getHostTriple, parseOptions, targetDirectory, ZIG_BUILD_TOOLS } from "./zigbuild_tools";
+import { checkout, run } from "./build_tools";
+import {
+  cmakeBuild,
+  getHostTriple,
+  parseOptions,
+  requireZigBuildTools,
+  targetDirectory,
+  ZIG_TOOLS_HINT,
+} from "./zigbuild_tools";
 
 /** Release v0.9.4 (it includes the Vulkan Flash Attention change for RoFormer). Written to VERSION and the build log. */
 const TAG = "v0.9.4";
@@ -49,7 +56,7 @@ const work = join(root, "vendor", ".build", `${directory}-zig`);
 const source = join(work, "src");
 const build = join(work, "build");
 
-await requireTools(ZIG_BUILD_TOOLS, TOOLS_HINT);
+await requireZigBuildTools();
 if (!keep) {
   await rm(work, { recursive: true, force: true });
 }
@@ -69,7 +76,7 @@ const started = performance.now();
 try {
   await cmakeBuild("audiocpp", triple, source, build, ["audiocpp"]);
 } catch (e) {
-  console.error(`the build failed; if a tool or a header is missing, ${TOOLS_HINT}`);
+  console.error(`the build failed; if a tool or a header is missing, ${ZIG_TOOLS_HINT}`);
   throw e;
 }
 
