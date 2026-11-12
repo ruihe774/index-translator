@@ -9,11 +9,12 @@
 // bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries, packed with public/), bun scripts/fetch_turndown.ts (web pages as Markdown) and
 // bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the Bun that is
 // packed: a minimal build, not the one running this script).
-// The AppImage needs what the engines were linked against, so it runs on systems at least as new
-// as the one it was built on (their C and C++ libraries), with a Vulkan driver, and curl
-// for `fetch`. Layout and start script: packaging/appimage/.
+// The AppImage needs glibc 2.31 or newer whatever the machine that builds it: Bun is linked against Ubuntu 20.04's
+// glibc (build_bun.ts), the libraries by Zig against an older one (they need 2.29 with Zig 0.17.1), libc++ inside;
+// each is checked against MAX_GLIBC here. Besides glibc it needs a Vulkan loader and driver, and curl for `fetch`.
+// Layout and start script: packaging/appimage/.
 //
-// Needs nothing installed besides Bun and git: appimagetool and the AppImage runtime are
+// Needs nothing installed besides Bun, git and objdump: appimagetool and the AppImage runtime are
 // downloaded, by version and checksum, into vendor/.build/appimage and kept there.
 
 import { chmod, cp, mkdir, rm } from "node:fs/promises";
@@ -23,7 +24,7 @@ import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
 import { libraryPath as llamaLibrary } from "../src/llama-ffi";
 import { opusLibraryPath } from "../src/opus-ffi";
-import { bunPath } from "./build_bun";
+import { bunPath, checkGlibc } from "./build_bun";
 import { output, run } from "./build_tools";
 import { downloadUnlessMatches } from "./fetch_tools";
 import { copyEngine, requireAllVendored, root, stageApp } from "./stage_app";
@@ -86,6 +87,16 @@ for (const [file, script] of [
   }
 }
 await requireAllVendored();
+// The glibc the README promises
+for (const file of [
+  llamaLibrary(llama),
+  audioLibrary(audio),
+  soxrLibraryPath(soxr),
+  opusLibraryPath(opus),
+  bunPath(bun),
+]) {
+  await checkGlibc(file);
+}
 
 await rm(appDir, { recursive: true, force: true });
 await mkdir(join(appDir, "usr", "bin"), { recursive: true });

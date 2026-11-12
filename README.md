@@ -93,7 +93,7 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
   model's license and waits for you to type `yes`; the speech model is under bilibili's own license
   with usage conditions, not Apache or MIT. `notices` prints the licenses of the software in the
   AppImage; they are also in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- It runs on x86-64 or aarch64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later), with a
+- It runs on x86-64 or aarch64 Linux with glibc 2.31 or newer (Ubuntu 20.04, Debian 11, Fedora 32 and later), with a
   Vulkan driver; besides that and the C library it needs no system library. The engines need an x86-64 processor with AVX2, or an aarch64
   one with Armv8.2-A dot product and fp16.
 

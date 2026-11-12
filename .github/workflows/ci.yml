@@ -302,7 +302,7 @@ jobs:
             runner: ubuntu-26.04
           - arch: aarch64
             runner: ubuntu-26.04-arm
-    # The AppImage runs on systems whose C and C++ libraries are at least as new as this one's.
+    # The AppImage needs glibc 2.31 whatever this runner's is (build_appimage.ts checks every packed binary).
     # 26.04 for its glslc (shaderc 2026.1) and Vulkan headers (1.4.341): 24.04's glslc lacks integer dot product, bfloat16,
     # cooperative matrix 2 and e4m3, and ggml's Vulkan backend leaves those shaders out. The Bun is still built on 24.04.
     runs-on: ${{ matrix.runner }}

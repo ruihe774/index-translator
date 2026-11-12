@@ -55,8 +55,8 @@ const build = join(source, "build", "release-minimal");
 const exe = windows ? "bun.exe" : "bun";
 const linux = process.platform === "linux";
 const sysroot = join(work, "glibc-sysroot");
-/** The newest glibc symbol version the binary may need: the sysroot's. */
-const MAX_GLIBC = "2.31";
+/** The newest glibc symbol version Bun may need: the sysroot's. build_appimage.ts holds every packed binary to it. */
+export const MAX_GLIBC = "2.31";
 
 /** The packed Bun in `dir` (vendor/bun): `bun`, or `bun.exe` on Windows. */
 export function bunPath(dir: string): string {
@@ -135,8 +135,11 @@ if (import.meta.main) {
   console.log(`ok ${dest} (bun ${revision}, ${megabytes} MB, built in ${seconds} s)`);
 }
 
-/** Throws when `file` needs a glibc symbol newer than `MAX_GLIBC`, which would mean the sysroot was not used. */
-async function checkGlibc(file: string): Promise<void> {
+/**
+ * Throws when `file` needs a glibc symbol newer than `MAX_GLIBC`: for Bun, that the sysroot was not used; for the
+ * libraries, a Zig default target newer than it. Needs objdump.
+ */
+export async function checkGlibc(file: string): Promise<void> {
   const symbols = await $`objdump -T ${file}`.text();
   const newer = [...new Set(symbols.match(/GLIBC_\d+(\.\d+)+/g))].filter(
     (version) => Bun.semver.order(`${version.slice(6)}.0`.split(".").slice(0, 3).join("."), `${MAX_GLIBC}.0`) > 0,
