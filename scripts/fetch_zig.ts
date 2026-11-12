@@ -10,7 +10,7 @@
 import { chmod, mkdir, rm } from "node:fs/promises";
 import { dirname, join, resolve } from "node:path";
 
-import { download, readStamp, unzip, writeStamp } from "./fetch_tools";
+import { download, extractTar, readStamp, unzip, writeStamp } from "./fetch_tools";
 
 export const ZIG_VERSION = "0.17.1";
 
@@ -65,16 +65,7 @@ if (import.meta.main) {
     await chmod(zigExecutable(home), 0o755);
   } else {
     // The archive's one top-level directory (zig-<arch>-linux-<version>) is dropped
-    const tar = Bun.spawn(["tar", "-xJ", "--strip-components=1", "-C", home], {
-      stdin: archive,
-      stdout: "inherit",
-      stderr: "inherit",
-    });
-    if ((await tar.exited) !== 0) {
-      throw new Error(
-        "tar failed to unpack the Zig archive; it needs xz (on Debian and Ubuntu: sudo apt install xz-utils)",
-      );
-    }
+    await extractTar(archive, home, "xz");
   }
   await writeStamp(home, `${ZIG_VERSION}\n`);
   console.log(`ok ${home} (${ZIG_VERSION})`);

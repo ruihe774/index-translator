@@ -10,12 +10,13 @@
 // shown as their TeX source.
 // Usage: bun scripts/fetch_web_libs.ts
 //
-// A library whose directory already holds the pinned version is left alone. Needs nothing besides Bun.
+// A library whose directory already holds the pinned version is left alone. Needs nothing besides Bun and tar (`tar.exe` of Windows 10 1803 and later).
 
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { download, readStamp, untar, writeStamp } from "./fetch_tools";
+import { download, extractTar, readStamp, writeStamp } from "./fetch_tools";
 
 export interface Library {
   /** Directory under public/vendor/ (vendor/ for the server's own, scripts/fetch_turndown.ts). */
@@ -223,23 +224,30 @@ export async function fetchLibrary(lib: Library, vendor: string): Promise<void> 
     return;
   }
   const stamp = stampOf(lib);
-  const files = untar(await download(lib.url, lib.sha256));
+  const archive = await download(lib.url, lib.sha256);
   const extra = lib.extra ?? [];
   const extraContents = await Promise.all(extra.map((f) => download(f.url, f.sha256)));
-  await rm(dir, { recursive: true, force: true });
+  const unpacked = await mkdtemp(join(tmpdir(), "web-lib-"));
   let count = 0;
   let bytes = 0;
   const written = new Set<string>();
-  for (const [path, data] of files) {
-    const to = lib.place(path);
-    if (to === undefined) {
-      continue;
+  try {
+    await extractTar(archive, unpacked, "gz");
+    await rm(dir, { recursive: true, force: true });
+    for await (const found of new Bun.Glob("**/*").scan({ cwd: unpacked, onlyFiles: true })) {
+      const to = lib.place(found.replaceAll("\\", "/"));
+      if (to === undefined) {
+        continue;
+      }
+      const data = Bun.file(join(unpacked, found));
+      await mkdir(dirname(join(dir, to)), { recursive: true });
+      await Bun.write(join(dir, to), data);
+      written.add(to);
+      count++;
+      bytes += data.size;
     }
-    await mkdir(dirname(join(dir, to)), { recursive: true });
-    await Bun.write(join(dir, to), data);
-    written.add(to);
-    count++;
-    bytes += data.length;
+  } finally {
+    await rm(unpacked, { recursive: true, force: true });
   }
   const missing = lib.expect.filter((path) => !written.has(path));
   if (missing.length > 0) {

@@ -5,7 +5,7 @@
 // page is unavailable.
 // Usage: bun scripts/fetch_turndown.ts
 //
-// A directory that already holds the pinned version is left alone. Needs nothing besides Bun.
+// A directory that already holds the pinned version is left alone. Needs nothing besides Bun and tar (`tar.exe` of Windows 10 1803 and later).
 
 import { join, resolve } from "node:path";
 

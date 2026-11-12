@@ -61,40 +61,28 @@ export async function downloadUnlessMatches(pin: { url: string; sha256: string }
   await Bun.write(path, await download(pin.url, pin.sha256));
 }
 
+/** The `tar` that unpacks `extractTar`'s archives: bsdtar of Windows 10 1803 and later, by full path (Git's GNU tar is often first on the PATH and misreads drive-letter paths). */
+const tarProgram = () =>
+  process.platform === "win32" ? join(process.env.SystemRoot ?? String.raw`C:\Windows`, "System32", "tar.exe") : "tar";
+
 /**
- * The regular files of a gzipped tar archive (ustar, as npm packs it), by their path below the
- * archive's one top-level directory. Anything but files and directories is refused, links too unless
- * `skipLinks` (then they are left out).
+ * Unpacks a tar archive, compressed with gzip or xz, into `dir` (made if missing), dropping the archive's
+ * one top-level directory. Runs the system's `tar` (`tar.exe` on Windows); `xz` needs xz-utils on Debian
+ * and Ubuntu. The archive is checked by its SHA-256 before, and tar itself refuses paths that leave `dir`.
  */
-export function untar(tgz: Uint8Array, skipLinks = false): Map<string, Uint8Array> {
-  const tar = Bun.gunzipSync(tgz as Uint8Array<ArrayBuffer>);
-  const text = new TextDecoder();
-  const field = (at: number, length: number) => text.decode(tar.subarray(at, at + length)).split("\0")[0]!;
-  const files = new Map<string, Uint8Array>();
-  for (let at = 0; at + 512 <= tar.length;) {
-    const name = field(at, 100);
-    if (name === "") {
-      break;
-    } // the end marker: empty blocks
-    const size = Number.parseInt(field(at + 124, 12).trim(), 8);
-    const type = field(at + 156, 1);
-    const prefix = field(at + 345, 155);
-    const path = prefix ? `${prefix}/${name}` : name;
-    if (Number.isNaN(size)) {
-      throw new TypeError(`unreadable size for ${path}`);
-    }
-    if (type === "0" || type === "") {
-      const inside = path.slice(path.indexOf("/") + 1);
-      if (inside.split("/").some((part) => part === ".." || part === "")) {
-        throw new Error(`refusing path ${path}`);
-      }
-      files.set(inside, tar.subarray(at + 512, at + 512 + size));
-    } else if (type !== "5" && !(skipLinks && (type === "1" || type === "2"))) {
-      throw new Error(`unexpected entry type "${type}" for ${path}`);
-    }
-    at += 512 + Math.ceil(size / 512) * 512;
+export async function extractTar(archive: Uint8Array, dir: string, compression: "gz" | "xz"): Promise<void> {
+  await mkdir(dir, { recursive: true });
+  const tar = Bun.spawn([tarProgram(), compression === "gz" ? "-xz" : "-xJ", "--strip-components=1", "-C", dir], {
+    stdin: archive,
+    stdout: "inherit",
+    stderr: "inherit",
+  });
+  if ((await tar.exited) !== 0) {
+    throw new Error(
+      `tar failed to unpack the archive into ${dir}` +
+        (compression === "xz" ? "; it needs xz (on Debian and Ubuntu: sudo apt install xz-utils)" : ""),
+    );
   }
-  return files;
 }
 
 /**

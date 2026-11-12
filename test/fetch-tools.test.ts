@@ -6,10 +6,10 @@ import { join } from "node:path";
 
 import {
   downloadUnlessMatches,
+  extractTar,
   fileMatches,
   readStamp,
   sha256Hex,
-  untar,
   unzip,
   writeStamp,
 } from "../scripts/fetch_tools";
@@ -23,10 +23,14 @@ function tgz(entries: { name: string; prefix?: string; type?: string; content?: 
     const content = encoder.encode(e.content ?? "");
     const header = new Uint8Array(512);
     header.set(encoder.encode(e.name), 0);
+    header.set(encoder.encode(e.type === "5" ? "0000755\0" : "0000644\0"), 100);
     header.set(encoder.encode(`${content.length.toString(8).padStart(11, "0")}\0`), 124);
     header.set(encoder.encode(e.type ?? "0"), 156);
     header.set(encoder.encode("ustar"), 257);
     header.set(encoder.encode(e.prefix ?? ""), 345);
+    header.fill(0x20, 148, 156); // the checksum field counts as spaces while it is summed
+    const sum = header.reduce((total, byte) => total + byte, 0);
+    header.set(encoder.encode(`${sum.toString(8).padStart(6, "0")}\0 `), 148);
     const padded = new Uint8Array(Math.ceil(content.length / 512) * 512);
     padded.set(content);
     blocks.push(header, padded);
@@ -35,11 +39,10 @@ function tgz(entries: { name: string; prefix?: string; type?: string; content?: 
   return Bun.gzipSync(Buffer.concat(blocks));
 }
 
-const text = (bytes: Uint8Array | undefined) => (bytes ? new TextDecoder().decode(bytes) : undefined);
-
-describe("untar", () => {
-  test("gives the files by their path below the top-level directory", () => {
-    const files = untar(
+describe("extractTar", () => {
+  test("unpacks below the top-level directory", async () => {
+    const dir = join(tempDir("extract-tar-"), "out");
+    await extractTar(
       tgz([
         { name: "package/", type: "5" },
         { name: "package/LICENSE", content: "MIT" },
@@ -47,19 +50,23 @@ describe("untar", () => {
         { name: "worker.mjs", prefix: "package/legacy/build", content: "w" },
         { name: "package/empty" },
       ]),
+      dir,
+      "gz",
     );
-    expect([...files.keys()]).toStrictEqual(["LICENSE", "build/pdf.mjs", "legacy/build/worker.mjs", "empty"]);
-    expect(text(files.get("LICENSE"))).toBe("MIT");
-    expect(files.get("build/pdf.mjs")).toHaveLength(700);
-    expect(text(files.get("legacy/build/worker.mjs"))).toBe("w");
-    expect(files.get("empty")).toHaveLength(0);
+    await expect(Bun.file(join(dir, "LICENSE")).text()).resolves.toBe("MIT");
+    expect(Bun.file(join(dir, "build/pdf.mjs")).size).toBe(700);
+    await expect(Bun.file(join(dir, "legacy/build/worker.mjs")).text()).resolves.toBe("w");
+    expect(Bun.file(join(dir, "empty")).size).toBe(0);
   });
 
-  test("refuses paths that leave the directory and entries that are not files", () => {
-    expect(() => untar(tgz([{ name: "package/../../etc/passwd", content: "x" }]))).toThrow("refusing path");
-    expect(() => untar(tgz([{ name: "package/link", type: "2" }]))).toThrow("unexpected entry type");
+  test("fails on an archive tar cannot read", async () => {
+    await expect(extractTar(new TextEncoder().encode("not a tar"), tempDir("extract-tar-"), "gz")).rejects.toThrow(
+      "tar failed",
+    );
   });
 });
+
+const text = (bytes: Uint8Array | undefined) => (bytes ? new TextDecoder().decode(bytes) : undefined);
 
 /** A zip archive of stored (method 0) or deflated (8) entries, with the central directory unzip reads. */
 function zip(entries: { name: string; content: string; deflate?: boolean }[]): Uint8Array {
