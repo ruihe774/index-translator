@@ -68,18 +68,23 @@ export function runProbe(llamaDir: string): Probe {
 
 // Message builders: text only, no filesystem. `preflight` below decides what to say.
 
-function noCpuBackendMessage(cfg: Config, log: string | undefined, windows: boolean): string {
+/** What the CPU backend inside libllama is compiled for (the Zig toolchain files' baselines), by `process.arch`. */
+const CPU_BASELINE: Record<string, string> = {
+  x64: "an x86-64 processor with AVX2 (Haswell, 2013, or newer)",
+  arm64: "an aarch64 processor with Armv8.2-A dot product and fp16 (Cortex-A76, Apple M1 or newer)",
+};
+
+function noCpuBackendMessage(cfg: Config, log: string | undefined, arch: string): string {
   // What the libraries said about it, without their ordinary start-up lines.
   const said = (log ?? "").split("\n").filter((line) => /fail|error|cannot/i.test(line));
   const lines = said.length > 0 ? `\n${said.join("\n")}` : "";
-  const runtime = windows
-    ? "It needs the Microsoft Visual C++ runtime (the x64 Redistributable, https://aka.ms/vs/17/release/vc_redist.x64.exe)."
-    : "It needs the OpenMP runtime, libgomp.so.1 (libgomp1 on Debian and Ubuntu, libgomp on Fedora, gcc-libs on Arch).";
-  return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}. ${runtime}${lines}`;
+  // The backend is compiled into libllama itself (scripts/zigbuild_llamacpp.ts), so it needs no other library.
+  const cpu = `It is part of the engine's library and needs ${CPU_BASELINE[arch] ?? "a processor the engine was built for"}.`;
+  return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}. ${cpu}${lines}`;
 }
 
 function noGpuMessage(cuda: boolean, vulkanLoader: boolean, windows: boolean): string {
-  // The NVIDIA variant (scripts/build_llama.ts --cuda) has CUDA and no Vulkan.
+  // A llama.cpp built with CUDA (libggml-cuda.so beside libllama) has no Vulkan.
   if (cuda) {
     return `No GPU with a CUDA driver was found. This build needs an NVIDIA GPU and its driver for CUDA 13 (version 580 or newer); "nvidia-smi" lists what is installed. ${CPU_HINT}`;
   }
@@ -101,6 +106,7 @@ export function preflight(
   probe: (llamaDir: string) => Probe = runProbe,
   env: Env = Bun.env,
   platform: string = process.platform,
+  arch: string = process.arch,
 ): string | undefined {
   const windows = platform === "win32";
   const found = probe(cfg.llamaDir);
@@ -108,7 +114,7 @@ export function preflight(
     return `The translation engine cannot be loaded. ${found.error}`;
   }
   if (!found.cpu) {
-    return noCpuBackendMessage(cfg, found.log, windows);
+    return noCpuBackendMessage(cfg, found.log, arch);
   }
   if (cfg.gpuLayers !== 0 && found.gpus.length === 0) {
     return noGpuMessage(existsSync(join(cfg.llamaDir, "libggml-cuda.so")), found.vulkanLoader, windows);
