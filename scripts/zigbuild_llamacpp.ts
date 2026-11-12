@@ -55,6 +55,49 @@ const objects = join(work, "shim");
 /** The new copy is put together here, so a failed build leaves the installed one alone. */
 const stage = join(work, "stage");
 
+/** The names in a 64-bit PE file's export table (a DLL). */
+function peExportNames(bytes: Uint8Array): string[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  const pe = view.getUint32(0x3c, true);
+  if (view.getUint32(pe, true) !== 0x00_00_45_50 /* "PE\0\0" */) {
+    throw new Error("not a PE file");
+  }
+  const sectionCount = view.getUint16(pe + 6, true);
+  const optionalSize = view.getUint16(pe + 20, true);
+  const optional = pe + 24;
+  if (view.getUint16(optional, true) !== 0x02_0b) {
+    throw new Error("not a PE32+ file");
+  }
+  // Data directory 0 is the export table, 112 bytes into the optional header
+  const exportRva = view.getUint32(optional + 112, true);
+  if (exportRva === 0) {
+    return [];
+  }
+  const sections = optional + optionalSize;
+  const offsetOf = (rva: number): number => {
+    for (let i = 0; i < sectionCount; i++) {
+      const at = sections + i * 40;
+      const start = view.getUint32(at + 12, true);
+      const size = Math.max(view.getUint32(at + 8, true), view.getUint32(at + 16, true));
+      if (rva >= start && rva < start + size) {
+        return rva - start + view.getUint32(at + 20, true);
+      }
+    }
+    throw new Error(`RVA ${rva} is in no section`);
+  };
+  const table = offsetOf(exportRva);
+  const count = view.getUint32(table + 24, true);
+  const namesAt = offsetOf(view.getUint32(table + 32, true));
+  const decoder = new TextDecoder();
+  const names: string[] = [];
+  for (let i = 0; i < count; i++) {
+    const start = offsetOf(view.getUint32(namesAt + i * 4, true));
+    const end = bytes.indexOf(0, start);
+    names.push(decoder.decode(bytes.subarray(start, end)));
+  }
+  return names;
+}
+
 /** Compiles the shim and links it with the static libraries of `build` into `stage`/libllama.so. */
 async function link(): Promise<void> {
   await rm(objects, { recursive: true, force: true });
@@ -82,9 +125,22 @@ async function link(): Promise<void> {
   const common = ["zig", "c++", "-target", triple, "-O2", "-shared", "-o", libraryPath(stage), cObject, cxxObject];
   const vulkan = await cacheValue(build, "Vulkan_LIBRARY");
   if (windows) {
-    // Nothing is marked dllexport (llama.h under MinGW, and the shim alike), so the linker exports every symbol.
-    // Hiding nothing is harmless here: a DLL's imports name the DLL, so libaudiocpp's ggml cannot bind to this one's.
+    // Nothing is marked dllexport (llama.h under MinGW, and the shim alike), so a link without a .def exports every
+    // symbol (about 8,800, ggml and libc++ inside). A .def has no wildcards, so the first link only finds the names:
+    // its export table is filtered by EXPORTS, the same list as the Linux version script, and the second link
+    // exports exactly those.
     await run([...common, ...archives, vulkan]);
+    const names = peExportNames(await Bun.file(libraryPath(stage)).bytes());
+    const globs = EXPORTS.map((pattern) => new Bun.Glob(pattern));
+    const wanted = names.filter((name) => globs.some((glob) => glob.match(name))).sort();
+    if (wanted.length === 0 || !wanted.some((name) => name.startsWith("llama_"))) {
+      throw new Error(`the first link exports no llama_* symbol (${names.length} exports in all)`);
+    }
+    const def = join(work, "exports.def");
+    await Bun.write(def, `LIBRARY llama.dll\nEXPORTS\n${wanted.map((name) => `  ${name}`).join("\n")}\n`);
+    await rm(libraryPath(stage), { force: true });
+    await run([...common, ...archives, vulkan, def]);
+    console.log(`exports: ${wanted.length} of ${names.length} symbols`);
     // The linker's side products: the debug database and the import library
     for (const name of await readdir(stage)) {
       if (name.endsWith(".pdb") || name.endsWith(".lib")) {
