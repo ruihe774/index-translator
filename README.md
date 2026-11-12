@@ -93,9 +93,9 @@ Stop the app with `Ctrl+C`. `./Index_Translator-x86_64.AppImage --help` lists th
   model's license and waits for you to type `yes`; the speech model is under bilibili's own license
   with usage conditions, not Apache or MIT. `notices` prints the licenses of the software in the
   AppImage; they are also in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md).
-- It runs on x86-64 or aarch64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later). Besides
-  the Vulkan driver it uses the system's `libgomp` (installed on most systems). Reading aloud needs
-  an x86-64 processor with AVX2.
+- It runs on x86-64 or aarch64 Linux as new as Ubuntu 24.04 or newer (Debian 13, Fedora 40 and later), with a
+  Vulkan driver; besides that and the C library it needs no system library. The engines need an x86-64 processor with AVX2, or an aarch64
+  one with Armv8.2-A dot product and fp16.
 
 ### Windows installer
 
@@ -138,8 +138,9 @@ Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`
 Before the first start, build the engines and get the models once (about 19.2 GiB):
 
 ```bash
-bun scripts/build_llama.ts      # translation engine (llama.cpp, Vulkan): built from source, 1 to 2 minutes
-bun scripts/build_audiocpp.ts   # speech engine (audio.cpp, Vulkan): built from source, 1 to 2 minutes
+bun scripts/fetch_zig.ts         # Zig, the compiler the two engines are built with, into vendor/zig
+bun scripts/zigbuild_llamacpp.ts # translation engine (llama.cpp, Vulkan): built from source, a few minutes
+bun scripts/zigbuild_audiocpp.ts # speech engine (audio.cpp, Vulkan): built from source, a few minutes
 bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
 bun scripts/build_libopus.ts    # libopus, which compresses speech for the browser and reads compressed uploads: built from source, seconds
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, the sentence segmentation and alignment models, example voices
@@ -153,40 +154,25 @@ Markdown files, says that PDF and Word support is not installed, and shows equat
 aloud sends its audio as WAV, which is much larger, and voice samples are uploaded as WAV too. Translating a web page by its address needs `fetch_turndown.ts`
 and is off until you allow some sites (see [Translate a web page](#translate-a-web-page)).
 
-Reading aloud is optional. To leave it out, skip `build_audiocpp.ts`, `build_soxr.ts` and `build_libopus.ts` and download only the
+Reading aloud is optional. To leave it out, skip `zigbuild_audiocpp.ts`, `build_soxr.ts` and `build_libopus.ts` and download only the
 translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.
 
-You need [Bun](https://bun.sh) and `curl`, and to build the engines git, CMake, a C and C++
-compiler, `glslc` and the Vulkan headers. On Debian and Ubuntu:
+You need [Bun](https://bun.sh) and `curl`, and to build git, CMake, Ninja, `glslc` and the Vulkan headers for the
+engines (Zig compiles them) and a C compiler for libsoxr and libopus. On Debian and Ubuntu:
 `sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers`.
 Both engines then need an x86-64 processor with AVX2 (Haswell, 2013, or newer) or an aarch64 one with
 Armv8.2-A dot product and fp16 (Cortex-A76 and Apple M1 or newer).
 
-On Windows the same three commands work in Command Prompt or PowerShell. Instead of the packages
-above you need Git, CMake and Ninja (on the `PATH`), Visual Studio 2022 or later, or its Build Tools, with the
-"Desktop development with C++" workload, and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (for
-`glslc`); `curl` comes with Windows. Open a new terminal after installing them, so it sees the new
-`PATH`. More in [WINDOWS.md](WINDOWS.md).
+On Windows the same commands work in Command Prompt or PowerShell. Instead of the packages
+above you need Git, CMake and Ninja on the `PATH` (a "Developer Command Prompt" of Visual Studio has both),
+Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload (for libsoxr
+and libopus), and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (`glslc`, the headers and `vulkan-1.lib`);
+`curl` comes with Windows. Open a new terminal after installing them, so it sees the new `PATH`. More in
+[WINDOWS.md](WINDOWS.md).
 
 `bun scripts/build_appimage.ts` packs what you have built and fetched (the models excepted) into an AppImage of your own, and on
 Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Setup if it is not
 installed), both in `dist/`.
-
-**CUDA instead of Vulkan (Linux, NVIDIA).** An engine has one GPU backend, never both. For CUDA 13, install the toolkit
-(`nvcc`, cudart, cuBLAS and cuFFT headers and libraries; `CUDA_PATH` names it if it is not in `/usr/local/cuda-13`; `glslc` and
-the Vulkan headers are not needed) and build the engines into their own directories, next to the Vulkan ones:
-
-```bash
-bun scripts/build_llama.ts --cuda      # vendor/llama.cpp-cuda
-bun scripts/build_audiocpp.ts --cuda   # vendor/audio.cpp-cuda
-LLAMA_DIR=vendor/llama.cpp-cuda AUDIO_DIR=vendor/audio.cpp-cuda SPEECH_BACKEND=cuda bun src/server.ts
-bun scripts/build_appimage.ts --cuda   # dist/Index_Translator-<arch>-cuda.AppImage
-```
-
-By default the kernels are compiled so that the NVIDIA driver finishes them for your GPU on the first run (a short
-wait, kept in the driver's cache afterwards), which is a little slower than a native build. `--cuda-arch=LIST`
-names the architectures instead (`native` builds for the GPU in this machine only: fastest to build and to run, not
-for sharing).
 
 > [!NOTE]
 > Reading aloud is optional. Skipping it saves 14.2 GiB of downloads and about 5.7 GiB of VRAM.
