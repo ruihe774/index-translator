@@ -134,8 +134,7 @@ async function buildShim(dir: string): Promise<void> {
   const objects = join(work, "shim");
   await mkdir(objects, { recursive: true });
   if (windows) {
-    // cl compiles the .c file as C and the .cpp file as C++. The C file uses C11 atomics, which MSVC has behind
-    // /experimental:c11atomics (Visual Studio 17.5 and later).
+    // cl compiles the .c file as C and the .cpp file as C++.
     await run(
       [
         "cl",
@@ -145,8 +144,6 @@ async function buildShim(dir: string): Promise<void> {
         "/W3",
         "/EHsc",
         "/std:c++17",
-        "/std:c11",
-        "/experimental:c11atomics",
         `/Fo${objects}\\`,
         `/Fe${shimPath(dir)}`,
         SHIM_C,
@@ -168,7 +165,7 @@ async function buildShim(dir: string): Promise<void> {
   const compile = ["-O2", ...BASELINE, "-fPIC", "-Wall", "-Wextra", `-I${join(dir, "include")}`];
   const cObject = join(objects, "llama-shim.o");
   const cxxObject = join(objects, "llama-shim-ext.o");
-  await run(["cc", ...compile, "-std=c11", "-c", "-o", cObject, SHIM_C]);
+  await run(["cc", ...compile, "-c", "-o", cObject, SHIM_C]);
   await run(["c++", ...compile, "-std=c++17", "-c", "-o", cxxObject, SHIM_CXX]);
   // Linked as C++, which brings in its runtime library (libllama needs it anyway).
   await run([

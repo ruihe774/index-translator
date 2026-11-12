@@ -4,7 +4,6 @@
 // libraries it has just built and puts next to it, so the struct layouts always match them. After a
 // change here: bun scripts/build_llama.ts --shim. Everything else is called directly from src/llama-ffi.ts.
 
-#include <stdatomic.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -39,13 +38,12 @@ static void shim_log(enum ggml_log_level level, const char * text, void * user_d
 // Once per process, however many threads ask: the chat engine's thread and the segmentation thread (LaBSE) both
 // open the library, and a second caller waits for the first one's initialization to end.
 // `backend_dir` holds the libggml-* backends (Vulkan, CPU variants).
-static atomic_int shim_init_state = 0; // 0: not started, 1: running, 2: done
+static int shim_init_state = 0; // 0: not started, 1: running, 2: done
 
 SHIM_API void shim_init(const char * backend_dir) {
     int expected = 0;
-    if (!atomic_compare_exchange_strong_explicit(&shim_init_state, &expected, 1, memory_order_acq_rel,
-                                                 memory_order_acquire)) {
-        while (atomic_load_explicit(&shim_init_state, memory_order_acquire) != 2) {
+    if (!__atomic_compare_exchange_n(&shim_init_state, &expected, 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        while (__atomic_load_n(&shim_init_state, __ATOMIC_ACQUIRE) != 2) {
         }
         return;
     }
@@ -53,7 +51,7 @@ SHIM_API void shim_init(const char * backend_dir) {
     mtmd_helper_log_set(shim_log, NULL);
     llama_backend_init();
     ggml_backend_load_all_from_path(backend_dir);
-    atomic_store_explicit(&shim_init_state, 2, memory_order_release);
+    __atomic_store_n(&shim_init_state, 2, __ATOMIC_RELEASE);
 }
 
 // The devices the loaded backends found. Returns how many, and writes them to `out` as
