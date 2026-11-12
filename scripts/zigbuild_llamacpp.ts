@@ -1,11 +1,11 @@
 // Build the translation engine with Zig: libllama and libmtmd (image input) from the pinned llama.cpp source,
 // with ggml's Vulkan and CPU backends compiled in and nothing else of llama.cpp, and the shim (src/llama-shim.c,
-// src/llama-shim-ext.cpp), linked into one library, ./vendor/llama.cpp-zig/libllama.so. libmtmd.so and
+// src/llama-shim-ext.cpp), linked into one library, ./vendor/llama.cpp/libllama.so. libmtmd.so and
 // libllama-shim.so there are links to it, so the bindings open one file three times.
 // Usage: bun scripts/zigbuild_llamacpp.ts [--keep] [--shim] [--target=<triple>]
 //
 //   --target  the Zig target to build for (scripts/zig/zig-toolchain-<triple>.cmake must exist); this machine's by
-//             default, into vendor/llama.cpp-zig, else into vendor/llama.cpp-zig-<triple>, which is not opened here
+//             default, into vendor/llama.cpp, else into vendor/llama.cpp-<triple>, which is not opened here
 //   --keep    keep the source and the build tree in vendor/.build/llama.cpp-zig, and reuse them
 //   --shim    only compile the shim again and link the library again, from the kept tree (after editing the shim)
 //
@@ -43,9 +43,10 @@ if (shimOnly && flags.size > 1) {
 }
 
 const root = resolve(import.meta.dir, "..");
-const directory = targetDirectory("llama.cpp-zig", triple);
+const directory = targetDirectory("llama.cpp", triple);
 const dest = join(root, "vendor", directory);
-const work = join(root, "vendor", ".build", directory);
+// Not the old scripts' tree: CMake's configuration there is another one
+const work = join(root, "vendor", ".build", `${directory}-zig`);
 const source = join(work, "src");
 const build = join(work, "build");
 const objects = join(work, "shim");

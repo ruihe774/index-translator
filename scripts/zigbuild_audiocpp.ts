@@ -1,10 +1,10 @@
 // Build the speech engine with Zig: audio.cpp's C API (libaudiocpp) from the pinned source, with the Vulkan
 // backend and only the model families the server uses (IndexTTS-2 for speech, RoFormer for separating a voice from
-// music and noise in a recording, MOSS and CED for transcription), into ./vendor/audio.cpp-zig.
+// music and noise in a recording, MOSS and CED for transcription), into ./vendor/audio.cpp.
 // Usage: bun scripts/zigbuild_audiocpp.ts [--keep] [--target=<triple>]
 //
 //   --target  the Zig target to build for (scripts/zig/zig-toolchain-<triple>.cmake must exist); this machine's by
-//             default, into vendor/audio.cpp-zig, else into vendor/audio.cpp-zig-<triple>, which is not opened here
+//             default, into vendor/audio.cpp, else into vendor/audio.cpp-<triple>, which is not opened here
 //   --keep    keep the source and the build tree in vendor/.build/audio.cpp-zig, and reuse them
 //
 // The CMake options are scripts/zig/audiocpp.flags, the compiler is Zig (the toolchain file says for which CPU and
@@ -42,9 +42,10 @@ const { flags, triple } = await parseOptions(["--keep"]);
 const keep = flags.has("--keep");
 
 const root = resolve(import.meta.dir, "..");
-const directory = targetDirectory("audio.cpp-zig", triple);
+const directory = targetDirectory("audio.cpp", triple);
 const dest = join(root, "vendor", directory);
-const work = join(root, "vendor", ".build", directory);
+// Not the old scripts' tree: CMake's configuration there is another one
+const work = join(root, "vendor", ".build", `${directory}-zig`);
 const source = join(work, "src");
 const build = join(work, "build");
 
