@@ -1,6 +1,6 @@
 // libllama as a sentence encoder, through bun:ffi: LaBSE (a BERT with CLS pooling) on the processor. Used by the
 // segmentation worker only (src/segment-worker.ts), a thread other than the chat engine's; each thread opens the
-// libraries itself and `shim_init` (src/llama-shim.cpp) sets them up once for the process. Every call blocks.
+// libraries itself and `shim_init` (src/llama-shim.c) sets them up once for the process. Every call blocks.
 
 import { dlopen, type Pointer } from "bun:ffi";
 import { existsSync } from "node:fs";

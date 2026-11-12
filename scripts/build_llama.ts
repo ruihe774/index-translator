@@ -1,6 +1,6 @@
 // Build the translation engine: libllama and libmtmd (image input) from the pinned llama.cpp source,
 // with the Vulkan and CPU backends as loadable libraries and nothing else of llama.cpp (no tools,
-// server or examples), and the shim (src/llama-shim.cpp, src/llama-shim-ext.cpp) as libllama-shim, into
+// server or examples), and the shim (src/llama-shim.c, src/llama-shim-ext.cpp) as libllama-shim, into
 // ./vendor/llama.cpp.
 // Usage: bun scripts/build_llama.ts [--native] [--keep] [--shim] [--cuda [--cuda-arch=LIST]]
 //
@@ -125,35 +125,34 @@ const build = join(work, "build");
 /** The new copy is put together here, so a failed build leaves the installed one alone. */
 const stage = join(work, "stage");
 
-/** The shim, and the part that gives the staging header's functions C names. */
-const SHIM_CXX = join(root, "src", "llama-shim.cpp");
-const SHIM_EXT = join(root, "src", "llama-shim-ext.cpp");
+/** The shim's C part, and its C++ part, which gives the staging header's functions C names. */
+const SHIM_C = join(root, "src", "llama-shim.c");
+const SHIM_CXX = join(root, "src", "llama-shim-ext.cpp");
 
 /** Compiles the shim into `dir`, against the headers and the libraries that are in it. */
 async function buildShim(dir: string): Promise<void> {
   const objects = join(work, "shim");
   await mkdir(objects, { recursive: true });
   if (windows) {
+    // cl takes one /std for both languages, so each file is compiled on its own and then linked. The C file uses
+    // C11 atomics, which MSVC has behind /experimental:c11atomics (Visual Studio 17.5 and later).
+    const { env } = await msvc();
+    const common = ["/nologo", "/c", "/O2", "/W3", "/EHsc", `/Fo${objects}\\`, `/I${join(dir, "include")}`];
+    await run(["cl", ...common, "/std:c11", "/experimental:c11atomics", SHIM_C], undefined, env);
+    await run(["cl", ...common, "/std:c++17", SHIM_CXX], undefined, env);
     await run(
       [
-        "cl",
+        "link",
         "/nologo",
-        "/O2",
-        "/LD",
-        "/W3",
-        "/EHsc",
-        "/std:c++17",
-        `/Fo${objects}\\`,
-        `/Fe${shimPath(dir)}`,
-        SHIM_CXX,
-        SHIM_EXT,
-        `/I${join(dir, "include")}`,
-        "/link",
+        "/DLL",
+        `/OUT:${shimPath(dir)}`,
+        join(objects, "llama-shim.obj"),
+        join(objects, "llama-shim-ext.obj"),
         `/LIBPATH:${dir}`,
         ...Object.keys(IMPORT_LIBS).map((name) => `${name}.lib`),
       ],
       undefined,
-      (await msvc()).env,
+      env,
     );
     // The shim's own import library and export file are not needed.
     for (const ext of [".lib", ".exp"]) {
@@ -162,10 +161,10 @@ async function buildShim(dir: string): Promise<void> {
     return;
   }
   const compile = ["-O2", ...BASELINE, "-fPIC", "-Wall", "-Wextra", `-I${join(dir, "include")}`];
-  const cxxObject = join(objects, "llama-shim.o");
-  const extObject = join(objects, "llama-shim-ext.o");
+  const cObject = join(objects, "llama-shim.o");
+  const cxxObject = join(objects, "llama-shim-ext.o");
+  await run(["cc", ...compile, "-std=c11", "-c", "-o", cObject, SHIM_C]);
   await run(["c++", ...compile, "-std=c++17", "-c", "-o", cxxObject, SHIM_CXX]);
-  await run(["c++", ...compile, "-std=c++17", "-c", "-o", extObject, SHIM_EXT]);
   // Linked as C++, which brings in its runtime library (libllama needs it anyway).
   await run([
     "c++",
@@ -173,8 +172,8 @@ async function buildShim(dir: string): Promise<void> {
     "-shared",
     "-o",
     shimPath(dir),
+    cObject,
     cxxObject,
-    extObject,
     `-L${dir}`,
     "-lllama",
     "-lmtmd",
@@ -207,7 +206,7 @@ if (flags.has("--shim")) {
   if (flags.size > (cuda ? 2 : 1)) {
     throw new Error("--shim is used alone, or with --cuda");
   }
-  await requireTools(windows ? [] : ["c++"], TOOLS_HINT);
+  await requireTools(windows ? [] : ["cc", "c++"], TOOLS_HINT);
   for (const header of HEADERS) {
     const name = header.slice(header.lastIndexOf("/") + 1);
     if (!(await Bun.file(join(dest, "include", name)).exists())) {
