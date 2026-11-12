@@ -4,30 +4,47 @@
 // Usage: bun scripts/fetch_zig.ts
 //
 // The zigbuild scripts use vendor/zig/zig when it is there, else the zig on the PATH, and refuse any other version.
-// A directory that already holds the pinned version is left alone. Needs Bun and tar with xz (Linux only so far).
+// A directory that already holds the pinned version is left alone. Linux (x86-64, aarch64) needs tar with xz; Windows
+// (x64) needs nothing (the zip is read here).
 
-import { mkdir, rm } from "node:fs/promises";
-import { join, resolve } from "node:path";
+import { chmod, mkdir, rm } from "node:fs/promises";
+import { dirname, join, resolve } from "node:path";
 
-import { download, readStamp, writeStamp } from "./fetch_tools";
+import { download, readStamp, unzip, writeStamp } from "./fetch_tools";
 
 export const ZIG_VERSION = "0.17.1";
 
-/** The release archive's SHA-256 per host (`process.arch` names the key), from https://ziglang.org/download/index.json. */
-const ARCHES = {
-  x64: { name: "x86_64", sha256: "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a" },
-  arm64: { name: "aarch64", sha256: "a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795" },
-} as const;
+/**
+ * The release archive's name and SHA-256 per host (`${process.platform}-${process.arch}`), from
+ * https://ziglang.org/download/index.json.
+ */
+const RELEASES: Record<string, { name: string; sha256: string }> = {
+  "linux-x64": {
+    name: `zig-x86_64-linux-${ZIG_VERSION}.tar.xz`,
+    sha256: "3581863e3cbcfd0fce0efc682ce7e9e93da96668a977791d356a26d2a7e9b17a",
+  },
+  "linux-arm64": {
+    name: `zig-aarch64-linux-${ZIG_VERSION}.tar.xz`,
+    sha256: "a1546d5646eb184437918d6635ca6b762a0e889eac09cef720ee7a1ed3fe7795",
+  },
+  "win32-x64": {
+    name: `zig-x86_64-windows-${ZIG_VERSION}.zip`,
+    sha256: "b03f477a1943673e02aca0f570e8030dffd536ce1f45cbc4d3326ec31159562e",
+  },
+};
 
 /** Where `vendor` keeps Zig; `zig` is in it. */
 export const zigHome = (vendor: string) => join(vendor, "zig");
+
+/** The Zig executable in `home`. */
+export const zigExecutable = (home: string) => join(home, process.platform === "win32" ? "zig.exe" : "zig");
 
 if (import.meta.main) {
   if (Bun.argv.length > 2) {
     throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
   }
-  const arch = process.platform === "linux" ? ARCHES[process.arch as keyof typeof ARCHES] : undefined;
-  if (!arch) {
+  const release = RELEASES[`${process.platform}-${process.arch}`];
+  if (!release) {
     throw new Error(`no Zig is pinned for ${process.platform} on ${process.arch} yet`);
   }
   const home = zigHome(resolve(import.meta.dir, "..", "vendor"));
@@ -35,22 +52,29 @@ if (import.meta.main) {
     console.log(`ok ${home} (${ZIG_VERSION}, already there)`);
     process.exit(0);
   }
-  const archive = await download(
-    `https://ziglang.org/download/${ZIG_VERSION}/zig-${arch.name}-linux-${ZIG_VERSION}.tar.xz`,
-    arch.sha256,
-  );
+  const archive = await download(`https://ziglang.org/download/${ZIG_VERSION}/${release.name}`, release.sha256);
   await rm(home, { recursive: true, force: true });
   await mkdir(home, { recursive: true });
-  // The archive's one top-level directory (zig-<arch>-linux-<version>) is dropped
-  const tar = Bun.spawn(["tar", "-xJ", "--strip-components=1", "-C", home], {
-    stdin: archive,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  if ((await tar.exited) !== 0) {
-    throw new Error(
-      "tar failed to unpack the Zig archive; it needs xz (on Debian and Ubuntu: sudo apt install xz-utils)",
-    );
+  if (release.name.endsWith(".zip")) {
+    // The archive's one top-level directory (zig-<arch>-windows-<version>) is dropped by `unzip`
+    for (const [path, bytes] of unzip(archive, () => true)) {
+      const target = join(home, path);
+      await mkdir(dirname(target), { recursive: true });
+      await Bun.write(target, bytes);
+    }
+    await chmod(zigExecutable(home), 0o755);
+  } else {
+    // The archive's one top-level directory (zig-<arch>-linux-<version>) is dropped
+    const tar = Bun.spawn(["tar", "-xJ", "--strip-components=1", "-C", home], {
+      stdin: archive,
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    if ((await tar.exited) !== 0) {
+      throw new Error(
+        "tar failed to unpack the Zig archive; it needs xz (on Debian and Ubuntu: sudo apt install xz-utils)",
+      );
+    }
   }
   await writeStamp(home, `${ZIG_VERSION}\n`);
   console.log(`ok ${home} (${ZIG_VERSION})`);

@@ -1,5 +1,5 @@
 // The real aligner: libllama through bun:ffi on the segmentation worker, with LaBSE. Skipped unless
-// both are installed (bun scripts/build_llama.ts; bun scripts/fetch_models.ts --model labse, or
+// both are installed (bun scripts/zigbuild_llamacpp.ts; bun scripts/fetch_models.ts --model labse, or
 // ALIGN_MODEL_DIR naming a directory with model.gguf, vocab.txt and dense.safetensors).
 
 import { afterAll, describe, expect, test } from "bun:test";
@@ -9,13 +9,12 @@ import { join } from "node:path";
 import type { AlignUnit } from "../src/api";
 import { loadConfig } from "../src/config";
 import { WordPieceTokenizer } from "../src/labse";
-import { libraryPath, shimPath } from "../src/llama-ffi";
+import { libraryPath } from "../src/llama-ffi";
 import { NativeSegmenter } from "../src/segment";
 
 const cfg = { ...loadConfig(Bun.env), align: true, segmentIdleUnload: 0 };
 const installed =
   existsSync(libraryPath(cfg.llamaDir)) &&
-  existsSync(shimPath(cfg.llamaDir)) &&
   ["model.gguf", "vocab.txt", "dense.safetensors"].every((f) => existsSync(join(cfg.alignModelDir, f)));
 
 const segmenter = new NativeSegmenter(cfg);

@@ -1,7 +1,7 @@
 // Build the translation engine with Zig: libllama and libmtmd (image input) from the pinned llama.cpp source,
 // with ggml's Vulkan and CPU backends compiled in and nothing else of llama.cpp, and the shim (src/llama-shim.c,
-// src/llama-shim-ext.cpp), linked into one library, ./vendor/llama.cpp/libllama.so. libmtmd.so and
-// libllama-shim.so there are links to it, so the bindings open one file three times.
+// src/llama-shim-ext.cpp), linked into one library, ./vendor/llama.cpp/libllama.so (llama.dll on Windows), which the
+// bindings open for all three.
 // Usage: bun scripts/zigbuild_llamacpp.ts [--keep] [--shim] [--target=<triple>]
 //
 //   --target  the Zig target to build for (scripts/zig/zig-toolchain-<triple>.cmake must exist); this machine's by
@@ -10,18 +10,19 @@
 //   --shim    only compile the shim again and link the library again, from the kept tree (after editing the shim)
 //
 // The CMake options are scripts/zig/llama.flags, the compiler is Zig (the toolchain file says for which CPU and libc;
-// x86_64-linux-gnu is the only target so far). Needs git, cmake, ninja, zig, glslc and the Vulkan
-// headers and libvulkan; no host C or C++ compiler. The library opens libvulkan.so.1 when it loads; it is the only
-// one besides libc.
+// x86_64-linux-gnu, aarch64-linux-gnu and, on Windows, x86_64-windows-gnu). Needs git, cmake, ninja, zig, glslc and
+// the Vulkan headers and libvulkan (on Windows the Vulkan SDK, found through VULKAN_SDK); no host C or C++ compiler.
+// The library opens libvulkan.so.1 (vulkan-1.dll) when it loads; it is the only one besides libc (Windows' own DLLs).
 
-import { cp, mkdir, rm, rmdir, symlink } from "node:fs/promises";
+import { cp, mkdir, readdir, rm, rmdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { devices, libraryPath, shimPath } from "../src/llama-ffi";
-import { checkout, run } from "./build_tools";
+import { devices, libraryPath } from "../src/llama-ffi";
+import { checkout, run, windows } from "./build_tools";
 import {
   cacheValue,
   cmakeBuild,
+  copyRuntimeLicenses,
   getHostTriple,
   parseOptions,
   requireZigBuildTools,
@@ -62,7 +63,7 @@ async function link(): Promise<void> {
     "-target",
     triple,
     "-O2",
-    "-fPIC",
+    ...(windows ? [] : ["-fPIC"]),
     "-Wall",
     "-Wextra",
     ...["include", "src", "tools/mtmd", "ggml/include"].map((dir) => `-I${join(source, dir)}`),
@@ -77,36 +78,37 @@ async function link(): Promise<void> {
     .filter((path) => !path.includes("vulkan-shaders-gen"))
     .map((path) => join(build, path))
     .sort();
+  await mkdir(stage, { recursive: true });
+  const common = ["zig", "c++", "-target", triple, "-O2", "-shared", "-o", libraryPath(stage), cObject, cxxObject];
+  const vulkan = await cacheValue(build, "Vulkan_LIBRARY");
+  if (windows) {
+    // Nothing is marked dllexport (llama.h under MinGW, and the shim alike), so the linker exports every symbol.
+    // Hiding nothing is harmless here: a DLL's imports name the DLL, so libaudiocpp's ggml cannot bind to this one's.
+    await run([...common, ...archives, vulkan]);
+    // The linker's side products: the debug database and the import library
+    for (const name of await readdir(stage)) {
+      if (name.endsWith(".pdb") || name.endsWith(".lib")) {
+        await rm(join(stage, name));
+      }
+    }
+    return;
+  }
   const exports = join(work, "exports.map");
   await Bun.write(exports, `{ global: ${EXPORTS.map((name) => `${name};`).join(" ")} local: *; };\n`);
-  await mkdir(stage, { recursive: true });
   await run([
-    "zig",
-    "c++",
-    "-target",
-    triple,
-    "-O2",
-    "-shared",
+    ...common,
     // Stripped: the exports are the version script's
     "-Wl,--strip-all",
-    "-o",
-    libraryPath(stage),
-    cObject,
-    cxxObject,
     "-Wl,--start-group",
     ...archives,
     "-Wl,--end-group",
-    await cacheValue(build, "Vulkan_LIBRARY"),
+    vulkan,
     `-Wl,--version-script=${exports}`,
     "-Wl,-soname,libllama.so",
     // Everything but what the system's libvulkan needs of a newer glibc than Zig's default target has
     "-Wl,--no-undefined",
     "-Wl,--allow-shlib-undefined",
   ]);
-  for (const path of [join(stage, "libmtmd.so"), shimPath(stage)]) {
-    await rm(path, { force: true });
-    await symlink("libllama.so", path);
-  }
 }
 
 /** Opens the library in `dir` with the declarations the server uses and lists what it can compute on. */
@@ -135,10 +137,8 @@ if (shimOnly) {
   await requireZigBuildTools();
   await rm(stage, { recursive: true, force: true });
   await link();
-  for (const name of ["libllama.so", "libmtmd.so", "libllama-shim.so"]) {
-    await rm(join(dest, name), { force: true });
-    await cp(join(stage, name), join(dest, name), { verbatimSymlinks: true });
-  }
+  await rm(libraryPath(dest), { force: true });
+  await cp(libraryPath(stage), libraryPath(dest));
   await rm(stage, { recursive: true, force: true });
   report("shim rebuilt");
   process.exit(0);
@@ -160,11 +160,12 @@ try {
   throw e;
 }
 await cp(join(source, "LICENSE"), join(stage, "LICENSE"));
+await copyRuntimeLicenses(triple, stage);
 await Bun.write(join(stage, "VERSION"), `${TAG}\n`);
 
 // Built before the existing copy is replaced.
 await rm(dest, { recursive: true, force: true });
-await cp(stage, dest, { recursive: true, verbatimSymlinks: true });
+await cp(stage, dest, { recursive: true });
 if (!keep) {
   await rm(work, { recursive: true, force: true });
   // Gone too, unless another build keeps its tree there.

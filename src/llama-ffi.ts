@@ -24,16 +24,16 @@ const MTP_DRAFT = 2;
  */
 const MTP_MIN_GPU_BYTES = 15.5 * 2 ** 30;
 
+/**
+ * The one library scripts/zigbuild_llamacpp.ts builds: libllama, libmtmd (image input), ggml with its backends, and
+ * src/llama-shim.c with src/llama-shim-ext.cpp, compiled against the same llama.cpp source.
+ */
 export const libraryPath = (dir: string) => libraryFile(dir, "llama");
-/** src/llama-shim.c as scripts/build_llama.ts compiled it, against the headers of the libllama beside it. */
-export const shimPath = (dir: string) => libraryFile(dir, "llama-shim");
-/** llama.cpp's library for image input, from the same build. */
-const mtmdPath = (dir: string) => libraryFile(dir, "mtmd");
 
-/** Opens libllama, libmtmd and the shim (which links the other two) in `dir`, and registers the backends. */
+/** Opens libllama with libmtmd and the shim in `dir`, and registers the backends. */
 function bind(dir: string) {
-  if (![libraryPath(dir), shimPath(dir), mtmdPath(dir)].every((path) => existsSync(path))) {
-    throw new Error(`libllama, libmtmd or the shim not found in ${dir}; run: bun scripts/build_llama.ts`);
+  if (!existsSync(libraryPath(dir))) {
+    throw new Error(`libllama not found in ${dir}; run: bun scripts/zigbuild_llamacpp.ts`);
   }
   const llama = dlopen(libraryPath(dir), {
     llama_model_free: { args: ["ptr"], returns: "void" },
@@ -51,7 +51,7 @@ function bind(dir: string) {
     llama_sampler_free: { args: ["ptr"], returns: "void" },
   }).symbols;
   // libmtmd (tools/mtmd/mtmd.h, mtmd-helper.h): the calls that need no struct.
-  const mtmd = dlopen(mtmdPath(dir), {
+  const mtmd = dlopen(libraryPath(dir), {
     mtmd_free: { args: ["ptr"], returns: "void" },
     mtmd_bitmap_free: { args: ["ptr"], returns: "void" },
     mtmd_input_chunks_size: { args: ["ptr"], returns: "usize" },
@@ -59,7 +59,7 @@ function bind(dir: string) {
     mtmd_helper_get_n_tokens: { args: ["ptr"], returns: "usize" },
   }).symbols;
   // src/llama-shim.c and src/llama-shim-ext.cpp.
-  const shim = dlopen(shimPath(dir), {
+  const shim = dlopen(libraryPath(dir), {
     shim_init: { args: ["ptr"], returns: "void" },
     shim_devices: { args: ["ptr", "i32"], returns: "i32" },
     shim_gpu_memory: { args: ["ptr", "ptr"], returns: "i32" },

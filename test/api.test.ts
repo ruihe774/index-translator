@@ -56,7 +56,10 @@ describe("metadata endpoints", () => {
       started_from: "source",
       queue: { running: false, waiting: 0, max_waiting: 1 },
       // The test config points at directories that do not exist.
-      speech: { status: "unavailable", error: "the speech engine is not installed; run bun scripts/build_audiocpp.ts" },
+      speech: {
+        status: "unavailable",
+        error: "the speech engine is not installed; run bun scripts/zigbuild_audiocpp.ts",
+      },
       segment: {
         status: "unavailable",
         error: "sat.wasm is not installed; run bun scripts/fetch_sat_wasm.ts",
@@ -64,12 +67,12 @@ describe("metadata endpoints", () => {
       },
       align: {
         status: "unavailable",
-        error: "libllama is not installed; run bun scripts/build_llama.ts",
+        error: "libllama is not installed; run bun scripts/zigbuild_llamacpp.ts",
         max_chars: 20_000,
       },
       transcribe: {
         status: "unavailable",
-        error: "the speech engine is not installed; run bun scripts/build_audiocpp.ts",
+        error: "the speech engine is not installed; run bun scripts/zigbuild_audiocpp.ts",
         separation: false,
         max_seconds: 1800,
         max_bytes: 160 * 1024 * 1024,

@@ -407,11 +407,11 @@ describe("launchNative", () => {
     expect(err.message).toContain(join(EMPTY_DIR, MODELS[0]!.file));
   });
 
-  test("a directory without libllama fails with a build_llama hint, and the engine thread survives it", async () => {
+  test("a directory without libllama fails with a zigbuild_llamacpp hint, and the engine thread survives it", async () => {
     for (let i = 0; i < 2; i++) {
       const err = await errorOf(launchNative(MODELS[0]!, config({ modelsDir: MODELS_DIR, llamaDir: EMPTY_DIR })));
       expect(err).toBeInstanceOf(EngineError);
-      expect(err.message).toContain("build_llama");
+      expect(err.message).toContain("zigbuild_llamacpp");
       expect(err.message).toContain(EMPTY_DIR);
     }
   });

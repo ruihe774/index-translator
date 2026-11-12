@@ -11,7 +11,7 @@
 // libc; x86_64-linux-gnu is the only target so far). Needs git, cmake, ninja, zig, glslc and the Vulkan
 // headers and libvulkan; no host C or C++ compiler.
 //
-// As in scripts/build_audiocpp.ts, ggml is linked in statically and only the audiocpp_* functions are exported:
+// ggml is linked in statically and only the audiocpp_* functions are exported:
 // audio.cpp's ggml is a fork that shares its library name with llama.cpp's.
 
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
@@ -20,9 +20,10 @@ import { join, resolve } from "node:path";
 import { $ } from "bun";
 
 import { libraryPath, libraryVersion, SILERO_WEIGHTS } from "../src/audiocpp-ffi";
-import { checkout, run } from "./build_tools";
+import { checkout, run, windows } from "./build_tools";
 import {
   cmakeBuild,
+  copyRuntimeLicenses,
   getHostTriple,
   parseOptions,
   requireZigBuildTools,
@@ -83,11 +84,16 @@ try {
 // Built before the existing copy is replaced.
 await rm(dest, { recursive: true, force: true });
 await mkdir(join(dest, "include"), { recursive: true });
-// build/bin/libaudiocpp.so is a link to the versioned file; the copy is the file.
-await cp(libraryPath(join(build, "bin")), libraryPath(dest), { dereference: true });
+// build/bin/libaudiocpp.so is a link to the versioned file; the copy is the file. MinGW's CMake names the DLL
+// libaudiocpp.dll; the bindings open audiocpp.dll.
+const built = windows ? join(build, "bin", "libaudiocpp.dll") : libraryPath(join(build, "bin"));
+await cp(built, libraryPath(dest), { dereference: true });
 await cp(join(source, "include", "audiocpp.h"), join(dest, "include", "audiocpp.h"));
 await cp(join(source, "LICENSE"), join(dest, "LICENSE"));
 await cp(join(source, "external", "ggml", "LICENSE"), join(dest, "LICENSE.ggml"));
+// libyaml (MIT) is linked in through audio.cpp's yaml_vendor, as cJSON and SentencePiece are.
+await cp(join(source, "external", "libyaml", "License"), join(dest, "LICENSE.libyaml"));
+await copyRuntimeLicenses(triple, dest);
 // Silero VAD's weights ship with audio.cpp's source, not in a GGUF; the library is given their path. Their
 // license (MIT) is not in audio.cpp's tree, so ours is a copy of the one in snakers4/silero-vad.
 await cp(join(source, "assets", "framework", "models", "silero_vad", SILERO_WEIGHTS), join(dest, SILERO_WEIGHTS));

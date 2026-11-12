@@ -1,8 +1,8 @@
 // The libllama and libmtmd (image input) calls that pass or return structs, which bun:ffi cannot
 // express, plus the log filter, the device list and multi-token prediction. Compiled by
-// scripts/build_llama.ts into libllama-shim, with src/llama-shim-ext.cpp, against the headers of the
-// libraries it has just built and puts next to it, so the struct layouts always match them. After a
-// change here: bun scripts/build_llama.ts --shim. Everything else is called directly from src/llama-ffi.ts.
+// scripts/zigbuild_llamacpp.ts with src/llama-shim-ext.cpp against the source it has just built, and linked into
+// the same library, so the struct layouts always match it. After a change here:
+// bun scripts/zigbuild_llamacpp.ts --shim. Everything else is called directly from src/llama-ffi.ts.
 
 #include <stdint.h>
 #include <stdio.h>
@@ -13,12 +13,10 @@
 #include "mtmd.h"
 #include "mtmd-helper.h"
 
-// The functions bun:ffi looks up by name; a Windows DLL exports only what is marked.
-#if defined(_WIN32)
-#    define SHIM_API __declspec(dllexport)
-#else
-#    define SHIM_API __attribute__((visibility("default")))
-#endif
+// The functions bun:ffi looks up by name. On Windows (MinGW) nothing is marked dllexport, as in llama.h: with no
+// marked symbol the linker exports every one, which libllama's and libmtmd's functions need; one dllexport here
+// would leave only the shim's.
+#define SHIM_API __attribute__((visibility("default")))
 
 static enum ggml_log_level shim_log_level = GGML_LOG_LEVEL_INFO;
 

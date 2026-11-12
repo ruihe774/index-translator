@@ -1,16 +1,13 @@
 // The libllama functions multi-token prediction needs that only llama.cpp's staging header
 // (src/llama-ext.h) declares. That header is C++, so libllama exports them under C++-mangled names,
 // which neither bun:ffi nor src/llama-shim.c can name; this file gives them C names. Compiled into
-// libllama-shim with src/llama-shim.c by scripts/build_llama.ts. The header is staging API: after a
+// libllama with src/llama-shim.c by scripts/zigbuild_llamacpp.ts. The header is staging API: after a
 // llama.cpp pin change, check these signatures against it.
 
 #include "llama-ext.h"
 
-#if defined(_WIN32)
-#    define SHIM_API __declspec(dllexport)
-#else
-#    define SHIM_API __attribute__((visibility("default")))
-#endif
+// Not dllexport on Windows: see SHIM_API in src/llama-shim.c.
+#define SHIM_API __attribute__((visibility("default")))
 
 extern "C" {
 
