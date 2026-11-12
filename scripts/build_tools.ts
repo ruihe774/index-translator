@@ -6,14 +6,21 @@ import { join } from "node:path";
 
 import { $ } from "bun";
 
+/**
+ * `command` with its program given by full path. The shell looks a command up on the PATH it started with, not of
+ * `env` (`cl` is only on the latter) and not of a `process.env.PATH` changed since (Zig's directory).
+ */
+function resolveProgram(command: string[], env: Record<string, string | undefined> = process.env): string[] {
+  const pathKey = Object.keys(env).find((key) => key.toUpperCase() === "PATH");
+  const program = Bun.which(command[0] ?? "", { PATH: pathKey ? env[pathKey] : undefined }) ?? command[0] ?? "";
+  return [program, ...command.slice(1)];
+}
+
 /** Runs a command with its output on the terminal and throws when it fails. */
 export async function run(command: string[], cwd?: string, env?: Record<string, string>): Promise<void> {
   console.log(`$ ${command.join(" ")}`);
   const merged = { ...Bun.env, ...env };
-  // The shell looks a command up on the PATH of this process, not of `env` (`cl` is only on the latter).
-  const pathKey = Object.keys(merged).find((key) => key.toUpperCase() === "PATH");
-  const program = Bun.which(command[0] ?? "", { PATH: pathKey ? merged[pathKey] : undefined }) ?? command[0] ?? "";
-  const result = await $`${[program, ...command.slice(1)]}`
+  const result = await $`${resolveProgram(command, merged)}`
     .cwd(cwd ?? process.cwd())
     .env(merged)
     .nothrow();
@@ -24,7 +31,7 @@ export async function run(command: string[], cwd?: string, env?: Record<string, 
 
 /** What a command prints, trimmed; empty when it fails. */
 export async function output(command: string[], cwd?: string): Promise<string> {
-  const result = await $`${command}`
+  const result = await $`${resolveProgram(command)}`
     .cwd(cwd ?? process.cwd())
     .quiet()
     .nothrow();
