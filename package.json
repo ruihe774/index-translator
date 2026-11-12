@@ -33,6 +33,7 @@
     "monocart-coverage-reports": "^2.13",
     "openapi-typescript": "^7.13",
     "postcss": "^8.5",
+    "string-argv": "^0.4",
     "stylelint": "^17.16",
     "stylelint-config-recommended": "^18.0"
   }

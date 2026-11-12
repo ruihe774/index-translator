@@ -12,8 +12,10 @@
 // Every CMake target becomes a Zig object with its own include paths and flags, as CMake compiled it. What is not
 // in the compdb is handled by name (marked GENERATED below): CMake's unity sources and the Vulkan shaders.
 
-import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, extname, join, relative, resolve } from "node:path";
+
+import { parseArgsStringToArgv as shellSplit } from "string-argv";
 
 interface Config {
   /** The library's name: lib<name>.so. */
@@ -37,7 +39,7 @@ if (!configPath || !sourceArg || !buildArg || !outArg) {
 const outDir: string = outArg;
 const source = sourceArg.replace(/\/$/, "");
 const build = buildArg.replace(/\/$/, "");
-const config = JSON.parse(readFileSync(configPath, "utf8")) as Config;
+const config = (await Bun.file(configPath).json()) as Config;
 
 interface Entry {
   file: string;
@@ -46,12 +48,10 @@ interface Entry {
   directory: string;
 }
 // `
-const all = JSON.parse(await Bun.$`ninja -C ${build} -t compdb`.text()) as Entry[];
+const all = (await Bun.$`ninja -C ${build} -t compdb`.json()) as Entry[];
 const entries = all.filter((e) => e.output.endsWith(".o"));
-const targetOf = (e: Entry) => /CMakeFiles\/([^/]+)\.dir\//.exec(e.output)![1]!;
+const targetOf = (e: Entry | string) => /CMakeFiles\/([^/]+)\.dir\//.exec(typeof e === "string" ? e : e.output)![1]!;
 
-const shellSplit = (s: string): string[] =>
-  [...s.matchAll(/"((?:[^"\\]|\\.)*)"|(\S+)/g)].map((m) => (m[1] ?? m[2]!).replaceAll(/\\(.)/g, "$1"));
 /** A compile line as Ninja runs it, without the depfile options it adds (CMake's compile_commands.json has none). */
 const compileArgs = (e: Entry) =>
   shellSplit(e.command).filter((a, i, all) => !/^-M[DTF]$/.test(a) && !/^-M[TF]$/.test(all[i - 1] ?? ""));
@@ -75,7 +75,7 @@ function closure(roots: string[]): Set<string> {
     }
     for (const item of shellSplit(link.command)) {
       if (item.endsWith(".o")) {
-        targets.add(/CMakeFiles\/([^/]+)\.dir\//.exec(item)![1]!);
+        targets.add(targetOf(item));
       } else if (item.endsWith(".a") && byOutput.has(item)) {
         pending.push(item);
       }
@@ -83,18 +83,16 @@ function closure(roots: string[]): Set<string> {
   }
   return targets;
 }
+
 const wanted = config.roots ? closure(config.roots) : new Set(entries.map(targetOf));
 const used = entries.filter((e) => wanted.has(targetOf(e)));
 
 /**
  * Flags Zig sets itself, or that are not wanted under Zig. -march and -m<isa> are the target's: Zig puts its own
- * -target-feature after -cflags, so they would be overridden anyway. -g goes with strip.
+ * -target-feature after -cflags, so they would be overridden anyway. -g goes with strip. -W flags are dropped.
  */
-function keepFlag(flag: string): boolean {
-  return (
-    !/^-(fPIC|march=.*|O\d|g|std=.*|Wno-maybe-uninitialized|x|m(sse|avx|fma|f16c|bmi).*)$/.test(flag) && flag !== "c++"
-  );
-}
+const keepFlag = (flag: string) =>
+  !/^-(fPIC|march=.*|O\d|g|std=.*|W.*|x|m(sse|avx|fma|f16c|bmi).*)$/.test(flag) && flag !== "c++";
 
 // The headers CMake generated that the compiles include, found by preprocessing each one (-M -MG: a header that is
 // not there yet, like the Vulkan shaders', is listed as it is named).
@@ -111,7 +109,7 @@ await Promise.all(
       const o = args.indexOf("-o");
       const argv = [...args.slice(0, o), ...args.slice(o + 2)].filter((a) => a !== "-c");
       const proc = Bun.spawn([...argv, "-M", "-MG"], { cwd: e.directory, stdout: "pipe", stderr: "inherit" });
-      const text = await new Response(proc.stdout).text();
+      const text = await proc.stdout.text();
       if ((await proc.exited) !== 0) {
         throw new Error(`-M failed for ${e.file}`);
       }
@@ -136,7 +134,7 @@ const changed = (await Bun.$`git -C ${source} status --porcelain --untracked-fil
 rmSync(join(outDir, "generated"), { recursive: true, force: true });
 rmSync(join(outDir, "overlay"), { recursive: true, force: true });
 for (const dep of deps) {
-  if (!(await Bun.file(dep).exists())) {
+  if (!existsSync(dep)) {
     continue;
   } // the shader header, made at build time
   const to = join(outDir, "generated", relative(build, dep));
@@ -247,10 +245,7 @@ w(
 );
 w(`    // -Dcpu override it. The sources and defines are still the ones CMake chose for x86-64.`);
 w(`    const target = b.standardTargetOptions(.{ .default_target = .{`);
-w(`        .cpu_arch = .x86_64,`);
-w(`        .os_tag = .linux,`);
 w(`        .abi = .gnu,`);
-w(`        .cpu_model = .{ .explicit = &std.Target.x86.cpu.x86_64_v3 },`);
 w(`    } });`);
 w(`    const optimize: std.builtin.OptimizeMode = .ReleaseFast;`);
 w(`    const upstream = b.dependency("${config.dependency}", .{});`);
