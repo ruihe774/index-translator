@@ -134,25 +134,30 @@ async function buildShim(dir: string): Promise<void> {
   const objects = join(work, "shim");
   await mkdir(objects, { recursive: true });
   if (windows) {
-    // cl takes one /std for both languages, so each file is compiled on its own and then linked. The C file uses
-    // C11 atomics, which MSVC has behind /experimental:c11atomics (Visual Studio 17.5 and later).
-    const { env } = await msvc();
-    const common = ["/nologo", "/c", "/O2", "/W3", "/EHsc", `/Fo${objects}\\`, `/I${join(dir, "include")}`];
-    await run(["cl", ...common, "/std:c11", "/experimental:c11atomics", SHIM_C], undefined, env);
-    await run(["cl", ...common, "/std:c++17", SHIM_CXX], undefined, env);
+    // cl compiles the .c file as C and the .cpp file as C++. The C file uses C11 atomics, which MSVC has behind
+    // /experimental:c11atomics (Visual Studio 17.5 and later).
     await run(
       [
-        "link",
+        "cl",
         "/nologo",
-        "/DLL",
-        `/OUT:${shimPath(dir)}`,
-        join(objects, "llama-shim.obj"),
-        join(objects, "llama-shim-ext.obj"),
+        "/O2",
+        "/LD",
+        "/W3",
+        "/EHsc",
+        "/std:c++17",
+        "/std:c11",
+        "/experimental:c11atomics",
+        `/Fo${objects}\\`,
+        `/Fe${shimPath(dir)}`,
+        SHIM_C,
+        SHIM_CXX,
+        `/I${join(dir, "include")}`,
+        "/link",
         `/LIBPATH:${dir}`,
         ...Object.keys(IMPORT_LIBS).map((name) => `${name}.lib`),
       ],
       undefined,
-      env,
+      (await msvc()).env,
     );
     // The shim's own import library and export file are not needed.
     for (const ext of [".lib", ".exp"]) {
