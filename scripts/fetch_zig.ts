@@ -5,7 +5,7 @@
 //
 // The zigbuild scripts use vendor/zig/zig when it is there, else the zig on the PATH, and refuse any other version.
 // A directory that already holds the pinned version is left alone. Linux (x86-64, aarch64) and macOS (Apple silicon)
-// need tar with xz; Windows (x64) needs nothing (the zip is read here).
+// need tar with xz; Windows (x64) needs `bun install` first (the zip is read here, with @stdx/zip).
 
 import { chmod, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";

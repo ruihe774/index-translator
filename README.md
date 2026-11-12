@@ -159,7 +159,8 @@ translation models with `bun scripts/fetch_models.ts --model index-translate-9b 
 
 You need [Bun](https://bun.sh) and `curl`, and to build git, CMake, Ninja, `glslc` and the Vulkan headers (Zig
 compiles everything; no other C or C++ compiler is needed). On Debian and Ubuntu:
-`sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers`.
+`sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers xz-utils` (`fetch_zig.ts` unpacks a
+`.tar.xz`).
 What is built then needs an x86-64 processor with AVX2 (Haswell, 2013, or newer) or an aarch64 one with
 Armv8.2-A dot product and fp16 (Cortex-A76 and Apple M1 or newer).
 
@@ -167,7 +168,8 @@ On Windows the same commands work in Command Prompt or PowerShell. Instead of th
 above you need Git, CMake and Ninja on the `PATH` (standalone installers, or
 `winget install Git.Git Kitware.CMake Ninja-build.Ninja`; no Visual Studio) and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (`glslc`,
 the headers and `vulkan-1.lib`); `curl` comes with Windows. Open a new terminal after installing them, so it sees
-the new `PATH`. More in [WINDOWS.md](WINDOWS.md).
+the new `PATH`. Run `bun install` once before `fetch_zig.ts`, which unpacks Zig's `.zip` with a development
+dependency. More in [WINDOWS.md](WINDOWS.md).
 
 `bun scripts/build_appimage.ts` packs what you have built and fetched (the models excepted) into an AppImage of your own, and on
 Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Setup if it is not

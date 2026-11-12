@@ -320,12 +320,9 @@ jobs:
           sudo apt-get install -y --no-install-recommends \
             git cmake ninja-build glslc libvulkan-dev spirv-headers
 
-      # scripts/fetch_zig.ts unpacks with scripts/extract_tools.ts, which imports @stdx/zip, a development dependency.
-      - name: Install the development tools
-        run: bun install --frozen-lockfile
-
-      # The engines, libsoxr and libopus are built with Zig (scripts/zigbuild_*.ts), the release that
-      # scripts/fetch_zig.ts pins.
+      # No `bun install`: on Linux nothing here needs a development dependency (Zig's archive is a .tar.xz; only
+      # extractZip imports @stdx/zip), which this job keeps true. The engines, libsoxr and libopus are built with Zig
+      # (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins.
       - name: Cache Zig
         id: zig
         uses: actions/cache@v6
