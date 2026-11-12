@@ -1,13 +1,12 @@
 // Pack the app into one file that runs on other Linux machines: dist/Index_Translator-<arch>.AppImage (x86_64 or aarch64, as the machine),
 // with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and the shim in one
-// library, libaudiocpp), libsoxr, libopus and sat.wasm. The models and the voices are not packed; the AppImage's `fetch`
+// library, libaudiocpp), libsat (the sentence segmentation model's forward pass), libsoxr and libopus. The models and the voices are not packed; the AppImage's `fetch`
 // subcommand (scripts/fetch_models.ts) downloads them into the user's data directory.
 // Usage: bun scripts/build_appimage.ts
 //
 // Before it: bun scripts/zigbuild_llamacpp.ts && bun scripts/zigbuild_audiocpp.ts (this machine's target, packed as
-// built), bun scripts/zigbuild_soxr.ts, bun scripts/zigbuild_libopus.ts (the Opus encoder), and
-// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries, packed with public/), bun scripts/fetch_turndown.ts (web pages as Markdown) and
-// bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the Bun that is
+// built), bun scripts/zigbuild_sat_engine.ts (sentence segmentation), bun scripts/zigbuild_soxr.ts, bun scripts/zigbuild_libopus.ts (the Opus encoder), and
+// bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries, packed with public/), bun scripts/fetch_turndown.ts (web pages as Markdown), and bun scripts/build_bun.ts (the Bun that is
 // packed: a minimal build, not the one running this script).
 // The AppImage needs glibc 2.31 or newer whatever the machine that builds it: Bun is linked against Ubuntu 20.04's
 // glibc (build_bun.ts), the libraries by Zig against an older one (they need 2.29 with Zig 0.17.1), libc++ inside;
@@ -24,6 +23,7 @@ import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
 import { libraryPath as llamaLibrary } from "../src/llama-ffi";
 import { opusLibraryPath } from "../src/opus-ffi";
+import { satLibraryPath } from "../src/sat-ffi";
 import { bunPath, checkGlibc } from "./build_bun";
 import { output, run } from "./build_tools";
 import { downloadUnlessMatches } from "./fetch_tools";
@@ -67,6 +67,7 @@ const RUNTIME = {
 const packaging = join(root, "packaging", "appimage");
 const llama = join(root, "vendor", "llama.cpp");
 const audio = join(root, "vendor", "audio.cpp");
+const sat = join(root, "vendor", "sat");
 const soxr = join(root, "vendor", "soxr");
 const opus = join(root, "vendor", "opus");
 const bun = join(root, "vendor", "bun");
@@ -78,6 +79,7 @@ const out = join(root, "dist", NAME);
 for (const [file, script] of [
   [llamaLibrary(llama), "zigbuild_llamacpp.ts"],
   [audioLibrary(audio), "zigbuild_audiocpp.ts"],
+  [satLibraryPath(sat), "zigbuild_sat_engine.ts"],
   [soxrLibraryPath(soxr), "zigbuild_soxr.ts"],
   [opusLibraryPath(opus), "zigbuild_libopus.ts"],
   [bunPath(bun), "build_bun.ts"],
@@ -91,6 +93,7 @@ await requireAllVendored();
 for (const file of [
   llamaLibrary(llama),
   audioLibrary(audio),
+  satLibraryPath(sat),
   soxrLibraryPath(soxr),
   opusLibraryPath(opus),
   bunPath(bun),
@@ -106,6 +109,7 @@ await mkdir(app, { recursive: true });
 await stageApp(app);
 await copyEngine(llama, join(app, "vendor", "llama.cpp"));
 await copyEngine(audio, join(app, "vendor", "audio.cpp"));
+await copyEngine(sat, join(app, "vendor", "sat"));
 await copyEngine(soxr, join(app, "vendor", "soxr"));
 await copyEngine(opus, join(app, "vendor", "opus"));
 
@@ -116,7 +120,7 @@ const version = [
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
-  `sat.wasm ${(await Bun.file(join(root, "vendor", "sat-wasm", "VERSION")).text()).slice(0, 7)}`,
+  `libsat ${(await Bun.file(join(sat, "VERSION")).text()).trim()}`,
   `bun ${(await Bun.file(join(bun, "VERSION")).text()).trim()}`,
 ];
 await Bun.write(join(app, "VERSION"), `${version.join("\n")}\n`);

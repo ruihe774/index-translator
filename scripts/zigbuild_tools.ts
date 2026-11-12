@@ -136,6 +136,37 @@ export function targetLibraryName(triple: string, name: string, soVersion: numbe
   return triple.includes("-macos") ? `lib${name}.${soVersion}.dylib` : `lib${name}.so.${soVersion}`;
 }
 
+/**
+ * Compiles `source` (src/sat-engine.zig, or a copy with other tunables) into the shared library `out` for `triple`:
+ * one `zig build-lib` command line, no build.zig. The CPU baselines are the engines' (x86-64-v3: AVX2 and FMA;
+ * Armv8.2-A with dotprod and fp16); macOS takes Zig's own default for the target.
+ */
+export async function zigBuildSatEngine(triple: string, source: string, out: string): Promise<void> {
+  const cpu = triple.startsWith("x86_64-")
+    ? "x86_64_v3"
+    : triple.startsWith("aarch64-linux")
+      ? "generic+v8_2a+fullfp16+dotprod"
+      : undefined;
+  await run([
+    "zig",
+    "build-lib",
+    "-dynamic",
+    "-O",
+    "ReleaseFast",
+    "-fstrip",
+    "-lc",
+    "-fno-emit-h",
+    "-fno-emit-implib",
+    "-target",
+    triple,
+    ...(cpu ? ["-mcpu", cpu] : []),
+    source,
+    "--name",
+    "sat",
+    `-femit-bin=${out}`,
+  ]);
+}
+
 const toolchainFile = (triple: string) => join(ZIG_DIR, `zig-toolchain-${triple}.cmake`);
 
 /** The CMake options saved in scripts/zig/<name>.flags, one per line. */

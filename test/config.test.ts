@@ -37,7 +37,7 @@ describe("loadConfig defaults", () => {
       transcribe: true,
       transcribeModelDir: join(root, "models", "MOSS-Transcribe-Diarize-GGUF"),
       segment: true,
-      satWasmDir: join(root, "vendor", "sat-wasm"),
+      satDir: join(root, "vendor", "sat"),
       segmentModelDir: join(root, "models", "sat-3l-sm"),
       segmentThreads: 0,
       segmentIdleUnload: 300,
@@ -57,7 +57,7 @@ describe("loadConfig defaults", () => {
     expect(loadConfig({ SEGMENT: "0" }).segment).toBe(false);
     expect(loadConfig({ MODELS_DIR: "/m" }).segmentModelDir).toBe(resolve("/m/sat-3l-sm"));
     expect(loadConfig({ MODELS_DIR: "/m", SEGMENT_MODEL_DIR: "/s" }).segmentModelDir).toBe(resolve("/s"));
-    expect(loadConfig({ SAT_WASM_DIR: "/w" }).satWasmDir).toBe(resolve("/w"));
+    expect(loadConfig({ SAT_DIR: "/w" }).satDir).toBe(resolve("/w"));
     expect(loadConfig({ SEGMENT_THREADS: "4" }).segmentThreads).toBe(4);
     expect(() => loadConfig({ SEGMENT_THREADS: "-1" })).toThrow("SEGMENT_THREADS");
     expect(loadConfig({ SEGMENT_IDLE_UNLOAD: "0" }).segmentIdleUnload).toBe(0);

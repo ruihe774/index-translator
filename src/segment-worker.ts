@@ -1,4 +1,4 @@
-// Worker thread that owns the models of sentence work: SaT (sentence ends, on sat.wasm) and LaBSE (sentence
+// Worker thread that owns the models of sentence work: SaT (sentence ends, on libsat) and LaBSE (sentence
 // embeddings, for alignment, on libllama). Running a model blocks, so it runs here and the server thread stays free
 // to answer requests. Every message is handled to its end before the next one. A request is run in
 // batches, and between two batches this thread looks at memory it shares with the server thread to see
@@ -12,14 +12,14 @@ import type { AlignedPair, AlignUnit, SegmentedText } from "./api";
 import { type Dense, DIMENSIONS, embed, readDense, WordPieceTokenizer } from "./labse";
 import { Embedder } from "./llama-embed-ffi";
 import { findBoundaries, type TokenizerJson, XlmrTokenizer } from "./sat";
-import { loadSatEngine, type SatEngine } from "./sat-wasm";
+import { loadSatEngine, type SatEngine } from "./sat-ffi";
 import { abortFlag, isAborted, serve } from "./worker-rpc";
 
 /** `sat`: `model.onnx` and `tokenizer.json`; `labse`: `model.gguf`, `vocab.txt` and `dense.safetensors`. */
 export type SegmentModel = "sat" | "labse";
 
 export interface SegmentModelOptions {
-  /** Directory with the model's engine: sat.wasm for `sat`, libllama for `labse`. */
+  /** Directory with the model's engine: libsat for `sat`, libllama for `labse`. */
   libraryDir: string;
   /** Directory with the model's files. */
   modelDir: string;

@@ -148,7 +148,7 @@ export function config(overrides: Partial<Config> = {}): Config {
     transcribe: true,
     transcribeModelDir: "/nonexistent/MOSS-Transcribe-Diarize-GGUF",
     segment: true,
-    satWasmDir: "/nonexistent/sat-wasm",
+    satDir: "/nonexistent/sat",
     segmentModelDir: "/nonexistent/sat-3l-sm",
     segmentThreads: 0,
     segmentIdleUnload: 0,

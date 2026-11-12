@@ -1,16 +1,16 @@
 // Pack the app into a Windows installer: dist/Index_Translator-Setup-x86_64.exe (Inno Setup).
 // It holds Bun, the web app, both engines as they are in ./vendor (llama.dll, with its backends and the shim inside,
-// and audiocpp.dll), soxr.dll, opus.dll and launcher.exe (packaging/windows/launcher.c), laid out as in a
+// and audiocpp.dll), sat.dll, soxr.dll, opus.dll and launcher.exe (packaging/windows/launcher.c), laid out as in a
 // checkout, since the launcher finds the program by walking up to src\server.ts and takes `bun`
 // from the directory it runs in. Installs per user, no administrator rights. The models and the
 // voices are not packed; the launcher's "Download models" runs scripts\fetch_models.ts (needs curl,
 // part of Windows 10 and later).
 // Usage: bun scripts/build_installer.ts
 //
-// Before it: bun scripts/zigbuild_llamacpp.ts && bun scripts/zigbuild_audiocpp.ts && bun scripts/zigbuild_soxr.ts &&
+// Before it: bun scripts/zigbuild_llamacpp.ts && bun scripts/zigbuild_audiocpp.ts && bun scripts/zigbuild_sat_engine.ts (sentence
+// segmentation) && bun scripts/zigbuild_soxr.ts &&
 // bun scripts/zigbuild_libopus.ts (the Opus encoder), and bun scripts/fetch_web_libs.ts (the web app's PDF and Word
-// libraries), bun scripts/fetch_turndown.ts (web pages as Markdown) and
-// bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the
+// libraries), bun scripts/fetch_turndown.ts (web pages as Markdown), and bun scripts/build_bun.ts (the
 // Bun that is packed: a minimal build, not the one running this script). Builds the launcher itself with Zig (scripts/zigbuild_launcher.ts) and needs
 // Inno Setup (no Visual Studio, unless build_bun.ts is run); without Inno Setup the script downloads the pinned installer and installs it for the current user.
 
@@ -21,6 +21,7 @@ import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
 import { libraryPath as llamaLibrary } from "../src/llama-ffi";
 import { opusLibraryPath } from "../src/opus-ffi";
+import { satLibraryPath } from "../src/sat-ffi";
 import { bunPath } from "./build_bun";
 import { output, run } from "./build_tools";
 import { downloadUnlessMatches } from "./fetch_tools";
@@ -41,6 +42,7 @@ const INNO = {
 const packaging = join(root, "packaging", "windows");
 const llama = join(root, "vendor", "llama.cpp");
 const audio = join(root, "vendor", "audio.cpp");
+const sat = join(root, "vendor", "sat");
 const soxr = join(root, "vendor", "soxr");
 const opus = join(root, "vendor", "opus");
 const bun = join(root, "vendor", "bun");
@@ -51,6 +53,7 @@ const dist = join(root, "dist");
 for (const [file, script] of [
   [llamaLibrary(llama), "zigbuild_llamacpp.ts"],
   [audioLibrary(audio), "zigbuild_audiocpp.ts"],
+  [satLibraryPath(sat), "zigbuild_sat_engine.ts"],
   [soxrLibraryPath(soxr), "zigbuild_soxr.ts"],
   [opusLibraryPath(opus), "zigbuild_libopus.ts"],
   [bunPath(bun), "build_bun.ts"],
@@ -103,6 +106,7 @@ await mkdir(stage, { recursive: true });
 await stageApp(stage);
 await copyEngine(llama, join(stage, "vendor", "llama.cpp"));
 await copyEngine(audio, join(stage, "vendor", "audio.cpp"));
+await copyEngine(sat, join(stage, "vendor", "sat"));
 await copyEngine(soxr, join(stage, "vendor", "soxr"));
 await copyEngine(opus, join(stage, "vendor", "opus"));
 await cp(launcher, join(stage, "launcher.exe"));
@@ -115,7 +119,7 @@ const version = [
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
-  `sat.wasm ${(await Bun.file(join(root, "vendor", "sat-wasm", "VERSION")).text()).slice(0, 7)}`,
+  `libsat ${(await Bun.file(join(sat, "VERSION")).text()).trim()}`,
   `bun ${(await Bun.file(join(bun, "VERSION")).text()).trim()}`,
 ];
 await Bun.write(join(stage, "VERSION"), `${version.join("\n")}\n`);

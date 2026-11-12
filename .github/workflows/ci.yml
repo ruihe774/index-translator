@@ -390,9 +390,9 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
-      # Packed for POST /segment (sentence segmentation).
-      - name: Fetch sat.wasm
-        run: bun scripts/fetch_sat_wasm.ts
+      # Packed for POST /segment (sentence segmentation): one Zig source file, built in a second.
+      - name: Build libsat
+        run: bun scripts/zigbuild_sat_engine.ts
 
       # The minimal Bun that the `bun` job built or found in the cache.
       - name: Restore Bun
@@ -724,9 +724,9 @@ jobs:
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
 
-      # Packed for POST /segment (sentence segmentation).
-      - name: Fetch sat.wasm
-        run: bun scripts/fetch_sat_wasm.ts
+      # Packed for POST /segment (sentence segmentation): one Zig source file, built in a second.
+      - name: Build libsat
+        run: bun scripts/zigbuild_sat_engine.ts
 
       - name: Restore Bun
         uses: actions/cache/restore@v6

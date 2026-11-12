@@ -62,7 +62,7 @@ describe("metadata endpoints", () => {
       },
       segment: {
         status: "unavailable",
-        error: "sat.wasm is not installed; run bun scripts/fetch_sat_wasm.ts",
+        error: "libsat is not installed; run bun scripts/zigbuild_sat_engine.ts",
         max_chars: 20_000,
       },
       align: {

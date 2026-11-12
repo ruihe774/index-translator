@@ -155,5 +155,5 @@ about to download and asks for `yes` first (the same text as here, in short).
 ## Keeping this file true
 
 Changing a pin in `scripts/zigbuild_llamacpp.ts`, `scripts/zigbuild_audiocpp.ts`, `scripts/fetch_zig.ts`, `scripts/zigbuild_soxr.ts`, `scripts/zigbuild_libopus.ts`, `scripts/build_appimage.ts`,
-`scripts/fetch_web_libs.ts`, `scripts/fetch_sat_wasm.ts` or `scripts/fetch_models.ts`, or adding a model, a library or a download, means checking its license and
+`scripts/fetch_web_libs.ts` or `scripts/fetch_models.ts`, or adding a model, a library or a download, means checking its license and
 updating this file and `NOTICES` in `scripts/fetch_models.ts`.

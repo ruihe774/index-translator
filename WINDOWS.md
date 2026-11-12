@@ -98,11 +98,10 @@ Windows has no AppImage-style single file, so the installer unpacks the reposito
 is the shortcut's target. The launcher's commands run in the install directory, and `cmd` finds
 `bun.exe` there first, so the user needs no Bun on the `PATH`.
 
-- Needs the two engines built first (`zigbuild_llamacpp.ts`, `zigbuild_audiocpp.ts`), `zigbuild_soxr.ts`,
-  `zigbuild_libopus.ts` and `build_bun.ts` (the packed `bun.exe`, a minimal build of Bun; it needs LLVM 23.1, NASM and Perl beside Visual
+- Needs the two engines built first (`zigbuild_llamacpp.ts`, `zigbuild_audiocpp.ts`), `zigbuild_sat_engine.ts` (the
+  sentence segmentation model's forward pass), `zigbuild_soxr.ts`, `zigbuild_libopus.ts` and `build_bun.ts` (the packed `bun.exe`, a minimal build of Bun; it needs LLVM 23.1, NASM and Perl beside Visual
   Studio, see the head of the script; Visual Studio is needed for nothing else here), the web app's PDF
-  libraries fetched (`fetch_web_libs.ts`, packed with `public\`) and `fetch_sat_wasm.ts` (`sat.wasm`,
-  which runs the sentence segmentation model). The script runs `zigbuild_launcher.ts` when `launcher.c`, `launcher.rc`
+  libraries fetched (`fetch_web_libs.ts`, packed with `public\`). The script runs `zigbuild_launcher.ts` when `launcher.c`, `launcher.rc`
   or the manifest is newer than `launcher.exe`, and downloads
   and installs Inno Setup 6.7.3 for the current user (pinned checksum) when `ISCC.exe` is not found.
 - Per-user install by default (`%LOCALAPPDATA%\Programs\Index Translator`, no administrator rights),

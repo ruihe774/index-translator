@@ -1,6 +1,6 @@
 // SaT (Segment any Text, sat-3l-sm) without the runtime: XLM-RoBERTa's tokenizer, read from the
 // model's `tokenizer.json`, and wtpsplit's way of running a text through the model in overlapping
-// windows. The model itself runs elsewhere (`RunModel`: sat.wasm on the segmentation worker), so
+// windows. The model itself runs elsewhere (`RunModel`: libsat on the segmentation worker), so
 // everything here is plain TypeScript and testable without it.
 //
 // The tokenizer is Hugging Face's for xlm-roberta-base: a Precompiled normalizer (sentencepiece's

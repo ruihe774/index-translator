@@ -1,4 +1,4 @@
-// The plumbing the engine threads share. Each engine (libllama, libaudiocpp, sat.wasm) runs in a
+// The plumbing the engine threads share. Each engine (libllama, libaudiocpp, libsat) runs in a
 // worker thread that answers one reply per request, matched by a request number:
 //
 // - a `Protocol` says, per request type, what it carries and which reply answers it;

@@ -1,4 +1,4 @@
-// Sentence boundaries with SaT (Segment any Text, sat-3l-sm), in-process on sat.wasm (src/sat-wasm.ts), and
+// Sentence boundaries with SaT (Segment any Text, sat-3l-sm), in-process on libsat (src/sat-ffi.ts), and
 // sentence alignment with LaBSE through libllama (bun:ffi). Both run on one worker thread
 // (src/segment-worker.ts); this file is the server-thread side. Each model is loaded by the first request that needs it and freed
 // again after `SEGMENT_IDLE_UNLOAD` seconds without one. They run on the processor, beside the
@@ -12,7 +12,7 @@ import type { Config } from "./config";
 import { inferenceThreads } from "./cpu";
 import { libraryPath as llamaLibraryPath } from "./llama-ffi";
 import { fetchAdvice } from "./preflight";
-import { wasmPath } from "./sat-wasm";
+import { satLibraryPath } from "./sat-ffi";
 import type { SegmentModel, SegmentProtocol } from "./segment-worker";
 import { abortable, LazyModel, startWorker, WorkerClient } from "./worker-rpc";
 
@@ -33,7 +33,7 @@ export const MAX_ALIGN_CHARS = MAX_SEGMENT_CHARS;
 export class SegmentError extends Error {}
 
 /**
- * `unavailable`: turned off, or sat.wasm (libllama for LaBSE) or the model is missing (`error` says which);
+ * `unavailable`: turned off, or libsat (libllama for LaBSE) or the model is missing (`error` says which);
  * `stopped`: installed, the model is not loaded; `starting`: loading it; `ready`; `error`: the
  * last load failed.
  */
@@ -90,9 +90,9 @@ const MODELS: Record<
     fetchId: "sat-3l-sm",
     enabled: (cfg) => cfg.segment,
     dir: (cfg) => cfg.segmentModelDir,
-    library: (cfg) => cfg.satWasmDir,
+    library: (cfg) => cfg.satDir,
     libraryMissing: (dir) =>
-      existsSync(wasmPath(dir)) ? undefined : "sat.wasm is not installed; run bun scripts/fetch_sat_wasm.ts",
+      existsSync(satLibraryPath(dir)) ? undefined : "libsat is not installed; run bun scripts/zigbuild_sat_engine.ts",
   },
   labse: {
     name: "alignment",

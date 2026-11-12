@@ -5,7 +5,6 @@
 import { cp, mkdir, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";
 
-import { requireSatWasm } from "./fetch_sat_wasm";
 import { requireTurndown } from "./fetch_turndown";
 import { requireWebLibs } from "./fetch_web_libs";
 
@@ -14,12 +13,11 @@ export const root = resolve(import.meta.dir, "..");
 /**
  * Throws, naming the script to run, unless the libraries that are fetched and not built are in place. The web
  * app's are packed with public/ (without them PDF and Word files would not open), then the Markdown converter of
- * fetched web pages and sat.wasm (without which there is no sentence segmentation).
+ * fetched web pages.
  */
 export async function requireAllVendored(): Promise<void> {
   await requireWebLibs(join(root, "public", "vendor"));
   await requireTurndown(join(root, "vendor"));
-  await requireSatWasm(join(root, "vendor"));
 }
 
 /** Copies an engine's directory as it is, links included: the libraries and licenses, not the headers or import libraries. */
@@ -32,7 +30,7 @@ export async function copyEngine(from: string, to: string): Promise<void> {
   }
 }
 
-/** Lays out `destDir` with everything the server reads except the engines (llama.cpp, audio.cpp, libsoxr, libopus) and Bun. */
+/** Lays out `destDir` with everything the server reads except the engines (llama.cpp, audio.cpp, libsat, libsoxr, libopus) and Bun. */
 export async function stageApp(destDir: string): Promise<void> {
   for (const name of await readdir(join(root, "src"))) {
     if (name.endsWith(".ts")) {
@@ -51,6 +49,5 @@ export async function stageApp(destDir: string): Promise<void> {
   }
   await cp(join(root, "packaging", "bunfig.toml"), join(destDir, "bunfig.toml"));
   await Bun.write(join(destDir, "package.json"), `${JSON.stringify({ name: "index-translator", type: "module" })}\n`);
-  await cp(join(root, "vendor", "sat-wasm"), join(destDir, "vendor", "sat-wasm"), { recursive: true });
   await cp(join(root, "vendor", "turndown"), join(destDir, "vendor", "turndown"), { recursive: true });
 }
