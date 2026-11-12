@@ -78,7 +78,7 @@ const NO_TURNDOWN = "turndown is not installed on this server; run: bun scripts/
 
 /** turndown, then src/page/extract.ts without its types, called: one expression for `evaluate`. */
 async function pageScript(turndown: string): Promise<string> {
-  const extract = new Bun.Transpiler({ loader: "ts" }).transformSync(
+  const extract = await new Bun.Transpiler({ loader: "ts" }).transform(
     await Bun.file(join(import.meta.dir, "page", "extract.ts")).text(),
   );
   return `(async () => {\n${await Bun.file(turndown).text()}\n${extract}\nreturn await extractPage(${LOAD_WAIT_MS}, ${QUIET_MS}, ${RENDER_WAIT_MS});\n})()`;

@@ -235,7 +235,7 @@ export function createStaticServer(publicDir: string, watcher?: PublicWatcher) {
     if (entry?.mtimeMs !== info.mtimeMs || entry.size !== info.size) {
       let code: string;
       try {
-        code = transpiler.transformSync(await Bun.file(path).text());
+        code = await transpiler.transform(await Bun.file(path).text());
       } catch (e) {
         // A syntax error is the file's problem, not the server's: log it, answer 500, and keep serving everything else.
         // The previous good entry stays cached; the next request retries because the file's stat still differs from it.

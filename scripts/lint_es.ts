@@ -72,7 +72,7 @@ const transpiler = new Bun.Transpiler({ loader: "ts" });
 
 let problems = 0;
 for (const file of files) {
-  const code = transpiler.transformSync(await Bun.file(file).text());
+  const code = await transpiler.transform(await Bun.file(file).text());
   const lines = code.split("\n");
   // A virtual .js path under the working directory: ESLint wants a name for its configuration, not a file.
   const [result] = await eslint.lintText(code, { filePath: file.replace(/\.ts$/, ".js") });

@@ -34,8 +34,8 @@ await check("HTMLRewriter", async () => {
   const rewriter = new HTMLRewriter().on("p", { element: (el) => void el.setAttribute("id", "x") });
   return (await rewriter.transform(new Response("<p>a</p>")).text()) === '<p id="x">a</p>';
 });
-await check("Bun.Transpiler", () =>
-  new Bun.Transpiler({ loader: "ts" }).transformSync("const a: number = 1; export { a };").includes("const a = 1"),
+await check("Bun.Transpiler", async () =>
+  (await new Bun.Transpiler({ loader: "ts" }).transform("const a: number = 1; export { a };")).includes("const a = 1"),
 );
 await check("Bun.Image", async () => {
   const png = await new Bun.Image(PNG).png({ compressionLevel: 0 }).bytes();
