@@ -5,12 +5,12 @@
 //
 // The zigbuild scripts use vendor/zig/zig when it is there, else the zig on the PATH, and refuse any other version.
 // A directory that already holds the pinned version is left alone. Linux (x86-64, aarch64) and macOS (Apple silicon)
-// need tar with xz; Windows (x64) needs nothing (the zip is read here).
+// need tar with xz; Windows (x64) needs nothing (`tar.exe` reads the zip).
 
 import { chmod, mkdir, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
-import { download, extractTar, readStamp, unzip, writeStamp } from "./fetch_tools";
+import { download, extractTar, readStamp, writeStamp } from "./fetch_tools";
 
 export const ZIG_VERSION = "0.17.1";
 
@@ -60,17 +60,10 @@ if (import.meta.main) {
   const archive = await download(`https://ziglang.org/download/${ZIG_VERSION}/${release.name}`, release.sha256);
   await rm(home, { recursive: true, force: true });
   await mkdir(home, { recursive: true });
+  // The archive's one top-level directory (zig-<arch>-<os>-<version>) is dropped
+  await extractTar(archive, home, release.name.endsWith(".zip") ? "zip" : "xz");
   if (release.name.endsWith(".zip")) {
-    // The archive's one top-level directory (zig-<arch>-windows-<version>) is dropped by `unzip`
-    for (const [path, bytes] of unzip(archive, () => true)) {
-      const target = join(home, path);
-      await mkdir(dirname(target), { recursive: true });
-      await Bun.write(target, bytes);
-    }
     await chmod(zigExecutable(home), 0o755);
-  } else {
-    // The archive's one top-level directory (zig-<arch>-<os>-<version>) is dropped
-    await extractTar(archive, home, "xz");
   }
   await writeStamp(home, `${ZIG_VERSION}\n`);
   console.log(`ok ${home} (${ZIG_VERSION})`);

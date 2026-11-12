@@ -1,8 +1,9 @@
-// What the fetch and packaging scripts share for pinned downloads: checksums, version stamps, archive readers
+// What the fetch and packaging scripts share for pinned downloads: checksums, version stamps, archive unpacking
 // and "download unless the copy here is right". No imports from the project: scripts/fetch_models.ts imports
 // this file and is packed into the AppImage and the installer (stage_app.ts copies both).
 
-import { mkdir } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 
 /** The SHA-256 of `bytes`, as lowercase hex. */
@@ -66,71 +67,37 @@ const tarProgram = () =>
   process.platform === "win32" ? join(process.env.SystemRoot ?? String.raw`C:\Windows`, "System32", "tar.exe") : "tar";
 
 /**
- * Unpacks a tar archive, compressed with gzip or xz, into `dir` (made if missing), dropping the archive's
- * one top-level directory. Runs the system's `tar` (`tar.exe` on Windows); `xz` needs xz-utils on Debian
- * and Ubuntu. The archive is checked by its SHA-256 before, and tar itself refuses paths that leave `dir`.
+ * Unpacks a tar archive, compressed with gzip or xz, or a zip archive (Windows' bsdtar reads zip), into `dir`
+ * (made if missing), dropping the archive's one top-level directory. Runs the system's `tar` (`tar.exe` on
+ * Windows); `xz` needs xz-utils on Debian and Ubuntu. The archive is checked by its SHA-256 before, and tar
+ * itself refuses paths that leave `dir`.
  */
-export async function extractTar(archive: Uint8Array, dir: string, compression: "gz" | "xz"): Promise<void> {
+export async function extractTar(archive: Uint8Array, dir: string, compression: "gz" | "xz" | "zip"): Promise<void> {
   await mkdir(dir, { recursive: true });
-  const tar = Bun.spawn([tarProgram(), compression === "gz" ? "-xz" : "-xJ", "--strip-components=1", "-C", dir], {
-    stdin: archive,
-    stdout: "inherit",
-    stderr: "inherit",
-  });
-  if ((await tar.exited) !== 0) {
+  // A zip is read from a file: bsdtar cannot read one reliably from a pipe (it detects the format itself)
+  const zipDir = compression === "zip" ? await mkdtemp(join(tmpdir(), "extract-zip-")) : undefined;
+  let exit: number;
+  try {
+    let args = [compression === "gz" ? "-xz" : "-xJ"];
+    if (zipDir !== undefined) {
+      await Bun.write(join(zipDir, "archive.zip"), archive);
+      args = ["-xf", join(zipDir, "archive.zip")];
+    }
+    const tar = Bun.spawn([tarProgram(), ...args, "--strip-components=1", "-C", dir], {
+      stdin: zipDir === undefined ? archive : "ignore",
+      stdout: "inherit",
+      stderr: "inherit",
+    });
+    exit = await tar.exited;
+  } finally {
+    if (zipDir !== undefined) {
+      await rm(zipDir, { recursive: true, force: true });
+    }
+  }
+  if (exit !== 0) {
     throw new Error(
       `tar failed to unpack the archive into ${dir}` +
         (compression === "xz" ? "; it needs xz (on Debian and Ubuntu: sudo apt install xz-utils)" : ""),
     );
   }
-}
-
-/**
- * The files of a zip archive that `want` names, by their path below the archive's one top-level
- * directory. Stored and deflated entries only, no Zip64 (the archive is checked by its SHA-256
- * before, and what is not wanted is never inflated).
- */
-export function unzip(zip: Uint8Array, want: (path: string) => boolean): Map<string, Uint8Array> {
-  const view = new DataView(zip.buffer, zip.byteOffset, zip.byteLength);
-  let end = zip.length - 22;
-  while (end >= 0 && view.getUint32(end, true) !== 0x06_05_4b_50) {
-    end--;
-  }
-  if (end < 0) {
-    throw new Error("not a zip archive (no end of central directory)");
-  }
-  const text = new TextDecoder();
-  const files = new Map<string, Uint8Array>();
-  let at = view.getUint32(end + 16, true);
-  for (let i = view.getUint16(end + 10, true); i > 0; i--) {
-    if (view.getUint32(at, true) !== 0x02_01_4b_50) {
-      throw new Error("unreadable zip central directory");
-    }
-    const method = view.getUint16(at + 10, true);
-    const packed = view.getUint32(at + 20, true);
-    const size = view.getUint32(at + 24, true);
-    const nameLength = view.getUint16(at + 28, true);
-    const next = at + 46 + nameLength + view.getUint16(at + 30, true) + view.getUint16(at + 32, true);
-    const local = view.getUint32(at + 42, true);
-    const name = text.decode(zip.subarray(at + 46, at + 46 + nameLength));
-    at = next;
-    if (name.endsWith("/")) {
-      continue;
-    }
-    const path = name.slice(name.indexOf("/") + 1);
-    if (name.includes("\\") || path.split("/").some((part) => part === ".." || part === "") || !want(path)) {
-      continue;
-    }
-    if (packed === 0xff_ff_ff_ff || size === 0xff_ff_ff_ff || view.getUint32(local, true) !== 0x04_03_4b_50) {
-      throw new Error(`unreadable zip entry ${name}`);
-    }
-    const start = local + 30 + view.getUint16(local + 26, true) + view.getUint16(local + 28, true);
-    const data = zip.subarray(start, start + packed);
-    const content = method === 0 ? data : method === 8 ? Bun.inflateSync(data as Uint8Array<ArrayBuffer>) : undefined;
-    if (content?.length !== size) {
-      throw new Error(`zip entry ${name}: unsupported compression ${method} or wrong size`);
-    }
-    files.set(path, content);
-  }
-  return files;
 }

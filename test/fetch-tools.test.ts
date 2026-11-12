@@ -10,7 +10,6 @@ import {
   fileMatches,
   readStamp,
   sha256Hex,
-  unzip,
   writeStamp,
 } from "../scripts/fetch_tools";
 import { tempDir } from "./helpers/harness";
@@ -66,9 +65,7 @@ describe("extractTar", () => {
   });
 });
 
-const text = (bytes: Uint8Array | undefined) => (bytes ? new TextDecoder().decode(bytes) : undefined);
-
-/** A zip archive of stored (method 0) or deflated (8) entries, with the central directory unzip reads. */
+/** A zip archive of stored (method 0) or deflated (8) entries, with a central directory. */
 function zip(entries: { name: string; content: string; deflate?: boolean }[]): Uint8Array {
   const encoder = new TextEncoder();
   const parts: Uint8Array[] = [];
@@ -81,7 +78,9 @@ function zip(entries: { name: string; content: string; deflate?: boolean }[]): U
     const local = new Uint8Array(30 + name.length);
     const lv = new DataView(local.buffer);
     lv.setUint32(0, 0x04_03_4b_50, true);
+    lv.setUint16(4, 20, true);
     lv.setUint16(8, e.deflate ? 8 : 0, true);
+    lv.setUint32(14, Bun.hash.crc32(raw), true);
     lv.setUint32(18, data.length, true);
     lv.setUint32(22, raw.length, true);
     lv.setUint16(26, name.length, true);
@@ -89,7 +88,10 @@ function zip(entries: { name: string; content: string; deflate?: boolean }[]): U
     const entry = new Uint8Array(46 + name.length);
     const cv = new DataView(entry.buffer);
     cv.setUint32(0, 0x02_01_4b_50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
     cv.setUint16(10, e.deflate ? 8 : 0, true);
+    cv.setUint32(16, Bun.hash.crc32(raw), true);
     cv.setUint32(20, data.length, true);
     cv.setUint32(24, raw.length, true);
     cv.setUint16(28, name.length, true);
@@ -103,31 +105,27 @@ function zip(entries: { name: string; content: string; deflate?: boolean }[]): U
   const end = new Uint8Array(22);
   const ev = new DataView(end.buffer);
   ev.setUint32(0, 0x06_05_4b_50, true);
+  ev.setUint16(8, entries.length, true);
   ev.setUint16(10, entries.length, true);
   ev.setUint32(12, directory.length, true);
   ev.setUint32(16, offset, true);
   return Buffer.concat([...parts, directory, end]);
 }
 
-describe("unzip", () => {
-  test("gives the wanted files, stored or deflated, by their path below the top-level directory", () => {
-    const files = unzip(
+describe("extractTar on a zip archive", () => {
+  test("unpacks stored and deflated entries below the top-level directory", async () => {
+    const dir = join(tempDir("extract-zip-"), "out");
+    await extractTar(
       zip([
         { name: "pkg/", content: "" },
         { name: "pkg/lib/a.dll", content: "binary", deflate: true },
         { name: "pkg/LICENSE", content: "MIT" },
-        { name: "pkg/other.txt", content: "left out" },
       ]),
-      (path) => path === "lib/a.dll" || path === "LICENSE",
+      dir,
+      "zip",
     );
-    expect([...files.keys()]).toStrictEqual(["lib/a.dll", "LICENSE"]);
-    expect(text(files.get("lib/a.dll"))).toBe("binary");
-    expect(text(files.get("LICENSE"))).toBe("MIT");
-  });
-
-  test("refuses what is not a zip archive, and paths that leave the directory", () => {
-    expect(() => unzip(new Uint8Array(40), () => true)).toThrow("not a zip archive");
-    expect([...unzip(zip([{ name: "pkg/../evil", content: "x" }]), () => true).keys()]).toStrictEqual([]);
+    await expect(Bun.file(join(dir, "lib/a.dll")).text()).resolves.toBe("binary");
+    await expect(Bun.file(join(dir, "LICENSE")).text()).resolves.toBe("MIT");
   });
 });
 
