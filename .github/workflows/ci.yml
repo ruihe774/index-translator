@@ -249,7 +249,8 @@ jobs:
             runner: ubuntu-24.04
           - arch: aarch64
             runner: ubuntu-24.04-arm
-    # Built on the AppImages' system, so it needs no newer C and C++ libraries than they do.
+    # Linked against Ubuntu 20.04's glibc and gcc-13's libstdc++ (scripts/glibc_sysroot.ts), as Bun's releases are,
+    # so it needs glibc 2.17 whatever the runner's is.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
     steps:
@@ -264,12 +265,12 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/bun
-          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/glibc_sysroot.ts', 'scripts/fetch_tools.ts', 'scripts/patches/bun-minimal.patch') }}
 
       # What Bun's build needs: clang, lld and the LLVM tools 23 from apt.llvm.org's repository (Bun's build finds them
       # in /usr/lib/llvm-23), NASM (x86-64: BoringSSL's and libjpeg-turbo's assembly) and Ninja; Git, CMake, Perl and
-      # rustup (which installs Bun's pinned nightly) are on the runner. The repository's key (fingerprint
-      # 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421) is pinned by its checksum.
+      # rustup (which installs Bun's pinned nightly) are on the runner, and so are tar, dpkg-deb and objdump for the
+      # sysroot. The repository's key (fingerprint 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421) is pinned by its checksum.
       - name: Install the build tools
         if: ${{ steps.bun.outputs.cache-hit != 'true' }}
         run: |
@@ -398,7 +399,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: vendor/bun
-          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/glibc_sysroot.ts', 'scripts/fetch_tools.ts', 'scripts/patches/bun-minimal.patch') }}
           fail-on-cache-miss: true
 
       - name: Build the AppImage
@@ -600,7 +601,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/bun
-          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/glibc_sysroot.ts', 'scripts/fetch_tools.ts', 'scripts/patches/bun-minimal.patch') }}
 
       # Visual Studio with the C++ tools, Git, CMake, Ninja, Perl and rustup are on the runner image. Bun's build also
       # needs NASM and LLVM 23.1 (the image has 20), from Chocolatey; LLVM goes to C:\Program Files\LLVM, where Bun's
@@ -731,7 +732,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: vendor/bun
-          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/glibc_sysroot.ts', 'scripts/fetch_tools.ts', 'scripts/patches/bun-minimal.patch') }}
           fail-on-cache-miss: true
 
       - name: Build the installer
