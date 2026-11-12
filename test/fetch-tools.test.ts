@@ -112,7 +112,8 @@ function zip(entries: { name: string; content: string; deflate?: boolean }[]): U
   return Buffer.concat([...parts, directory, end]);
 }
 
-describe("extractTar on a zip archive", () => {
+// Only Windows' bsdtar reads zip; GNU tar does not, and extractTar takes zip archives for Windows alone.
+describe.skipIf(process.platform !== "win32")("extractTar on a zip archive", () => {
   test("unpacks stored and deflated entries below the top-level directory", async () => {
     const dir = join(tempDir("extract-zip-"), "out");
     await extractTar(
