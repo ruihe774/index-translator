@@ -138,11 +138,11 @@ Then open **http://127.0.0.1:3000/** in your browser. Stop the app with `Ctrl+C`
 Before the first start, build the engines and get the models once (about 19.2 GiB):
 
 ```bash
-bun scripts/fetch_zig.ts         # Zig, the compiler the two engines are built with, into vendor/zig
+bun scripts/fetch_zig.ts         # Zig, the compiler the engines and their libraries are built with, into vendor/zig
 bun scripts/zigbuild_llamacpp.ts # translation engine (llama.cpp, Vulkan): built from source, a few minutes
 bun scripts/zigbuild_audiocpp.ts # speech engine (audio.cpp, Vulkan): built from source, a few minutes
-bun scripts/build_soxr.ts       # libsoxr, the resampler the speech engine uses: built from source, seconds
-bun scripts/build_libopus.ts    # libopus, which compresses speech for the browser and reads compressed uploads: built from source, seconds
+bun scripts/zigbuild_soxr.ts     # libsoxr, the resampler the speech engine uses: built from source, seconds
+bun scripts/zigbuild_libopus.ts  # libopus, which compresses speech for the browser and reads compressed uploads: built from source, seconds
 bun scripts/fetch_models.ts     # the two translation models, the speech and voice separation models, the sentence segmentation and alignment models, example voices
 bun scripts/fetch_sat_wasm.ts    # sat.wasm, which runs the sentence segmentation model, into vendor/
 bun scripts/fetch_web_libs.ts   # the libraries that open PDF and Word files and show equations in the browser, into public/vendor/
@@ -150,25 +150,24 @@ bun scripts/fetch_turndown.ts   # turndown, which turns a fetched web page into 
 ```
 
 Opening PDF and Word files is optional too: without `fetch_web_libs.ts` the app runs, opens text and
-Markdown files, says that PDF and Word support is not installed, and shows equations as their TeX. Without `build_libopus.ts` reading
+Markdown files, says that PDF and Word support is not installed, and shows equations as their TeX. Without `zigbuild_libopus.ts` reading
 aloud sends its audio as WAV, which is much larger, and voice samples are uploaded as WAV too. Translating a web page by its address needs `fetch_turndown.ts`
 and is off until you allow some sites (see [Translate a web page](#translate-a-web-page)).
 
-Reading aloud is optional. To leave it out, skip `zigbuild_audiocpp.ts`, `build_soxr.ts` and `build_libopus.ts` and download only the
+Reading aloud is optional. To leave it out, skip `zigbuild_audiocpp.ts`, `zigbuild_soxr.ts` and `zigbuild_libopus.ts` and download only the
 translation models with `bun scripts/fetch_models.ts --model index-translate-9b --model index-nailong-9b`.
 
-You need [Bun](https://bun.sh) and `curl`, and to build git, CMake, Ninja, `glslc` and the Vulkan headers for the
-engines (Zig compiles them) and a C compiler for libsoxr and libopus. On Debian and Ubuntu:
-`sudo apt install build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers`.
-Both engines then need an x86-64 processor with AVX2 (Haswell, 2013, or newer) or an aarch64 one with
+You need [Bun](https://bun.sh) and `curl`, and to build git, CMake, Ninja, `glslc` and the Vulkan headers (Zig
+compiles everything; no other C or C++ compiler is needed). On Debian and Ubuntu:
+`sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers`.
+What is built then needs an x86-64 processor with AVX2 (Haswell, 2013, or newer) or an aarch64 one with
 Armv8.2-A dot product and fp16 (Cortex-A76 and Apple M1 or newer).
 
 On Windows the same commands work in Command Prompt or PowerShell. Instead of the packages
-above you need Git, CMake and Ninja on the `PATH` (a "Developer Command Prompt" of Visual Studio has both),
-Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload (for libsoxr
-and libopus), and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (`glslc`, the headers and `vulkan-1.lib`);
-`curl` comes with Windows. Open a new terminal after installing them, so it sees the new `PATH`. More in
-[WINDOWS.md](WINDOWS.md).
+above you need Git, CMake and Ninja on the `PATH` (a "Developer Command Prompt" of Visual Studio has both, or
+`winget install Kitware.CMake Ninja-build.Ninja`) and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (`glslc`,
+the headers and `vulkan-1.lib`); `curl` comes with Windows. Open a new terminal after installing them, so it sees
+the new `PATH`. More in [WINDOWS.md](WINDOWS.md).
 
 `bun scripts/build_appimage.ts` packs what you have built and fetched (the models excepted) into an AppImage of your own, and on
 Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Setup if it is not
@@ -382,7 +381,7 @@ Chromium only so far.
   DTS in most browsers; Safari before 26 and Firefox before 130 decode none, so there only what needs
   no conversion works), as are tracks stored compressed or encrypted inside the file. MP4 and MOV are
   not opened yet.
-- **A server without libopus** (`build_libopus.ts`): Opus is decoded in your browser too, and
+- **A server without libopus** (`zigbuild_libopus.ts`): Opus is decoded in your browser too, and
   everything is sent as a WAV file, and so is everything converted in a browser that cannot encode
   Opus.
 - **Long files:** only the first 30 minutes are transcribed. Where a video's audio starts late or
@@ -568,7 +567,7 @@ authentication, so keep `HOST` on loopback or behind a proxy.
 For example, transcription:
 
 `POST /api/v1/transcriptions` takes a WAV file (16 to 48 kHz) or an Ogg Opus file (`audio/ogg`, with
-`build_libopus.ts`), mono or stereo, up to 30 minutes, and streams the transcript segment by segment,
+`zigbuild_libopus.ts`), mono or stereo, up to 30 minutes, and streams the transcript segment by segment,
 each with its start and end time and a speaker label; see [`docs/openapi.yaml`](docs/openapi.yaml).
 
 ```bash
