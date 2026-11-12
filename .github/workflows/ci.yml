@@ -432,8 +432,10 @@ jobs:
     timeout-minutes: 90
     env:
       # The Vulkan SDK supplies glslc, the headers and vulkan-1.lib; the runner has no administrator
-      # prompt, so its installer runs silently. LunarG's URL for a version is a fixed file.
-      VULKAN_SDK_VERSION: "1.4.363.0"
+      # prompt, so its installer runs silently. LunarG's URL for a version is a fixed file. The version is Ubuntu
+      # 26.04's (vulkan-loader and spirv-headers 1.4.341.0, as the AppImage jobs build with): ggml's Vulkan backend
+      # enables shader families by what glslc supports, so both systems should build the same set.
+      VULKAN_SDK_VERSION: "1.4.341.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -441,7 +443,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
-      # Visual Studio 2026 with the C++ tools, Git, CMake and Ninja are on the runner image.
+      # Git, CMake and Ninja are on the runner image (Visual Studio's C++ tools build libsoxr).
       - name: Install the Vulkan SDK
         shell: pwsh
         run: |
@@ -453,17 +455,31 @@ jobs:
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "$sdk\Bin" >> $env:GITHUB_PATH
 
-      # Each engine is built from a pinned commit, so it changes only when its build script does.
+      # The engines are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins, for
+      # x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-windows-x64-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
+      # Each engine is built from a pinned commit, so it changes only when its build script, its CMake options or
+      # toolchain files (scripts/zig), the shim, or Zig does.
       - name: Cache the translation engine
         id: llama
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-zig-windows-x64-vulkan-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('scripts/zigbuild_llamacpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'src/llama-shim.c', 'src/llama-shim-ext.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_llama.ts
+        run: bun scripts/zigbuild_llamacpp.ts
 
       - name: Cache libsoxr
         id: soxr
@@ -481,11 +497,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-windows-vs2026-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+          key: audio-zig-windows-x64-vulkan-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('scripts/zigbuild_audiocpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'scripts/patches/audiocpp-*.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_audiocpp.ts
+        run: bun scripts/zigbuild_audiocpp.ts
 
       # audio.cpp asks LoadLibraryA for "soxr.dll" by name, which does not search its own directory.
       # Opening the engine loads ours first; a request by name must then return that very file.
@@ -596,7 +612,8 @@ jobs:
     runs-on: windows-2025-vs2026
     timeout-minutes: 90
     env:
-      VULKAN_SDK_VERSION: "1.4.363.0"
+      # As in `engines-windows`, which shares its engine caches
+      VULKAN_SDK_VERSION: "1.4.341.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -615,16 +632,31 @@ jobs:
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "$sdk\Bin" >> $env:GITHUB_PATH
 
+      # The engines are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins, for
+      # x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-windows-x64-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
+      # Each engine is built from a pinned commit, so it changes only when its build script, its CMake options or
+      # toolchain files (scripts/zig), the shim, or Zig does.
       - name: Cache the translation engine
         id: llama
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.c') }}
+          key: llama-zig-windows-x64-vulkan-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('scripts/zigbuild_llamacpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'src/llama-shim.c', 'src/llama-shim-ext.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_llama.ts
+        run: bun scripts/zigbuild_llamacpp.ts
 
       - name: Cache libsoxr
         id: soxr
@@ -642,11 +674,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-windows-vs2026-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+          key: audio-zig-windows-x64-vulkan-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('scripts/zigbuild_audiocpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'scripts/patches/audiocpp-*.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_audiocpp.ts
+        run: bun scripts/zigbuild_audiocpp.ts
 
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
