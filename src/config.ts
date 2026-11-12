@@ -32,7 +32,7 @@ function list(env: Env, name: string): string[] {
     .filter(Boolean);
 }
 
-const SPEECH_BACKENDS = ["vulkan", "cuda", "cpu"] as const;
+const SPEECH_BACKENDS = ["vulkan", "cpu"] as const;
 export type SpeechBackend = (typeof SPEECH_BACKENDS)[number];
 
 function speechBackend(env: Env): SpeechBackend {
@@ -95,7 +95,7 @@ export interface Config {
   separationModelDir: string;
   /** Reference recordings (`*.wav`), one per voice. */
   voicesDir: string;
-  /** audio.cpp backend for speech: `vulkan`, `cuda` (for a libaudiocpp built with CUDA) or `cpu`. */
+  /** audio.cpp backend for speech: `vulkan` or `cpu`. */
   speechBackend: SpeechBackend;
   /** Seconds without a speech request after which the speech model leaves the GPU; 0 keeps it. */
   speechIdleUnload: number;
@@ -289,7 +289,7 @@ const SETTING_HELP: Record<(typeof SETTING_NAMES)[number], string> = {
   SPEECH_MODEL_DIR: "directory with the speech model (default MODELS_DIR/IndexTTS2.5-GGUF)",
   SEPARATION_MODEL_DIR: "directory with the voice separation model (default MODELS_DIR/Mel-Band-RoFormer-GGUF)",
   VOICES_DIR: "directory with the voice recordings, one .wav each (default voices/)",
-  SPEECH_BACKEND: "speech backend: vulkan (default), cuda (for an engine built with CUDA) or cpu",
+  SPEECH_BACKEND: "speech backend: vulkan (default) or cpu",
   SPEECH_IDLE_UNLOAD: "seconds without speech before the model is freed; 0 never (default 300)",
   TRANSCRIBE: "0 turns transcription (a preview) off (default on)",
   TRANSCRIBE_MODEL_DIR: "directory with the transcription model (default MODELS_DIR/MOSS-Transcribe-Diarize-GGUF)",

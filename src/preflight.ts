@@ -83,11 +83,7 @@ function noCpuBackendMessage(cfg: Config, log: string | undefined, arch: string)
   return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}. ${cpu}${lines}`;
 }
 
-function noGpuMessage(cuda: boolean, vulkanLoader: boolean, windows: boolean): string {
-  // A llama.cpp built with CUDA (libggml-cuda.so beside libllama) has no Vulkan.
-  if (cuda) {
-    return `No GPU with a CUDA driver was found. This build needs an NVIDIA GPU and its driver for CUDA 13 (version 580 or newer); "nvidia-smi" lists what is installed. ${CPU_HINT}`;
-  }
+function noGpuMessage(vulkanLoader: boolean, windows: boolean): string {
   if (vulkanLoader) {
     return `No GPU with a Vulkan driver was found. Install the Vulkan driver for your graphics card (${windows ? "the current driver from AMD, Intel or NVIDIA includes it" : DRIVERS}); "vulkaninfo --summary" lists what Vulkan sees. ${CPU_HINT}`;
   }
@@ -117,7 +113,7 @@ export function preflight(
     return noCpuBackendMessage(cfg, found.log, arch);
   }
   if (cfg.gpuLayers !== 0 && found.gpus.length === 0) {
-    return noGpuMessage(existsSync(join(cfg.llamaDir, "libggml-cuda.so")), found.vulkanLoader, windows);
+    return noGpuMessage(found.vulkanLoader, windows);
   }
   // loadConfig has made sure the default model is a known one.
   const model = defaultModelSpec(cfg);
