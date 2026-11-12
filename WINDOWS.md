@@ -35,8 +35,7 @@ CRLF and do not commit CRLF. Editors and `sed -i` in Git Bash keep LF; check wit
 
 ## Building the engines
 
-The engines and their libraries are built with Zig, as on Linux: `bun install` (`fetch_zig.ts` unpacks Zig's zip
-with `@stdx/zip`, a development dependency), `bun scripts/fetch_zig.ts` (Zig into `vendor/zig`),
+The engines and their libraries are built with Zig, as on Linux: `bun scripts/fetch_zig.ts` (Zig into `vendor/zig`),
 then `bun scripts/zigbuild_llamacpp.ts`, `bun scripts/zigbuild_audiocpp.ts`, `bun scripts/zigbuild_soxr.ts` and
 `bun scripts/zigbuild_libopus.ts`, for the target `x86_64-windows-gnu`
 (`scripts/zig/zig-toolchain-x86_64-windows-gnu.cmake`: MinGW-w64 with UCRT, libc++ linked in, x86-64-v3). No

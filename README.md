@@ -170,8 +170,7 @@ On Windows the same commands work in Command Prompt or PowerShell. Instead of th
 above you need Git, CMake and Ninja on the `PATH` (standalone installers, or
 `winget install Git.Git Kitware.CMake Ninja-build.Ninja`; no Visual Studio) and the [Vulkan SDK](https://vulkan.lunarg.com/sdk/home) (`glslc`,
 the headers and `vulkan-1.lib`); `curl` comes with Windows. Open a new terminal after installing them, so it sees
-the new `PATH`. Run `bun install` once before `fetch_zig.ts`, which unpacks Zig's `.zip` with a development
-dependency. More in [WINDOWS.md](WINDOWS.md).
+the new `PATH`. More in [WINDOWS.md](WINDOWS.md).
 
 `bun scripts/build_appimage.ts` packs what you have built and fetched (the models excepted) into an AppImage of your own, and on
 Windows `bun scripts/build_installer.ts` into an installer (it downloads Inno Setup if it is not

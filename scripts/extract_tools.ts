@@ -1,9 +1,10 @@
 // Unpacking the archives the fetch scripts download: tar with the system's tar, zip with @stdx/zip, a
 // development dependency. Not in fetch_tools.ts, which is packed without node_modules (stage_app.ts) for `fetch`.
-// @stdx/zip is imported by `extractZip` alone, so the scripts that only unpack tar archives run before `bun install`.
 
 import { mkdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
+
+import { unzip } from "@stdx/zip";
 
 /** The `tar` that unpacks `extractTar`'s archives: bsdtar of Windows 10 1803 and later, by full path (Git's GNU tar is often first on the PATH and misreads drive-letter paths). */
 const tarProgram = () =>
@@ -35,9 +36,6 @@ export async function extractTar(archive: Uint8Array, dir: string, compression: 
  * that leaves `dir` and on a symbolic link.
  */
 export async function extractZip(archive: Uint8Array, dir: string): Promise<void> {
-  const { unzip } = await import("@stdx/zip").catch((e: unknown) => {
-    throw new Error("@stdx/zip is not installed; run: bun install", { cause: e });
-  });
   const files = new Map<string, Uint8Array>();
   for (const entry of await unzip(archive)) {
     if (entry.isDirectory) {
