@@ -20,7 +20,7 @@ nodes:
   - { id: sline, kind: queue, label: Speech line, note: "one at a time, also transcribing", frame: server }
   - { id: llama, kind: service, label: llama worker, note: libllama on Vulkan, frame: server }
   - { id: speech, kind: service, label: speech worker, note: libaudiocpp, frame: server }
-  - { id: segment, kind: service, label: segment worker, note: "sat.wasm and LaBSE on the CPU", frame: server }
+  - { id: segment, kind: service, label: segment worker, note: "libsat and LaBSE on the CPU", frame: server }
   - { id: webpage, kind: service, label: Headless browser, note: "Bun.WebView, Markdown out", frame: server }
   - { id: chat, kind: model, label: Chat model, note: "GGUF, Q6_K, text and images" }
   - { id: tts, kind: model, label: Speech model, note: IndexTTS-2.5 }
