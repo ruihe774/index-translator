@@ -61,18 +61,9 @@ export async function requireTools(tools: string[], hint: string): Promise<void>
 
 export const windows = process.platform === "win32";
 
-/** What to install when a build tool is missing, for the message. */
-export const TOOLS_HINT = windows
-  ? "on Windows: install Git, CMake (https://cmake.org/download/, add it to the PATH), Ninja (winget install Ninja-build.Ninja), and Visual Studio 2022 or later, or its Build Tools, with the 'Desktop development with C++' workload"
-  : process.platform === "darwin"
-    ? "on macOS (libopus and libsoxr only, for the e2e mock server): xcode-select --install; brew install cmake ninja"
-    : "on Debian and Ubuntu: sudo apt install build-essential git cmake ninja-build";
-
-/** The build tools every library built with the system's compilers needs on the PATH (the engines: zigbuild_tools.ts). */
-export const BUILD_TOOLS = ["git", "cmake", "ninja"];
-
-/** The C and C++ compilers' names on the PATH. On Windows `cl` comes from `msvc()`, not from the PATH. */
-export const COMPILERS = windows ? [] : ["cc", "c++"];
+/** What to install when Visual Studio is missing (scripts/build_bun.ts, on Windows), for the message. */
+const TOOLS_HINT =
+  "on Windows: install Git, CMake (https://cmake.org/download/, add it to the PATH), Ninja (winget install Ninja-build.Ninja), and Visual Studio 2022 or later, or its Build Tools, with the 'Desktop development with C++' workload";
 
 interface Msvc {
   /** The environment of a Developer Command Prompt for x64: `cl`, `link`, the Windows SDK's headers and libraries. */

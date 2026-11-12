@@ -1,11 +1,11 @@
-// Fetch the Zig compiler into vendor/zig/: the toolchain of scripts/zigbuild_llamacpp.ts and
-// scripts/zigbuild_audiocpp.ts, which build with it instead of the system's C and C++ compilers, so the engines come out
-// the same wherever they are built. The release is downloaded from ziglang.org by version and checksum.
+// Fetch the Zig compiler into vendor/zig/: the toolchain of the zigbuild scripts (the engines, libsoxr and libopus),
+// which build with it instead of the system's C and C++ compilers, so the libraries come out the same wherever they
+// are built. The release is downloaded from ziglang.org by version and checksum.
 // Usage: bun scripts/fetch_zig.ts
 //
 // The zigbuild scripts use vendor/zig/zig when it is there, else the zig on the PATH, and refuse any other version.
-// A directory that already holds the pinned version is left alone. Linux (x86-64, aarch64) needs tar with xz; Windows
-// (x64) needs nothing (the zip is read here).
+// A directory that already holds the pinned version is left alone. Linux (x86-64, aarch64) and macOS (Apple silicon)
+// need tar with xz; Windows (x64) needs nothing (the zip is read here).
 
 import { chmod, mkdir, rm } from "node:fs/promises";
 import { join, resolve } from "node:path";
@@ -31,6 +31,11 @@ const RELEASES: Record<string, { name: string; sha256: string }> = {
   "win32-x64": {
     name: `zig-x86_64-windows-${ZIG_VERSION}.zip`,
     sha256: "b03f477a1943673e02aca0f570e8030dffd536ce1f45cbc4d3326ec31159562e",
+  },
+  // libsoxr and libopus only, for the e2e mock server of CI's WebKit job
+  "darwin-arm64": {
+    name: `zig-aarch64-macos-${ZIG_VERSION}.tar.xz`,
+    sha256: "75f1bc7a1e9852f17ec9a0c1895f767c4ec56d46bc8a834920eece1d0359dd8d",
   },
 };
 
@@ -61,7 +66,7 @@ if (import.meta.main) {
     await extractZip(archive, home);
     await chmod(zigExecutable(home), 0o755);
   } else {
-    // The archive's one top-level directory (zig-<arch>-linux-<version>) is dropped
+    // The archive's one top-level directory (zig-<arch>-<os>-<version>) is dropped
     await extractTar(archive, home, "xz");
   }
   await writeStamp(home, `${ZIG_VERSION}\n`);

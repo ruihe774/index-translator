@@ -5,7 +5,7 @@
 // Usage: bun scripts/build_appimage.ts
 //
 // Before it: bun scripts/zigbuild_llamacpp.ts && bun scripts/zigbuild_audiocpp.ts (this machine's target, packed as
-// built), bun scripts/build_soxr.ts, bun scripts/build_libopus.ts (the Opus encoder), and
+// built), bun scripts/zigbuild_soxr.ts, bun scripts/zigbuild_libopus.ts (the Opus encoder), and
 // bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries, packed with public/), bun scripts/fetch_turndown.ts (web pages as Markdown) and
 // bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the Bun that is
 // packed: a minimal build, not the one running this script).
@@ -77,8 +77,8 @@ const out = join(root, "dist", NAME);
 for (const [file, script] of [
   [llamaLibrary(llama), "zigbuild_llamacpp.ts"],
   [audioLibrary(audio), "zigbuild_audiocpp.ts"],
-  [soxrLibraryPath(soxr), "build_soxr.ts"],
-  [opusLibraryPath(opus), "build_libopus.ts"],
+  [soxrLibraryPath(soxr), "zigbuild_soxr.ts"],
+  [opusLibraryPath(opus), "zigbuild_libopus.ts"],
   [bunPath(bun), "build_bun.ts"],
 ] as const) {
   if (!(await Bun.file(file).exists())) {

@@ -1,7 +1,7 @@
 // Ogg Opus uploads: the demuxer (public/ogg-opus.ts) on our muxer's files and on hand-made pages,
 // decoding with libopus (src/opus-file.ts), and `POST /voices` and `POST /transcriptions` taking
 // `audio/ogg`. That a browser's AudioEncoder output is taken is e2e/speech.spec.ts's test. The tests
-// that encode or decode need libopus and libsoxr (bun scripts/build_libopus.ts, build_soxr.ts) and are
+// that encode or decode need libopus and libsoxr (bun scripts/zigbuild_libopus.ts, zigbuild_soxr.ts) and are
 // skipped without them.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";

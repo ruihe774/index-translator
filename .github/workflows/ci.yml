@@ -52,17 +52,29 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
+      # libopus and libsoxr are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins.
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-ubuntu-24.04-x64-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
       # The speech tests encode Opus on the server (libopus, resampled with libsoxr) and decode it with libopus.
       - name: Cache libopus
         id: opus
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-ubuntu-24.04-x64-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+          key: opus-zig-ubuntu-24.04-x64-${{ hashFiles('scripts/zigbuild_libopus.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libopus
         if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+        run: bun scripts/zigbuild_libopus.ts
 
       # test/webpage.test.ts opens pages in the runner's Chrome and converts them with turndown.
       - name: Fetch the web page converter
@@ -73,11 +85,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-ubuntu-24.04-x64-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-ubuntu-24.04-x64-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       # Both use the mock engines: no GPU, no models.
       - name: Unit and API integration tests
@@ -133,6 +145,19 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
+      # libopus and libsoxr are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins
+      # (on macOS for aarch64-macos).
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
       # The speech tests encode Opus on the server (libopus, resampled with libsoxr), and the browser decodes it;
       # uploads and recordings are sent as Ogg Opus only when the server has libopus. Built on macOS too, so
       # WebKit takes the Opus paths Safari takes against a real server.
@@ -141,14 +166,14 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+          key: opus-zig-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_libopus.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Cache libsoxr
         id: soxr
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Install Ninja
         if: ${{ runner.os == 'macOS' && (steps.opus.outputs.cache-hit != 'true' || steps.soxr.outputs.cache-hit != 'true') }}
@@ -156,11 +181,11 @@ jobs:
 
       - name: Build libopus
         if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+        run: bun scripts/zigbuild_libopus.ts
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       - name: Install ${{ matrix.browser }}
         run: bunx playwright install --with-deps ${{ matrix.browser }}
@@ -292,9 +317,10 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
+            git cmake ninja-build glslc libvulkan-dev spirv-headers
 
-      # The engines are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins.
+      # The engines, libsoxr and libopus are built with Zig (scripts/zigbuild_*.ts), the release that
+      # scripts/fetch_zig.ts pins.
       - name: Cache Zig
         id: zig
         uses: actions/cache@v6
@@ -326,11 +352,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       - name: Cache the speech engine
         id: audio
@@ -354,11 +380,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+          key: opus-zig-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_libopus.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libopus
         if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+        run: bun scripts/zigbuild_libopus.ts
 
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
@@ -443,7 +469,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
-      # Git, CMake and Ninja are on the runner image (Visual Studio's C++ tools build libsoxr).
+      # Git, CMake and Ninja are on the runner image.
       - name: Install the Vulkan SDK
         shell: pwsh
         run: |
@@ -455,8 +481,8 @@ jobs:
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "$sdk\Bin" >> $env:GITHUB_PATH
 
-      # The engines are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins, for
-      # x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
+      # The engines and libsoxr are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins,
+      # for x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
       - name: Cache Zig
         id: zig
         uses: actions/cache@v6
@@ -486,11 +512,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-windows-vs2026-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-windows-x64-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       - name: Cache the speech engine
         id: audio
@@ -632,8 +658,8 @@ jobs:
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "$sdk\Bin" >> $env:GITHUB_PATH
 
-      # The engines are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins, for
-      # x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
+      # The engines, libsoxr and libopus are built with Zig (scripts/zigbuild_*.ts), the release that
+      # scripts/fetch_zig.ts pins, for x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
       - name: Cache Zig
         id: zig
         uses: actions/cache@v6
@@ -663,11 +689,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-windows-vs2026-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-windows-x64-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       - name: Cache the speech engine
         id: audio
@@ -688,11 +714,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-windows-vs2026-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+          key: opus-zig-windows-x64-${{ hashFiles('scripts/zigbuild_libopus.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libopus
         if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+        run: bun scripts/zigbuild_libopus.ts
 
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts

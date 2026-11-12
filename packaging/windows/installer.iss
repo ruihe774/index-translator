@@ -5,7 +5,8 @@
 ; Uninstalling removes only what was installed here, so downloaded models and voices stay.
 
 ; The Visual C++ runtime is not packed: CodeDependencies.iss (DomGries/InnoDependencyInstaller,
-; copied unchanged) downloads and runs Microsoft's redistributable when the machine lacks it.
+; copied unchanged) downloads and runs Microsoft's redistributable when the machine lacks it. The Zig
+; builds (engines, soxr.dll, opus.dll) do not import it; bun.exe has not been checked (WINDOWS.md).
 #include "CodeDependencies.iss"
 
 #ifndef Stage

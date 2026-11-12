@@ -1,10 +1,11 @@
-// What scripts/zigbuild_llamacpp.ts and scripts/zigbuild_audiocpp.ts share: the target, and CMake run with Zig as the
-// toolchain (scripts/zig/zig-toolchain-<target>.cmake, so a target needs its file there).
+// What the zigbuild scripts share (the engines, zigbuild_llamacpp.ts and zigbuild_audiocpp.ts, and libsoxr and libopus,
+// zigbuild_soxr.ts and zigbuild_libopus.ts): the target, and CMake run with Zig as the toolchain
+// (scripts/zig/zig-toolchain-<target>.cmake, so a target needs its file there).
 
 import { cp } from "node:fs/promises";
 import { delimiter, join, resolve } from "node:path";
 
-import { output, requireTools, run } from "./build_tools";
+import { output, run } from "./build_tools";
 import { ZIG_VERSION, zigExecutable, zigHome } from "./fetch_zig";
 
 /** The build targets we support, mapped from node `${process.platform}-${process.arch}`. */
@@ -12,31 +13,59 @@ const ZIG_TARGETS: Record<string, string> = {
   "linux-x64": "x86_64-linux-gnu",
   "linux-arm64": "aarch64-linux-gnu",
   "win32-x64": "x86_64-windows-gnu",
+  // libsoxr and libopus only, for the e2e mock server of CI's WebKit job; the engines need Vulkan
+  "darwin-arm64": "aarch64-macos",
 };
 
-/** What the builds need on the PATH besides Zig. */
-const BUILD_TOOLS = ["git", "cmake", "ninja", "glslc"];
+/** What the builds need on the PATH besides Zig; the engines also glslc. */
+const BUILD_TOOLS = ["git", "cmake", "ninja"];
 
-/** What to install when a build tool is missing, for the message. */
-export const ZIG_TOOLS_HINT =
-  process.platform === "win32"
-    ? "on Windows: Git, CMake and Ninja on the PATH (a Developer Command Prompt of Visual Studio or its Build Tools has both, or: winget install Kitware.CMake Ninja-build.Ninja) and the Vulkan SDK (https://vulkan.lunarg.com/sdk/home: glslc, the headers, vulkan-1.lib, and VULKAN_SDK set); Zig: bun scripts/fetch_zig.ts"
-    : "on Debian and Ubuntu: sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers; Zig: bun scripts/fetch_zig.ts";
+/** What to install when a build tool is missing, for the message: the engines' (with Vulkan), or libsoxr's and libopus's. */
+export function zigToolsHint(vulkan = true): string {
+  const zig = "Zig: bun scripts/fetch_zig.ts";
+  if (process.platform === "win32") {
+    const tools =
+      "on Windows: Git, CMake and Ninja on the PATH (a Developer Command Prompt of Visual Studio or its Build Tools has both, or: winget install Kitware.CMake Ninja-build.Ninja)";
+    return vulkan
+      ? `${tools} and the Vulkan SDK (https://vulkan.lunarg.com/sdk/home: glslc, the headers, vulkan-1.lib, and VULKAN_SDK set); ${zig}`
+      : `${tools}; ${zig}`;
+  }
+  if (process.platform === "darwin") {
+    return `on macOS: brew install git cmake ninja; ${zig}`;
+  }
+  return vulkan
+    ? `on Debian and Ubuntu: sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers; ${zig}`
+    : `on Debian and Ubuntu: sudo apt install git cmake ninja-build; ${zig}`;
+}
+
+/** The hint for the engines. */
+export const ZIG_TOOLS_HINT = zigToolsHint();
 
 /**
- * Checks the tools the builds need. Zig is the one in vendor/zig (`bun scripts/fetch_zig.ts`) when there is one,
- * put first on the PATH for everything that is run here (the toolchain files and their ar and ranlib call `zig`),
- * else the system's; either must be the pinned version, so that a build does not depend on the machine's.
+ * Checks the tools the builds need (glslc with `vulkan`). Zig is the one in vendor/zig (`bun scripts/fetch_zig.ts`)
+ * when there is one, put first on the PATH for everything that is run here (the toolchain files and their ar and
+ * ranlib call `zig`), else the system's; either must be the pinned version, so that a build does not depend on the
+ * machine's.
  */
-export async function requireZigBuildTools(): Promise<void> {
+export async function requireZigBuildTools(vulkan = true): Promise<void> {
+  if (vulkan && process.platform === "darwin") {
+    throw new Error("the engines are not built on macOS (no Vulkan); only libsoxr and libopus are");
+  }
   const home = zigHome(resolve(import.meta.dir, "..", "vendor"));
   if (await Bun.file(zigExecutable(home)).exists()) {
     process.env.PATH = `${home}${delimiter}${process.env.PATH ?? ""}`;
   }
-  await requireTools(BUILD_TOOLS, ZIG_TOOLS_HINT);
-  // (`requireTools` looks at the PATH this process started with.)
-  if (!Bun.which("zig", { PATH: process.env.PATH })) {
-    throw new Error(`zig not found; ${ZIG_TOOLS_HINT}`);
+  const hint = zigToolsHint(vulkan);
+  // On this process's PATH, Zig's included; not `requireTools`, which on Windows looks for Visual Studio's
+  const missing = [...BUILD_TOOLS, ...(vulkan ? ["glslc"] : []), "zig"].filter(
+    (tool) => !Bun.which(tool, { PATH: process.env.PATH }),
+  );
+  if (missing.length > 0) {
+    throw new Error(`${missing.join(", ")} not found; ${hint}`);
+  }
+  // The Windows toolchain file finds the Vulkan SDK through it
+  if (vulkan && process.platform === "win32" && !process.env.VULKAN_SDK) {
+    throw new Error(`VULKAN_SDK is not set; ${hint}`);
   }
   const version = await output(["zig", "version"]);
   if (version !== ZIG_VERSION) {
@@ -85,6 +114,20 @@ export function targetDirectory(name: string, triple: string): string {
   return triple === getHostTriple() ? name : `${name}-${triple}`;
 }
 
+/** Whether `triple` is a Windows target. */
+export const windowsTarget = (triple: string) => triple.includes("-windows-");
+
+/**
+ * The file name src/ffi-util.ts's `libName` gives the shared library `name` on the system of `triple` (not this
+ * machine's): `<name>.dll`, `lib<name>.<soVersion>.dylib` or `lib<name>.so.<soVersion>`.
+ */
+export function targetLibraryName(triple: string, name: string, soVersion: number): string {
+  if (windowsTarget(triple)) {
+    return `${name}.dll`;
+  }
+  return triple.includes("-macos") ? `lib${name}.${soVersion}.dylib` : `lib${name}.so.${soVersion}`;
+}
+
 const toolchainFile = (triple: string) => join(ZIG_DIR, `zig-toolchain-${triple}.cmake`);
 
 /** The CMake options saved in scripts/zig/<name>.flags, one per line. */
@@ -92,13 +135,17 @@ export async function cmakeFlags(name: string): Promise<string[]> {
   return (await Bun.file(join(ZIG_DIR, `${name}.flags`)).text()).split("\n").filter((line) => line !== "");
 }
 
-/** Configures `source` into `build` with the saved flags and the toolchain file, and builds `targets`. */
+/**
+ * Configures `source` into `build` with the saved flags, `extra` options and the toolchain file, and builds
+ * `targets`.
+ */
 export async function cmakeBuild(
   name: string,
   triple: string,
   source: string,
   build: string,
   targets: string[] = [],
+  extra: string[] = [],
 ): Promise<void> {
   await run([
     "cmake",
@@ -110,6 +157,7 @@ export async function cmakeBuild(
     "Ninja",
     `-DCMAKE_TOOLCHAIN_FILE=${toolchainFile(triple)}`,
     ...(await cmakeFlags(name)),
+    ...extra,
   ]);
   await run(["cmake", "--build", build, ...targets.flatMap((target) => ["--target", target])]);
 }
@@ -155,7 +203,7 @@ export async function copyRuntimeLicenses(triple: string, dest: string): Promise
   const lib = await zigLibDir();
   await cp(join(lib, "..", "LICENSE"), join(dest, "LICENSE.zig"));
   await cp(join(lib, "libc", "musl", "COPYRIGHT"), join(dest, "LICENSE.musl"));
-  if (triple.includes("-windows-")) {
+  if (windowsTarget(triple)) {
     const mingw = join(lib, "libc", "mingw");
     await cp(join(mingw, "COPYING"), join(dest, "LICENSE.mingw-w64"));
     await Bun.write(

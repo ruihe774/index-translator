@@ -8,8 +8,8 @@
 //   --keep    keep the source and the build tree in vendor/.build/audio.cpp-zig, and reuse them
 //
 // The CMake options are scripts/zig/audiocpp.flags, the compiler is Zig (the toolchain file says for which CPU and
-// libc; x86_64-linux-gnu is the only target so far). Needs git, cmake, ninja, zig, glslc and the Vulkan
-// headers and libvulkan; no host C or C++ compiler.
+// libc; x86_64-linux-gnu, aarch64-linux-gnu and, on Windows, x86_64-windows-gnu). Needs git, cmake, ninja, zig, glslc
+// and the Vulkan headers and libvulkan (on Windows the Vulkan SDK, found through VULKAN_SDK); no host C or C++ compiler.
 //
 // ggml is linked in statically and only the audiocpp_* functions are exported:
 // audio.cpp's ggml is a fork that shares its library name with llama.cpp's.

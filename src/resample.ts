@@ -1,4 +1,4 @@
-// Sample-rate conversion with libsoxr through bun:ffi: the library scripts/build_soxr.ts builds, the
+// Sample-rate conversion with libsoxr through bun:ffi: the library scripts/zigbuild_soxr.ts builds, the
 // one audio.cpp resamples with, so a speech stream that is re-encoded has gone through the same
 // resampler as the voice. Used on the main thread: one call per utterance, which takes a few
 // milliseconds for a minute of speech.
@@ -18,7 +18,7 @@ const QUALITY_SPEC = new Float64Array([20, 50, 0.95, 1, 0, 0]);
 function bind(dir: string) {
   const path = soxrLibraryPath(dir);
   if (!existsSync(path)) {
-    throw new Error(`libsoxr not found in ${dir}; run: bun scripts/build_soxr.ts`);
+    throw new Error(`libsoxr not found in ${dir}; run: bun scripts/zigbuild_soxr.ts`);
   }
   return dlopen(path, {
     // soxr_error_t is a string, null when it worked; the io and runtime specs are left to their defaults

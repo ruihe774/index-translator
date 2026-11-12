@@ -34,10 +34,10 @@ endforeach()
 set(GGML_VULKAN_SHADERS_GEN_TOOLCHAIN "${_here}/zig-toolchain-host.cmake" CACHE FILEPATH "")
 
 # The Vulkan SDK's import library. find_package does not search for it when cross-compiling, which CMake takes a set
-# CMAKE_SYSTEM_NAME for; the SDK's installer sets VULKAN_SDK
-if(NOT DEFINED ENV{VULKAN_SDK})
-  message(FATAL_ERROR "VULKAN_SDK is not set; install the Vulkan SDK (https://vulkan.lunarg.com/sdk/home)")
+# CMAKE_SYSTEM_NAME for; the SDK's installer sets VULKAN_SDK. The engines' scripts require it (requireZigBuildTools);
+# libsoxr and libopus need no Vulkan
+if(DEFINED ENV{VULKAN_SDK})
+  file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" _vulkan_sdk)
+  set(Vulkan_LIBRARY "${_vulkan_sdk}/Lib/vulkan-1.lib" CACHE FILEPATH "vulkan-1's import library, from the Vulkan SDK")
+  set(Vulkan_INCLUDE_DIR "${_vulkan_sdk}/Include" CACHE PATH "the Vulkan headers, from the Vulkan SDK")
 endif()
-file(TO_CMAKE_PATH "$ENV{VULKAN_SDK}" _vulkan_sdk)
-set(Vulkan_LIBRARY "${_vulkan_sdk}/Lib/vulkan-1.lib" CACHE FILEPATH "vulkan-1's import library, from the Vulkan SDK")
-set(Vulkan_INCLUDE_DIR "${_vulkan_sdk}/Include" CACHE PATH "the Vulkan headers, from the Vulkan SDK")

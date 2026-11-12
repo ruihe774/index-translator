@@ -1,6 +1,6 @@
 // libopus (include/opus.h) through bun:ffi: the encoder of the speech stream (src/opus-stream.ts) and the
 // decoder of uploaded Ogg Opus recordings (src/opus-file.ts), which the tests also read that stream back with.
-// The library is the build of scripts/build_libopus.ts, beside the engine directory, opened by its full path so
+// The library is the build of scripts/zigbuild_libopus.ts, beside the engine directory, opened by its full path so
 // an Opus installed on the system is never used. The encoder and a voice sample's decoder run on the main
 // thread (encoding a minute of speech takes about a tenth of a second); a recording to transcribe, up to 30
 // minutes, is decoded on the speech worker.
@@ -11,7 +11,7 @@ import { join } from "node:path";
 
 import { libraryFile, once } from "./ffi-util";
 
-/** Where scripts/build_libopus.ts puts libopus, beside the engine directory `audioDir`. */
+/** Where scripts/zigbuild_libopus.ts puts libopus, beside the engine directory `audioDir`. */
 export const opusDir = (audioDir: string) => join(audioDir, "..", "opus");
 
 /** The library's SONAME on Linux, `opus.dll` on Windows. */
@@ -36,7 +36,7 @@ const MAX_FRAME = 5760;
 function bind(dir: string) {
   const path = opusLibraryPath(dir);
   if (!existsSync(path)) {
-    throw new Error(`libopus not found in ${dir}; run: bun scripts/build_libopus.ts`);
+    throw new Error(`libopus not found in ${dir}; run: bun scripts/zigbuild_libopus.ts`);
   }
   const lib = dlopen(path, {
     opus_get_version_string: { args: [], returns: "ptr" },

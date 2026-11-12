@@ -60,7 +60,7 @@ cat >&2 <<EOF
 Index Translator bundles third-party software: llama.cpp and ggml (MIT, with stb_image, miniaudio
 and xxHash), audio.cpp (Apache-2.0,
 with cJSON, SentencePiece, Abseil and libyaml, and Silero VAD's weights under MIT), Zig's runtime (MIT,
-with parts from musl) and LLVM's libc++ (Apache-2.0 with LLVM Exceptions) in both engines, libsoxr (LGPL-2.1 or later), libopus (BSD-3-Clause), turndown (MIT), Bun (MIT, with JavaScriptCore under the LGPL and other
+with parts from musl) in both engines, libsoxr and libopus, LLVM's libc++ (Apache-2.0 with LLVM Exceptions) in both engines, libsoxr (LGPL-2.1 or later), libopus (BSD-3-Clause), turndown (MIT), Bun (MIT, with JavaScriptCore under the LGPL and other
 components) and, in the browser, pdf-inspector (MIT) and pdf.js (Apache-2.0, with fonts and
 decoders under their own licenses) for PDF files, undoc (MIT) for Word files and Temml (MIT) with the
 Noto Sans Math font (OFL-1.1) for equations. Models are not bundled; \`fetch\` shows their licenses before it downloads them.

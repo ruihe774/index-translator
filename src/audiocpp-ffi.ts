@@ -30,7 +30,7 @@ export const libraryPath = (dir: string) => libraryFile(dir, "audiocpp");
 function openSoxr(dir: string) {
   const path = soxrLibraryPath(dir);
   if (!existsSync(path)) {
-    throw new Error(`libsoxr not found in ${dir}; run: bun scripts/build_soxr.ts`);
+    throw new Error(`libsoxr not found in ${dir}; run: bun scripts/zigbuild_soxr.ts`);
   }
   return dlopen(path, { soxr_version: { args: [], returns: "ptr" } }).symbols;
 }
