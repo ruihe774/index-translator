@@ -16,8 +16,7 @@ import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 
-import { extractTar } from "./extract_tools";
-import { download, readStamp, writeStamp } from "./fetch_tools";
+import { download, extractTar, readStamp, writeStamp } from "./fetch_tools";
 
 export interface Library {
   /** Directory under public/vendor/ (vendor/ for the server's own, scripts/fetch_turndown.ts). */
