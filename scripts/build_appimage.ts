@@ -1,16 +1,11 @@
 // Pack the app into one file that runs on other Linux machines: dist/Index_Translator-<arch>.AppImage (x86_64 or aarch64, as the machine),
-// with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and
-// the prebuilt shim, libaudiocpp), libsoxr, libopus and sat.wasm. The models and the voices are not packed; the AppImage's `fetch`
+// with Bun, the web app and both engines as they are in ./vendor (libllama with its backends and the shim in one
+// library, libaudiocpp), libsoxr, libopus and sat.wasm. The models and the voices are not packed; the AppImage's `fetch`
 // subcommand (scripts/fetch_models.ts) downloads them into the user's data directory.
-// Usage: bun scripts/build_appimage.ts [--cuda]
+// Usage: bun scripts/build_appimage.ts
 //
-//   --cuda  the NVIDIA variant, dist/Index_Translator-<arch>-cuda.AppImage: the engines of
-//           `build_llama.ts --cuda` and `build_audiocpp.ts --cuda` (vendor/llama.cpp-cuda, vendor/audio.cpp-cuda: CUDA
-//           and no Vulkan, with the CUDA runtime libraries), started with SPEECH_BACKEND=cuda. It needs an NVIDIA
-//           driver for CUDA 13 (580 or newer), not Vulkan. Without the flag the engines are the Vulkan ones, with no CUDA.
-//
-// Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts, both without --native,
-// since the engines are packed as built, bun scripts/build_soxr.ts, bun scripts/build_libopus.ts (the Opus encoder), and
+// Before it: bun scripts/zigbuild_llamacpp.ts && bun scripts/zigbuild_audiocpp.ts (this machine's target, packed as
+// built), bun scripts/build_soxr.ts, bun scripts/build_libopus.ts (the Opus encoder), and
 // bun scripts/fetch_web_libs.ts (the web app's PDF and Word libraries, packed with public/), bun scripts/fetch_turndown.ts (web pages as Markdown) and
 // bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the Bun that is
 // packed: a minimal build, not the one running this script).
@@ -21,12 +16,12 @@
 // Needs nothing installed besides Bun and git: appimagetool and the AppImage runtime are
 // downloaded, by version and checksum, into vendor/.build/appimage and kept there.
 
-import { chmod, cp, lstat, mkdir, rm } from "node:fs/promises";
+import { chmod, cp, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
 
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
-import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
+import { libraryPath as llamaLibrary } from "../src/llama-ffi";
 import { opusLibraryPath } from "../src/opus-ffi";
 import { bunPath } from "./build_bun";
 import { output, run } from "./build_tools";
@@ -52,14 +47,11 @@ if (process.platform !== "linux" || !arch) {
 }
 const ARCH = arch.name;
 
-const flags = Bun.argv.slice(2);
-const cuda = flags.includes("--cuda");
-const unknown = flags.find((flag) => flag !== "--cuda");
-if (unknown) {
-  throw new Error(`unknown option ${unknown}; see the head of this file`);
+if (Bun.argv.length > 2) {
+  throw new Error(`unknown option ${Bun.argv[2]}; this script takes none`);
 }
 
-const NAME = `Index_Translator-${ARCH}${cuda ? "-cuda" : ""}.AppImage`;
+const NAME = `Index_Translator-${ARCH}.AppImage`;
 
 const APPIMAGETOOL = {
   url: `https://github.com/AppImage/appimagetool/releases/download/1.9.1/appimagetool-${ARCH}.AppImage`,
@@ -72,9 +64,8 @@ const RUNTIME = {
 };
 
 const packaging = join(root, "packaging", "appimage");
-// Each variant has the one GPU backend: Vulkan in vendor/llama.cpp and vendor/audio.cpp, CUDA in the -cuda directories.
-const llama = join(root, "vendor", cuda ? "llama.cpp-cuda" : "llama.cpp");
-const audio = join(root, "vendor", cuda ? "audio.cpp-cuda" : "audio.cpp");
+const llama = join(root, "vendor", "llama.cpp");
+const audio = join(root, "vendor", "audio.cpp");
 const soxr = join(root, "vendor", "soxr");
 const opus = join(root, "vendor", "opus");
 const bun = join(root, "vendor", "bun");
@@ -84,9 +75,8 @@ const app = join(appDir, "usr", "share", "index-translator");
 const out = join(root, "dist", NAME);
 
 for (const [file, script] of [
-  [llamaLibrary(llama), `build_llama.ts${cuda ? " --cuda" : ""}`],
-  [shimPath(llama), `build_llama.ts${cuda ? " --cuda" : ""}`],
-  [audioLibrary(audio), `build_audiocpp.ts${cuda ? " --cuda" : ""}`],
+  [llamaLibrary(llama), "zigbuild_llamacpp.ts"],
+  [audioLibrary(audio), "zigbuild_audiocpp.ts"],
   [soxrLibraryPath(soxr), "build_soxr.ts"],
   [opusLibraryPath(opus), "build_libopus.ts"],
   [bunPath(bun), "build_bun.ts"],
@@ -94,22 +84,6 @@ for (const [file, script] of [
   if (!(await Bun.file(file).exists())) {
     throw new Error(`${file} is missing; run: bun scripts/${script}`);
   }
-}
-// Whatever the directories were built with, the AppImage has exactly the one GPU backend it is named for.
-// (llama.cpp's backends are libraries of their own; audio.cpp's are inside libaudiocpp.so, where only the bundled CUDA runtime shows.)
-const llamaCuda = await Bun.file(join(llama, "libggml-cuda.so")).exists();
-// (The Zig build of llama.cpp, scripts/zigbuild_llamacpp.ts, has Vulkan inside libllama.so, and libmtmd.so links to it.)
-const llamaVulkan =
-  (await Bun.file(join(llama, "libggml-vulkan.so")).exists()) ||
-  (await lstat(join(llama, "libmtmd.so")).then(
-    (stat) => stat.isSymbolicLink(),
-    () => false,
-  ));
-const audioCuda = await Bun.file(join(audio, "libcudart.so.13")).exists();
-if (llamaCuda !== cuda || llamaVulkan === cuda || audioCuda !== cuda) {
-  throw new Error(
-    `${llama} and ${audio} are not both ${cuda ? "CUDA" : "Vulkan"} builds; build them ${cuda ? "with" : "without"} --cuda`,
-  );
 }
 await requireAllVendored();
 
@@ -129,7 +103,6 @@ const version = [
   `index-translator ${commit}`,
   `llama.cpp ${(await Bun.file(join(llama, "VERSION")).text()).trim()}`,
   `audio.cpp ${(await Bun.file(join(audio, "VERSION")).text()).trim()}`,
-  ...(cuda ? [`CUDA ${(await Bun.file(join(llama, "CUDA_VERSION")).text()).trim()}`] : []),
   `libsoxr ${(await Bun.file(join(soxr, "VERSION")).text()).trim()}`,
   `libopus ${(await Bun.file(join(opus, "VERSION")).text()).trim()}`,
   `sat.wasm ${(await Bun.file(join(root, "vendor", "sat-wasm", "VERSION")).text()).slice(0, 7)}`,

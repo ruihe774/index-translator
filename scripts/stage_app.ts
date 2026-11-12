@@ -1,6 +1,6 @@
 // What build_appimage.ts and build_installer.ts pack alike: the repository's own layout, so the code finds its
 // files the way it does in a checkout. A new top-level directory or file the server reads is added here, once.
-// What differs (the engines of a variant, Bun, the start script or launcher) stays with the two scripts.
+// What differs (the engines, Bun, the start script or launcher) stays with the two scripts.
 
 import { cp, mkdir, readdir } from "node:fs/promises";
 import { join, resolve } from "node:path";

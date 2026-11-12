@@ -1,13 +1,13 @@
 // Pack the app into a Windows installer: dist/Index_Translator-Setup-x86_64.exe (Inno Setup).
-// It holds Bun, the web app, both engines as they are in ./vendor (llama.dll with its backends and
-// llama-shim.dll, audiocpp.dll), soxr.dll, opus.dll and launcher.exe (packaging/windows/launcher.c), laid out as in a
+// It holds Bun, the web app, both engines as they are in ./vendor (llama.dll, with its backends and the shim inside,
+// and audiocpp.dll), soxr.dll, opus.dll and launcher.exe (packaging/windows/launcher.c), laid out as in a
 // checkout, since the launcher finds the program by walking up to src\server.ts and takes `bun`
 // from the directory it runs in. Installs per user, no administrator rights. The models and the
 // voices are not packed; the launcher's "Download models" runs scripts\fetch_models.ts (needs curl,
 // part of Windows 10 and later).
 // Usage: bun scripts/build_installer.ts
 //
-// Before it: bun scripts/build_llama.ts && bun scripts/build_audiocpp.ts && bun scripts/build_soxr.ts &&
+// Before it: bun scripts/zigbuild_llamacpp.ts && bun scripts/zigbuild_audiocpp.ts && bun scripts/build_soxr.ts &&
 // bun scripts/build_libopus.ts (the Opus encoder), and bun scripts/fetch_web_libs.ts (the web app's PDF and Word
 // libraries), bun scripts/fetch_turndown.ts (web pages as Markdown) and
 // bun scripts/fetch_sat_wasm.ts (sat.wasm, for sentence segmentation), and bun scripts/build_bun.ts (the
@@ -19,7 +19,7 @@ import { join } from "node:path";
 
 import { libraryPath as audioLibrary } from "../src/audiocpp-ffi";
 import { soxrLibraryPath } from "../src/ffi-util";
-import { libraryPath as llamaLibrary, shimPath } from "../src/llama-ffi";
+import { libraryPath as llamaLibrary } from "../src/llama-ffi";
 import { opusLibraryPath } from "../src/opus-ffi";
 import { bunPath } from "./build_bun";
 import { output, run } from "./build_tools";
@@ -49,9 +49,8 @@ const stage = join(work, "stage");
 const dist = join(root, "dist");
 
 for (const [file, script] of [
-  [llamaLibrary(llama), "build_llama.ts"],
-  [shimPath(llama), "build_llama.ts"],
-  [audioLibrary(audio), "build_audiocpp.ts"],
+  [llamaLibrary(llama), "zigbuild_llamacpp.ts"],
+  [audioLibrary(audio), "zigbuild_audiocpp.ts"],
   [soxrLibraryPath(soxr), "build_soxr.ts"],
   [opusLibraryPath(opus), "build_libopus.ts"],
   [bunPath(bun), "build_bun.ts"],
