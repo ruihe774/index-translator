@@ -61,26 +61,21 @@ export function runProbe(llamaDir: string): Probe {
     }
   }
   const how = child.signalCode ? `was ended by ${child.signalCode}` : `ended with exit code ${child.exitCode}`;
-  return { error: `Its check ${how}, which points at the graphics driver.${log ? `\n${log}` : ""}` };
+  return {
+    error: `Its check ${how}, which points at the graphics driver or an unsatisfied CPU requirement.${log ? `\n${log}` : ""}`,
+  };
 }
 
 // Message builders: text only, no filesystem. `preflight` below decides what to say.
 
-function noCpuBackendMessage(cfg: Config, log: string | undefined, windows: boolean): string {
+function noCpuBackendMessage(cfg: Config, log: string | undefined): string {
   // What the libraries said about it, without their ordinary start-up lines.
   const said = (log ?? "").split("\n").filter((line) => /fail|error|cannot/i.test(line));
   const lines = said.length > 0 ? `\n${said.join("\n")}` : "";
-  const runtime = windows
-    ? "It needs the Microsoft Visual C++ runtime (the x64 Redistributable, https://aka.ms/vs/17/release/vc_redist.x64.exe)."
-    : "It needs the OpenMP runtime, libgomp.so.1 (libgomp1 on Debian and Ubuntu, libgomp on Fedora, gcc-libs on Arch).";
-  return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}. ${runtime}${lines}`;
+  return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}.${lines}`;
 }
 
-function noGpuMessage(cuda: boolean, vulkanLoader: boolean, windows: boolean): string {
-  // The NVIDIA variant (scripts/build_llama.ts --cuda) has CUDA and no Vulkan.
-  if (cuda) {
-    return `No GPU with a CUDA driver was found. This build needs an NVIDIA GPU and its driver for CUDA 13 (version 580 or newer); "nvidia-smi" lists what is installed. ${CPU_HINT}`;
-  }
+function noGpuMessage(vulkanLoader: boolean, windows: boolean): string {
   if (vulkanLoader) {
     return `No GPU with a Vulkan driver was found. Install the Vulkan driver for your graphics card (${windows ? "the current driver from AMD, Intel or NVIDIA includes it" : DRIVERS}); "vulkaninfo --summary" lists what Vulkan sees. ${CPU_HINT}`;
   }
@@ -106,10 +101,10 @@ export function preflight(
     return `The translation engine cannot be loaded. ${found.error}`;
   }
   if (!found.cpu) {
-    return noCpuBackendMessage(cfg, found.log, windows);
+    return noCpuBackendMessage(cfg, found.log);
   }
   if (cfg.gpuLayers !== 0 && found.gpus.length === 0) {
-    return noGpuMessage(existsSync(join(cfg.llamaDir, "libggml-cuda.so")), found.vulkanLoader, windows);
+    return noGpuMessage(found.vulkanLoader, windows);
   }
   // loadConfig has made sure the default model is a known one.
   const model = defaultModelSpec(cfg);

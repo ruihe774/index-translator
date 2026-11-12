@@ -5,7 +5,7 @@
 // here blocks its thread, so
 // this module is only used from src/speech-worker.ts.
 //
-// The library must be the build of scripts/build_audiocpp.ts, which has its own ggml linked in and
+// The library must be the build of scripts/zigbuild_audiocpp.ts, which has its own ggml linked in and
 // hidden. audio.cpp's ggml is a fork with the same library name as llama.cpp's; a libaudiocpp that
 // looked for a shared libggml would be handed the one libllama has loaded, and fail.
 
@@ -30,7 +30,7 @@ export const libraryPath = (dir: string) => libraryFile(dir, "audiocpp");
 function openSoxr(dir: string) {
   const path = soxrLibraryPath(dir);
   if (!existsSync(path)) {
-    throw new Error(`libsoxr not found in ${dir}; run: bun scripts/build_soxr.ts`);
+    throw new Error(`libsoxr not found in ${dir}; run: bun scripts/zigbuild_soxr.ts`);
   }
   return dlopen(path, { soxr_version: { args: [], returns: "ptr" } }).symbols;
 }
@@ -45,7 +45,7 @@ export function soxrVersion(dir: string): string {
 function bind(dir: string) {
   const libPath = libraryPath(dir);
   if (!existsSync(libPath)) {
-    throw new Error(`libaudiocpp not found in ${dir}; run: bun scripts/build_audiocpp.ts`);
+    throw new Error(`libaudiocpp not found in ${dir}; run: bun scripts/zigbuild_audiocpp.ts`);
   }
   openSoxr(soxrDir(dir));
   const lib = dlopen(libPath, {
@@ -377,7 +377,7 @@ export class VoiceSeparator extends Loaded {
   }
 }
 
-/** The file of Silero VAD's weights, which `build_audiocpp.ts` copies next to the library. */
+/** The file of Silero VAD's weights, which `zigbuild_audiocpp.ts` copies next to the library. */
 export const SILERO_WEIGHTS = "silero_vad_16k.safetensors";
 
 /** Silero VAD with one offline session. Same rules as `SpeechModel`. */

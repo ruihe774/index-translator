@@ -9,7 +9,7 @@ import type { Page } from "@playwright/test";
 
 import { expect, frames, quiet, test } from "./fixtures";
 
-// The server encodes Opus with libopus, resampled by libsoxr (bun scripts/build_libopus.ts, build_soxr.ts).
+// The server encodes Opus with libopus, resampled by libsoxr (bun scripts/zigbuild_libopus.ts, zigbuild_soxr.ts).
 const VENDOR = join(import.meta.dirname, "..", "vendor");
 const opusInstalled = existsSync(join(VENDOR, "opus", "VERSION")) && existsSync(join(VENDOR, "soxr", "VERSION"));
 
@@ -595,7 +595,7 @@ function watchSpeech(page: Page) {
 }
 
 test("speech arrives as Ogg Opus, decoded by the browser, and plays to its end", async ({ app, mock }) => {
-  test.skip(!opusInstalled, "run: bun scripts/build_libopus.ts and bun scripts/build_soxr.ts");
+  test.skip(!opusInstalled, "run: bun scripts/zigbuild_libopus.ts and bun scripts/zigbuild_soxr.ts");
   // Several pages of a second each.
   await mock.set({ speech: { audioSeconds: 2.5 } });
   const seen = watchSpeech(app.page);
@@ -616,7 +616,7 @@ test("speech arrives as Ogg Opus, decoded by the browser, and plays to its end",
 });
 
 test("the Opus the server sends decodes to the length of the utterance", async ({ app, mock }) => {
-  test.skip(!opusInstalled, "run: bun scripts/build_libopus.ts and bun scripts/build_soxr.ts");
+  test.skip(!opusInstalled, "run: bun scripts/zigbuild_libopus.ts and bun scripts/zigbuild_soxr.ts");
   await mock.set({ speech: { audioSeconds: 2.5 } });
   await app.open();
   const decoded = await app.page.evaluate(async () => {

@@ -329,7 +329,7 @@ export class NativeSpeech implements Speech {
       return "reading aloud is turned off (SPEECH=0)";
     }
     if (!existsSync(libraryPath(this.cfg.audioDir))) {
-      return "the speech engine is not installed; run bun scripts/build_audiocpp.ts";
+      return "the speech engine is not installed; run bun scripts/zigbuild_audiocpp.ts";
     }
     if (!existsSync(this.cfg.speechModelDir)) {
       return `the speech model is not installed; ${fetchAdvice(["index-tts-2.5"])}`;
@@ -459,7 +459,7 @@ export class NativeSpeech implements Speech {
     }
     // Reading aloud may be off or its model missing: transcription needs only the engine and its own model.
     if (!existsSync(libraryPath(this.cfg.audioDir))) {
-      return "the speech engine is not installed; run bun scripts/build_audiocpp.ts";
+      return "the speech engine is not installed; run bun scripts/zigbuild_audiocpp.ts";
     }
     if (!findTranscribeModel(this.cfg)) {
       return `the transcription model is not installed; ${fetchAdvice([TRANSCRIBE_MODEL_ID])}`;

@@ -17,6 +17,11 @@
 // development with C++" workload, LLVM 23.1 in C:\Program Files\LLVM (`choco install llvm --version=23.1.3`) and
 // NASM on the PATH; Strawberry Perl's MinGW tools (C:\Strawberry\c\bin) must not be on it. WebKit comes prebuilt; it and the build caches go to ~/.bun/build-cache
 // (BUN_BUILD_CACHE_DIR). Building needs no administrator rights.
+//
+// On Linux it is linked, as Bun's releases are, against Ubuntu 20.04's glibc and gcc-13's libstdc++
+// (glibc_sysroot.ts; also needs tar, dpkg-deb and objdump), so it runs on glibc 2.31 and later whatever the build
+// machine's glibc; the build fails otherwise. The patch also turns off Bun's `--wrap` list, which pins what glibc 2.31
+// has above 2.17 down to 2.17 (its own shims of exp, getrandom, statx, ...): 2.31 is old enough.
 
 import { existsSync } from "node:fs";
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
@@ -25,6 +30,7 @@ import { join, resolve } from "node:path";
 import { $ } from "bun";
 
 import { checkout, msvc, output, requireTools, run, windows } from "./build_tools";
+import { glibcSysroot } from "./glibc_sysroot";
 
 /** Bun 1.4.4 as it is on main at this commit; the patch is written against it. */
 const VERSION = "1.4.4";
@@ -47,6 +53,10 @@ const source = join(work, "src");
 // Inside the checkout: Bun's build finds its repository by walking up from the build directory.
 const build = join(source, "build", "release-minimal");
 const exe = windows ? "bun.exe" : "bun";
+const linux = process.platform === "linux";
+const sysroot = join(work, "glibc-sysroot");
+/** The newest glibc symbol version Bun may need: the sysroot's. build_appimage.ts holds every packed binary to it. */
+export const MAX_GLIBC = "2.31";
 
 /** The packed Bun in `dir` (vendor/bun): `bun`, or `bun.exe` on Windows. */
 export function bunPath(dir: string): string {
@@ -55,7 +65,10 @@ export function bunPath(dir: string): string {
 
 if (import.meta.main) {
   // Bun's own configure step checks the rest (LLVM's version, Rust, Perl, NASM, ...) and says what is missing.
-  await requireTools(["git"], "install git");
+  await requireTools(
+    linux ? ["git", "tar", "dpkg-deb", "objdump"] : ["git"],
+    "install git (and on Linux tar, dpkg and binutils)",
+  );
   // On Windows the build runs in the environment of a Developer Command Prompt, as Bun's scripts/vs-shell.ps1 sets up.
   const buildEnv = windows ? (await msvc()).env : undefined;
 
@@ -69,10 +82,20 @@ if (import.meta.main) {
     await run(["git", "apply", "--ignore-whitespace", PATCH], source);
   }
 
+  if (linux) {
+    await glibcSysroot(sysroot, join(work, "downloads"));
+  }
+
   const started = performance.now();
   // Bun's build installs its own build tools' packages (esbuild and the like) with the running Bun.
   await run(
-    [process.execPath, "scripts/build.ts", "--profile=release-minimal", `--build-dir=${build}`],
+    [
+      process.execPath,
+      "scripts/build.ts",
+      "--profile=release-minimal",
+      `--build-dir=${build}`,
+      ...(linux ? [`--linux-sysroot=${sysroot}`] : []),
+    ],
     source,
     buildEnv,
   ).catch((e: unknown) => {
@@ -82,6 +105,10 @@ if (import.meta.main) {
   const built = join(build, exe);
   if (!existsSync(built)) {
     throw new Error(`the build left no ${built}`);
+  }
+
+  if (linux) {
+    await checkGlibc(built);
   }
 
   // Built before the existing copy is replaced.
@@ -106,4 +133,18 @@ if (import.meta.main) {
   const seconds = Math.round((performance.now() - started) / 1000);
   const megabytes = Math.round(Bun.file(bunPath(dest)).size / 1e6);
   console.log(`ok ${dest} (bun ${revision}, ${megabytes} MB, built in ${seconds} s)`);
+}
+
+/**
+ * Throws when `file` needs a glibc symbol newer than `MAX_GLIBC`: for Bun, that the sysroot was not used; for the
+ * libraries, a Zig default target newer than it. Needs objdump.
+ */
+export async function checkGlibc(file: string): Promise<void> {
+  const symbols = await $`objdump -T ${file}`.text();
+  const newer = [...new Set(symbols.match(/GLIBC_\d+(\.\d+)+/g))].filter(
+    (version) => Bun.semver.order(`${version.slice(6)}.0`.split(".").slice(0, 3).join("."), `${MAX_GLIBC}.0`) > 0,
+  );
+  if (newer.length > 0) {
+    throw new Error(`${file} needs ${newer.sort().join(", ")}; at most GLIBC_${MAX_GLIBC} was expected`);
+  }
 }

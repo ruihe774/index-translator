@@ -1,12 +1,12 @@
 // libllama as a sentence encoder, through bun:ffi: LaBSE (a BERT with CLS pooling) on the processor. Used by the
 // segmentation worker only (src/segment-worker.ts), a thread other than the chat engine's; each thread opens the
-// libraries itself and `shim_init` (src/llama-shim.cpp) sets them up once for the process. Every call blocks.
+// libraries itself and `shim_init` (src/llama-shim.c) sets them up once for the process. Every call blocks.
 
 import { dlopen, type Pointer } from "bun:ffi";
 import { existsSync } from "node:fs";
 
 import { cstr, once } from "./ffi-util";
-import { libraryPath, shimPath } from "./llama-ffi";
+import { libraryPath } from "./llama-ffi";
 
 /** Sequences in one `Embedder.embed` call. */
 export const MAX_SEQUENCES = 16;
@@ -14,22 +14,21 @@ export const MAX_SEQUENCES = 16;
 export const MAX_SEQUENCE_TOKENS = 512;
 
 function bind(dir: string) {
-  if (![libraryPath(dir), shimPath(dir)].every((path) => existsSync(path))) {
-    throw new Error(`libllama or the shim not found in ${dir}; run: bun scripts/build_llama.ts`);
+  if (!existsSync(libraryPath(dir))) {
+    throw new Error(`libllama not found in ${dir}; run: bun scripts/zigbuild_llamacpp.ts`);
   }
-  const llama = dlopen(libraryPath(dir), {
+  // libllama's own calls and the shim's, one library
+  const lib = dlopen(libraryPath(dir), {
     llama_model_free: { args: ["ptr"], returns: "void" },
     llama_free: { args: ["ptr"], returns: "void" },
     llama_model_n_embd: { args: ["ptr"], returns: "i32" },
-  }).symbols;
-  const shim = dlopen(shimPath(dir), {
     shim_init: { args: ["ptr"], returns: "void" },
     shim_load_model: { args: ["ptr", "i32", "bool"], returns: "ptr" },
     shim_new_embed_context: { args: ["ptr", "u32", "u32", "i32"], returns: "ptr" },
     shim_embed: { args: ["ptr", "ptr", "ptr", "i32", "ptr", "i32"], returns: "i32" },
   }).symbols;
-  shim.shim_init(cstr(dir));
-  return { ...llama, ...shim };
+  lib.shim_init(cstr(dir));
+  return lib;
 }
 
 const llama = once("libllama", bind);

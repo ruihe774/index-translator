@@ -1,10 +1,9 @@
 // The libllama and libmtmd (image input) calls that pass or return structs, which bun:ffi cannot
 // express, plus the log filter, the device list and multi-token prediction. Compiled by
-// scripts/build_llama.ts into libllama-shim, with src/llama-shim-ext.cpp, against the headers of the
-// libraries it has just built and puts next to it, so the struct layouts always match them. After a
-// change here: bun scripts/build_llama.ts --shim. Everything else is called directly from src/llama-ffi.ts.
+// scripts/zigbuild_llamacpp.ts with src/llama-shim-ext.cpp against the source it has just built, and linked into
+// the same library, so the struct layouts always match it. After a change here:
+// bun scripts/zigbuild_llamacpp.ts --shim. Everything else is called directly from src/llama-ffi.ts.
 
-#include <atomic>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -14,14 +13,10 @@
 #include "mtmd.h"
 #include "mtmd-helper.h"
 
-// The functions bun:ffi looks up by name; a Windows DLL exports only what is marked.
-#if defined(_WIN32)
-#    define SHIM_API __declspec(dllexport)
-#else
-#    define SHIM_API __attribute__((visibility("default")))
-#endif
-
-extern "C" {
+// The functions bun:ffi looks up by name. On Windows (MinGW) nothing is marked dllexport, as in llama.h: with no
+// marked symbol the linker exports every one, which libllama's and libmtmd's functions need; one dllexport here
+// would leave only the shim's.
+#define SHIM_API __attribute__((visibility("default")))
 
 static enum ggml_log_level shim_log_level = GGML_LOG_LEVEL_INFO;
 
@@ -41,12 +36,12 @@ static void shim_log(enum ggml_log_level level, const char * text, void * user_d
 // Once per process, however many threads ask: the chat engine's thread and the segmentation thread (LaBSE) both
 // open the library, and a second caller waits for the first one's initialization to end.
 // `backend_dir` holds the libggml-* backends (Vulkan, CPU variants).
-static std::atomic<int> shim_init_state{0}; // 0: not started, 1: running, 2: done
+static int shim_init_state = 0; // 0: not started, 1: running, 2: done
 
 SHIM_API void shim_init(const char * backend_dir) {
     int expected = 0;
-    if (!shim_init_state.compare_exchange_strong(expected, 1, std::memory_order_acq_rel, std::memory_order_acquire)) {
-        while (shim_init_state.load(std::memory_order_acquire) != 2) {
+    if (!__atomic_compare_exchange_n(&shim_init_state, &expected, 1, false, __ATOMIC_ACQ_REL, __ATOMIC_ACQUIRE)) {
+        while (__atomic_load_n(&shim_init_state, __ATOMIC_ACQUIRE) != 2) {
         }
         return;
     }
@@ -54,7 +49,7 @@ SHIM_API void shim_init(const char * backend_dir) {
     mtmd_helper_log_set(shim_log, NULL);
     llama_backend_init();
     ggml_backend_load_all_from_path(backend_dir);
-    shim_init_state.store(2, std::memory_order_release);
+    __atomic_store_n(&shim_init_state, 2, __ATOMIC_RELEASE);
 }
 
 // The devices the loaded backends found. Returns how many, and writes them to `out` as
@@ -355,7 +350,7 @@ SHIM_API struct shim_mtp * shim_mtp_new(struct llama_model * model, struct llama
         params.n_threads_batch = n_threads;
     }
     // Whatever is missing at `fail` is still NULL: shim_mtp_free takes a partly built drafter.
-    struct shim_mtp * m = (struct shim_mtp *) calloc(1, sizeof(*m));
+    struct shim_mtp * m = calloc(1, sizeof(*m));
     if (m == NULL) {
         return NULL;
     }
@@ -366,8 +361,8 @@ SHIM_API struct shim_mtp * shim_mtp_new(struct llama_model * model, struct llama
     if (m->dft == NULL) {
         goto fail;
     }
-    m->pending = (float *) calloc((size_t) m->n_embd, sizeof(float));
-    m->rows = (float *) calloc((size_t) (max_draft + 1) * (size_t) m->n_embd, sizeof(float));
+    m->pending = calloc((size_t) m->n_embd, sizeof(float));
+    m->rows = calloc((size_t) (max_draft + 1) * (size_t) m->n_embd, sizeof(float));
     m->batch = llama_batch_ext_init(m->dft);
     m->greedy = llama_sampler_init_greedy();
     if (m->pending == NULL || m->rows == NULL || m->batch == NULL || m->greedy == NULL) {
@@ -505,5 +500,3 @@ SHIM_API int32_t shim_mtp_step(struct shim_mtp * m, struct llama_sampler * sampl
     }
     return kept + 1;
 }
-
-} // extern "C"

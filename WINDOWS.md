@@ -35,29 +35,44 @@ CRLF and do not commit CRLF. Editors and `sed -i` in Git Bash keep LF; check wit
 
 ## Building the engines
 
-`bun scripts/build_llama.ts`, `bun scripts/build_audiocpp.ts`, `bun scripts/build_soxr.ts` (libsoxr, as
-`soxr.dll`) and `bun scripts/build_libopus.ts` (libopus, as `opus.dll`; these two need only Git, CMake, Ninja and the
-Visual Studio tools) build for Windows with no administrator
-rights. They need: Git, CMake and Ninja (on the PATH, or the ones Visual Studio ships, which the scripts find through
-`vcvars64.bat`; `winget install Ninja-build.Ninja` installs Ninja for the current user), Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload
-(found with `vswhere`; `vcvars64.bat` supplies `cl`, whose environment the scripts hand to CMake), and the Vulkan
-SDK (`glslc`, headers, `vulkan-1.lib`; sets `VULKAN_SDK`). As on Linux, CMake's Ninja generator is used
-(single-configuration, `CMAKE_BUILD_TYPE=Release`); a build tree kept with `--keep` from before this (Visual
-Studio generator) must be deleted (`vendor/.build`). A terminal opened before the installs needs a restart to see
-the new PATH. The GitHub runner image already has Ninja.
+The engines and their libraries are built with Zig, as on Linux: `bun install` (`fetch_zig.ts` unpacks Zig's zip
+with `@stdx/zip`, a development dependency), `bun scripts/fetch_zig.ts` (Zig into `vendor/zig`),
+then `bun scripts/zigbuild_llamacpp.ts`, `bun scripts/zigbuild_audiocpp.ts`, `bun scripts/zigbuild_soxr.ts` and
+`bun scripts/zigbuild_libopus.ts`, for the target `x86_64-windows-gnu`
+(`scripts/zig/zig-toolchain-x86_64-windows-gnu.cmake`: MinGW-w64 with UCRT, libc++ linked in, x86-64-v3). No
+administrator rights. They need Git, CMake and Ninja on the PATH (their standalone installers, or
+`winget install Git.Git Kitware.CMake Ninja-build.Ninja`; the scripts do not look for them elsewhere, Visual Studio's
+copies included) and, for the engines, the Vulkan SDK (`glslc`, the headers, `vulkan-1.lib`; the toolchain file takes
+the library from `VULKAN_SDK`, which the engine scripts require), no C or C++ compiler and no Visual Studio. A
+terminal opened before the installs needs a restart to see the new PATH.
 
-- llama.cpp gives `llama.dll`, `mtmd.dll` (image input; not yet built or run on Windows: the shim links `mtmd.lib`
-  and takes `stbi_load_from_memory` from it, which `WINDOWS_EXPORT_ALL_SYMBOLS` should export), `ggml*.dll`, `ggml-vulkan.dll`, `ggml-cpu.dll` (AVX2), and `llama-shim.dll`
-  (compiled by `cl`; the shim marks its functions `dllexport`). The `.lib` import libraries stay in
-  `vendor/llama.cpp` so `--shim` can rebuild the shim. About 100 s on 20 threads.
-- audio.cpp gives `audiocpp.dll` (exports only `audiocpp_*`, checked with `dumpbin /exports`), AVX2 code. About 4 min.
-  The script applies `scripts/patches/audiocpp-abort.patch` and `audiocpp-custom-output.patch` to the checkout
-  with `git apply --ignore-whitespace` (line endings of the checkout do not matter); a DLL built before them lacks
-  `audiocpp_set_abort_flag` or `audiocpp_result_custom_output` and the server says so when speech is first used.
-  The patched build has not been run on Windows yet, nor has transcription.
-- Checked on an RX 9070 (Vulkan) with the real engines: translation (72 tokens/s), speech in zh, en and ja,
-  a voice upload separated by BS-RoFormer (2 s; since replaced by Mel-Band RoFormer, not run on Windows), and speech with that uploaded voice.
-- The AppImage script and the CI `appimage` job are Linux-only and were not changed. CI has `test-windows` (lint and typecheck, `bun test`) and `engines-windows` (builds both engines, checks they open and that the server stops with a reason), neither with a GPU or models.
+- llama.cpp gives one `llama.dll`: libllama, libmtmd, the shim, ggml, its Vulkan and CPU backends. Nothing in it is
+  marked `dllexport` (llama.h under MinGW, and the shim likewise), so the linker exports every symbol; a single
+  `dllexport` would leave only that one's. The DLL imports only KERNEL32, ADVAPI32, the UCRT (`api-ms-win-crt-*`,
+  part of Windows 10 and later) and `vulkan-1.dll`. `--shim` relinks it from a tree kept with `--keep`.
+- audio.cpp gives `audiocpp.dll` (CMake's MinGW name `libaudiocpp.dll`, renamed when copied; it exports only
+  `audiocpp_*`, which audio.cpp marks `dllexport`), with the same imports. The script applies the patches in
+  `scripts/patches/` with `git apply --ignore-whitespace`.
+- `-flto=thin` is on the compile lines only: on a link (CMake repeats the compile flags there) Zig 0.17.1 would build
+  its MinGW libc as bitcode too and miss its own math and string functions, so the toolchain file adds `-fno-lto`
+  to the link flags. The objects are bitcode either way, and the linker optimizes them together.
+- A checkout whose files are dated in the future (a system clock that was ahead) makes Ninja regenerate the shader
+  generator's build forever ("build.ninja still dirty after 100 tries"): its build depends on the toolchain files.
+  `touch` them.
+
+- libsoxr gives `soxr.dll` and libopus `opus.dll` (CMake's MinGW names `libsoxr.dll` and `libopus.dll`, renamed when
+  copied: audio.cpp asks for `soxr.dll` by name). Each exports its own functions and three symbols of MinGW's
+  start-up code, and imports only KERNEL32 and the UCRT. These Zig builds were cross-built from Linux and checked
+  there, not yet run on Windows (the speech check below used the earlier MSVC builds).
+- Checked on an RX 9070 (Vulkan, Vulkan SDK 1.4.363.0) and an i5-14600KF with the Zig builds and the real models:
+  text translation with MTP (115 tokens/s; the earlier MSVC build gave 72 without it), an opaque and a transparent
+  image, `POST /segment`, `POST /align` (LaBSE on llama.dll's CPU backend), speech in en, and transcription of that
+  speech with and without Mel-Band RoFormer separation. The builds took 90 s (llama.cpp) and 114 s (audio.cpp) on
+  20 threads.
+- The AppImage script and the CI `appimage` job are Linux-only. CI has `test-windows` (lint and typecheck, `bun test`)
+  and `engines-windows` (fetches Zig, builds both engines against the Vulkan SDK of Ubuntu 26.04's version, 1.4.341.0,
+  and libsoxr, checks they open, that audio.cpp's lookup of `soxr.dll` finds ours and that the server stops with a
+  reason), neither with a GPU or models.
 
 ## Building the launcher
 
@@ -66,12 +81,12 @@ port, download models, third-party notices, server settings), each running in an
 console in the repository directory. It finds the repository by walking up from the exe until
 `src\server.ts` exists, and takes `bun` from the `PATH`, so keep `launcher.exe` inside the checkout.
 
-- Build: `packaging\windows\build.bat` (from `cmd` or PowerShell; in Git Bash `cmd //c packaging\windows\build.bat`).
-  Needs Visual Studio 2022 or later, or its Build Tools, with the "Desktop development with C++" workload,
-  found with `vswhere`; the script calls `vcvars64.bat` itself, so no Developer Prompt is needed.
-- Output: `packaging/windows/launcher.exe` (untracked, listed in `.gitignore`). `launcher.manifest`
-  (Common Controls 6 for command links and visual styles, Per-Monitor DPI Awareness V2) is embedded
-  by the build; the `.obj` is deleted afterwards.
+- Build: `bun scripts/zigbuild_launcher.ts`. Zig only (`bun scripts/fetch_zig.ts`): `zig cc` for `x86_64-windows-gnu`
+  (MinGW-w64 with UCRT, as the engines) with `-municode` and the GUI subsystem, `launcher.rc` compiled by Zig's
+  resource compiler. No CMake, Ninja or Visual Studio, and no Visual C++ runtime at run time.
+- Output: `packaging/windows/launcher.exe` (untracked, listed in `.gitignore`). `launcher.rc` holds the icon and
+  `launcher.manifest` (Common Controls 6 for command links and visual styles, Per-Monitor DPI Awareness V2) as the
+  exe's manifest resource.
 - Run it by double-clicking. It is not built in CI and has no automated test; check changes by hand
   at more than one display scale (all sizes are 96-dpi units scaled by the window's DPI).
 
@@ -84,22 +99,20 @@ Windows has no AppImage-style single file, so the installer unpacks the reposito
 is the shortcut's target. The launcher's commands run in the install directory, and `cmd` finds
 `bun.exe` there first, so the user needs no Bun on the `PATH`.
 
-- Needs the two engines built first (`build_llama.ts`, `build_audiocpp.ts`), `build_soxr.ts`, `build_libopus.ts` and
-  `build_bun.ts` (the packed `bun.exe`, a minimal build of Bun; it needs LLVM 23.1, NASM and Perl beside Visual
-  Studio, see the head of the script), the web app's PDF
-  libraries fetched (`fetch_web_libs.ts`, packed with `public\`), `fetch_sat_wasm.ts` (`sat.wasm`,
-  which runs the sentence segmentation model) and the launcher's MSVC
-  tools. The script rebuilds `launcher.exe` when `launcher.c` or the manifest is newer, and downloads
+- Needs the two engines built first (`zigbuild_llamacpp.ts`, `zigbuild_audiocpp.ts`), `zigbuild_soxr.ts`,
+  `zigbuild_libopus.ts` and `build_bun.ts` (the packed `bun.exe`, a minimal build of Bun; it needs LLVM 23.1, NASM and Perl beside Visual
+  Studio, see the head of the script; Visual Studio is needed for nothing else here), the web app's PDF
+  libraries fetched (`fetch_web_libs.ts`, packed with `public\`) and `fetch_sat_wasm.ts` (`sat.wasm`,
+  which runs the sentence segmentation model). The script runs `zigbuild_launcher.ts` when `launcher.c`, `launcher.rc`
+  or the manifest is newer than `launcher.exe`, and downloads
   and installs Inno Setup 6.7.3 for the current user (pinned checksum) when `ISCC.exe` is not found.
 - Per-user install by default (`%LOCALAPPDATA%\Programs\Index Translator`, no administrator rights),
   so `models\` and `voices\` beside the program stay writable; the "Download models" link fills them.
   The uninstaller removes only what the installer put there, so models and voices stay.
-- The Visual C++ runtime (the x64 Redistributable the engines import; not tested without it) is not
-  packed. The installer includes `packaging/windows/CodeDependencies.iss` (a copy of DomGries/InnoDependencyInstaller) and
-  calls `Dependency_AddVC14`: when the runtime is missing or older than the version the script names,
-  the installer downloads Microsoft's redistributable (checksum pinned in that file) and runs it,
-  which asks for administrator rights itself. Needs network only on a machine without the runtime.
-  The Universal CRT comes with Windows 10 and later. Not tested without the redistributable.
+- The Visual C++ runtime is neither packed nor installed. The engines, `soxr.dll` and `opus.dll` (built with Zig, which
+  links MinGW-w64 against the Universal CRT), the minimal `bun.exe` and `launcher.exe` import only Windows' own DLLs
+  and the Universal CRT (`api-ms-win-crt-*`), which comes with Windows 10 and later; none imports `vcruntime140.dll`,
+  `msvcp140.dll` or `vcomp140.dll` (checked with `llvm-objdump -p`). The installer needs no network.
 - CI job `bun-windows` builds `bun.exe` (cached by the script and the patch) and checks it with `scripts/check_bun.ts`.
 - CI job `installer-windows` builds it (reusing the engine caches and `bun-windows`'), installs it silently, checks that
   the installed `bun.exe` loads the engines and stops with the same reasons as `engines-windows`,

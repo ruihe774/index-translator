@@ -10,7 +10,7 @@ import { join } from "node:path";
 import type { AlignedPair, AlignUnit, SegmentedText, SegmentStatus } from "./api";
 import type { Config } from "./config";
 import { inferenceThreads } from "./cpu";
-import { libraryPath as llamaLibraryPath, shimPath } from "./llama-ffi";
+import { libraryPath as llamaLibraryPath } from "./llama-ffi";
 import { fetchAdvice } from "./preflight";
 import { wasmPath } from "./sat-wasm";
 import type { SegmentModel, SegmentProtocol } from "./segment-worker";
@@ -103,9 +103,7 @@ const MODELS: Record<
     dir: (cfg) => cfg.alignModelDir,
     library: (cfg) => cfg.llamaDir,
     libraryMissing: (dir) =>
-      [llamaLibraryPath(dir), shimPath(dir)].every((path) => existsSync(path))
-        ? undefined
-        : "libllama is not installed; run bun scripts/build_llama.ts",
+      existsSync(llamaLibraryPath(dir)) ? undefined : "libllama is not installed; run bun scripts/zigbuild_llamacpp.ts",
   },
 };
 

@@ -2,7 +2,7 @@
 // client names it with `Accept: audio/ogg`; the WAV the engine wrote is what a client that cannot play
 // it, or a server without the encoder, gets instead.
 //
-// The encoder is libopus (vendor/opus, built by scripts/build_libopus.ts; src/opus-ffi.ts). It is given
+// The encoder is libopus (vendor/opus, built by scripts/zigbuild_libopus.ts; src/opus-ffi.ts). It is given
 // 48 kHz mono, so the engine's 22.05 kHz audio is resampled with libsoxr first (src/resample.ts); the
 // muxer is public/ogg-opus.ts, which the page shares.
 //

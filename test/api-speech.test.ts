@@ -226,7 +226,7 @@ describe("the native speech engine without audio.cpp", () => {
   test("says what is missing, and refuses to synthesize", async () => {
     const speech = nativeSpeech(config());
     expect(speech.state).toBe("unavailable");
-    expect(speech.error).toContain("bun scripts/build_audiocpp.ts");
+    expect(speech.error).toContain("bun scripts/zigbuild_audiocpp.ts");
     expect(nativeSpeech(config({ speech: false })).error).toContain("SPEECH=0");
     const request: SpeechRequest = { text: "Hi", lang: "en", voice: "a", speed: 1 };
     let released = 0;

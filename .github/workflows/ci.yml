@@ -52,17 +52,29 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
+      # libopus and libsoxr are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins.
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-ubuntu-24.04-x64-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
       # The speech tests encode Opus on the server (libopus, resampled with libsoxr) and decode it with libopus.
       - name: Cache libopus
         id: opus
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-ubuntu-24.04-x64-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+          key: opus-zig-ubuntu-24.04-x64-${{ hashFiles('scripts/zigbuild_libopus.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libopus
         if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+        run: bun scripts/zigbuild_libopus.ts
 
       # test/webpage.test.ts opens pages in the runner's Chrome and converts them with turndown.
       - name: Fetch the web page converter
@@ -73,11 +85,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-ubuntu-24.04-x64-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-ubuntu-24.04-x64-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       # Both use the mock engines: no GPU, no models.
       - name: Unit and API integration tests
@@ -133,6 +145,19 @@ jobs:
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
 
+      # libopus and libsoxr are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins
+      # (on macOS for aarch64-macos).
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
       # The speech tests encode Opus on the server (libopus, resampled with libsoxr), and the browser decodes it;
       # uploads and recordings are sent as Ogg Opus only when the server has libopus. Built on macOS too, so
       # WebKit takes the Opus paths Safari takes against a real server.
@@ -141,14 +166,14 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+          key: opus-zig-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_libopus.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Cache libsoxr
         id: soxr
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-${{ matrix.runner }}-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Install Ninja
         if: ${{ runner.os == 'macOS' && (steps.opus.outputs.cache-hit != 'true' || steps.soxr.outputs.cache-hit != 'true') }}
@@ -156,11 +181,11 @@ jobs:
 
       - name: Build libopus
         if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+        run: bun scripts/zigbuild_libopus.ts
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       - name: Install ${{ matrix.browser }}
         run: bunx playwright install --with-deps ${{ matrix.browser }}
@@ -224,7 +249,8 @@ jobs:
             runner: ubuntu-24.04
           - arch: aarch64
             runner: ubuntu-24.04-arm
-    # Built on the AppImages' system, so it needs no newer C and C++ libraries than they do.
+    # Linked against Ubuntu 20.04's glibc and gcc-13's libstdc++ (scripts/glibc_sysroot.ts), as Bun's releases are,
+    # so it needs glibc 2.31 whatever the runner's is.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 240
     steps:
@@ -239,12 +265,12 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/bun
-          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/glibc_sysroot.ts', 'scripts/fetch_tools.ts', 'scripts/patches/bun-minimal.patch') }}
 
       # What Bun's build needs: clang, lld and the LLVM tools 23 from apt.llvm.org's repository (Bun's build finds them
       # in /usr/lib/llvm-23), NASM (x86-64: BoringSSL's and libjpeg-turbo's assembly) and Ninja; Git, CMake, Perl and
-      # rustup (which installs Bun's pinned nightly) are on the runner. The repository's key (fingerprint
-      # 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421) is pinned by its checksum.
+      # rustup (which installs Bun's pinned nightly) are on the runner, and so are tar, dpkg-deb and objdump for the
+      # sysroot. The repository's key (fingerprint 6084F3CF814B57C1CF12EFD515CF4D18AF4F7421) is pinned by its checksum.
       - name: Install the build tools
         if: ${{ steps.bun.outputs.cache-hit != 'true' }}
         run: |
@@ -273,10 +299,12 @@ jobs:
       matrix:
         include:
           - arch: x86_64
-            runner: ubuntu-24.04
+            runner: ubuntu-26.04
           - arch: aarch64
-            runner: ubuntu-24.04-arm
-    # The AppImage runs on systems whose C and C++ libraries are at least as new as this one's.
+            runner: ubuntu-26.04-arm
+    # The AppImage needs glibc 2.31 whatever this runner's is (build_appimage.ts checks every packed binary).
+    # 26.04 for its glslc (shaderc 2026.1) and Vulkan headers (1.4.341): 24.04's glslc lacks integer dot product, bfloat16,
+    # cooperative matrix 2 and e4m3, and ggml's Vulkan backend leaves those shaders out. The Bun is still built on 24.04.
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 90
     steps:
@@ -290,19 +318,34 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential git cmake ninja-build glslc libvulkan-dev spirv-headers
+            git cmake ninja-build glslc libvulkan-dev spirv-headers
 
-      # Each engine is built from a pinned commit, so it changes only when its build script does.
+      # No `bun install`: on Linux nothing here needs a development dependency (Zig's archive is a .tar.xz; only
+      # extractZip imports @stdx/zip), which this job keeps true. The engines, libsoxr and libopus are built with Zig
+      # (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins.
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
+      # Each engine is built from a pinned commit, so it changes only when its build script, its CMake options or
+      # toolchain files (scripts/zig), the shim, or Zig does.
       - name: Cache the translation engine
         id: llama
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.cpp') }}
+          key: llama-zig-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_llamacpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'src/llama-shim.c', 'src/llama-shim-ext.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_llama.ts
+        run: bun scripts/zigbuild_llamacpp.ts
 
       # audio.cpp resamples with libsoxr when it finds one and differently when not, so the one it is
       # given is ours, packed in the AppImage (src/audiocpp-ffi.ts opens it first).
@@ -311,22 +354,22 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       - name: Cache the speech engine
         id: audio
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+          key: audio-zig-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_audiocpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'scripts/patches/audiocpp-*.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_audiocpp.ts
+        run: bun scripts/zigbuild_audiocpp.ts
 
       - name: Check that libsoxr and libaudiocpp open
         run: bun -e "import { libraryVersion } from './src/audiocpp-ffi'; console.log(libraryVersion('vendor/audio.cpp'))"
@@ -339,11 +382,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+          key: opus-zig-ubuntu-26.04-${{ matrix.arch }}-${{ hashFiles('scripts/zigbuild_libopus.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libopus
         if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+        run: bun scripts/zigbuild_libopus.ts
 
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
@@ -357,7 +400,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: vendor/bun
-          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/glibc_sysroot.ts', 'scripts/fetch_tools.ts', 'scripts/patches/bun-minimal.patch') }}
           fail-on-cache-miss: true
 
       - name: Build the AppImage
@@ -389,150 +432,6 @@ jobs:
           path: dist/Index_Translator-${{ matrix.arch }}.AppImage
           if-no-files-found: error
 
-  # The NVIDIA variant of the AppImage: engines built with CUDA 13 and without Vulkan (the other one has
-  # Vulkan and no CUDA), with the CUDA runtime libraries packed. No GPU or driver is needed to build it.
-  appimage-cuda:
-    name: AppImage with CUDA (${{ matrix.arch }})
-    needs: bun
-    # Manual runs only (Actions → CI → Run workflow): not on push or pull request.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: x86_64
-            runner: ubuntu-24.04
-            repo: x86_64
-            keyring_sha256: d2a6b11c096396d868758b86dab1823b25e14d70333f1dfa74da5ddaf6a06dba
-          - arch: aarch64
-            runner: ubuntu-24.04-arm
-            repo: sbsa
-            keyring_sha256: 6ea7d2737648936820e85677177957a0f6521b840d98eb0bbae0a4f003fa7249
-    runs-on: ${{ matrix.runner }}
-    # Every CUDA kernel is compiled for two GPU architectures, twice (llama.cpp and audio.cpp); the caches make it rare.
-    timeout-minutes: 240
-    env:
-      # The toolkit's packages in NVIDIA's apt repository are named by this; it is also in the cache keys.
-      CUDA_PACKAGE_VERSION: "13-1"
-      CUDA_PATH: /usr/local/cuda-13.1
-    steps:
-      - uses: actions/checkout@v7
-
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-
-      - name: Install the build tools
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends build-essential git cmake ninja-build
-
-      # Only the compiler and the libraries the engines link: not the whole toolkit (several GB), no driver.
-      # cuda-driver-dev has the stub libcuda.so to link against; the real one is the user's driver.
-      # cuda-documentation has EULA.txt, which bundleCuda packs beside the runtime libraries.
-      - name: Install the CUDA toolkit
-        run: |
-          keyring=cuda-keyring_1.1-1_all.deb
-          curl -fsSLO "https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2404/${{ matrix.repo }}/$keyring"
-          echo "${{ matrix.keyring_sha256 }}  $keyring" | sha256sum -c -
-          sudo dpkg -i "$keyring"
-          sudo apt-get update
-          v=$CUDA_PACKAGE_VERSION
-          sudo apt-get install -y --no-install-recommends \
-            cuda-nvcc-$v cuda-cudart-dev-$v libcublas-dev-$v libcufft-dev-$v cuda-driver-dev-$v cuda-documentation-$v
-          "$CUDA_PATH/bin/nvcc" --version
-
-      - name: Cache the translation engine
-        id: llama
-        uses: actions/cache@v6
-        with:
-          path: vendor/llama.cpp-cuda
-          key: llama-cuda-${{ env.CUDA_PACKAGE_VERSION }}-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.cpp') }}
-
-      - name: Build the translation engine (llama.cpp, CUDA)
-        if: ${{ steps.llama.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_llama.ts --cuda
-
-      - name: Cache libsoxr
-        id: soxr
-        uses: actions/cache@v6
-        with:
-          path: vendor/soxr
-          key: soxr-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
-
-      - name: Build libsoxr
-        if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
-
-      - name: Cache the speech engine
-        id: audio
-        uses: actions/cache@v6
-        with:
-          path: vendor/audio.cpp-cuda
-          key: audio-cuda-${{ env.CUDA_PACKAGE_VERSION }}-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
-
-      - name: Build the speech engine (audio.cpp, CUDA)
-        if: ${{ steps.audio.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_audiocpp.ts --cuda
-
-      - name: Fetch the web app's libraries
-        run: bun scripts/fetch_web_libs.ts
-
-      - name: Cache libopus
-        id: opus
-        uses: actions/cache@v6
-        with:
-          path: vendor/opus
-          key: opus-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
-
-      - name: Build libopus
-        if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
-
-      - name: Fetch the web page converter
-        run: bun scripts/fetch_turndown.ts
-
-      # Packed for POST /segment (sentence segmentation).
-      - name: Fetch sat.wasm
-        run: bun scripts/fetch_sat_wasm.ts
-
-      # The minimal Bun that the `bun` job built or found in the cache.
-      - name: Restore Bun
-        uses: actions/cache/restore@v6
-        with:
-          path: vendor/bun
-          key: bun-ubuntu-24.04-${{ matrix.arch }}-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
-          fail-on-cache-miss: true
-
-      - name: Build the AppImage
-        run: bun scripts/build_appimage.ts --cuda
-
-      # Like the other AppImage's check: no GPU or driver here, so the packed program must say so and stop,
-      # and the packed engine, CUDA backend unloadable, must still run on the CPU.
-      - name: Check that the AppImage starts and stops with a reason
-        run: |
-          appimage=dist/Index_Translator-${{ matrix.arch }}-cuda.AppImage
-          export XDG_DATA_HOME="$RUNNER_TEMP/data"
-          expect() { # <words the output must contain> <command...>
-            local want=$1 out code=0
-            shift
-            out=$("$@" 2>&1) || code=$?
-            printf '%s\n(exit code %s)\n\n' "$out" "$code"
-            [ "$code" -eq 1 ] && grep -qF -- "$want" <<<"$out"
-          }
-          expect "No GPU with a CUDA driver was found" \
-            "$appimage" --appimage-extract-and-run --open-browser 0
-          expect "The model index-translate-9b is not in" \
-            "$appimage" --appimage-extract-and-run --open-browser 0 --gpu-layers 0
-          expect 'unknown model "nope"' \
-            "$appimage" --appimage-extract-and-run fetch --model nope
-
-      - uses: actions/upload-artifact@v7
-        with:
-          name: Index_Translator-${{ matrix.arch }}-cuda.AppImage
-          path: dist/Index_Translator-${{ matrix.arch }}-cuda.AppImage
-          if-no-files-found: error
-
   # The same checks as `test`, on Windows: paths, native library names, line endings. Both engines
   # are mocked, so there is no GPU or model. The browser tests are not run here.
   test-windows:
@@ -561,8 +460,10 @@ jobs:
     timeout-minutes: 90
     env:
       # The Vulkan SDK supplies glslc, the headers and vulkan-1.lib; the runner has no administrator
-      # prompt, so its installer runs silently. LunarG's URL for a version is a fixed file.
-      VULKAN_SDK_VERSION: "1.4.363.0"
+      # prompt, so its installer runs silently. LunarG's URL for a version is a fixed file. The version is Ubuntu
+      # 26.04's (vulkan-loader and spirv-headers 1.4.341.0, as the AppImage jobs build with): ggml's Vulkan backend
+      # enables shader families by what glslc supports, so both systems should build the same set.
+      VULKAN_SDK_VERSION: "1.4.341.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -570,7 +471,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
 
-      # Visual Studio 2026 with the C++ tools, Git, CMake and Ninja are on the runner image.
+      # Git, CMake and Ninja are on the runner image.
       - name: Install the Vulkan SDK
         shell: pwsh
         run: |
@@ -582,39 +483,57 @@ jobs:
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "$sdk\Bin" >> $env:GITHUB_PATH
 
-      # Each engine is built from a pinned commit, so it changes only when its build script does.
+      # scripts/fetch_zig.ts unpacks with scripts/extract_tools.ts, which imports @stdx/zip, a development dependency.
+      - name: Install the development tools
+        run: bun install --frozen-lockfile
+
+      # The engines and libsoxr are built with Zig (scripts/zigbuild_*.ts), the release that scripts/fetch_zig.ts pins,
+      # for x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-windows-x64-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
+      # Each engine is built from a pinned commit, so it changes only when its build script, its CMake options or
+      # toolchain files (scripts/zig), the shim, or Zig does.
       - name: Cache the translation engine
         id: llama
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.cpp') }}
+          key: llama-zig-windows-x64-vulkan-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('scripts/zigbuild_llamacpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'src/llama-shim.c', 'src/llama-shim-ext.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_llama.ts
+        run: bun scripts/zigbuild_llamacpp.ts
 
       - name: Cache libsoxr
         id: soxr
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-windows-vs2026-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-windows-x64-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       - name: Cache the speech engine
         id: audio
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-windows-vs2026-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+          key: audio-zig-windows-x64-vulkan-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('scripts/zigbuild_audiocpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'scripts/patches/audiocpp-*.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_audiocpp.ts
+        run: bun scripts/zigbuild_audiocpp.ts
 
       # audio.cpp asks LoadLibraryA for "soxr.dll" by name, which does not search its own directory.
       # Opening the engine loads ours first; a request by name must then return that very file.
@@ -687,7 +606,7 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/bun
-          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/glibc_sysroot.ts', 'scripts/fetch_tools.ts', 'scripts/patches/bun-minimal.patch') }}
 
       # Visual Studio with the C++ tools, Git, CMake, Ninja, Perl and rustup are on the runner image. Bun's build also
       # needs NASM and LLVM 23.1 (the image has 20), from Chocolatey; LLVM goes to C:\Program Files\LLVM, where Bun's
@@ -725,7 +644,8 @@ jobs:
     runs-on: windows-2025-vs2026
     timeout-minutes: 90
     env:
-      VULKAN_SDK_VERSION: "1.4.363.0"
+      # As in `engines-windows`, which shares its engine caches
+      VULKAN_SDK_VERSION: "1.4.341.0"
     steps:
       - uses: actions/checkout@v7
 
@@ -744,38 +664,57 @@ jobs:
           "VULKAN_SDK=$sdk" >> $env:GITHUB_ENV
           "$sdk\Bin" >> $env:GITHUB_PATH
 
+      # scripts/fetch_zig.ts unpacks with scripts/extract_tools.ts, which imports @stdx/zip, a development dependency.
+      - name: Install the development tools
+        run: bun install --frozen-lockfile
+
+      # The engines, libsoxr and libopus are built with Zig (scripts/zigbuild_*.ts), the release that
+      # scripts/fetch_zig.ts pins, for x86_64-windows-gnu; CMake and Ninja are the runner image's, on the PATH.
+      - name: Cache Zig
+        id: zig
+        uses: actions/cache@v6
+        with:
+          path: vendor/zig
+          key: zig-windows-x64-${{ hashFiles('scripts/fetch_zig.ts') }}
+
+      - name: Fetch Zig
+        if: ${{ steps.zig.outputs.cache-hit != 'true' }}
+        run: bun scripts/fetch_zig.ts
+
+      # Each engine is built from a pinned commit, so it changes only when its build script, its CMake options or
+      # toolchain files (scripts/zig), the shim, or Zig does.
       - name: Cache the translation engine
         id: llama
         uses: actions/cache@v6
         with:
           path: vendor/llama.cpp
-          key: llama-windows-vs2026-${{ hashFiles('scripts/build_llama.ts', 'scripts/build_tools.ts', 'src/llama-shim.cpp') }}
+          key: llama-zig-windows-x64-vulkan-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('scripts/zigbuild_llamacpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'src/llama-shim.c', 'src/llama-shim-ext.cpp') }}
 
       - name: Build the translation engine (llama.cpp)
         if: ${{ steps.llama.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_llama.ts
+        run: bun scripts/zigbuild_llamacpp.ts
 
       - name: Cache libsoxr
         id: soxr
         uses: actions/cache@v6
         with:
           path: vendor/soxr
-          key: soxr-windows-vs2026-${{ hashFiles('scripts/build_soxr.ts', 'scripts/build_tools.ts') }}
+          key: soxr-zig-windows-x64-${{ hashFiles('scripts/zigbuild_soxr.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libsoxr
         if: ${{ steps.soxr.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_soxr.ts
+        run: bun scripts/zigbuild_soxr.ts
 
       - name: Cache the speech engine
         id: audio
         uses: actions/cache@v6
         with:
           path: vendor/audio.cpp
-          key: audio-windows-vs2026-${{ hashFiles('scripts/build_audiocpp.ts', 'scripts/build_tools.ts', 'scripts/patches/audiocpp-abort.patch') }}
+          key: audio-zig-windows-x64-vulkan-${{ env.VULKAN_SDK_VERSION }}-${{ hashFiles('scripts/zigbuild_audiocpp.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**', 'scripts/patches/audiocpp-*.patch') }}
 
       - name: Build the speech engine (audio.cpp)
         if: ${{ steps.audio.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_audiocpp.ts
+        run: bun scripts/zigbuild_audiocpp.ts
 
       - name: Fetch the web app's libraries
         run: bun scripts/fetch_web_libs.ts
@@ -785,11 +724,11 @@ jobs:
         uses: actions/cache@v6
         with:
           path: vendor/opus
-          key: opus-windows-vs2026-${{ hashFiles('scripts/build_libopus.ts', 'scripts/build_tools.ts') }}
+          key: opus-zig-windows-x64-${{ hashFiles('scripts/zigbuild_libopus.ts', 'scripts/zigbuild_tools.ts', 'scripts/fetch_zig.ts', 'scripts/zig/**') }}
 
       - name: Build libopus
         if: ${{ steps.opus.outputs.cache-hit != 'true' }}
-        run: bun scripts/build_libopus.ts
+        run: bun scripts/zigbuild_libopus.ts
 
       - name: Fetch the web page converter
         run: bun scripts/fetch_turndown.ts
@@ -802,7 +741,7 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: vendor/bun
-          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/patches/bun-minimal.patch') }}
+          key: bun-windows-vs2022-${{ hashFiles('scripts/build_bun.ts', 'scripts/build_tools.ts', 'scripts/glibc_sysroot.ts', 'scripts/fetch_tools.ts', 'scripts/patches/bun-minimal.patch') }}
           fail-on-cache-miss: true
 
       - name: Build the installer

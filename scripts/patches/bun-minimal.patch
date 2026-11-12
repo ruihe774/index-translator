@@ -51,6 +51,20 @@ index e32ce3113ab..1a9c2652af1 100644
    if (!cfg.canary) features.push("canary:off");
    // Non-default modes — show so you notice when a build is unusual.
    if (cfg.webkit !== "prebuilt") features.push(`webkit:${cfg.webkit}`);
+diff --git a/scripts/build/flags.ts b/scripts/build/flags.ts
+index 5b322de84f5..900f9aebcca 100644
+--- a/scripts/build/flags.ts
++++ b/scripts/build/flags.ts
+@@ -1293,7 +1293,8 @@ export const linkerFlags: Flag[] = [
+       "_dl_find_object",
+       "posix_spawn_file_actions_addchdir_np",
+     ].map(s => `-Wl,--wrap=${s}`),
+-    when: c => c.linux && c.abi === "gnu",
++    // index-translator: off; its Bun needs the sysroot's glibc 2.31 and takes what 2.31 has.
++    when: () => false,
+     desc: "Wrap glibc 2.18+ symbols (portable down to glibc 2.17)",
+   },
+   {
 diff --git a/scripts/build/profiles.ts b/scripts/build/profiles.ts
 index 75af0a71c56..d0572d32d17 100644
 --- a/scripts/build/profiles.ts

@@ -24,6 +24,7 @@
     "@axe-core/playwright": "^4.13",
     "@mdn/browser-compat-data": "^8.1",
     "@playwright/test": "~1.64",
+    "@stdx/zip": "npm:@jsr/stdx__zip@^0.1",
     "@types/bun": "^1.4",
     "browserslist": "^4.29",
     "doiuse": "^6.0",

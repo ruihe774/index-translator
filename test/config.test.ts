@@ -71,8 +71,8 @@ describe("loadConfig defaults", () => {
     expect(loadConfig({ MODELS_DIR: "/m", SEPARATION_MODEL_DIR: "/b" }).separationModelDir).toBe(resolve("/b"));
     expect(loadConfig({ SPEECH_IDLE_UNLOAD: "0" }).speechIdleUnload).toBe(0);
     expect(() => loadConfig({ SPEECH_IDLE_UNLOAD: "soon" })).toThrow("SPEECH_IDLE_UNLOAD");
-    expect(loadConfig({ SPEECH_BACKEND: "cuda" }).speechBackend).toBe("cuda");
-    expect(() => loadConfig({ SPEECH_BACKEND: "cuada" })).toThrow("SPEECH_BACKEND");
+    expect(loadConfig({ SPEECH_BACKEND: "cpu" }).speechBackend).toBe("cpu");
+    expect(() => loadConfig({ SPEECH_BACKEND: "cuda" })).toThrow("SPEECH_BACKEND");
   });
 
   test("push is on only with a contact URI", () => {

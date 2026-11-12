@@ -4,9 +4,8 @@
 ; writable. The models and the voices are not packed: the launcher's "Download models" fetches them.
 ; Uninstalling removes only what was installed here, so downloaded models and voices stay.
 
-; The Visual C++ runtime is not packed: CodeDependencies.iss (DomGries/InnoDependencyInstaller,
-; copied unchanged) downloads and runs Microsoft's redistributable when the machine lacks it.
-#include "CodeDependencies.iss"
+; No Visual C++ runtime is needed: the Zig builds (engines, soxr.dll, opus.dll), the minimal bun.exe and the
+; launcher import only Windows' own DLLs and the Universal CRT (WINDOWS.md).
 
 #ifndef Stage
   #error Stage is not defined; run: bun scripts/build_installer.ts
@@ -43,10 +42,3 @@ Name: "desktopicon"; Description: "Create a desktop shortcut"; Flags: unchecked
 
 [Run]
 Filename: "{app}\launcher.exe"; Description: "Start Index Translator"; WorkingDir: "{app}"; Flags: nowait postinstall skipifsilent
-
-[Code]
-function InitializeSetup: Boolean;
-begin
-  Dependency_AddVC14;
-  Result := True;
-end;

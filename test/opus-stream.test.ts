@@ -1,7 +1,7 @@
 // The Ogg Opus form of the speech stream: how a client asks for it, the muxer's pages, what the
 // server sends, and that libopus's own decoder gets the audio back. That a browser decodes it is
-// e2e/speech.spec.ts's test. The tests that encode need libopus and libsoxr (bun scripts/build_libopus.ts,
-// build_soxr.ts) and are skipped without them.
+// e2e/speech.spec.ts's test. The tests that encode need libopus and libsoxr (bun scripts/zigbuild_libopus.ts,
+// zigbuild_soxr.ts) and are skipped without them.
 
 import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import { existsSync } from "node:fs";

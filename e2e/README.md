@@ -25,7 +25,7 @@ comment saying why.
   `public/vendor/`, so run `bun scripts/fetch_web_libs.ts` once before them. One test serves
   `/vendor/` as 404 to check that the page does without the libraries.
 - `speech.spec.ts` also runs the Ogg Opus stream against the real libopus and libsoxr in `vendor/`
-  (`bun scripts/build_libopus.ts`, `build_soxr.ts`; skipped without them) and the fallback to WAV of
+  (`bun scripts/zigbuild_libopus.ts`, `zigbuild_soxr.ts`; skipped without them) and the fallback to WAV of
   a browser that cannot decode it.
 - `webpage.spec.ts`: a web address alone in the box, against the mock browser of `POST /webpage`,
   which answers every page with set Markdown and records the addresses (`webpage` in `/mock`); the

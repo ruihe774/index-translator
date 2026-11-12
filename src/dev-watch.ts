@@ -6,7 +6,7 @@
 // @ts-expect-error
 import ffi from "./llama-ffi.ts" with { type: "text" };
 // @ts-expect-error
-import shim from "./llama-shim.cpp" with { type: "text" };
+import shim from "./llama-shim.c" with { type: "text" };
 // @ts-expect-error
 import worker from "./llama-worker.ts" with { type: "text" };
 
