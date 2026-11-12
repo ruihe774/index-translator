@@ -53,11 +53,10 @@ describe("preflight", () => {
     expect(problem).toContain("GPU_LAYERS=0");
   });
 
-  test("on Windows the messages name the driver, vulkan-1.dll and the processor", () => {
+  test("on Windows the messages name the driver and vulkan-1.dll", () => {
     const cfg = config({ modelsDir: withModel });
     expect(preflight(cfg, () => NO_GPU, {}, "win32")).toContain("AMD, Intel or NVIDIA");
     expect(preflight(cfg, () => ({ ...NO_GPU, vulkanLoader: false }), {}, "win32")).toContain("vulkan-1.dll");
-    expect(preflight(cfg, () => ({ ...GPU, cpu: false }), {}, "win32", "x64")).toContain("AVX2");
   });
 
   test("GPU_LAYERS=0 needs no GPU", () => {
@@ -68,24 +67,11 @@ describe("preflight", () => {
   });
 
   test("no CPU backend is a problem even with a GPU, with what the libraries said about it", () => {
-    const log = "load_backend: loaded Vulkan backend\nggml_backend_cpu: failed to initialize: cannot use AVX2";
-    const problem = preflight(
-      config({ modelsDir: withModel }),
-      () => ({ ...GPU, cpu: false, log }),
-      {},
-      "linux",
-      "x64",
+    const log = "load_backend: loaded Vulkan backend\nggml_backend_cpu: failed to initialize";
+    const problem = preflight(config({ modelsDir: withModel }), () => ({ ...GPU, cpu: false, log }), {}, "linux");
+    expect(problem).toBe(
+      `The translation engine's processor backend cannot be loaded from ${config().llamaDir}.\nggml_backend_cpu: failed to initialize`,
     );
-    expect(problem).toContain("processor backend cannot be loaded");
-    expect(problem).toContain("AVX2");
-    expect(problem).not.toContain("libgomp");
-    expect(problem).toContain("failed to initialize");
-    expect(problem).not.toContain("loaded Vulkan backend");
-  });
-
-  test("on aarch64 the CPU message names the Armv8.2-A baseline", () => {
-    const problem = preflight(config({ modelsDir: withModel }), () => ({ ...GPU, cpu: false }), {}, "linux", "arm64");
-    expect(problem).toContain("Armv8.2-A dot product and fp16");
   });
 
   test("libraries that cannot be opened are reported with the reason", () => {

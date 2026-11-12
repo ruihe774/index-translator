@@ -68,19 +68,11 @@ export function runProbe(llamaDir: string): Probe {
 
 // Message builders: text only, no filesystem. `preflight` below decides what to say.
 
-/** What the CPU backend inside libllama is compiled for (the Zig toolchain files' baselines), by `process.arch`. */
-const CPU_BASELINE: Record<string, string> = {
-  x64: "an x86-64 processor with AVX2 (Haswell, 2013, or newer)",
-  arm64: "an aarch64 processor with Armv8.2-A dot product and fp16 (Cortex-A76, Apple M1 or newer)",
-};
-
-function noCpuBackendMessage(cfg: Config, log: string | undefined, arch: string): string {
+function noCpuBackendMessage(cfg: Config, log: string | undefined): string {
   // What the libraries said about it, without their ordinary start-up lines.
   const said = (log ?? "").split("\n").filter((line) => /fail|error|cannot/i.test(line));
   const lines = said.length > 0 ? `\n${said.join("\n")}` : "";
-  // The backend is compiled into libllama itself (scripts/zigbuild_llamacpp.ts), so it needs no other library.
-  const cpu = `It is part of the engine's library and needs ${CPU_BASELINE[arch] ?? "a processor the engine was built for"}.`;
-  return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}. ${cpu}${lines}`;
+  return `The translation engine's processor backend cannot be loaded from ${cfg.llamaDir}.${lines}`;
 }
 
 function noGpuMessage(vulkanLoader: boolean, windows: boolean): string {
@@ -102,7 +94,6 @@ export function preflight(
   probe: (llamaDir: string) => Probe = runProbe,
   env: Env = Bun.env,
   platform: string = process.platform,
-  arch: string = process.arch,
 ): string | undefined {
   const windows = platform === "win32";
   const found = probe(cfg.llamaDir);
@@ -110,7 +101,7 @@ export function preflight(
     return `The translation engine cannot be loaded. ${found.error}`;
   }
   if (!found.cpu) {
-    return noCpuBackendMessage(cfg, found.log, arch);
+    return noCpuBackendMessage(cfg, found.log);
   }
   if (cfg.gpuLayers !== 0 && found.gpus.length === 0) {
     return noGpuMessage(found.vulkanLoader, windows);
