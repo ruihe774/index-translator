@@ -160,7 +160,9 @@ translation models with `bun scripts/fetch_models.ts --model index-translate-9b 
 You need [Bun](https://bun.sh) and `curl`, and to build git, CMake, Ninja, `glslc` and the Vulkan headers (Zig
 compiles everything; no other C or C++ compiler is needed). On Debian and Ubuntu:
 `sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers xz-utils` (`fetch_zig.ts` unpacks a
-`.tar.xz`).
+`.tar.xz`). On Fedora:
+`sudo dnf install git cmake ninja-build glslc vulkan-loader-devel vulkan-headers spirv-headers-devel xz`; on Arch:
+`sudo pacman -S git cmake ninja shaderc vulkan-icd-loader vulkan-headers spirv-headers xz` (both untested).
 What is built then needs an x86-64 processor with AVX2 (Haswell, 2013, or newer) or an aarch64 one with
 Armv8.2-A dot product and fp16 (Cortex-A76 and Apple M1 or newer).
 

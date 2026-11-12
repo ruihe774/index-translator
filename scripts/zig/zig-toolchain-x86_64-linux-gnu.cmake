@@ -29,4 +29,7 @@ endforeach()
 # ggml builds its Vulkan shader generator, a program that runs during the build, for the machine that builds
 set(GGML_VULKAN_SHADERS_GEN_TOOLCHAIN "${_here}/zig-toolchain-host.cmake" CACHE FILEPATH "")
 
-set(Vulkan_LIBRARY /usr/lib/x86_64-linux-gnu/libvulkan.so CACHE FILEPATH "libvulkan, which find_package does not search for when cross-compiling")
+# CMake takes the multiarch directory (/usr/lib/<triple> on Debian and Ubuntu) from the compiler's own library
+# directories, which Zig's are not; named here, find_package(Vulkan) finds libvulkan there, as in /usr/lib64 (Fedora)
+# and /usr/lib (Arch), which it searches anyway. -DVulkan_LIBRARY=<path> overrides it
+set(CMAKE_LIBRARY_ARCHITECTURE x86_64-linux-gnu)

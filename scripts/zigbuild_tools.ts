@@ -34,8 +34,11 @@ export function zigToolsHint(vulkan = true): string {
     return `on macOS: brew install git cmake ninja; ${zig}`;
   }
   return vulkan
-    ? `on Debian and Ubuntu: sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers; ${zig}`
-    : `on Debian and Ubuntu: sudo apt install git cmake ninja-build; ${zig}`;
+    ? "on Debian and Ubuntu: sudo apt install git cmake ninja-build glslc libvulkan-dev spirv-headers; " +
+        "on Fedora: sudo dnf install git cmake ninja-build glslc vulkan-loader-devel vulkan-headers spirv-headers-devel; " +
+        `on Arch: sudo pacman -S git cmake ninja shaderc vulkan-icd-loader vulkan-headers spirv-headers; ${zig}`
+    : "on Debian and Ubuntu: sudo apt install git cmake ninja-build; on Fedora: sudo dnf install git cmake ninja-build; " +
+        `on Arch: sudo pacman -S git cmake ninja; ${zig}`;
 }
 
 /** The hint for the engines. */
