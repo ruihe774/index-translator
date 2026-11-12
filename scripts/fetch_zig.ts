@@ -8,9 +8,10 @@
 // (x64) needs nothing (the zip is read here).
 
 import { chmod, mkdir, rm } from "node:fs/promises";
-import { dirname, join, resolve } from "node:path";
+import { join, resolve } from "node:path";
 
-import { download, extractTar, readStamp, unzip, writeStamp } from "./fetch_tools";
+import { extractTar, extractZip } from "./extract_tools";
+import { download, readStamp, writeStamp } from "./fetch_tools";
 
 export const ZIG_VERSION = "0.17.1";
 
@@ -56,12 +57,8 @@ if (import.meta.main) {
   await rm(home, { recursive: true, force: true });
   await mkdir(home, { recursive: true });
   if (release.name.endsWith(".zip")) {
-    // The archive's one top-level directory (zig-<arch>-windows-<version>) is dropped by `unzip`
-    for (const [path, bytes] of unzip(archive, () => true)) {
-      const target = join(home, path);
-      await mkdir(dirname(target), { recursive: true });
-      await Bun.write(target, bytes);
-    }
+    // The archive's one top-level directory (zig-<arch>-windows-<version>) is dropped
+    await extractZip(archive, home);
     await chmod(zigExecutable(home), 0o755);
   } else {
     // The archive's one top-level directory (zig-<arch>-linux-<version>) is dropped
