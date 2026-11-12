@@ -19,8 +19,9 @@
 // (BUN_BUILD_CACHE_DIR). Building needs no administrator rights.
 //
 // On Linux it is linked, as Bun's releases are, against Ubuntu 20.04's glibc and gcc-13's libstdc++
-// (glibc_sysroot.ts; also needs tar, dpkg-deb and objdump), so it runs on glibc 2.17 and later whatever the build
-// machine's glibc; the build fails otherwise.
+// (glibc_sysroot.ts; also needs tar, dpkg-deb and objdump), so it runs on glibc 2.31 and later whatever the build
+// machine's glibc; the build fails otherwise. The patch also turns off Bun's `--wrap` list, which pins what glibc 2.31
+// has above 2.17 down to 2.17 (its own shims of exp, getrandom, statx, ...): 2.31 is old enough.
 
 import { existsSync } from "node:fs";
 import { cp, mkdir, rm, rmdir } from "node:fs/promises";
@@ -54,8 +55,8 @@ const build = join(source, "build", "release-minimal");
 const exe = windows ? "bun.exe" : "bun";
 const linux = process.platform === "linux";
 const sysroot = join(work, "glibc-sysroot");
-/** The newest glibc symbol version the binary may need: Bun's own floor (scripts/build/binary-expectations.ts). */
-const MAX_GLIBC = "2.17";
+/** The newest glibc symbol version the binary may need: the sysroot's. */
+const MAX_GLIBC = "2.31";
 
 /** The packed Bun in `dir` (vendor/bun): `bun`, or `bun.exe` on Windows. */
 export function bunPath(dir: string): string {

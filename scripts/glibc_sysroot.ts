@@ -2,7 +2,8 @@
 // (scripts/build/ci-images/spec.ts `glibcSysroot` in Bun's tree): ubuntu:20.04's root filesystem (glibc 2.31),
 // focal's libc headers, and gcc-13's libstdc++ (the environment WebKit's prebuilt is built in). Linked against the
 // host's glibc, the binary needs that glibc (2.38 from Ubuntu 24.04's C23 headers: `__isoc23_strtol` and the like);
-// against this one, Bun's `--wrap` list (scripts/build/flags.ts) pins what 2.31 has above 2.17 down to 2.17.
+// against this one, 2.31. (Bun's releases go on to 2.17 with a `--wrap` list in scripts/build/flags.ts, which
+// bun-minimal.patch turns off.)
 // The pins are Bun's, at the commit build_bun.ts builds; the base image is cdimage's tarball of the same release.
 
 import { mkdir, readdir, readlink, rm, symlink } from "node:fs/promises";
