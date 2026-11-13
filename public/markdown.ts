@@ -5,10 +5,11 @@
 // It covers what translated documents and model output use: ATX and setext headings, paragraphs,
 // fenced code, block quotes, bullet, ordered and task lists, thematic breaks, GFM tables and display
 // equations (`$$`); inline code, equations (`$…$`, `$$…$$`), emphasis, strong, strikethrough, inline
-// links, images (shown as links) and autolinks.
-// Deliberately left out: raw HTML (shown as text), indented code blocks (indented prose stays
-// prose), reference links and entity references. A single newline inside a paragraph is kept as a
-// line break, as in the plain-text view. Every other CommonMark spec example passes; see
+// links, images (shown as links), autolinks and a few attribute-less inline HTML tags (`<sup>`,
+// `<sub>`, `<u>`, `<mark>`, `<kbd>`, `<small>`, `<br>` and the `<b>`/`<i>`/`<s>` aliases).
+// Deliberately left out: all other raw HTML (shown as text), indented code blocks (indented prose
+// stays prose), reference links and entity references. A single newline inside a paragraph is kept
+// as a line break, as in the plain-text view. Every other CommonMark spec example passes; see
 // docs/markdown-conformance.md and `bun scripts/commonmark.ts`.
 //
 // Streaming: a block, once a later line has started another block, never changes. `MarkdownStream`
@@ -17,7 +18,7 @@
 export type Inline =
   | { type: "text"; text: string }
   | { type: "code"; text: string }
-  | { type: "em" | "strong" | "del"; children: Inline[] }
+  | { type: "em" | "strong" | "del" | "sup" | "sub" | "u" | "mark" | "kbd" | "small"; children: Inline[] }
   | { type: "link"; href: string; title: string; children: Inline[] }
   | { type: "image"; href: string; title: string; alt: string }
   /** TeX, without its dollar signs; `display` for `$$…$$`. */
@@ -52,6 +53,8 @@ const DETECT_STRONG = [
   /\[[^\]\n]+\]\((?:https?:\/\/|mailto:|\/|#|\.)[^)\s]*\)/, // inline link
   /^ {0,3}\$\$[^$]+\$\$[ \t]*$/m, // display equation
   /(?<![$\\])\$(?![\s$])[^$\n]*\\[a-zA-Z]+[^$\n]*(?<![\s\\])\$(?![\d$])/, // equation with a TeX command
+  /<(b|strong|i|em|s|del|strike|sup|sub|u|mark|kbd|small)>[^<]*<\/\1>/i, // paired inline HTML
+  /<br[ \t]*\/?[ \t]*>/i, // inline HTML line break
 ];
 
 const DETECT_WEAK = [
@@ -66,7 +69,7 @@ const DETECT_WEAK = [
 
 /**
  * Whether the source text looks written in Markdown: one unambiguous construct (heading, fence,
- * table, link, display equation, an equation with a TeX command), or at least two of the weaker
+ * table, link, display equation, an equation with a TeX command, paired inline HTML), or at least two of the weaker
  * hints (list items, quotes, strong, code spans, breaks, equations with `^` or `_`), which plain text
  * seldom has together.
  */
@@ -514,12 +517,31 @@ export function parseMarkdown(text: string): Block[] {
 // The CommonMark algorithm: code spans, equations and autolinks are taken first while scanning; "*", "_" and
 // "~~" runs and "[" / "![" go on delimiter stacks; "]" closes the nearest bracket if an inline link
 // destination follows, and emphasis is resolved by "process emphasis" with the flanking rules and
-// the rule of three.
+// the rule of three. The few supported HTML tags go on a stack of their own, below.
 
 const ASCII_PUNCT = /[!-/:-@[-`{-~]/;
 const AUTOLINK = /<((?:https?:\/\/|mailto:)[^\s<>]*)>/iy;
 const EMAIL_AUTOLINK =
   /<([\w.!#$%&'*+/=?^`{|}~-]+@[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(?:\.[a-zA-Z0-9](?:[a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*)>/y;
+const HTML_BR = /<br[ \t]*\/?[ \t]*>/iy;
+const HTML_TAG = /<(\/?)(b|strong|i|em|s|del|strike|sup|sub|u|mark|kbd|small)[ \t]*>/iy;
+
+/** The element each supported HTML tag becomes; `<b>`, `<i>` and `<s>` are aliases, as in the page. */
+const HTML_TAG_TYPE: Record<string, "em" | "strong" | "del" | "sup" | "sub" | "u" | "mark" | "kbd" | "small"> = {
+  b: "strong",
+  strong: "strong",
+  i: "em",
+  em: "em",
+  s: "del",
+  del: "del",
+  strike: "del",
+  sup: "sup",
+  sub: "sub",
+  u: "u",
+  mark: "mark",
+  kbd: "kbd",
+  small: "small",
+};
 const BARE_URL = /(?<![\p{L}\p{N}])https?:\/\/[^\s<]*[^\s<?!.,:;*_~'")\]]/gu;
 const WHITESPACE = /\s/u;
 const PUNCTUATION = /[\p{P}\p{S}]/u;
@@ -669,6 +691,11 @@ function plainText(nodes: Inline[]): string {
     .join("");
 }
 
+/** Whether `node` is one of `nodes` or inside one of their children. */
+function containsNode(nodes: Inline[], node: Inline): boolean {
+  return nodes.some((n) => n === node || ("children" in n && containsNode(n.children, node)));
+}
+
 /** Link children cannot hold links: a bare URL or autolink inside a label is unwrapped to its text. */
 function unlink(nodes: Inline[]): Inline[] {
   return nodes.flatMap((n): Inline[] =>
@@ -696,10 +723,19 @@ interface Bracket {
   bottom: number;
 }
 
+interface HtmlTag {
+  /** The opening tag as a text node, so an unclosed tag is shown as written. */
+  node: TextNode;
+  type: "em" | "strong" | "del" | "sup" | "sub" | "u" | "mark" | "kbd" | "small";
+  /** Delimiters at or above this index lie inside the tag. */
+  bottom: number;
+}
+
 export function parseInline(src: string): Inline[] {
   const out: Inline[] = [];
   const delims: Delimiter[] = [];
   const brackets: Bracket[] = [];
+  const htmlTags: HtmlTag[] = [];
   let buf = "";
   const flush = () => {
     if (buf) {
@@ -715,7 +751,9 @@ export function parseInline(src: string): Inline[] {
   };
 
   /** Resolves emphasis among the delimiters from index `bottom` up, then drops them from the stack. */
-  const processEmphasis = (bottom: number) => {
+  const processEmphasis = (givenBottom: number) => {
+    // A bottom taken before a tag or bracket closed may be past the delimiters that are left.
+    const bottom = Math.min(givenBottom, delims.length);
     const openersBottom = new Map<string, number>();
     let c = bottom;
     while (c < delims.length) {
@@ -858,6 +896,44 @@ export function parseInline(src: string): Inline[] {
         i += (m ?? email)![0].length;
         continue;
       }
+      const br = matchAt(HTML_BR, src, i);
+      if (br) {
+        flush();
+        out.push({ type: "br" });
+        i += br[0].length;
+        continue;
+      }
+      const tag = matchAt(HTML_TAG, src, i);
+      if (tag) {
+        const type = HTML_TAG_TYPE[tag[2]!.toLowerCase()]!;
+        if (!tag[1]) {
+          htmlTags.push({ node: textNode(tag[0]), type, bottom: delims.length });
+        } else {
+          flush();
+          const open = htmlTags.at(-1);
+          if (open?.type !== type) {
+            buf += tag[0]; // a closing tag that closes nothing is text
+          } else {
+            htmlTags.pop();
+            processEmphasis(Math.min(open.bottom, delims.length));
+            const from = out.indexOf(open.node);
+            if (from === -1) {
+              buf += tag[0]; // the opening tag was taken into a link label; the pair cannot span it
+            } else {
+              const children = out.splice(from + 1);
+              out[from] = { type, children };
+              // A bracket opened inside the tag can no longer close outside it.
+              for (const b of brackets) {
+                if (containsNode(children, b.node)) {
+                  b.active = false;
+                }
+              }
+            }
+          }
+        }
+        i += tag[0].length;
+        continue;
+      }
     }
 
     if (c === "[" || (c === "!" && src[i + 1] === "[")) {
@@ -878,6 +954,12 @@ export function parseInline(src: string): Inline[] {
       flush();
       processEmphasis(opener.bottom);
       const from = out.indexOf(opener.node);
+      if (from === -1) {
+        // The bracket was taken into a tag or emphasis that has since closed; `](…)` is text.
+        buf += src.slice(i, tail.end);
+        i = tail.end;
+        continue;
+      }
       const children = unlink(out.splice(from + 1));
       out[from] = opener.image
         ? { type: "image", href: tail.href, title: tail.title, alt: plainText(children) }

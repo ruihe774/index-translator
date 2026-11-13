@@ -492,6 +492,12 @@ function inlineBoth(nodes: Inline[], lang: string): InlineText {
         case "em":
         case "strong":
         case "del":
+        case "sup":
+        case "sub":
+        case "u":
+        case "mark":
+        case "kbd":
+        case "small":
         case "link": {
           walk(n.children);
           break;

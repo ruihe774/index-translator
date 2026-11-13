@@ -20,14 +20,14 @@ Update both when the parser changes.
 
 ## Result
 
-CommonMark 0.31.2: **390 of 652** examples pass exactly. Of the 262 others, 51 differ only in line
-breaks, and 211 come from constructs that are left out on purpose. No divergence is
+CommonMark 0.31.2: **391 of 652** examples pass exactly. Of the 261 others, 51 differ only in line
+breaks, and 210 come from constructs that are left out on purpose. No divergence is
 unexplained.
 
 | Reason | Examples | Behaviour here |
 |---|---:|---|
 | Line breaks kept | 51 | Every newline inside a paragraph is a line break (`<br>`), not a soft break. Translations keep the source's line structure, as the plain-text view does. |
-| Raw HTML | 74 | HTML blocks and inline HTML are shown as text, never interpreted. Model output must not be able to inject markup. |
+| Raw HTML | 73 | HTML blocks and inline HTML other than the supported tags below are shown as text, never interpreted. Model output must not be able to inject markup. |
 | Link reference definitions | 75 | `[text][ref]`, `[ref]` and `[ref]: /url` are not supported; they stay text. Only inline links `[text](url)` and autolinks. |
 | Indented code blocks | 43 | Four-space indentation is not code; it stays prose, so indented plain text is not turned into code blocks. Fenced code works. Tab examples that fail are indented code too. |
 | Entity and character references | 12 | `&ouml;`, `&#35;` and the like are shown as written, not decoded. |
@@ -40,6 +40,15 @@ Example numbers for each reason are in `KNOWN` in `scripts/commonmark.ts`.
 
 - GFM extensions: pipe tables (with alignment), `~~strikethrough~~` (two tildes only), task list
   items `- [ ]` / `- [x]`, bare URL autolinks. The GFM spec suite has not been run.
+- Inline HTML: only the attribute-less tags `<sup>`, `<sub>`, `<u>`, `<mark>`, `<kbd>`, `<small>`,
+  `<b>`, `<strong>`, `<i>`, `<em>`, `<s>`, `<del>` and `<strike>` (case-insensitive; `<b>`, `<i>`
+  and `<s>`/`<strike>` become the `strong`, `em` and `del` elements) and `<br>` (also `<br/>` and
+  `<br />`, a line break). Markdown is parsed inside a properly nested pair; a tag with
+  attributes, an unclosed or unmatched tag and every other tag are shown as text, and crossed
+  tags do not cross in the tree (a closing tag that would cross is text).
+  No string is parsed as HTML: the page builds the element with the DOM API, so nothing can inject
+  markup. A paired supported tag, or a `<br>`, is by itself enough for a text to look like
+  Markdown.
 - Equations (TeX, as GitHub and Pandoc write them; shown as MathML by Temml): `$…$` inline needs a
   non-space after the opening `$` and before the closing one and no digit after the closing one, and
   the first unescaped `$` decides, so `$5 and $10` stays text. `$$…$$` within a paragraph is a

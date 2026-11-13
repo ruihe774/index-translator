@@ -19,6 +19,8 @@ describe("looksLikeMarkdown", () => {
     expect(looksLikeMarkdown("See [the docs](https://example.com) for more.")).toBe(true);
     expect(looksLikeMarkdown("So:\n$$\nE = mc^2\n$$")).toBe(true);
     expect(looksLikeMarkdown(String.raw`where $\alpha$ is the rate`)).toBe(true);
+    expect(looksLikeMarkdown("Water is H<sub>2</sub>O.")).toBe(true);
+    expect(looksLikeMarkdown("one<br>two")).toBe(true);
   });
 
   test("weaker hints need company", () => {
@@ -35,6 +37,7 @@ describe("looksLikeMarkdown", () => {
     expect(looksLikeMarkdown("Hello, world")).toBe(false);
     expect(looksLikeMarkdown("#hashtag and 5 * 3 = 15, 2023. A year.")).toBe(false);
     expect(looksLikeMarkdown("It costs $5 and $10, or US$ 7_000 in $_bulk.")).toBe(false);
+    expect(looksLikeMarkdown('The <span>tag</span> and <sup class="x">this</sup>.')).toBe(false);
     expect(looksLikeMarkdown(await Bun.file(new URL("fixtures/essays.en.txt", import.meta.url)).text())).toBe(false);
   });
 });
@@ -315,8 +318,90 @@ describe("parseInline", () => {
     ]);
   });
 
-  test("raw HTML is text", () => {
-    expect(parseInline("<b>x</b>")).toStrictEqual([{ type: "text", text: "<b>x</b>" }]);
+  test("attribute-less inline HTML becomes formatting; other raw HTML is text", () => {
+    expect(
+      parseInline("H<sub>2</sub>O, x<sup>2</sup>, <u>u</u>, <mark>m</mark>, <kbd>k</kbd>, <small>s</small>"),
+    ).toStrictEqual([
+      { type: "text", text: "H" },
+      { type: "sub", children: [{ type: "text", text: "2" }] },
+      { type: "text", text: "O, x" },
+      { type: "sup", children: [{ type: "text", text: "2" }] },
+      { type: "text", text: ", " },
+      { type: "u", children: [{ type: "text", text: "u" }] },
+      { type: "text", text: ", " },
+      { type: "mark", children: [{ type: "text", text: "m" }] },
+      { type: "text", text: ", " },
+      { type: "kbd", children: [{ type: "text", text: "k" }] },
+      { type: "text", text: ", " },
+      { type: "small", children: [{ type: "text", text: "s" }] },
+    ]);
+    // Aliases take the element the Markdown forms take; tag names are case-insensitive.
+    expect(
+      parseInline("<B>b</B> <strong>s</strong> <i>i</i> <em>e</em> <s>x</s> <del>d</del> <strike>t</strike>"),
+    ).toStrictEqual([
+      { type: "strong", children: [{ type: "text", text: "b" }] },
+      { type: "text", text: " " },
+      { type: "strong", children: [{ type: "text", text: "s" }] },
+      { type: "text", text: " " },
+      { type: "em", children: [{ type: "text", text: "i" }] },
+      { type: "text", text: " " },
+      { type: "em", children: [{ type: "text", text: "e" }] },
+      { type: "text", text: " " },
+      { type: "del", children: [{ type: "text", text: "x" }] },
+      { type: "text", text: " " },
+      { type: "del", children: [{ type: "text", text: "d" }] },
+      { type: "text", text: " " },
+      { type: "del", children: [{ type: "text", text: "t" }] },
+    ]);
+    expect(parseInline("a<br>b<br/>c<br />d")).toStrictEqual([
+      { type: "text", text: "a" },
+      { type: "br" },
+      { type: "text", text: "b" },
+      { type: "br" },
+      { type: "text", text: "c" },
+      { type: "br" },
+      { type: "text", text: "d" },
+    ]);
+    // Markdown parses inside a tag, and a tag inside emphasis.
+    expect(parseInline("<sup>**x**</sup> *<sub>y</sub>* [<kbd>z</kbd>](https://a.b)")).toStrictEqual([
+      { type: "sup", children: [{ type: "strong", children: [{ type: "text", text: "x" }] }] },
+      { type: "text", text: " " },
+      { type: "em", children: [{ type: "sub", children: [{ type: "text", text: "y" }] }] },
+      { type: "text", text: " " },
+      {
+        type: "link",
+        href: "https://a.b",
+        title: "",
+        children: [{ type: "kbd", children: [{ type: "text", text: "z" }] }],
+      },
+    ]);
+    for (const text of [
+      "<span>x</span>",
+      '<sup class="x">x</sup>',
+      "<sup>x",
+      "x</sup>",
+      "<div>x</div>",
+      String.raw`\<sup>x</sup>`,
+    ]) {
+      expect(parseInline(text)).toStrictEqual([{ type: "text", text: text.replace(String.raw`\<`, "<") }]);
+    }
+    expect(parseInline("`<sup>x</sup>`")).toStrictEqual([{ type: "code", text: "<sup>x</sup>" }]);
+    // Crossed tags do not cross in the tree: the inner one closes, the rest is text.
+    expect(parseInline("<sup><u>x</sup></u>")).toStrictEqual([
+      { type: "text", text: "<sup>" },
+      { type: "u", children: [{ type: "text", text: "x</sup>" }] },
+    ]);
+    // Emphasis and a link cannot cross a tag's boundary either.
+    expect(parseInline("<sup>*a [b* c</sup>](x)")).toStrictEqual([
+      {
+        type: "sup",
+        children: [
+          { type: "em", children: [{ type: "text", text: "a [b" }] },
+          { type: "text", text: " c" },
+        ],
+      },
+      { type: "text", text: "](x)" },
+    ]);
   });
 });
 

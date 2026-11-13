@@ -74,7 +74,13 @@ function inlineNodes(nodes: Inline[]): Child[] {
       }
       case "em":
       case "strong":
-      case "del": {
+      case "del":
+      case "sup":
+      case "sub":
+      case "u":
+      case "mark":
+      case "kbd":
+      case "small": {
         return el(n.type, inlineNodes(n.children));
       }
       case "link": {

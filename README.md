@@ -223,7 +223,10 @@ to the next of these, as the buttons are laid out. Leave with the button at the 
 of the bar, Escape, or the browser's Back. Reading aloud stops when you open it.
 **Copy translation** copies the Markdown source as plain text and, when the translation is shown
 formatted, also puts the formatted text on the clipboard as rich text. Links open in a new tab;
-images are shown as links and are not loaded.
+images are shown as links and are not loaded. A few basic HTML tags without attributes are shown
+formatted too: `<sup>`, `<sub>`, `<u>`, `<mark>`, `<kbd>`, `<small>` and `<br>`, and the bold,
+italic and struck-through tags (`<b>`, `<strong>`, `<i>`, `<em>`, `<s>`, `<del>`, `<strike>`);
+any other HTML is shown as written.
 
 Equations written in TeX between dollar signs are shown typeset: `$E = mc^2$` within a line, and
 `$$ … $$` set apart, on one line or with each `$$` on a line of its own. A dollar sign followed by a
