@@ -1,6 +1,6 @@
 ---
 name: a11y-acceptance
-description: Accessibility acceptance gate (WCAG 2.2 AA, WAI-ARIA APG) for this repository. Load BEFORE changing anything in `public/` (HTML, CSS, custom elements, dialogs, controls, colours, layout), even when the request never mentions accessibility. A UI change is not done until the affected criteria are verified and `A11Y-ACCEPTANCE.md` is updated.
+description: Accessibility acceptance gate (WCAG 2.2 AA, WAI-ARIA APG) for this repository.
 ---
 
 # a11y-acceptance
