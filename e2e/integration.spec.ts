@@ -240,7 +240,9 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
   await expect(app.output.locator("th").nth(0)).toHaveClass("align-left");
   await expect(app.output.locator("th").nth(1)).toHaveClass("align-right");
   await expect(app.output.locator("b")).toHaveCount(0);
-  await expect(app.output.locator("p").last()).toHaveText("<b>原样</b>");
+  // Attribute-less `<b>` is shown formatted, as `<strong>` (see docs/markdown-conformance.md).
+  await expect(app.output.locator("p").last()).toHaveText("原样");
+  await expect(app.output.locator("p").last().locator("strong")).toHaveText("原样");
 
   await app.copy.click();
   await expect(app.meta).toHaveText("Translation copied to the clipboard.");
@@ -265,6 +267,7 @@ test("Markdown source: the output is rendered, unsafe links stay text, and copy 
     "https://example.com",
   ]);
   expect(copiedHtml).toContain("<code>let a = 1;</code>");
+  expect(copiedHtml).toContain("<strong>原样</strong>");
   // Markdown table alignment survives as the cell's `align`, while page classes do not survive at all.
   expect(copiedHtml).toContain('<th align="left">左</th>');
   expect(copiedHtml).toContain('<th align="right">右</th>');
