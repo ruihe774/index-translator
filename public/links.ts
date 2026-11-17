@@ -78,7 +78,10 @@ export function linkReference(source: string, alignment: Alignment | null): Link
  * top-level block that holds the link.
  */
 export function linkProblem(ref: LinkReference, href: string, outputLine: number): LinkProblem | null {
-  if (!ref.text.includes(href)) {
+  // The parser strips a backslash before ASCII punctuation in a link target (`\&` in the source is `&` in
+  // the href), so the raw source may not contain the href verbatim; the parsed targets in `byLine` do.
+  const inSource = ref.text.includes(href) || [...ref.byLine.values()].some((hrefs) => hrefs.has(href));
+  if (!inSource) {
     return "missing";
   }
   const match = ref.alignment && counterpart(ref.alignment, "output", outputLine);

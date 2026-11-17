@@ -18,6 +18,15 @@ test("a target from another paragraph is a mismatch", () => {
   expect(linkProblem(ref, "https://b.example", 0)).toBe("mismatch");
 });
 
+test("an escaped ampersand in a source target is not missing, however the output writes it", () => {
+  const escaped = "[A](https://a.example/?x=1\\&y=2)\n\nplain";
+  // The model may copy the `\&` or drop the backslash; the parser reads both as `&`.
+  for (const out of [escaped, "[A](https://a.example/?x=1&y=2)\n\nplain"]) {
+    const ref = linkReference(escaped, alignBlocks(escaped, out));
+    expect(linkProblem(ref, "https://a.example/?x=1&y=2", 0)).toBeNull();
+  }
+});
+
 test("a target absent from the source is missing", () => {
   const out = "[甲](https://evil.example)\n\n乙\n\n文本";
   const ref = linkReference(source, alignBlocks(source, out));
