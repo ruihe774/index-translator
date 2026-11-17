@@ -45,7 +45,7 @@
     gap: 0.125rem;
     inline-size: 100%;
     padding: var(--page-pad);
-    font-size: 0.75rem;
+    font-size: 0.75em;
     font-weight: 400;
     line-height: 1.2;
     background: var(--surface);

@@ -12,7 +12,7 @@ summary {
 
 .language label {
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: 0.875em;
 }
 
 input[type="text"],

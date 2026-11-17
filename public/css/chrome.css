@@ -71,7 +71,7 @@
 
 .hint {
   color: var(--muted);
-  font-size: 0.875rem;
+  font-size: 0.875em;
 }
 
 /* The status line, and the letter count beside the source's buttons, scroll sideways instead of
