@@ -6,14 +6,14 @@ export class OfficeDocument {
     free(): void;
     [Symbol.dispose](): void;
     format(): string;
-    static fromBytes(data: Uint8Array): OfficeDocument;
+    static fromBytes(data: Uint8Array | number[]): OfficeDocument;
     metadata(): string;
     toJson(): string;
     toMarkdown(): string;
     toText(): string;
 }
 
-export function parse(data: Uint8Array): OfficeDocument;
+export function parse(data: Uint8Array | number[]): OfficeDocument;
 
 /**
  * The formats this package can parse, as JSON.

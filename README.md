@@ -5,8 +5,8 @@ The WebAssembly build of [undoc](https://github.com/iyulab/undoc), the `undoc-wa
 browser to read a Word document's text as Markdown (`scripts/fetch_web_libs.ts` on `main` fetches
 these files by commit and checksum).
 
-Built from [iyulab/undoc@3a9dbbb](https://github.com/iyulab/undoc/commit/3a9dbbb911b30e944323402d30278e0629444885)
-(upstream main, `undoc-wasm` 0.27.0):
+Built from [iyulab/undoc@69faa12](https://github.com/iyulab/undoc/commit/69faa12f5f9e6edad250413ff005c6e302fce03c)
+(upstream's tag v0.28.0, `undoc-wasm` 0.28.0, wasm-bindgen 0.2.130 as its `Cargo.lock` pins):
 
 ```sh
 CARGO_PROFILE_RELEASE_OPT_LEVEL=2 \
