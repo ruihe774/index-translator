@@ -13,9 +13,9 @@ import { fetchLibrary, isPresent, type Library } from "./fetch_web_libs";
 
 export const TURNDOWN: Library = {
   dir: "turndown",
-  version: "7.2.4",
-  url: "https://registry.npmjs.org/turndown/-/turndown-7.2.4.tgz",
-  sha256: "05f61bc3f0aeca5e5cd7f1b5492e26b9040bb00708cd41fb1b0f7b216e296fa0",
+  version: "7.2.5",
+  url: "https://registry.npmjs.org/turndown/-/turndown-7.2.5.tgz",
+  sha256: "7e91c1d36c07a6fd25825734ac71890e89a4113a431e138af8b02b1c99e98e0b",
   place: (path) => (path === "dist/turndown.js" ? "turndown.js" : path === "LICENSE" ? path : undefined),
   expect: ["turndown.js", "LICENSE"],
 };

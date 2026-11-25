@@ -45,9 +45,9 @@ const NOTO_SANS_MATH_RAW = `https://raw.githubusercontent.com/ruihe774/index-tra
 export const LIBRARIES: Library[] = [
   {
     dir: "pdfjs",
-    version: "6.4.299",
-    url: "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.4.299.tgz",
-    sha256: "86269b40170eb41740ea05ad2102d71d33de4f122b34eb2f478be0ea7779c415",
+    version: "6.5.438",
+    url: "https://registry.npmjs.org/pdfjs-dist/-/pdfjs-dist-6.5.438.tgz",
+    sha256: "7461aefcd27c4ef0dd76f9ca5760f09466eb6b3f934432670c12132e7b3d6faa",
     // The legacy build: the other one is written for browsers newer than some in .browserslistrc.
     // cmaps/ and standard_fonts/ are what a PDF may leave out and name instead; wasm/ holds the
     // JPEG 2000, JBIG2 and colour decoders (not the scripting sandbox, which thumbnails never run).
