@@ -31,18 +31,18 @@ import {
   ZIG_TOOLS_HINT,
 } from "./zigbuild_tools";
 
-/** Release v0.9.4 (it includes the Vulkan Flash Attention change for RoFormer). Written to VERSION and the build log. */
-const TAG = "v0.9.4";
+/** Release v0.9.6 (C API 0.4: its `audiocpp_result_custom_schema` reads CED's scores). Written to VERSION and the build log. */
+const TAG = "v0.9.6";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
-const COMMIT = "f7ac446fb75e594a6913c846bea6c85b637f6ac0";
+const COMMIT = "04a37f2e80ff2dbcdd84cc67848a970bd02a73e0";
 const REPO = "https://github.com/0xShug0/audio.cpp.git";
 /**
  * Our changes to audio.cpp, applied in this order to the checkout before it is built (upstream has none of them):
- * `audiocpp_set_abort_flag`, a flag that stops a running IndexTTS-2 utterance; `audiocpp_result_custom_output`, which
- * reads a result's family-specific output (CED's scores); and the removal of `-Wl,--exclude-libs,ALL` from the link
- * of libaudiocpp, which Zig's linker does not know (the version script already hides everything but `audiocpp_*`).
+ * `audiocpp_set_abort_flag`, a flag that stops a running IndexTTS-2 utterance; and the removal of
+ * `-Wl,--exclude-libs,ALL` from the link of libaudiocpp, which Zig's linker does not know (the version script already
+ * hides everything but `audiocpp_*`).
  */
-const PATCHES = ["audiocpp-abort.patch", "audiocpp-custom-output.patch", "audiocpp-zig-link.patch"].map((name) =>
+const PATCHES = ["audiocpp-abort.patch", "audiocpp-zig-link.patch"].map((name) =>
   join(import.meta.dir, "patches", name),
 );
 

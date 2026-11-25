@@ -35,8 +35,8 @@ names them and says where the full texts are. The AppImage carries this file in
 
 `libaudiocpp.so` is built from audio.cpp's source with two changes of ours, in this app's repository:
 `scripts/patches/audiocpp-abort.patch`, a function that lets the app stop an utterance that is being
-generated, and `scripts/patches/audiocpp-custom-output.patch`, a function that reads a model's own
-output (the audio tagger's scores).
+generated, and `scripts/patches/audiocpp-zig-link.patch`, which removes a linker option that Zig's
+linker does not know.
 
 The AppImage is packed with [appimagetool](https://github.com/AppImage/appimagetool) and the
 [type2-runtime](https://github.com/AppImage/type2-runtime), whose code is embedded at the start of the

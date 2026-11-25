@@ -16,7 +16,7 @@ import { cstr, libraryFile, once, pointerOf, slot, soxrDir, soxrLibraryPath } fr
 import type { Pcm } from "./wav";
 import { isAborted } from "./worker-rpc";
 
-/** The major version of the C API these declarations were written against (`audiocpp.h`, 0.2). */
+/** The major version of the C API these declarations were written against (`audiocpp.h`, 0.4). */
 const ABI_MAJOR = 0;
 
 export const libraryPath = (dir: string) => libraryFile(dir, "audiocpp");
@@ -75,8 +75,7 @@ function bind(dir: string) {
     audiocpp_result_named_audio_count: { args: ["ptr"], returns: "usize" },
     audiocpp_result_named_audio: { args: ["ptr", "usize", "ptr", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
     audiocpp_result_text: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
-    // Ours, not upstream's: scripts/patches/audiocpp-custom-output.patch.
-    audiocpp_result_custom_output: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
+    audiocpp_result_custom_schema: { args: ["ptr", "ptr", "ptr"], returns: "i32" },
     audiocpp_result_segment_count: { args: ["ptr"], returns: "usize" },
     audiocpp_result_segment: { args: ["ptr", "usize", "ptr", "ptr", "ptr", "ptr"], returns: "i32" },
     audiocpp_stream_start: { args: ["ptr", "ptr"], returns: "i32" },
@@ -438,7 +437,7 @@ export class MusicDetector extends Loaded {
 
     return withResult(lib, result, () => {
       const json = slot();
-      check(lib, lib.audiocpp_result_custom_output(result, null, json), "audiocpp_result_custom_output");
+      check(lib, lib.audiocpp_result_custom_schema(result, null, json), "audiocpp_result_custom_schema");
       const { scores } = JSON.parse(new CString(pointerOf(json))) as { scores: { label: string; score: number }[] };
       return scores.find((s) => s.label === "Music")?.score ?? 0;
     });

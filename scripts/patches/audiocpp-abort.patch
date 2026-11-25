@@ -1,5 +1,5 @@
 diff --git a/include/audiocpp.h b/include/audiocpp.h
-index e85ad9f..fc69d2b 100644
+index ea5a1c4..f274288 100644
 --- a/include/audiocpp.h
 +++ b/include/audiocpp.h
 @@ -84,6 +84,18 @@ typedef enum audiocpp_status {
@@ -56,18 +56,18 @@ index 0000000..bdf1631
 +
 +#endif
 diff --git a/src/capi/audiocpp.cpp b/src/capi/audiocpp.cpp
-index 6915460..ad1a9ab 100644
+index 634b057..92e7429 100644
 --- a/src/capi/audiocpp.cpp
 +++ b/src/capi/audiocpp.cpp
-@@ -18,6 +18,7 @@
- 
+@@ -21,6 +21,7 @@
+ #include "engine/framework/debug/trace.h"
  #include "engine/framework/core/backend.h"
  #include "engine/framework/core/module.h"
 +#include "engine/framework/runtime/abort.h"
  #include "engine/framework/runtime/errors.h"
  #include "engine/framework/runtime/model.h"
  #include "engine/framework/runtime/registry.h"
-@@ -311,6 +312,10 @@ const char * audiocpp_build_version(void) {
+@@ -376,6 +377,10 @@ const char * audiocpp_build_version(void) {
  #endif
  }
  
@@ -119,7 +119,7 @@ index ae0eec1..08edf4e 100644
          auto x_batched = repeat_or_zero_rows(x, kMelChannels * total_frames, use_cfg, false);
          auto prompt_batched = repeat_or_zero_rows(prompt_x, kMelChannels * total_frames, use_cfg, true);
 diff --git a/src/models/index_tts2/session.cpp b/src/models/index_tts2/session.cpp
-index 449d990..73014b5 100644
+index d603847..f90cfe3 100644
 --- a/src/models/index_tts2/session.cpp
 +++ b/src/models/index_tts2/session.cpp
 @@ -2,6 +2,7 @@
@@ -130,7 +130,7 @@ index 449d990..73014b5 100644
  #include "engine/framework/runtime/options.h"
  #include "engine/framework/text/chunking.h"
  
-@@ -723,6 +724,7 @@ runtime::AudioBuffer IndexTTS2Session::synthesize_segment(
+@@ -733,6 +734,7 @@ runtime::AudioBuffer IndexTTS2Session::synthesize_segment(
          s2mel_->release_cfm_graph();
      }
  
