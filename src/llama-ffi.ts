@@ -26,7 +26,7 @@ const MTP_MIN_GPU_BYTES = 15.5 * 2 ** 30;
 
 /**
  * The one library scripts/zigbuild_llamacpp.ts builds: libllama, libmtmd (image input), ggml with its backends, and
- * src/llama-shim.c with src/llama-shim-ext.cpp, compiled against the same llama.cpp source.
+ * src/llama-shim.c, compiled against the same llama.cpp source.
  */
 export const libraryPath = (dir: string) => libraryFile(dir, "llama");
 
@@ -58,7 +58,7 @@ function bind(dir: string) {
     mtmd_input_chunks_free: { args: ["ptr"], returns: "void" },
     mtmd_helper_get_n_tokens: { args: ["ptr"], returns: "usize" },
   }).symbols;
-  // src/llama-shim.c and src/llama-shim-ext.cpp.
+  // src/llama-shim.c.
   const shim = dlopen(libraryPath(dir), {
     shim_init: { args: ["ptr"], returns: "void" },
     shim_devices: { args: ["ptr", "i32"], returns: "i32" },

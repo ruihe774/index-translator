@@ -1,6 +1,5 @@
 // Build the translation engine with Zig: libllama and libmtmd (image input) from the pinned llama.cpp source,
-// with ggml's Vulkan and CPU backends compiled in and nothing else of llama.cpp, and the shim (src/llama-shim.c,
-// src/llama-shim-ext.cpp), linked into one library, ./vendor/llama.cpp/libllama.so (llama.dll on Windows), which the
+// with ggml's Vulkan and CPU backends compiled in and nothing else of llama.cpp, and the shim (src/llama-shim.c), linked into one library, ./vendor/llama.cpp/libllama.so (llama.dll on Windows), which the
 // bindings open for all three.
 // Usage: bun scripts/zigbuild_llamacpp.ts [--keep] [--shim] [--target=<triple>]
 //
@@ -30,9 +29,9 @@ import {
   ZIG_TOOLS_HINT,
 } from "./zigbuild_tools";
 
-const TAG = "v0.9.0";
+const TAG = "v1.0.0";
 /** The commit of the tag. It is fetched by this id, so the source is what was reviewed even if the tag moves. */
-const COMMIT = "cd959bae99ff4bed22bef2604f45241c09bbb8c8";
+const COMMIT = "b1b770d90d94cad9e9ea5b993bdbc383a522fb28";
 const REPO = "https://github.com/ggml-org/llama.cpp.git";
 /** What the library exports: the calls the bindings make. ggml and the C++ runtime stay inside. */
 const EXPORTS = ["llama_*", "mtmd_*", "shim_*"];
@@ -112,9 +111,7 @@ async function link(): Promise<void> {
     ...["include", "src", "tools/mtmd", "ggml/include"].map((dir) => `-I${join(source, dir)}`),
   ];
   const cObject = join(objects, "llama-shim.o");
-  const cxxObject = join(objects, "llama-shim-ext.o");
   await run(["zig", "cc", ...compile, "-c", "-o", cObject, join(root, "src", "llama-shim.c")]);
-  await run(["zig", "c++", ...compile, "-std=c++17", "-c", "-o", cxxObject, join(root, "src", "llama-shim-ext.cpp")]);
 
   const archives = (await Array.fromAsync(new Bun.Glob("**/*.a").scan({ cwd: build })))
     // The shader generator's own build, a program for this machine
@@ -122,7 +119,7 @@ async function link(): Promise<void> {
     .map((path) => join(build, path))
     .sort();
   await mkdir(stage, { recursive: true });
-  const common = ["zig", "c++", "-target", triple, "-O2", "-shared", "-o", libraryPath(stage), cObject, cxxObject];
+  const common = ["zig", "c++", "-target", triple, "-O2", "-shared", "-o", libraryPath(stage), cObject];
   const vulkan = await cacheValue(build, "Vulkan_LIBRARY");
   if (windows) {
     // Nothing is marked dllexport (llama.h under MinGW, and the shim alike), so a link without a .def exports every

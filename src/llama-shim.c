@@ -1,6 +1,6 @@
 // The libllama and libmtmd (image input) calls that pass or return structs, which bun:ffi cannot
 // express, plus the log filter, the device list and multi-token prediction. Compiled by
-// scripts/zigbuild_llamacpp.ts with src/llama-shim-ext.cpp against the source it has just built, and linked into
+// scripts/zigbuild_llamacpp.ts against the source it has just built, and linked into
 // the same library, so the struct layouts always match it. After a change here:
 // bun scripts/zigbuild_llamacpp.ts --shim. Everything else is called directly from src/llama-ffi.ts.
 
@@ -306,12 +306,7 @@ SHIM_API int32_t shim_mtmd_eval_chunk(mtmd_context * ctx, struct llama_context *
 // the target checks them all. Greedy, one sequence, one MTP layer (Qwen3.5); ported from
 // common/speculative.cpp (draft-mtp) and the server's verification in tools/server/server-context.cpp.
 // The MTP layer reads, for each token, the hidden state the target computed for the token before
-// it; those come from the staging calls in src/llama-shim-ext.cpp.
-
-// From src/llama-shim-ext.cpp.
-void shim_ext_set_embeddings_nextn(struct llama_context * ctx, bool value, bool masked);
-float * shim_ext_get_embeddings_nextn(struct llama_context * ctx);
-float * shim_ext_get_embeddings_nextn_ith(struct llama_context * ctx, int32_t i);
+// it; those come from llama_get_embeddings_nextn and its _ith, which llama.h declares.
 
 struct shim_mtp {
     struct llama_context * tgt;
@@ -369,8 +364,8 @@ SHIM_API struct shim_mtp * shim_mtp_new(struct llama_model * model, struct llama
         goto fail;
     }
     // The target's state for every token of a batch, the MTP layer's only for the ones with logits.
-    shim_ext_set_embeddings_nextn(tgt, true, false);
-    shim_ext_set_embeddings_nextn(m->dft, true, true);
+    llama_set_embeddings_nextn(tgt, true, false);
+    llama_set_embeddings_nextn(m->dft, true, true);
     return m;
 fail:
     shim_mtp_free(m);
@@ -402,7 +397,7 @@ SHIM_API void shim_mtp_reset(struct shim_mtp * m) {
 // the target's state for the token before it. `keep_rows`, when not NULL, is where the target's
 // states for the `n` tokens (at most max_draft + 1) are also copied to. Returns llama_process's status.
 static int32_t mtp_catch_up(struct shim_mtp * m, const llama_token * tokens, int32_t n, llama_pos pos, float * keep_rows) {
-    const float * h = shim_ext_get_embeddings_nextn(m->tgt);
+    const float * h = llama_get_embeddings_nextn(m->tgt);
     if (h == NULL || n < 1) {
         return -1;
     }
@@ -467,7 +462,7 @@ SHIM_API int32_t shim_mtp_step(struct shim_mtp * m, struct llama_sampler * sampl
             return -1;
         }
         tokens[i + 1] = llama_sampler_sample(m->greedy, m->dft, idx);
-        state = shim_ext_get_embeddings_nextn_ith(m->dft, idx);
+        state = llama_get_embeddings_nextn_ith(m->dft, idx);
         if (state == NULL) {
             return -1;
         }
