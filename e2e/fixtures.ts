@@ -3,7 +3,7 @@
 
 import { expect, test as base } from "@playwright/test";
 import type { Locator, Page } from "@playwright/test";
-import { CoverageReport } from "monocart-coverage-reports";
+import { MCR } from "monocart-coverage-reports";
 
 import type {
   AlignedPair,
@@ -100,7 +100,7 @@ export const THINK = "<think>\n\n</think>\n\n";
 export { CHAT, DOCUMENT } from "../test/helpers/harness";
 
 // Under `E2E_COVERAGE` every page measures its JS; globalTeardown merges the workers' data (`e2e/coverage.ts`).
-const coverage = COVERAGE ? new CoverageReport(REPORT) : undefined;
+const coverage = COVERAGE ? MCR(REPORT) : undefined;
 
 /**
  * Playwright's WebKit plays media without an H.264 decoder, on Linux (GStreamer; an H.264 MP4 fails too) and on
