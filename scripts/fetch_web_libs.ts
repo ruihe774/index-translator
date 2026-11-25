@@ -129,7 +129,7 @@ export interface FileLibrary {
   files: PinnedFile[];
 }
 
-const UNDOC_COMMIT = "7469dcc40a7109b29e26922e284a77205535ee3b";
+const UNDOC_COMMIT = "962b5171ebbdba5f62b70b0997acdde1c70bd56d";
 const UNDOC_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${UNDOC_COMMIT}`;
 const PDF_INSPECTOR_COMMIT = "54f43e19370da8cfa7795a79dc7b0edd9848bf7d";
 const PDF_INSPECTOR_RAW = `https://raw.githubusercontent.com/ruihe774/index-translator/${PDF_INSPECTOR_COMMIT}`;
@@ -173,12 +173,12 @@ export const FILE_LIBRARIES: FileLibrary[] = [
       {
         to: "undoc_wasm.js",
         url: `${UNDOC_RAW}/undoc_wasm.js`,
-        sha256: "b93987bc0c9af79e4e379d3a17f877cd4127f8a8f337dac88cf590b4eb6ea350",
+        sha256: "96e4e7d49d7a30f54d0e0a446e47a80fe9f4d8b5f9b1a1c87b6fa7f7e8440bbe",
       },
       {
         to: "undoc_wasm_bg.wasm",
         url: `${UNDOC_RAW}/undoc_wasm_bg.wasm`,
-        sha256: "fd4a5d228fff13eace560d026cfde126659e613612f590aca719b0fa53f7f3ab",
+        sha256: "43b8e8346f31610f9b734e849d8f55ba2089699fcb8baceb9399b2711aed3398",
       },
       {
         to: "LICENSE",
